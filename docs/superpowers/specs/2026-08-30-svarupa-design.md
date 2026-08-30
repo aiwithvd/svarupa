@@ -7,7 +7,7 @@
 
 ## 1. What this is
 
-Svarupa (स्वरूप, "its own true form") reads a codebase and produces a **verified** map of it: a queryable knowledge graph plus nine types of architecture diagram, delivered as one interactive HTML artifact.
+Svarupa (स्वरूप, "its own true form") reads a codebase and produces a **verified** map of it: a queryable knowledge graph plus seven types of architecture diagram, delivered as one interactive HTML artifact.
 
 The defining constraint: **every node and every edge in every diagram carries `file:line` evidence, or it does not render.** Not a heuristic guess, not an LLM's plausible story. A claim you can click through to the source line that proves it.
 
@@ -52,7 +52,7 @@ Each stage is a pure function of its input plus pinned versions. No stage reache
 | `detect` | Walk the tree, classify files, respect ignore rules, emit a manifest with content hashes |
 | `extract` | tree-sitter AST per code file, structured parse per config file. Emit evidenced nodes and edges |
 | `build` | Assemble into a NetworkX graph. Deduplicate. Validate every element carries evidence |
-| `cluster` | Leiden community detection with deterministic edge ordering. Split oversized, resplit low-cohesion |
+| `cluster` | Seeded community detection (Louvain default) over canonically ordered, weighted edges. **Presentation only, never reaches the lockfile** |
 | `derive` | Per-diagram-type heuristics turn graph structure into candidate diagram specs |
 | `refine` | Replay `refinements.yaml` overlay onto candidates. Optional LLM naming pass (constrained) |
 | `layout` | Per-type layout engine assigns coordinates. Geometry validation |
@@ -73,18 +73,17 @@ svarupa/
     frameworks/    per-language framework detectors (see 4.2)
     config/        compose.py, k8s.py, terraform.py, openapi.py, manifests.py, ci.py
   build.py         graph assembly, dedup, evidence enforcement
-  cluster.py       Leiden with determinism guarantees
+  cluster.py       seeded community detection; pluggable backend
   derive/
     base.py        Deriver ABC: graph -> DiagramSpec | None
     architecture.py, moduledeps.py, sequence.py, erd.py, apisurface.py,
-    deploy.py, lifecycle.py, workflow.py, classhier.py
+    deploy.py, classhier.py
   refine.py        overlay application, constrained LLM naming
   layout/
     base.py        Layout ABC: DiagramSpec -> PositionedSpec
     columnar.py    sequence
     grid.py        ERD
     layered.py     module deps, class hierarchy
-    laned.py       lifecycle, workflow (layered plus lane assignment)
     clustered.py   architecture, deploy topology
     grouped.py     API surface (list-tree by resource path)
     validate.py    overlap, crossing, out-of-bounds, label fit
@@ -107,6 +106,35 @@ viewer/            browser-side rendering (see 6)
 ```
 
 **Rule:** `derive/` may only read the graph. `layout/` may only read a `DiagramSpec`. Neither may re-parse source. This keeps the evidence chain intact and each layer independently testable.
+
+---
+
+### 2.3 Dependencies
+
+Deliberately small. This ships as a CLI installed with `uv tool install`
+and baked into a CI image pulled on every pipeline run, so install
+footprint is an adoption cost, and every dependency is a supply-chain
+surface on a tool positioned for enterprise governance.
+
+| Purpose | Choice | License |
+|---|---|---|
+| Parsing | `tree-sitter` 0.26+, grammar wheels `==`-pinned | MIT |
+| Graph | `networkx` | BSD-3-Clause |
+| Community detection | `networkx.louvain_communities` | BSD-3-Clause |
+| YAML | `pyyaml`, `safe_load` only | MIT |
+
+**Clustering is deliberately not `leidenalg` or `graspologic`.**
+Measured in Spike 0: `graspologic` costs 575 MB and 43 transitive
+dependencies (matplotlib, pandas, scikit-learn, numba, umap-learn) to
+deliver one algorithm. `leidenalg` + `igraph` is 19 MB and 6
+dependencies but is **GPL**, which would foreclose the license revisit
+§14 explicitly plans. `networkx.louvain_communities` is already present,
+adds nothing, is BSD, and scored an identical ARI of 1.000 on the
+benchmark. `leidenalg` remains available as an opt-in extra.
+
+This is safe **only because clustering is presentation-only**. If
+communities still fed the lockfile, algorithm quality would be a
+correctness concern rather than an aesthetic one.
 
 ---
 
@@ -225,17 +253,17 @@ class Deriver(ABC):
 
 A deriver returning `None` produces no diagram, and the report says why. **An empty diagram is never fabricated to fill a tab.**
 
+**Sequence is the highest-risk deriver, not a strong one.** It depends entirely on call-edge resolution, which dies at the first dynamic hop, and in a FastAPI, Spring, or NestJS application that is hop one or two. Import resolution measured 37-47% in Spike 0; call resolution was never measured and is far harder. A bounded call-resolution measurement is therefore a **blocking gate in P1-2, before this deriver is scheduled.** If the number is poor, scope moves to the config-and-import-backed diagrams, which Spike 0 did validate. A sequence tab rendering two participants for a forty-endpoint service reads as "the tool does not understand my code", which is worse than not shipping the tab.
+
 | Diagram | Derivation strategy | Strength |
 |---|---|---|
-| Architecture | Leiden communities as components, import direction as layers, compose services as concrete boundaries | Strong |
+| Architecture | Structural modules as boxes, communities for visual grouping only, import direction as layers, compose services as concrete boundaries | Strong |
 | Module deps | Import edges, topologically layered | Trivial |
 | ERD | SQL DDL plus ORM model classes, FK edges | Strong |
 | API surface | OpenAPI spec plus route decorators/annotations, grouped by resource | Strong |
 | Deploy topology | compose/k8s/terraform, nested by scope | Strong |
-| Sequence | Detect entry points (main, route handlers, CLI commands, job entries), trace the call chain, participants are the modules crossed | Strong |
+| Sequence | Detect entry points (main, route handlers, CLI commands, job entries), trace the call chain, participants are the modules crossed | **Weakest, gated** |
 | Class hierarchy | `inherits`/`implements` edges | Trivial |
-| Lifecycle | State enums plus the functions that assign them; transitions from assignment sites | Medium, LLM-assisted ordering |
-| Workflow | Middleware chains, task pipelines (Celery chains, CI job graphs) | Medium, LLM-assisted grouping |
 
 ### 5.1 Hierarchical zoom
 
@@ -245,17 +273,20 @@ Small repos degrade gracefully rather than specially: when a community contains 
 
 This is the answer to the 50,000-node monorepo. The UX is identical at 500 nodes and 500,000, and it avoids the hairball failure that every competing tool exhibits at scale.
 
-### 5.2 The LLM contract
+### 5.2 No LLM in the derivation path
 
-The LLM participates only in lifecycle and workflow derivation, and only under a hard constraint:
+Both derivers that would have required LLM inference (lifecycle and
+workflow) are cut from v1. **Nothing in the analysis or derivation
+pipeline calls a model.** The whole build is deterministic and needs no
+API key.
 
-**Input:** a list of already-evidenced nodes and edges, nothing else.
-**Permitted:** group them, order them, assign human-readable names.
-**Forbidden:** introduce any element not present in its input.
-
-The refine stage validates this. Any returned element whose id is not in the input set is dropped and logged. Fail-closed survives because the LLM never becomes a source of facts, only of arrangement and vocabulary.
-
-When no LLM is available, lifecycle and workflow fall back to deterministic ordering with machine-generated names. They still render; they just read less well.
+The only place a model may participate is rewriting the Overview
+narrative when the tool is driven through the agent skill, and that
+output lands in `refinements.yaml`, never in the lockfile path (see
+§7.2). Cutting the two weakest diagram types also removed the
+nondeterminism quarantine problem, the prompt-injection surface that CI
+execution on untrusted fork PRs would have created, and the API-key
+dependency. One cut removed five problems.
 
 ### 5.3 Refinement overlay
 
@@ -290,7 +321,6 @@ Most of these diagrams do not need general graph layout, and forcing them throug
 | Module deps, class hierarchy | Layered DAG by topological depth, row-packed |
 | Architecture, deploy topology | Clustered layered, communities as bands, nested boundaries |
 | API surface | Grouped list-tree by resource path |
-| Lifecycle, workflow | Layered left-to-right with lane assignment |
 
 Layout runs in Python at build time and writes coordinates into the diagram JSON. Geometry validation (node overlap, out-of-bounds, edge-through-node crossings, label fit) runs immediately after and fails the build on error, following Archify's proven model.
 
@@ -323,14 +353,39 @@ Plain text, canonically ordered, designed so `git diff` renders architecture cha
 ```
 # svarupa 1.0.0
 # schema 1
-# grammars python@0.21.0 typescript@0.20.5 go@0.20.0 ...
-module     api            -> auth, billing
-module     billing        -> auth, db
-endpoint   POST /refunds  billing.refunds     billing/refunds.py:44-71
-datastore  postgres       compose.yml:22-29
+# grammars python@0.25.0 typescript@0.23.2
+module	api
+module	billing
+dep	api	auth
+dep	api	billing
+dep	billing	auth
+endpoint	POST /refunds	billing.refunds
+datastore	postgres
 ```
 
 It records **architecture-level facts only**: modules and their dependencies, endpoints, datastores, queues, service topology, and public type surfaces. Not every function. It stays small and stable so that a refactor inside a module produces no diff, while a new cross-module dependency produces exactly one line.
+
+**No line numbers, ever.** Line numbers are the most volatile data in the system: any edit above a record shifts them and churns the lockfile, which directly contradicts the stability guarantee above. Evidence lives in `graph.json`, which is regenerated rather than committed. The PR comment bot joins the lockfile delta against the fresh head graph to display evidence lines, so nothing is lost from the reviewer's view.
+
+**One fact per line.** Dependencies are never aggregated onto a shared line. `module api -> auth, billing` would render an added dependency as one removed line plus one added line, forcing the reviewer to eyeball-diff a comma list, which breaks the promise this format exists to keep.
+
+#### Grammar
+
+- One record per line. First tab-separated field is the record **kind**.
+- Fields separated by **TAB**. Within a field, `\t`, `\n`, and `\\` are backslash-escaped. Tab is chosen because it cannot appear unescaped in a path or an endpoint template, unlike space.
+- Lines beginning `#` are header or comment. The header carries tool version, schema version, and exact grammar versions.
+- Records sorted by `(kind, fields...)` using codepoint order.
+
+#### Evolution policy
+
+- **Additive** (a new record kind): bumps the schema **minor**. Parsers **must skip unknown kinds**, so an old lockfile still diffs against a new one. Unknown-kind lines diff as opaque adds and removes.
+- **Breaking** (field shape of an existing kind changes): bumps the schema **major**, and diffing refuses with an instruction to regenerate.
+
+Without this, the P2 release that introduces `endpoint` and `datastore` records becomes a flag day for every early adopter, which is precisely the moment they are lost.
+
+#### Collisions
+
+Two module keys that are distinct on disk but identical after NFC normalization (or after case-folding on a case-insensitive filesystem) **must raise a diagnostic, never silently merge**. Normalization and case-insensitivity are separate axes and both are checked.
 
 The full `graph.json` and HTML stay gitignored and regenerate on demand.
 
@@ -338,14 +393,18 @@ The full `graph.json` and HTML stay gitignored and regenerate on demand.
 
 The lockfile must be byte-identical on a developer laptop and in CI, or every PR shows changes that did not happen.
 
-- Every collection canonically sorted before serialization
-- Grammar versions pinned exactly, recorded in the header
-- Paths always repo-relative with posix separators
+- Every collection canonically sorted before serialization, by codepoint (never `locale.strxfrm`)
+- Grammar versions pinned with `==`, recorded in the header. A grammar patch release can change node structure and therefore extraction output
+- Paths always repo-relative, posix separators, **NFC-normalized at the `detect` boundary**
 - No timestamps, no absolute paths, no iteration-order dependence, no locale-dependent formatting
+- Coordinates quantized to integers; no float formatting reaches any serialized artifact
 - Tool version and schema version stamped in the header
 - **Stamp mismatch refuses to diff** and instructs the user to regenerate, rather than reporting spurious changes
+- **LLM output is banned from the lockfile path entirely.** It may reach diagrams and `refinements.yaml` only. Otherwise this contract is void whenever a naming pass runs
 
-Enforced by our own CI: build the same fixture repos on Linux and macOS across Python 3.10 through 3.13 and assert the bytes match.
+**On Unicode normalization.** The hazard is real but not for the commonly cited reason. HFS+ normalized filenames to NFD on write; **APFS preserves whatever bytes it is given** and is merely normalization-*insensitive* on lookup (verified directly in Spike 0: a path created with explicit NFD bytes came back non-normalized). So the form a build sees depends on whichever tool created the file, what git stored, and git's own `core.precomposeunicode` (default true in Apple-shipped git, absent on Linux). Two developers can hold byte-different paths for the same logical filename. Recording the true mechanism matters, because a guard justified by a wrong mechanism gets deleted by whoever later discovers that APFS does not normalize.
+
+Enforced by our own CI: build the same fixture repos on Linux and macOS across Python 3.10 through 3.13 and assert the bytes match. The suite varies `PYTHONHASHSEED` across runs so any unsorted-set leak fails immediately, sets `LC_ALL=C`, and includes a **git-checkout** fixture containing an NFD-named path (not an `os.mkdir`-created one, which would test the wrong layer).
 
 ### 7.3 CI capabilities
 
@@ -535,38 +594,55 @@ The determinism suite is the highest-value test in the project. If it regresses,
 ## 13. Phasing
 
 Each phase is a shippable release, so real usage informs the next.
+Re-scoped after the design review found P1 was three or four parallel
+workstreams rather than one.
 
-### Phase 1 (~3 weeks): prove the loop
+### Phase 1 (~4 weeks): the spine
 - Python, TypeScript/JS, SQL extraction
 - Config parsers: compose, package manifests, SQL DDL
-- Graph build with fail-closed evidence
-- Leiden clustering with the determinism contract
+- Graph build with fail-closed evidence and structural module identity
+- Seeded clustering (Louvain default) with the determinism contract
 - Derivers: architecture, module deps, ERD
 - Layout: clustered, layered, grid
-- Viewer: overview plus tabs, evidence links, graph explorer
-- **Lockfile format, canonical serializer, and diff engine**
-- MCP server with all six tools
-- `init` / `doctor` / `setup skill`
+- Minimal viewer: tabs plus evidence click-through. **No graph explorer**
+- **Lockfile grammar, canonical serializer, and diff engine**
+- `Target` ABC plus `setup skill` and `setup ci_github` as plain commands
+- **Blocking gate in P1-2:** measure call-edge resolution before the
+  sequence deriver is scheduled
 
-The lockfile format ships in P1 deliberately. Retrofitting a stable serialization format after the graph schema has settled is painful, and everything in P2 and P3 depends on it.
+The lockfile format ships in P1 deliberately. Retrofitting a stable
+serialization format after the graph schema has settled is painful, and
+everything in P2 and P3 depends on it.
 
-### Phase 2 (~3 weeks): widen
-- Go, Rust, Java extraction
-- Framework detection across all six languages
+### Phase 2 (~3 weeks): widen and ship CI
+- Go extraction
+- Framework detection across Python, TypeScript, Go
 - Config parsers: k8s, terraform, OpenAPI, CI
 - Derivers: sequence, API surface, deploy topology
+- **MCP server with all six tools**
 - GitHub Action, PR comment bot, per-branch publishing
 - Docker image
-- Hierarchical zoom drill-down in the viewer
+- **Graph explorer tab**, hierarchical zoom drill-down
+- **`init` / `doctor` wizard**
 
-### Phase 3 (~2 weeks): interpret and gate
-- Derivers: lifecycle, workflow, class hierarchy
-- Constrained LLM naming pass
+### Phase 3 (~3 weeks): complete and gate
+- Rust and Java extraction. Spring DI and AOP proxy resolution is the
+  hardest environment in the matrix and gets dedicated time
+- Deriver: class hierarchy
 - `policy.yaml` rule engine and gate exit codes
 - `--bundle`
 - GitLab and Jenkins templates
 - Claude plugin marketplace manifest
 - Documentation
+
+### Cut from v1
+
+**Lifecycle and workflow derivers.** Both were "medium, LLM-assisted" by
+this document's own assessment, and cutting them also removes the LLM
+naming pass, its nondeterminism quarantine problem, its prompt-injection
+surface, and the API-key dependency. One cut removes five problems. Nine
+diagram types is a brochure number; **seven excellent ones beat nine
+where two are mediocre.** Revisit post-v1 if users ask.
 
 ---
 
@@ -592,6 +668,21 @@ The lockfile format ships in P1 deliberately. Retrofitting a stable serializatio
 | Hierarchical zoom always on | Avoids the hairball failure mode that every competitor exhibits at scale, with identical UX at any repo size |
 | Per-type layout engines | A sequence diagram laid out by a DAG algorithm does not look like a sequence diagram |
 | Delegate agent installation to skills.sh | 77 platforms with zero maintenance instead of roughly twenty on a treadmill |
-| Python core with `uv` bootstrap | Mature graph ecosystem, real Leiden. Cost is one bootstrap step and a schema duplicated between analyzer and viewer |
+| Python core with `uv` bootstrap | Mature graph and parsing ecosystem. Cost is one bootstrap step and a schema duplicated between analyzer and viewer |
 | No npm shim | An `npx` entry point that secretly installs Python is surprising and fails in locked-down environments |
 | Lockfile records architecture-level facts only | Keeps it small and stable. Intra-module refactors produce no diff; a new cross-module dependency produces one line |
+
+### 15.1 Promoted from review (reasoning inherited by later components)
+
+Accepted findings are recorded here with their reasoning so subsequent reviewers
+inherit the rationale instead of relitigating it. Source review in parentheses.
+
+| Decision | Reasoning |
+|---|---|
+| **Leiden/Louvain communities may never be committed identity** (design review F2) | Community detection is chaotically sensitive to input perturbation, not merely nondeterministic. Determinism means same input, same output; **a PR changes the input.** Measured in Spike 0: one added import flipped 3 of 8 community assignments in flask (25-38% across subjects). Structural identity churned 0 lines on the same edit. Identity must come from what developers declare (directories, packages, workspace members), which is the only cross-language notion that is both stable and meaningful to a human reading a diff |
+| **Lockfile carries no line numbers** (F1) | Line numbers are the most volatile data in the system and buy nothing in the diff, since the engine can recover them from the head build. Stability of the committed artifact outranks convenience of the raw `git diff` view |
+| **Fail-closed applies to evidence, not to recall** (F3) | Any edge we emit trivially has *some* source location, so fail-closed alone does not make the graph useful. The real question is how many true edges survive. Candidate edges (N impls yields N edges, each with call-site and candidate-definition evidence) preserve click-through-to-source, which is the actual contract, while restoring the recall that Go implicit interfaces, Spring DI, and Python dynamic dispatch would otherwise destroy |
+| **Resolution scorecard needs three bins, not two** (review #1 R2-3) | Counting every resolution failure as "external" launders resolver bugs into a number that looks like honesty. Bins are resolved / known-external (matches stdlib or a declared dependency) / **unresolved-unknown**, and the third is the number the report surfaces. Declared dependencies are already parsed by the config extractors, so the classification is nearly free |
+| **Resolution targets symbols, with a file-level fallback tier** (R2-4) | Directory granularity loses every intra-package edge: `src/requests/api.py` importing `.models` is intra-module at that granularity, which scored requests **0 of 221** imports resolved. File level fixed that (83 of 221), but file is the right *substrate* and the wrong terminal unit: `from flask import Flask` resolves at file level to `__init__.py` while the definition lives in `app.py`, so `impact_of_change` would be wrong for most of a well-packaged library's public API. Re-export chains must be chased |
+| **Clustering defaults to `networkx.louvain_communities` (BSD)** (R2-7) | `leidenalg`/`igraph` are GPL, which is compatible with the provisional AGPL but forecloses the two most likely outcomes of the license revisit §14 explicitly plans: relicensing permissive, or dual-licensing. Measured identical quality (ARI 1.000) at zero extra dependencies. Safe **only because F2 made clustering presentation-only**; were communities still feeding the lockfile, algorithm quality would be a correctness concern rather than an aesthetic one. Re-measure at scale in P1-5, since Louvain's known weakness (internally disconnected communities) is untested on a real code graph |
+| **A gate must be able to fail** (R2-1) | Spike 0's headline result was tautological: its lockfile is a pure function of file paths and imports, and three of four perturbations could not touch either input, so 0 churn was guaranteed by construction. No-op perturbations also scored as passes. Every future gate asserts it actually mutated state and fails the run otherwise, prefers replayed real PRs over synthetic string edits, and reports partition distance (1 − ARI) rather than label distance |
