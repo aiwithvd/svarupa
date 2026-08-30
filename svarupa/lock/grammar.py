@@ -23,7 +23,8 @@ Four properties it must have (design 7.1):
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import cast
 
 __all__ = [
     "SCHEMA_MAJOR",
@@ -116,11 +117,11 @@ class Header:
     tool_version: str
     schema_major: int = SCHEMA_MAJOR
     schema_minor: int = SCHEMA_MINOR
-    grammars: Mapping[str, str] = None  # type: ignore[assignment]
+    grammars: Mapping[str, str] = field(default_factory=lambda: cast("dict[str, str]", {}))
 
     def __post_init__(self) -> None:
-        if self.grammars is None:
-            object.__setattr__(self, "grammars", {})
+        # Sorted so the rendered header is canonical: grammar order must not
+        # depend on the order extractors happened to register themselves.
         object.__setattr__(self, "grammars", dict(sorted(self.grammars.items())))
 
     def render(self) -> list[str]:

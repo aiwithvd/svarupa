@@ -178,3 +178,40 @@ def test_elements_are_hashable_and_frozen() -> None:
     assert hash(n) == hash(node())
     with pytest.raises((AttributeError, TypeError)):
         n.id = "mutated"  # type: ignore[misc]
+
+
+def test_evidence_sorts_when_some_have_a_git_rev_and_some_do_not() -> None:
+    """Regression: mixed rev is the normal case, not an edge case.
+
+    `rev` is a git blob sha "when available", so one element routinely carries
+    both pinned and unpinned evidence. A generated `order=True` comparison
+    would compare None against str and raise TypeError at Node construction.
+    """
+    pinned = Evidence("src/a.py", 1, 1, rev="abc123")
+    unpinned = Evidence("src/a.py", 1, 1, rev=None)
+
+    assert sorted([pinned, unpinned]) == [unpinned, pinned]
+    n = node(evidence=(pinned, unpinned))
+    assert len(n.evidence) == 2
+
+    e = edge(evidence=(pinned, unpinned), resolution=Resolution.CANDIDATE, arity=2)
+    assert len(e.evidence) == 2
+
+
+def test_evidence_ordering_is_total_across_all_fields() -> None:
+    items = [
+        Evidence("src/b.py", 1, 1),
+        Evidence("src/a.py", 9, 9),
+        Evidence("src/a.py", 1, 5),
+        Evidence("src/a.py", 1, 1, rev="zzz"),
+        Evidence("src/a.py", 1, 1),
+    ]
+    ordered = sorted(items)
+    shuffled = list(reversed(ordered))
+    assert sorted(shuffled) == ordered
+    assert [str(x) for x in ordered[:2]] == ["src/a.py:1", "src/a.py:1"]
+
+
+def test_evidence_comparison_with_foreign_type_is_not_silently_true() -> None:
+    with pytest.raises(TypeError):
+        _ = Evidence("src/a.py", 1, 1) < "not evidence"  # type: ignore[operator]

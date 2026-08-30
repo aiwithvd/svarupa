@@ -121,14 +121,47 @@ class Resolution(str, Enum):
     UNRESOLVED = "unresolved"
 
 
-@dataclass(frozen=True, order=True, slots=True)
+@dataclass(frozen=True, slots=True)
 class Evidence:
-    """A pointer at real source. Lines are 1-indexed and inclusive."""
+    """A pointer at real source. Lines are 1-indexed and inclusive.
+
+    Ordering is defined explicitly rather than via ``order=True``. A generated
+    comparison would compare ``rev`` fields directly, and ``rev`` is
+    ``str | None`` by design (a git blob sha "when available"). Mixing pinned
+    and unpinned evidence on one element is the normal case, not an edge case,
+    and a tuple comparison of ``None`` against ``str`` raises ``TypeError``.
+    That would crash at Node construction, where evidence is sorted.
+    """
 
     file: str
     start_line: int
     end_line: int
     rev: str | None = None
+
+    @property
+    def sort_key(self) -> tuple[str, int, int, str]:
+        """Total order over all Evidence, including unpinned ones."""
+        return (self.file, self.start_line, self.end_line, self.rev or "")
+
+    def __lt__(self, other: object) -> bool:
+        if not isinstance(other, Evidence):
+            return NotImplemented
+        return self.sort_key < other.sort_key
+
+    def __le__(self, other: object) -> bool:
+        if not isinstance(other, Evidence):
+            return NotImplemented
+        return self.sort_key <= other.sort_key
+
+    def __gt__(self, other: object) -> bool:
+        if not isinstance(other, Evidence):
+            return NotImplemented
+        return self.sort_key > other.sort_key
+
+    def __ge__(self, other: object) -> bool:
+        if not isinstance(other, Evidence):
+            return NotImplemented
+        return self.sort_key >= other.sort_key
 
     def __post_init__(self) -> None:
         if not self.file:
