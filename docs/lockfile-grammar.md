@@ -35,11 +35,39 @@ header     := "#" SP text NEWLINE
 record     := kind (TAB field)* NEWLINE
 kind       := [a-z_]+
 field      := escaped-text
+NEWLINE    := LF          ; U+000A only
 ```
 
 - Fields are separated by a literal **TAB** (`U+0009`).
 - Blank lines are ignored.
 - Lines beginning `#` are header or comment.
+- A single trailing CR is stripped, so a CRLF file still parses.
+
+### NEWLINE means LF, and only LF
+
+Not "whatever the host language calls a line break." Python's
+`str.splitlines()`, for instance, also breaks on VT (`U+000B`), FF (`U+000C`),
+NEL (`U+0085`), LS (`U+2028`) and PS (`U+2029`) — **all of which are legal in a
+POSIX filename**. Splitting on them would turn one module record into a module
+plus a phantom opaque "fact", silently, in the file you commit.
+
+### The parser enforces this grammar
+
+A line whose kind does not match `[a-z_]+` is **rejected**, not tolerated. This
+is what stops an unresolved merge conflict from becoming architecture:
+
+```
+<<<<<<< HEAD          → SVA-L-001, refused
+=======               → SVA-L-001, refused
+```
+
+Known kinds are also checked for **arity**. `dep\tsrc/api` (one field) is
+refused with `SVA-L-002` rather than silently parsed as a different fact than
+the truncated line intended.
+
+Forward compatibility is unaffected: a *well-formed* unknown kind
+(`quantum_widget\tx\ty`) is still retained verbatim. The tolerance exists for
+future records, not as an amnesty for corruption.
 
 ### Why tab
 
@@ -63,6 +91,11 @@ Backslash is escaped first, so escapes are never doubly-applied. Every other
 byte is emitted verbatim, including non-ASCII. Paths are **NFC-normalized**
 before serialization.
 
+`\\`, `\t`, `\n` and `\r` are the **only** valid escapes. An unrecognized
+sequence such as `\q` is refused with `SVA-L-004`. Tolerating it would make
+parse→render non-idempotent: it would decode to a literal backslash-q and
+re-encode as `\\q`, changing the bytes of a committed file with no diagnostic.
+
 ---
 
 ## Header
@@ -76,6 +109,11 @@ before serialization.
 Grammar versions are recorded because a tree-sitter grammar patch release can
 change node structure and therefore extraction output. They are `==` pinned in
 the package metadata for the same reason.
+
+**The `# schema` stamp is mandatory.** A lockfile without one refuses to diff,
+rather than being assumed to match the current schema. A missing stamp is
+strictly less trustworthy than a mismatched one, and defaulting would
+manufacture provenance for a file that has none.
 
 ---
 
@@ -151,10 +189,22 @@ carrying an NFD-encoded path.
 ### Collisions
 
 Two module ids that are distinct on disk but identical after NFC normalization,
-or after case-folding on a case-insensitive filesystem, raise a **diagnostic**.
-They are never silently merged, because a silently merged module is a silently
-wrong lockfile. Normalization and case-insensitivity are checked as separate
-axes.
+or after case-folding on a case-insensitive filesystem, raise `SVA-L-007`. They
+are never silently merged, because a silently merged module is a silently wrong
+lockfile.
+
+The two axes are checked **separately and reported separately**, because the
+remedy differs:
+
+| Axis | Example | Why it matters |
+|---|---|---|
+| Normalization | `café` (NFC) vs `café` (NFD) | Two files on Linux, one on macOS |
+| Case | `src/Utils` vs `src/utils` | Two files on Linux, one on APFS or NTFS |
+
+Note that case-folding alone does **not** catch the normalization axis, because
+`str.casefold()` does not normalize. Detection must also run on the **raw**
+ids: once paths are normalized, the pre-images are gone and there is nothing
+left to compare.
 
 ---
 

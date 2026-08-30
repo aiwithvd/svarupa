@@ -22,9 +22,12 @@ Four properties it must have (design 7.1):
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass, field
-from typing import cast
+import re
+import unicodedata
+from collections.abc import Callable, Iterable, Mapping, Sequence
+from dataclasses import dataclass
+
+from svarupa.diagnostics import Diagnostic, DiagnosticError, Severity
 
 __all__ = [
     "SCHEMA_MAJOR",
@@ -43,20 +46,39 @@ SCHEMA_MINOR = 0
 _SEP = "\t"
 _COMMENT = "#"
 
-# Kinds this build understands. An unknown kind is NOT an error: it is retained
-# verbatim so an older tool can still diff a newer lockfile, with the unknown
-# lines showing as opaque adds and removes.
-KNOWN_KINDS: frozenset[str] = frozenset(
-    {
-        "module",  # module <id>
-        "dep",  # dep <from> <to>
-        "endpoint",  # endpoint <method-and-path> <handler-module>   (P2)
-        "datastore",  # datastore <name>                              (P2)
-        "service",  # service <name>                                (P2)
-        "queue",  # queue <name>                                  (P2)
-        "surface",  # surface <module> <exported-symbol>            (P2)
-    }
-)
+# Kinds this build understands, mapped to their required field count.
+#
+# A *well-formed* unknown kind is not an error: it is retained verbatim so an
+# older tool can still diff a newer lockfile, with the unknown lines showing as
+# opaque adds and removes. That tolerance exists for forward compatibility with
+# future records, not as an amnesty for garbage, which is why the kind must
+# still match the published production and known kinds must have right arity.
+KNOWN_KINDS: dict[str, int] = {
+    "module": 1,  # module <id>
+    "dep": 2,  # dep <from> <to>
+    "endpoint": 2,  # endpoint <method-and-path> <handler-module>   (P2)
+    "datastore": 1,  # datastore <name>                             (P2)
+    "service": 1,  # service <name>                                (P2)
+    "queue": 1,  # queue <name>                                   (P2)
+    "surface": 2,  # surface <module> <exported-symbol>            (P2)
+}
+
+# The grammar publishes `kind := [a-z_]+`. Enforcing it is what stops an
+# unresolved git conflict marker ("<<<<<<< HEAD", "=======") from parsing as an
+# architecture fact and flowing through the diff engine as real change. This
+# file is committed, merged by humans, and diffed by CI on every PR, so
+# malformed input is the expected case, not the exotic one.
+_KIND_RE = re.compile(r"^[a-z_]+$")
+
+# NEWLINE in the grammar means LF and nothing else. str.splitlines() also
+# breaks on VT (U+000B), FF (U+000C), NEL (U+0085), U+2028 and U+2029 -- all
+# legal in POSIX filenames -- which would silently split one record into two
+# and invent a phantom fact in the artifact users commit.
+_LF = "\n"
+
+
+# Accepts either form for ergonomics, normalized to the tuple on construction.
+GrammarSpec = Mapping[str, str] | tuple[tuple[str, str], ...]
 
 
 class SchemaMismatch(Exception):
@@ -73,14 +95,40 @@ def escape_field(s: str) -> str:
     )
 
 
+_ESCAPES = {"\\": "\\", "t": "\t", "n": "\n", "r": "\r"}
+
+
 def unescape_field(s: str) -> str:
+    """Reverse `escape_field`. An unrecognized escape is an error.
+
+    Tolerating `\\q` would make parse->render non-idempotent: it would decode to
+    a literal backslash-q and re-encode as `\\\\q`, changing bytes with no
+    diagnostic. Since this format is machine-written, any unknown escape means
+    hand-editing or corruption, and refusing loudly beats canonicalizing
+    silently.
+    """
     out: list[str] = []
     i, n = 0, len(s)
     while i < n:
         c = s[i]
-        if c == "\\" and i + 1 < n:
-            nxt = s[i + 1]
-            out.append({"\\": "\\", "t": "\t", "n": "\n", "r": "\r"}.get(nxt, "\\" + nxt))
+        if c == "\\":
+            nxt = s[i + 1] if i + 1 < n else ""
+            if nxt not in _ESCAPES:
+                raise DiagnosticError(
+                    Diagnostic(
+                        code="SVA-L-004",
+                        severity=Severity.ERROR,
+                        message=(
+                            f"unknown escape sequence '\\{nxt}'. "
+                            "Valid escapes are \\\\, \\t, \\n, \\r."
+                        ),
+                        subject=s,
+                        suggested_fixes=(
+                            "Regenerate the lockfile rather than hand-editing it.",
+                        ),
+                    )
+                )
+            out.append(_ESCAPES[nxt])
             i += 2
             continue
         out.append(c)
@@ -103,9 +151,46 @@ class Record:
         return _SEP.join([self.kind, *(escape_field(f) for f in self.fields)])
 
     @staticmethod
-    def parse(line: str) -> Record:
+    def parse(line: str, lineno: int | None = None) -> Record:
         parts = line.split(_SEP)
-        return Record(parts[0], tuple(unescape_field(p) for p in parts[1:]))
+        kind = parts[0]
+        loc = f"line {lineno}" if lineno else None
+
+        if not _KIND_RE.match(kind):
+            raise DiagnosticError(
+                Diagnostic(
+                    code="SVA-L-001",
+                    severity=Severity.ERROR,
+                    message=(
+                        "record kind must match [a-z_]+. This usually means an "
+                        "unresolved merge conflict or hand-editing."
+                    ),
+                    subject=line[:120],
+                    location=loc,
+                    suggested_fixes=(
+                        "Resolve any conflict markers, then regenerate: svarupa --lock",
+                    ),
+                )
+            )
+
+        fields = tuple(unescape_field(x) for x in parts[1:])
+        expected = KNOWN_KINDS.get(kind)
+        if expected is not None and len(fields) != expected:
+            raise DiagnosticError(
+                Diagnostic(
+                    code="SVA-L-002",
+                    severity=Severity.ERROR,
+                    message=(
+                        f"record kind {kind!r} takes {expected} field(s), "
+                        f"got {len(fields)}. A truncated line would otherwise "
+                        "parse as a different fact."
+                    ),
+                    subject=line[:120],
+                    location=loc,
+                    suggested_fixes=("Regenerate the lockfile: svarupa --lock",),
+                )
+            )
+        return Record(kind, fields)
 
     @property
     def is_known(self) -> bool:
@@ -117,15 +202,28 @@ class Header:
     tool_version: str
     schema_major: int = SCHEMA_MAJOR
     schema_minor: int = SCHEMA_MINOR
-    grammars: Mapping[str, str] = field(default_factory=lambda: cast("dict[str, str]", {}))
+    # Stored as a sorted tuple, not a dict, for the same reason Node.attrs is:
+    # a dict field makes the frozen dataclass unhashable and mutable after
+    # construction, and post-init mutation would break header canonicality.
+    grammars: GrammarSpec = ()
+    stamped: bool = True
 
     def __post_init__(self) -> None:
-        # Sorted so the rendered header is canonical: grammar order must not
-        # depend on the order extractors happened to register themselves.
-        object.__setattr__(self, "grammars", dict(sorted(self.grammars.items())))
+        g: GrammarSpec = self.grammars
+        items: Iterable[tuple[str, str]] = g.items() if isinstance(g, Mapping) else g
+        object.__setattr__(self, "grammars", tuple(sorted(items)))
+
+    @property
+    def grammars_tuple(self) -> tuple[tuple[str, str], ...]:
+        g = self.grammars
+        return g if isinstance(g, tuple) else tuple(sorted(g.items()))
+
+    @property
+    def grammars_dict(self) -> dict[str, str]:
+        return dict(self.grammars_tuple)
 
     def render(self) -> list[str]:
-        g = " ".join(f"{k}@{v}" for k, v in self.grammars.items())
+        g = " ".join(f"{k}@{v}" for k, v in self.grammars_tuple)
         return [
             f"{_COMMENT} svarupa {self.tool_version}",
             f"{_COMMENT} schema {self.schema_major}.{self.schema_minor}",
@@ -157,10 +255,16 @@ class Lockfile:
     def parse(text: str) -> Lockfile:
         tool_version = "unknown"
         major, minor = SCHEMA_MAJOR, SCHEMA_MINOR
+        stamped = False
         grammars: dict[str, str] = {}
         records: list[Record] = []
 
-        for raw in text.splitlines():
+        # LF only. str.splitlines() would also break on VT, FF, NEL, U+2028
+        # and U+2029, all legal in POSIX filenames, silently turning one
+        # record into two and inventing a phantom fact.
+        lines = text.split(_LF)
+        for lineno, raw0 in enumerate(lines, start=1):
+            raw = raw0[:-1] if raw0.endswith("\r") else raw0  # tolerate CRLF
             if not raw.strip():
                 continue
             if raw.startswith(_COMMENT):
@@ -173,6 +277,7 @@ class Lockfile:
                     try:
                         major = int(part[0])
                         minor = int(part[1]) if len(part) > 1 else 0
+                        stamped = True
                     except ValueError as exc:
                         raise SchemaMismatch(f"unparseable schema stamp {val!r}") from exc
                 elif body.startswith("grammars"):
@@ -181,9 +286,12 @@ class Lockfile:
                             k, v = tok.rsplit("@", 1)
                             grammars[k] = v
                 continue
-            records.append(Record.parse(raw))
+            records.append(Record.parse(raw, lineno))
 
-        return Lockfile(Header(tool_version, major, minor, grammars), tuple(records))
+        return Lockfile(
+            Header(tool_version, major, minor, tuple(sorted(grammars.items())), stamped),
+            tuple(records),
+        )
 
     def assert_diffable(self, other: Lockfile) -> None:
         """Refuse only on a MAJOR mismatch.
@@ -193,6 +301,15 @@ class Lockfile:
         every release that adds a record kind becomes a flag day for every
         adopter, which is exactly the moment they are lost.
         """
+        for name, lf in (("base", self), ("head", other)):
+            if not lf.header.stamped:
+                raise SchemaMismatch(
+                    f"the {name} lockfile carries no '# schema' stamp, so its "
+                    "format cannot be established. A missing stamp is less "
+                    "trustworthy than a mismatched one: refusing rather than "
+                    "assuming the current schema. Regenerate it with "
+                    "this version of svarupa."
+                )
         if self.header.schema_major != other.header.schema_major:
             raise SchemaMismatch(
                 f"lockfile schema {self.header.schema_major}.x cannot be diffed "
@@ -212,17 +329,75 @@ def dep_record(src: str, dst: str) -> Record:
     return Record("dep", (src, dst))
 
 
-def collision_check(module_ids: Sequence[str]) -> list[tuple[str, list[str]]]:
-    """Find ids that collide after normalization or case-folding.
+def collision_check(module_ids: Sequence[str]) -> list[Diagnostic]:
+    """Diagnose ids that would merge into one lockfile key.
 
-    Two directories distinct on Linux can be one file on a case-insensitive
-    macOS filesystem, and NFC normalization can merge two Linux-distinct names.
-    Either case must raise a diagnostic rather than silently merging keys,
-    because a silently merged module is a silently wrong lockfile.
+    Must be given the **raw** ids, before normalization: once `norm_path` has
+    run, the pre-images are gone and there is nothing left to compare.
 
-    Normalization and case-insensitivity are separate axes and both are checked.
+    Two separate axes, reported separately because the remedy differs:
+
+    * **normalization** — NFC and NFD of one name are two distinct files on
+      Linux but one file on macOS. `casefold()` alone does not catch this,
+      because it does not normalize.
+    * **case** — distinct on Linux, one file on a case-insensitive APFS or
+      NTFS volume.
+
+    Silently merging either would produce a silently wrong lockfile, which is
+    worse than failing, so this returns diagnostics rather than a merged view.
     """
-    buckets: dict[str, list[str]] = {}
-    for mid in module_ids:
-        buckets.setdefault(mid.casefold(), []).append(mid)
-    return sorted((k, sorted(set(v))) for k, v in buckets.items() if len(set(v)) > 1)
+    out: list[Diagnostic] = []
+
+    def bucket(key: Callable[[str], str]) -> dict[str, list[str]]:
+        b: dict[str, list[str]] = {}
+        for mid in module_ids:
+            b.setdefault(key(mid), []).append(mid)
+        return b
+
+    def to_nfc(x: str) -> str:
+        return unicodedata.normalize("NFC", x)
+
+    def to_nfc_folded(x: str) -> str:
+        return unicodedata.normalize("NFC", x).casefold()
+
+    seen: set[tuple[str, ...]] = set()
+
+    for norm_key, group in sorted(bucket(to_nfc).items()):
+        uniq = sorted(set(group))
+        if len(uniq) > 1:
+            seen.add(tuple(uniq))
+            out.append(
+                Diagnostic(
+                    code="SVA-L-007",
+                    severity=Severity.ERROR,
+                    message=(
+                        "these paths are distinct on disk but identical after "
+                        "Unicode NFC normalization, so they would collapse into "
+                        "one lockfile key"
+                    ),
+                    subject=" | ".join(uniq),
+                    location=norm_key,
+                    suggested_fixes=(
+                        "Rename one path so the two differ by more than "
+                        "Unicode normalization form.",
+                    ),
+                )
+            )
+
+    for fold_key, group in sorted(bucket(to_nfc_folded).items()):
+        uniq = sorted(set(group))
+        if len(uniq) > 1 and tuple(uniq) not in seen:
+            out.append(
+                Diagnostic(
+                    code="SVA-L-007",
+                    severity=Severity.ERROR,
+                    message=(
+                        "these paths differ only by case, so they are distinct "
+                        "on Linux but one file on a case-insensitive volume"
+                    ),
+                    subject=" | ".join(uniq),
+                    location=fold_key,
+                    suggested_fixes=("Rename one path so the two differ by more than case.",),
+                )
+            )
+    return out

@@ -7,8 +7,12 @@ is forgotten gets deleted during the next refactor.
 
 from __future__ import annotations
 
+import difflib
+import re
+
 import pytest
 
+from svarupa.diagnostics import DiagnosticError
 from svarupa.lock import (
     Lockfile,
     Record,
@@ -64,11 +68,16 @@ def test_escaped_field_contains_no_raw_delimiter() -> None:
 
 
 def test_paths_with_delimiters_survive_a_full_roundtrip() -> None:
-    """POSIX paths may legally contain spaces, commas, and even ' -> '."""
+    """POSIX paths may legally contain spaces, commas, and even ' -> '.
+
+    Asserts the full record set, not `records[0] or records[1]`: an `or`
+    would pass while one of the two records was mangled.
+    """
     weird = "src/my project, v2/a -> b/mod.py"
     lf = build(module_record(weird), dep_record(weird, "src/other"))
     back = Lockfile.parse(lf.render())
-    assert back.records[0].fields[0] == weird or back.records[1].fields[0] == weird
+    assert set(back.records) == set(lf.records)
+    assert all(r.fields[0] == weird for r in back.records)
     assert back.render() == lf.render()
 
 
@@ -97,14 +106,22 @@ def test_adding_one_dependency_adds_exactly_one_line() -> None:
         dep_record("api", "auth"),
         dep_record("billing", "auth"),
     )
-    a = before.render().splitlines()
-    b = after.render().splitlines()
-    added = [x for x in b if x not in a]
-    removed = [x for x in a if x not in b]
+    # A real positional diff, not set membership. Membership would report one
+    # added line even if the serializer had also duplicated an existing record
+    # or reordered the whole file, both of which a reviewer would see as noise.
+    diff = list(
+        difflib.unified_diff(
+            before.render().splitlines(),
+            after.render().splitlines(),
+            lineterm="",
+            n=0,
+        )
+    )
+    added = [d[1:] for d in diff if d.startswith("+") and not d.startswith("+++")]
+    removed = [d[1:] for d in diff if d.startswith("-") and not d.startswith("---")]
 
-    assert len(added) == 1, f"expected exactly one added line, got {added}"
+    assert added == ["dep\tbilling\tauth"], f"expected one added line, got {added}"
     assert removed == [], f"expected no removed lines, got {removed}"
-    assert added[0].split("\t") == ["dep", "billing", "auth"]
 
 
 # --------------------------------------------------------------------------
@@ -118,8 +135,22 @@ def test_input_order_does_not_affect_output() -> None:
 
 
 def test_duplicates_collapse() -> None:
-    lf = build(module_record("a"), module_record("a"), dep_record("a", "b"))
-    assert lf.render().count("\nmodule\ta") == 1
+    """Compares the whole render, not a substring count.
+
+    `count("\\nmodule\\ta")` would over-count against a `module ab` record
+    (prefix collision) and ignores dep records entirely.
+    """
+    lf = build(
+        module_record("a"), module_record("a"), dep_record("a", "b"), dep_record("a", "b")
+    )
+    body = [ln for ln in lf.render().splitlines() if not ln.startswith("#")]
+    assert body == ["dep\ta\tb", "module\ta"]
+
+
+def test_prefix_collision_does_not_confuse_dedup() -> None:
+    lf = build(module_record("a"), module_record("ab"), module_record("a"))
+    body = [ln for ln in lf.render().splitlines() if not ln.startswith("#")]
+    assert body == ["module\ta", "module\tab"]
 
 
 def test_sorting_is_codepoint_not_locale() -> None:
@@ -129,19 +160,38 @@ def test_sorting_is_codepoint_not_locale() -> None:
     assert fields == sorted(fields)
 
 
+# Matches every form `Evidence.__str__` can emit, plus the GitHub #L style.
+# The first version of this test only caught `path:44` and let the range form
+# `src/a.py:44-71` -- which is what the code actually produces -- straight
+# through, against a corpus that contained no colons at all.
+_LINE_REF = re.compile(r":\d+(-\d+)?$|#L\d+")
+
+
+def test_line_number_shaped_fields_are_rejected_by_the_detector() -> None:
+    """First: prove the detector can fail. R2-1."""
+    for bad in ("src/a.py:44", "src/a.py:44-71", "src/a.py#L44"):
+        assert _LINE_REF.search(bad), f"detector missed {bad!r}"
+    for good in ("src/a.py", "src/api", "POST /refunds/{id}", "C:/win/path"):
+        assert not _LINE_REF.search(good), f"detector false-positived on {good!r}"
+
+
 def test_no_line_numbers_anywhere() -> None:
     """Property 1: facts only.
 
     Any edit above a record would shift a line number and churn the lockfile,
     contradicting the stability guarantee. Evidence lives in graph.json.
     """
-    lf = build(module_record("api"), dep_record("api", "db"))
+    lf = build(
+        module_record("src/api"),
+        dep_record("src/api", "src/db"),
+        Record("endpoint", ("POST /refunds/{id}", "src/billing")),
+        Record("datastore", ("postgres",)),
+    )
     body = [ln for ln in lf.render().splitlines() if not ln.startswith("#")]
+    assert body, "corpus must actually contain records to inspect"
     for line in body:
         for fld in line.split("\t")[1:]:
-            assert ":" not in fld or not fld.rsplit(":", 1)[-1].isdigit(), (
-                f"lockfile record looks like it carries a line number: {line!r}"
-            )
+            assert not _LINE_REF.search(fld), f"lockfile record carries a line number: {line!r}"
 
 
 # --------------------------------------------------------------------------
@@ -185,7 +235,7 @@ def test_header_roundtrips() -> None:
     lf = build(module_record("api"))
     back = Lockfile.parse(lf.render())
     assert back.header.tool_version == TOOL
-    assert back.header.grammars == GRAMMARS
+    assert back.header.grammars_dict == GRAMMARS
     assert back.render() == lf.render()
 
 
@@ -197,8 +247,122 @@ def test_header_roundtrips() -> None:
 def test_case_collision_is_reported() -> None:
     """Distinct on Linux, one file on a case-insensitive macOS volume."""
     got = collision_check(["src/Utils", "src/utils", "src/api"])
-    assert got == [("src/utils", ["src/Utils", "src/utils"])]
+    assert len(got) == 1
+    assert got[0].code == "SVA-L-007"
+    assert "case" in got[0].message.lower()
+    assert got[0].subject == "src/Utils | src/utils"
 
 
 def test_no_false_positive_collisions() -> None:
     assert collision_check(["src/a", "src/b", "src/c"]) == []
+
+
+# --------------------------------------------------------------------------
+# Negative parse tests
+#
+# The riskiest assumption in this component was that `Lockfile.parse` would
+# only ever be fed bytes that `Lockfile.render` produced. That is guaranteed
+# false: this file lives in git, gets merged by humans, and is diffed by CI on
+# every PR. Malformed input is the expected case.
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "marker",
+    ["<<<<<<< HEAD", "=======", ">>>>>>> theirs", "<<<<<<< ours:file.lock"],
+)
+def test_unresolved_conflict_markers_refuse(marker: str) -> None:
+    """A botched merge must not flow through the diff engine as architecture.
+
+    Before this, `unknown_kinds()` cheerfully reported
+    {'<<<<<<< HEAD', '======='} and the evolution policy preserved them as
+    opaque facts.
+    """
+    with pytest.raises(DiagnosticError) as exc:
+        Lockfile.parse(f"# schema 1.0\nmodule\tsrc/api\n{marker}\n")
+    assert exc.value.diagnostic.code == "SVA-L-001"
+    assert "conflict" in exc.value.diagnostic.message.lower()
+
+
+@pytest.mark.parametrize(
+    ("line", "why"),
+    [
+        ("dep\ta", "truncated dep silently becomes a different fact"),
+        ("dep\ta\tb\tc", "over-long dep"),
+        ("module", "module with no id"),
+        ("module\ta\tb", "module with a stray field"),
+    ],
+)
+def test_wrong_arity_refuses(line: str, why: str) -> None:
+    with pytest.raises(DiagnosticError) as exc:
+        Lockfile.parse(f"# schema 1.0\n{line}\n")
+    assert exc.value.diagnostic.code == "SVA-L-002", why
+    assert "line 2" in (exc.value.diagnostic.location or "")
+
+
+@pytest.mark.parametrize("kind", ["Module", "dep-x", "a b", "dep!", "", "12"])
+def test_kind_must_match_the_published_production(kind: str) -> None:
+    with pytest.raises(DiagnosticError) as exc:
+        Lockfile.parse(f"# schema 1.0\n{kind}\tx\n")
+    assert exc.value.diagnostic.code == "SVA-L-001"
+
+
+def test_well_formed_unknown_kind_is_still_tolerated() -> None:
+    """Strictness must not break forward compatibility, which is the point."""
+    lf = Lockfile.parse("# schema 1.7\nmodule\ta\nquantum_widget\tx\ty\tz\n")
+    assert lf.unknown_kinds() == {"quantum_widget"}
+
+
+@pytest.mark.parametrize("bad", ["a\\qb", "trailing\\", "\\"])
+def test_unknown_escape_refuses(bad: str) -> None:
+    """Silently canonicalizing would change bytes with no diagnostic."""
+    with pytest.raises(DiagnosticError) as exc:
+        Lockfile.parse(f"# schema 1.0\nmodule\t{bad}\n")
+    assert exc.value.diagnostic.code == "SVA-L-004"
+
+
+@pytest.mark.parametrize(
+    ("name", "cp"),
+    [
+        ("U+2028 line separator", "\u2028"),
+        ("U+2029 paragraph separator", "\u2029"),
+        ("vertical tab", "\x0b"),
+        ("form feed", "\x0c"),
+        ("NEL", "\x85"),
+    ],
+)
+def test_exotic_line_separators_do_not_split_records(name: str, cp: str) -> None:
+    """str.splitlines() breaks on all of these; the grammar's NEWLINE is LF.
+
+    Each is legal in a POSIX filename. Splitting on them turned one module into
+    a module plus a phantom opaque 'fact' that the evolution policy then
+    preserved in diffs.
+    """
+    original = f"src/a{cp}b"
+    lf = build(module_record(original))
+    back = Lockfile.parse(lf.render())
+    assert len(back.records) == 1, f"{name} split one record into {len(back.records)}"
+    assert back.records[0].fields[0] == original
+    assert back.render() == lf.render()
+
+
+def test_crlf_lockfile_still_parses() -> None:
+    """A Windows editor must not break the file."""
+    lf = build(module_record("src/api"), dep_record("src/api", "src/db"))
+    crlf = lf.render().replace("\n", "\r\n")
+    assert Lockfile.parse(crlf).render() == lf.render()
+
+
+def test_unstamped_lockfile_refuses_to_diff() -> None:
+    """A missing stamp is less trustworthy than a mismatched one.
+
+    Defaulting to the current schema would manufacture provenance for a file
+    that has none.
+    """
+    unstamped = Lockfile.parse("module\tsrc/api\n")
+    stamped = build(module_record("src/api"))
+    assert unstamped.header.stamped is False
+    with pytest.raises(SchemaMismatch, match="no '# schema' stamp"):
+        unstamped.assert_diffable(stamped)
+    with pytest.raises(SchemaMismatch):
+        stamped.assert_diffable(unstamped)
