@@ -76,12 +76,12 @@ svarupa/
   cluster.py       seeded community detection; pluggable backend
   derive/
     base.py        Deriver ABC: graph -> DiagramSpec | None
-    architecture.py, moduledeps.py, sequence.py, erd.py, apisurface.py,
+    architecture.py, moduledeps.py, requestflow.py, erd.py, apisurface.py,
     deploy.py, classhier.py
   refine.py        overlay application, constrained LLM naming
   layout/
     base.py        Layout ABC: DiagramSpec -> PositionedSpec
-    columnar.py    sequence
+    columnar.py    request flow
     grid.py        ERD
     layered.py     module deps, class hierarchy
     clustered.py   architecture, deploy topology
@@ -253,17 +253,11 @@ class Deriver(ABC):
 
 A deriver returning `None` produces no diagram, and the report says why. **An empty diagram is never fabricated to fill a tab.**
 
-**Sequence is the highest-risk deriver, not a strong one.** It depends entirely on call-edge resolution, which dies at the first dynamic hop, and in a FastAPI, Spring, or NestJS application that is hop one or two. Import resolution measured 37-47% in Spike 0; call resolution was never measured and is far harder. A bounded call-resolution measurement is therefore a **blocking gate in P1-2, before this deriver is scheduled.** If the number is poor, scope moves to the config-and-import-backed diagrams, which Spike 0 did validate. A sequence tab rendering two participants for a forty-endpoint service reads as "the tool does not understand my code", which is worse than not shipping the tab.
+**Function-level sequence diagrams were cut after measurement, not speculation.** Spike 0b measured call-edge resolution across five repos. Libraries resolve at ~60%; **services resolve at ~20%**, with median call-chain depth of 0-1. The cause is a single dominant shape: `something.method()` where the receiver is a local variable, which is 730 of 1,323 call sites in one subject and resolves at 5.2%. Type annotations do not rescue it: annotation coverage is 97-100%, but the types name external classes (`Session`, `AsyncClient`, `Redis`), so perfect inference would recover 13-19 receivers against hundreds of unresolved sites. Service code is mostly glue over frameworks, so its intra-repo call graph is genuinely thin, and no inference recovers edges that are not there.
 
-| Diagram | Derivation strategy | Strength |
-|---|---|---|
-| Architecture | Structural modules as boxes, communities for visual grouping only, import direction as layers, compose services as concrete boundaries | Strong |
-| Module deps | Import edges, topologically layered | Trivial |
-| ERD | SQL DDL plus ORM model classes, FK edges | Strong |
-| API surface | OpenAPI spec plus route decorators/annotations, grouped by resource | Strong |
-| Deploy topology | compose/k8s/terraform, nested by scope | Strong |
-| Sequence | Detect entry points (main, route handlers, CLI commands, job entries), trace the call chain, participants are the modules crossed | **Weakest, gated** |
-| Class hierarchy | `inherits`/`implements` edges | Trivial |
+**Request Flow replaces it**, derived from resolved imports plus route decorators plus config. On the same repos where call chains reach depth 0-1, import chains reach **depth 3-10**. This is also the better product: the question people ask on joining a codebase is "what does this endpoint touch", which is a module-level question best answered with module-level data.
+
+`self.method()` resolution measured 90-100% via MRO walking and stays in the graph. It is simply too rare in service code to carry a diagram on its own.
 
 ### 5.1 Hierarchical zoom
 
@@ -316,7 +310,7 @@ Most of these diagrams do not need general graph layout, and forcing them throug
 
 | Type | Engine |
 |---|---|
-| Sequence | Columnar. Participants are columns, messages are rows |
+| Request Flow | Columnar. Participants are columns, hops are rows |
 | ERD | Grid with foreign-key-aware locality nudging |
 | Module deps, class hierarchy | Layered DAG by topological depth, row-packed |
 | Architecture, deploy topology | Clustered layered, communities as bands, nested boundaries |
@@ -454,8 +448,8 @@ Six tools, so the agent queries the graph instead of grepping the filesystem:
 | Tool | Returns |
 |---|---|
 | `find_symbol(name, kind?)` | Matching nodes with evidence |
-| `trace_calls(from, to?, depth?)` | Call chain with evidence at each hop |
-| `impact_of_change(symbol)` | Transitive dependents, ranked by distance |
+| `trace_dependencies(from, to?, depth?)` | Import path with evidence at each hop |
+| `impact_of_change(symbol)` | Transitive **importers**, ranked by distance |
 | `explain_module(path)` | Node summary, public surface, in/out edges, community |
 | `why_connected(a, b)` | Shortest evidenced path between two nodes |
 | `list_entry_points()` | Detected mains, routes, CLI commands, job entries |
@@ -607,8 +601,8 @@ workstreams rather than one.
 - Minimal viewer: tabs plus evidence click-through. **No graph explorer**
 - **Lockfile grammar, canonical serializer, and diff engine**
 - `Target` ABC plus `setup skill` and `setup ci_github` as plain commands
-- **Blocking gate in P1-2:** measure call-edge resolution before the
-  sequence deriver is scheduled
+- Call-resolution gate: **done, Spike 0b.** Function-level sequence cut;
+  Request Flow (import + route + config derived) replaces it in P2
 
 The lockfile format ships in P1 deliberately. Retrofitting a stable
 serialization format after the graph schema has settled is painful, and
@@ -618,7 +612,7 @@ everything in P2 and P3 depends on it.
 - Go extraction
 - Framework detection across Python, TypeScript, Go
 - Config parsers: k8s, terraform, OpenAPI, CI
-- Derivers: sequence, API surface, deploy topology
+- Derivers: request flow, API surface, deploy topology
 - **MCP server with all six tools**
 - GitHub Action, PR comment bot, per-branch publishing
 - Docker image
@@ -666,7 +660,7 @@ where two are mediocre.** Revisit post-v1 if users ask.
 | LLM may arrange but never introduce | Preserves fail-closed while allowing readable names |
 | Committed lockfile over rebuilding both refs | One build per PR instead of two, and architecture changes render natively in GitHub's diff view |
 | Hierarchical zoom always on | Avoids the hairball failure mode that every competitor exhibits at scale, with identical UX at any repo size |
-| Per-type layout engines | A sequence diagram laid out by a DAG algorithm does not look like a sequence diagram |
+| Per-type layout engines | A columnar flow diagram laid out by a DAG algorithm does not look like a flow diagram; an ERD laid out that way ignores foreign-key locality |
 | Delegate agent installation to skills.sh | 77 platforms with zero maintenance instead of roughly twenty on a treadmill |
 | Python core with `uv` bootstrap | Mature graph and parsing ecosystem. Cost is one bootstrap step and a schema duplicated between analyzer and viewer |
 | No npm shim | An `npx` entry point that secretly installs Python is surprising and fails in locked-down environments |
@@ -685,4 +679,5 @@ inherit the rationale instead of relitigating it. Source review in parentheses.
 | **Resolution scorecard needs three bins, not two** (review #1 R2-3) | Counting every resolution failure as "external" launders resolver bugs into a number that looks like honesty. Bins are resolved / known-external (matches stdlib or a declared dependency) / **unresolved-unknown**, and the third is the number the report surfaces. Declared dependencies are already parsed by the config extractors, so the classification is nearly free |
 | **Resolution targets symbols, with a file-level fallback tier** (R2-4) | Directory granularity loses every intra-package edge: `src/requests/api.py` importing `.models` is intra-module at that granularity, which scored requests **0 of 221** imports resolved. File level fixed that (83 of 221), but file is the right *substrate* and the wrong terminal unit: `from flask import Flask` resolves at file level to `__init__.py` while the definition lives in `app.py`, so `impact_of_change` would be wrong for most of a well-packaged library's public API. Re-export chains must be chased |
 | **Clustering defaults to `networkx.louvain_communities` (BSD)** (R2-7) | `leidenalg`/`igraph` are GPL, which is compatible with the provisional AGPL but forecloses the two most likely outcomes of the license revisit §14 explicitly plans: relicensing permissive, or dual-licensing. Measured identical quality (ARI 1.000) at zero extra dependencies. Safe **only because F2 made clustering presentation-only**; were communities still feeding the lockfile, algorithm quality would be a correctness concern rather than an aesthetic one. Re-measure at scale in P1-5, since Louvain's known weakness (internally disconnected communities) is untested on a real code graph |
+| **Function-level sequence cut; Request Flow replaces it** (Spike 0b) | Measured, not assumed. Call resolution is ~60% on libraries but **~20% on services**, with median call-chain depth 0-1. One shape dominates: `var.method()` is 730 of 1,323 call sites in one subject and resolves at 5.2%. Type annotations do not help (97-100% coverage, but the types name external classes), because service code is glue over frameworks and its intra-repo call graph is genuinely thin. Import chains on the same repos reach depth 3-10. Answering "what does this endpoint touch" completely beats answering "what calls what" badly |
 | **A gate must be able to fail** (R2-1) | Spike 0's headline result was tautological: its lockfile is a pure function of file paths and imports, and three of four perturbations could not touch either input, so 0 churn was guaranteed by construction. No-op perturbations also scored as passes. Every future gate asserts it actually mutated state and fails the run otherwise, prefers replayed real PRs over synthetic string edits, and reports partition distance (1 − ARI) rather than label distance |
