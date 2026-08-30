@@ -1,0 +1,78 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "svarupa"
+version = "0.1.0.dev0"
+description = "Verified architecture diagrams and a queryable knowledge graph, derived from your codebase. Every box points at a line of code."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+keywords = ["architecture", "diagrams", "knowledge-graph", "static-analysis", "tree-sitter"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Software Development :: Documentation",
+]
+
+# Deliberately small. This ships as a CLI installed with `uv tool install` and
+# baked into a CI image pulled on every pipeline run, so install footprint is
+# an adoption cost and every dependency is a supply-chain surface.
+#
+# Grammars are `==` pinned: a grammar patch release can change node structure
+# and therefore extraction output, which would break the determinism contract.
+# See docs/superpowers/specs/*-design.md 2.3 and 7.2.
+dependencies = [
+  "tree-sitter>=0.26,<0.27",
+  "tree-sitter-python==0.25.0",
+  "tree-sitter-typescript==0.23.2",
+  "networkx>=3.2,<4",
+  "PyYAML>=6,<7",
+]
+
+[project.optional-dependencies]
+# Opt-in only. leidenalg and igraph are GPL, which would foreclose the license
+# revisit tracked in the design's open items. Default clustering is
+# networkx.louvain_communities (BSD), measured at identical quality.
+leiden = ["leidenalg>=0.10", "python-igraph>=0.11"]
+
+[project.scripts]
+svarupa = "svarupa.cli:main"
+
+[dependency-groups]
+dev = [
+  "pytest>=8",
+  "pytest-cov>=5",
+  "ruff>=0.6",
+  "pyright>=1.1.380",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["svarupa"]
+
+[tool.ruff]
+line-length = 96
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF", "PTH", "C4", "ARG"]
+ignore = ["E501"]
+
+[tool.pyright]
+include = ["svarupa"]
+pythonVersion = "3.10"
+typeCheckingMode = "strict"
+reportMissingTypeStubs = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --strict-markers"
+markers = [
+  "determinism: byte-identity checks that must pass on every platform",
+  "slow: excluded from the fast loop",
+]
