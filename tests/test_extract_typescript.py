@@ -206,13 +206,15 @@ def test_aliases_are_found_through_project_references(tmp_path: Path) -> None:
         "tsconfig.web.json",
         '{"compilerOptions":{"baseUrl":".","paths":{"@/*":["src/renderer/*"]}}}',
     )
-    assert ("@", "src/renderer") in load_aliases(tmp_path)
+    got = {(a.prefix, a.target) for a in load_aliases(tmp_path)}
+    assert ("@", "src/renderer") in got
 
 
 def test_aliases_are_found_through_extends(tmp_path: Path) -> None:
     write(tmp_path, "tsconfig.base.json", '{"compilerOptions":{"paths":{"~/*":["lib/*"]}}}')
     write(tmp_path, "tsconfig.json", '{"extends":"./tsconfig.base.json"}')
-    assert ("~", "lib") in load_aliases(tmp_path)
+    got = {(a.prefix, a.target) for a in load_aliases(tmp_path)}
+    assert ("~", "lib") in got
 
 
 def test_longest_alias_wins(tmp_path: Path) -> None:
@@ -369,3 +371,195 @@ def test_grammar_version_matches_the_installed_pin() -> None:
     from importlib.metadata import version
 
     assert TypeScriptExtractor.grammar_version == version("tree-sitter-typescript")
+
+
+# --------------------------------------------------------------------------
+# Review #5 regressions
+#
+# The review's central criticism: the decoy discipline had been applied to the
+# fixtures earlier reviews already named, and to nothing new. Aliases,
+# workspace packages, field conflicts and star re-exports all shipped
+# decoy-free, and all four hid a bug. Each test below plants the decoy the
+# original was missing.
+# --------------------------------------------------------------------------
+
+
+def test_tsconfig_aliases_are_scoped_to_their_declaring_app(tmp_path: Path) -> None:
+    """Two apps each declaring `@/*` is the standard Next/Vite/Nest layout.
+
+    Merging every config into one namespace made an import inside `apps/b`
+    resolve to `apps/a/src/store.ts`, with the winner decided by filesystem
+    enumeration order: a wrong edge AND a determinism break in one bug.
+    """
+    for app in ("a", "b"):
+        write(
+            tmp_path,
+            f"apps/{app}/tsconfig.json",
+            '{"compilerOptions":{"baseUrl":".","paths":{"@/*":["src/*"]}}}',
+        )
+        write(tmp_path, f"apps/{app}/src/store.ts", f"export const {app.upper()} = 1;\n")
+    write(tmp_path, "apps/b/src/app.ts", "import { B } from '@/store';\n")
+
+    res = run(tmp_path)
+    targets = {e.dst for e in res.edges if e.kind is EdgeKind.IMPORTS and "app.ts" in e.src}
+    assert targets == {"apps/b/src/store.ts"}, f"crossed app boundary: {targets}"
+
+
+def test_alias_target_may_climb_out_of_its_directory(tmp_path: Path) -> None:
+    """`lstrip("./")` is a character-set operation, not a path one.
+
+    A target of `../shared/src/*` declared in `packages/web` became
+    `packages/web/shared/src`, which either silently failed or resolved into
+    whatever decoy happened to sit at the mangled path.
+    """
+    write(
+        tmp_path,
+        "packages/web/tsconfig.json",
+        '{"compilerOptions":{"paths":{"~/*":["../shared/src/*"]}}}',
+    )
+    write(tmp_path, "packages/shared/src/util.ts", "export const u = 1;\n")
+    write(tmp_path, "packages/web/shared/src/util.ts", "export const decoy = 2;\n")
+    write(tmp_path, "packages/web/app.ts", "import { u } from '~/util';\n")
+
+    res = run(tmp_path)
+    targets = {e.dst for e in res.edges if e.kind is EdgeKind.IMPORTS}
+    assert targets == {"packages/shared/src/util.ts"}
+
+
+def test_a_nested_package_json_cannot_hijack_a_real_dependency(tmp_path: Path) -> None:
+    """Example dirs and fixtures often contain manifests named after real packages."""
+    write(
+        tmp_path,
+        "package.json",
+        '{"name":"root","workspaces":["packages/*"],"dependencies":{"express":"4"}}',
+    )
+    write(tmp_path, "examples/fake/package.json", '{"name":"express"}')
+    write(tmp_path, "examples/fake/index.ts", "export const x = 1;\n")
+    write(tmp_path, "src/app.ts", "import express from 'express';\n")
+
+    res = run(tmp_path)
+    assert not [e for e in res.edges if e.kind is EdgeKind.IMPORTS and e.src == "src/app.ts"]
+    assert res.scorecard.get("typescript", "imports", Resolution.EXTERNAL) >= 1
+
+
+def test_a_declared_workspace_member_may_still_claim_its_name(tmp_path: Path) -> None:
+    """The guard must not be so tight it kills real monorepo resolution."""
+    write(tmp_path, "package.json", '{"name":"root","workspaces":["packages/*"]}')
+    write(tmp_path, "packages/lib/package.json", '{"name":"mylib"}')
+    write(tmp_path, "packages/lib/src/v2.ts", "export const x = 1;\n")
+    write(tmp_path, "apps/web/app.ts", "import { x } from 'mylib/v2';\n")
+    res = run(tmp_path)
+    imports = {(e.src, e.dst) for e in res.edges if e.kind is EdgeKind.IMPORTS}
+    assert ("apps/web/app.ts", "packages/lib/src/v2.ts") in imports
+
+
+def test_only_parameter_properties_declare_fields() -> None:
+    """`constructor(config: T)` declares no field; TS requires a modifier.
+
+    Recording every typed parameter, combined with last-write-wins, resolved
+    `this.config.run()` to the parameter's type while the runtime object is
+    the declared field's type.
+    """
+    f = facts(
+        "class C {\n"
+        "  config: DeclaredType;\n"
+        "  constructor(config: ParamType, private readonly svc: Svc) {}\n"
+        "}\n"
+    )
+    got = {(x.field, x.type_name) for x in f.fields}
+    assert got == {("config", "DeclaredType"), ("svc", "Svc")}
+
+
+@pytest.mark.parametrize(
+    ("src", "expected"),
+    [
+        ("import typeA from './x';\n", False),
+        ("import typeDefs from './schema';\n", False),
+        ("import type { A } from './x';\n", True),
+    ],
+)
+def test_type_only_is_read_from_the_tree_not_a_substring(src: str, expected: bool) -> None:
+    """`"import type" in text[:20]` matched any default import starting `type`.
+
+    `import typeDefs from ...` is a common GraphQL idiom, so a false
+    type-only attribute was being stamped on real runtime imports.
+    """
+    assert facts(src).imports[0].type_only is expected
+
+
+def test_ambiguous_di_type_is_unresolved_not_external(tmp_path: Path) -> None:
+    """Two classes share a name, so the annotation cannot pick one.
+
+    Returning "external" for an intra-repo ambiguity is the unconditioned
+    EXTERNAL shape the decision log records; the third bin exists to catch it.
+    """
+    write(tmp_path, "src/a.ts", "export class UserService {\n  find(): void {}\n}\n")
+    write(tmp_path, "src/b.ts", "export class UserService {\n  find(): void {}\n}\n")
+    write(
+        tmp_path,
+        "src/c.ts",
+        "export class Ctrl {\n"
+        "  constructor(private svc: UserService) {}\n"
+        "  go(): void { this.svc.find(); }\n"
+        "}\n",
+    )
+    res = run(tmp_path)
+    assert res.scorecard.get("typescript", "calls", Resolution.UNRESOLVED) >= 1
+    assert res.scorecard.get("typescript", "calls", Resolution.EXTERNAL) == 0
+
+
+def test_import_alias_is_mapped_before_lookup(tmp_path: Path) -> None:
+    """The alias map was captured in pass 1 and never consulted.
+
+    Every aliased import produced a false UNRESOLVED in two bins, using data
+    the resolver already held. The decoy `Alias` ensures we resolve through
+    the mapping rather than coincidentally finding a symbol of that name.
+    """
+    write(tmp_path, "src/x.ts", "export function Real(): void {}\n")
+    write(tmp_path, "src/decoy.ts", "export function Alias(): void {}\n")
+    write(tmp_path, "src/app.ts", "import { Real as Alias } from './x';\n\nAlias();\n")
+    res = run(tmp_path)
+    refs = [e for e in res.edges if e.kind is EdgeKind.REFERENCES and e.src == "src/app.ts"]
+    assert refs, "aliased import produced no reference"
+    assert refs[0].dst == node_id("src/x.ts", "src.x.Real")
+
+
+def test_star_barrel_is_chased_to_the_definition(tmp_path: Path) -> None:
+    """`export * from './x'` names nothing explicitly.
+
+    It is the dominant barrel idiom, so leaving it unchaseable left the
+    references bin silently dark behind every star barrel.
+    """
+    write(tmp_path, "src/core.ts", "export class Thing {\n  go(): void {}\n}\n")
+    write(tmp_path, "src/other.ts", "export class Thing {\n  go(): void {}\n}\n")
+    write(tmp_path, "src/index.ts", "export * from './core';\n")
+    write(tmp_path, "app.ts", "import { Thing } from './src';\n")
+    res = run(tmp_path)
+    refs = [e for e in res.edges if e.kind is EdgeKind.REFERENCES and e.src == "app.ts"]
+    assert refs, "star barrel produced no reference"
+    assert refs[0].dst == node_id("src/core.ts", "src.core.Thing")
+
+
+def test_exported_is_computed_not_defaulted() -> None:
+    """The TS extractor never set it, so the dataclass default stamped
+    `exported=true` on every node including unexported ones. An attribute in
+    the output that was never extracted is what fail-closed forbids."""
+    f = facts("export function shown(): void {}\nfunction hidden(): void {}\n")
+    assert {s.name: s.exported for s in f.symbols} == {"shown": True, "hidden": False}
+
+
+def test_globals_test_has_a_positive_control() -> None:
+    """The original asserted `== ()`, so it passed if NO calls were emitted."""
+    f = facts("function f() { console.log(mine()); }")
+    names = {c.name for c in f.calls}
+    assert names == {"mine"}, "globals dropped, real calls kept"
+
+
+def test_trailing_comma_inside_a_string_survives() -> None:
+    """A follow-up regex would delete a comma inside a string containing `,]`."""
+    import json
+
+    raw = '{\n  "note": "a, ] trap",\n  "paths": {"@/*": ["src/*"],},\n}'
+    parsed = json.loads(strip_jsonc(raw))
+    assert parsed["note"] == "a, ] trap"
+    assert parsed["paths"]["@/*"] == ["src/*"]

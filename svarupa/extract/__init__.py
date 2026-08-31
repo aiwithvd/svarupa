@@ -85,9 +85,26 @@ def workspace_packages(scan: Scan) -> tuple[tuple[str, str], ...]:
     intra-repo import that no tsconfig alias covers. Without this it lands in
     the unresolved bin despite being right there in the tree.
     """
+    from svarupa.build import workspace_members
+
+    # Only declared members may claim a package name. Every package.json in the
+    # tree used to qualify, so an `examples/fake/package.json` naming itself
+    # "express" captured a real `import express` as an intra-repo edge.
+    # A package.json may claim a name only if it is a declared workspace member
+    # or the repository's own root manifest. Any nested manifest used to
+    # qualify, so an `examples/fake/package.json` naming itself "express"
+    # captured a real `import express` as an intra-repo edge.
+    #
+    # No `if members:` escape hatch: a workspace that declares members which do
+    # not exist yet should claim nothing, not everything.
+    allowed = set(workspace_members(scan)) | {""}
     out: dict[str, str] = {}
     for rec in scan.files:
         if Path(rec.path).name != "package.json":
+            continue
+        holder = str(Path(rec.path).parent)
+        holder = "" if holder == "." else holder
+        if holder not in allowed:
             continue
         try:
             loaded: object = json.loads(
@@ -99,8 +116,7 @@ def workspace_packages(scan: Scan) -> tuple[tuple[str, str], ...]:
             continue
         name = cast("dict[str, object]", loaded).get("name")
         if isinstance(name, str) and name:
-            parent = str(Path(rec.path).parent)
-            out.setdefault(name, "" if parent == "." else parent)
+            out.setdefault(name, holder)
     return tuple(sorted(out.items()))
 
 

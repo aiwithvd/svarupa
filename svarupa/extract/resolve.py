@@ -29,6 +29,7 @@ from svarupa.extract.base import (
     CallShape,
     ExtractResult,
     FileFacts,
+    ImportRef,
     Scorecard,
     node_id,
     sorted_edges,
@@ -43,6 +44,7 @@ from svarupa.model import (
     NodeKind,
     Resolution,
 )
+from svarupa.tsconfig import Alias
 
 __all__ = ["Resolver", "resolve"]
 
@@ -249,13 +251,13 @@ class Resolver:
         facts: Sequence[FileFacts],
         declared_deps: frozenset[str] = frozenset(),
         source_roots: Sequence[str] = (),
-        ts_aliases: Sequence[tuple[str, str]] = (),
+        ts_aliases: Sequence[Alias] = (),
         ts_packages: Sequence[tuple[str, str]] = (),
     ) -> None:
         self.facts = list(facts)
         self.deps = declared_deps
         # Longest alias first, so `@/store/x` prefers `@/store` over `@`.
-        self.ts_aliases = tuple(sorted(ts_aliases, key=lambda kv: -len(kv[0])))
+        self.ts_aliases = tuple(ts_aliases)
         self.ts_packages = tuple(sorted(ts_packages, key=lambda kv: -len(kv[0])))
         self.scorecard = Scorecard()
         self.diagnostics: list[Diagnostic] = []
@@ -384,6 +386,23 @@ class Resolver:
                 out.extend(self._mro_ids(resolved, seen | {cls_id}))
         return out
 
+    def _type_is_external(self, f: FileFacts, name: str) -> bool:
+        for imp in f.imports:
+            if name not in imp.names and name not in imp.alias_of:
+                continue
+            if imp.is_relative:
+                return False
+            return self._is_external(self._package_root(imp.specifier, f.lang), f.lang)
+        return False
+
+    def _resolve_class_name_x(
+        self, name: str, from_file: str
+    ) -> tuple[tuple[str, str] | None, bool]:
+        """Resolve, and say whether a None means absent or ambiguous."""
+        repo_wide = [cid for cid in self.idx.class_by_id if cid[1].endswith(f".{name}")]
+        hit = self._resolve_class_name(name, from_file)
+        return hit, hit is None and len(repo_wide) > 1
+
     def _resolve_class_name(self, name: str, from_file: str) -> tuple[str, str] | None:
         same_file = [
             cid
@@ -498,11 +517,15 @@ class Resolver:
                     if (hit := self._hit_ts(probe)) is not None:
                         return hit
 
-        for alias, target in self.ts_aliases:
-            if spec == alias or spec.startswith(alias + "/"):
-                rest = spec[len(alias) :].lstrip("/")
-                cand = f"{target}/{rest}" if rest else target
-                if (hit := self._hit_ts(cand)) is not None:
+        # Only aliases whose declaring config governs this file, most specific
+        # scope first. A global namespace lets one app's `@/` hijack another's.
+        applicable = [a for a in self.ts_aliases if a.applies_to(from_file)]
+        applicable.sort(key=lambda a: (-len(a.scope), -len(a.prefix)))
+        for alias in applicable:
+            if spec == alias.prefix or spec.startswith(alias.prefix + "/"):
+                rest = spec[len(alias.prefix) :].lstrip("/")
+                cand = f"{alias.target}/{rest}" if rest else alias.target
+                if (hit := self._hit_ts(cand.lstrip("/"))) is not None:
                     return hit
         return None
 
@@ -535,6 +558,16 @@ class Resolver:
                 return c
         return None
 
+    @staticmethod
+    def _real_name(imp: ImportRef, local: str) -> str:
+        """`import { Real as Alias }` must be looked up as `Real`.
+
+        The alias map was captured in pass 1 and never consulted, so every
+        aliased import produced a false UNRESOLVED in two bins, using data the
+        resolver already held.
+        """
+        return imp.alias_of.get(local, local)
+
     def _follow_reexport(self, file: str, name: str, depth: int = 0) -> tuple[str, str] | None:
         """Chase `__init__.py` re-export chains to the real definition.
 
@@ -552,14 +585,27 @@ class Resolver:
         for s in facts.symbols:
             if s.name == name:
                 return (file, s.qualified_name)
+
         for imp in facts.imports:
+            # F8: `export * from './x'` names nothing, so the only way to chase
+            # it is to search the target's own symbols. The depth cap bounds it.
+            if imp.is_star:
+                target = self._resolve_module(imp.specifier, file, imp.level, facts.lang)
+                if (
+                    target
+                    and target != file
+                    and (found := self._follow_reexport(target, name, depth + 1)) is not None
+                ):
+                    return found
+                continue
             if name not in imp.names:
                 continue
             target = self._resolve_module(imp.specifier, file, imp.level, facts.lang)
+            real = self._real_name(imp, name)
             if (
                 target
                 and target != file
-                and (found := self._follow_reexport(target, name, depth + 1)) is not None
+                and (found := self._follow_reexport(target, real, depth + 1)) is not None
             ):
                 return found
         return None
@@ -707,6 +753,7 @@ class Resolver:
 
             # Symbol-level references, chasing re-export chains.
             for name in imp.names:
+                lookup = self._real_name(imp, name)
                 # `from . import sub` names a submodule. Treating it as a
                 # symbol lookup inside __init__.py misses the real dependency.
                 sibling = self._resolve_module(
@@ -728,7 +775,7 @@ class Resolver:
                         )
                     )
                     continue
-                found = self._follow_reexport(target, name)
+                found = self._follow_reexport(target, lookup)
                 if found is None:
                     self.scorecard.record(
                         f.lang, "references", Resolution.UNRESOLVED, f"{imp.specifier}.{name}"
@@ -757,7 +804,9 @@ class Resolver:
         # anchored at the wrong directory -- a wrong-edge generator, not just
         # recall loss.
         import_names: dict[str, tuple[str, int]] = {}
+        alias_targets: dict[str, str] = {}
         for imp in f.imports:
+            alias_targets.update(imp.alias_of)
             for alias, real in imp.alias_of.items():
                 import_names[alias] = (imp.specifier or real, imp.level)
             for n in imp.names:
@@ -768,7 +817,7 @@ class Resolver:
 
         for call in f.calls:
             src_id = node_id(f.path, call.enclosing) if call.enclosing else f.path
-            targets = self._call_targets(f, call, import_names)
+            targets = self._call_targets(f, call, import_names, alias_targets)
 
             if targets is None:  # external
                 self.scorecard.record(f.lang, EdgeKind.CALLS, Resolution.EXTERNAL)
@@ -831,12 +880,17 @@ class Resolver:
         return None
 
     def _call_targets(
-        self, f: FileFacts, call: object, import_names: Mapping[str, tuple[str, int]]
+        self,
+        f: FileFacts,
+        call: object,
+        import_names: Mapping[str, tuple[str, int]],
+        alias_targets: Mapping[str, str] | None = None,
     ) -> list[tuple[str, str]] | None:
         """Return targets, [] for unresolved, or None for known-external."""
         from svarupa.extract.base import CallSite
 
         assert isinstance(call, CallSite)
+        alias_targets = alias_targets or {}
         name = call.name
 
         if call.shape is CallShape.SELF_FIELD:
@@ -849,10 +903,15 @@ class Resolver:
             type_name = self.idx.field_types.get((f.path, call.enclosing_class, call.receiver))
             if type_name is None:
                 return []
-            owner = self._resolve_class_name(type_name, f.path)
+            owner, ambiguous = self._resolve_class_name_x(type_name, f.path)
             if owner is None:
-                # Typed to something outside the repo: external, not a failure.
-                return None
+                # `_resolve_class_name` returns None both for "not in the repo"
+                # and for "in the repo twice". Collapsing those into EXTERNAL is
+                # the unconditioned-external shape review #4 promoted to the
+                # decision log; an ambiguous intra-repo type is unresolved.
+                if ambiguous:
+                    return []
+                return None if self._type_is_external(f, type_name) else []
             return _dedupe(
                 [
                     m
@@ -997,7 +1056,7 @@ def resolve(
     facts: Sequence[FileFacts],
     declared_deps: frozenset[str] = frozenset(),
     source_roots: Sequence[str] = (),
-    ts_aliases: Sequence[tuple[str, str]] = (),
+    ts_aliases: Sequence[Alias] = (),
     ts_packages: Sequence[tuple[str, str]] = (),
 ) -> ExtractResult:
     return Resolver(facts, declared_deps, source_roots, ts_aliases, ts_packages).run()

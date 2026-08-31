@@ -116,6 +116,9 @@ class ImportRef:
     # `export { x } from './y'` is a re-export, the TypeScript barrel pattern
     # and direct analogue of a package __init__.
     is_reexport: bool = False
+    # `export * from './x'` names nothing explicitly; the resolver has to
+    # search the target's own symbol table to chase it.
+    is_star: bool = False
 
 
 @dataclass(frozen=True, slots=True)

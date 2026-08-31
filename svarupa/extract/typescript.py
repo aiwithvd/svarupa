@@ -153,7 +153,13 @@ class TypeScriptExtractor(Extractor):
         def qual(stack: list[str]) -> str:
             return ".".join([prefix, *stack]) if stack else prefix
 
-        def visit(node: TSNode, stack: list[str], cls: str | None, fn: str | None) -> None:
+        def visit(
+            node: TSNode,
+            stack: list[str],
+            cls: str | None,
+            fn: str | None,
+            exported: bool = False,
+        ) -> None:
             t = node.type
 
             if t == "import_statement" and (ref := self._import(path, data, node)) is not None:
@@ -168,12 +174,13 @@ class TypeScriptExtractor(Extractor):
                 src_node = node.child_by_field_name("source")
                 if src_node is not None:
                     spec = _text(data, src_node).strip("'\"`")
-                    names = self._named_exports(data, node)
+                    export_aliases: dict[str, str] = {}
+                    names = self._named_exports(data, node, export_aliases)
                     imports.append(
                         ImportRef(
                             specifier=spec,
                             names=names,
-                            alias_of={},
+                            alias_of=export_aliases,
                             evidence=self.evidence(
                                 path, node.start_point[0], node.end_point[0]
                             ),
@@ -181,12 +188,14 @@ class TypeScriptExtractor(Extractor):
                             level=0,
                             is_from=True,
                             is_reexport=True,
+                            is_star=not names,
                         )
                     )
                     reexports.extend(names)
                     return
+                # A bare `export` wrapper: everything inside it is exported.
                 for child in node.children:
-                    visit(child, stack, cls, fn)
+                    visit(child, stack, cls, fn, exported=True)
                 return
 
             if t in ("class_declaration", "abstract_class_declaration"):
@@ -215,6 +224,7 @@ class TypeScriptExtractor(Extractor):
                         evidence=self.evidence(path, node.start_point[0], node.end_point[0]),
                         enclosing_class=cls,
                         bases=tuple(b for b in bases if b),
+                        exported=exported,
                     )
                 )
                 body = node.child_by_field_name("body")
@@ -235,6 +245,7 @@ class TypeScriptExtractor(Extractor):
                             evidence=self.evidence(
                                 path, node.start_point[0], node.end_point[0]
                             ),
+                            exported=exported,
                         )
                     )
                 return
@@ -252,6 +263,7 @@ class TypeScriptExtractor(Extractor):
                         kind="method",
                         evidence=self.evidence(path, node.start_point[0], node.end_point[0]),
                         enclosing_class=cls,
+                        exported=not name.startswith("_"),
                     )
                 )
                 if name == "constructor" and cls:
@@ -280,6 +292,7 @@ class TypeScriptExtractor(Extractor):
                             evidence=self.evidence(
                                 path, node.start_point[0], node.end_point[0]
                             ),
+                            exported=exported,
                         )
                     )
                     body = node.child_by_field_name("body")
@@ -306,6 +319,7 @@ class TypeScriptExtractor(Extractor):
                             evidence=self.evidence(
                                 path, node.start_point[0], node.end_point[0]
                             ),
+                            exported=exported,
                         )
                     )
                     for child in value.children:
@@ -336,7 +350,10 @@ class TypeScriptExtractor(Extractor):
 
     # ------------------------------------------------------------------
 
-    def _named_exports(self, src: bytes, node: TSNode) -> tuple[str, ...]:
+    def _named_exports(
+        self, src: bytes, node: TSNode, aliases: dict[str, str] | None = None
+    ) -> tuple[str, ...]:
+        aliases = aliases if aliases is not None else {}
         out: list[str] = []
         for child in node.children:
             if child.type == "export_clause":
@@ -347,6 +364,8 @@ class TypeScriptExtractor(Extractor):
                         target = alias or name
                         if target is not None:
                             out.append(_text(src, target))
+                        if alias is not None and name is not None:
+                            aliases[_text(src, alias)] = _text(src, name)
         return tuple(out)
 
     def _import(self, path: str, src: bytes, node: TSNode) -> ImportRef | None:
@@ -356,7 +375,17 @@ class TypeScriptExtractor(Extractor):
         spec = _text(src, source).strip("'\"`")
         names: list[str] = []
         alias: dict[str, str] = {}
-        type_only = "import type" in _text(src, node)[:20]
+        # From the tree, never a substring: `import typeA from './x'` matched
+        # "import type" and stamped a false type-only attribute on a runtime
+        # import. `import typeDefs from ...` is a common GraphQL idiom.
+        type_only = any(
+            c.type == "type" or (c.type == "identifier" and False) for c in node.children
+        ) or any(
+            ch.type == "type"
+            for c in node.children
+            if c.type == "import_clause"
+            for ch in c.children
+        )
 
         for child in node.children:
             if child.type != "import_clause":
@@ -395,13 +424,24 @@ class TypeScriptExtractor(Extractor):
     def _injected_fields(self, src: bytes, cls: str, params: TSNode) -> list[FieldType]:
         """`constructor(private readonly svc: UserService)` declares a field.
 
-        This is the highest-yield fact in TypeScript extraction: it is what
-        makes `this.svc.method()` resolvable, and it pinned at 99-100% on
-        DI-heavy code.
+        Only *parameter properties* count. A plain `constructor(config: T)`
+        declares no field at all, and recording it as one produced a wrong
+        edge: a class with a declared `config: DeclaredType` field resolved
+        `this.config.run()` to the constructor parameter's type instead.
+
+        This is still the highest-yield fact in TypeScript extraction, pinning
+        at 99-100% on DI-heavy code, which is exactly why it has to be right.
         """
         out: list[FieldType] = []
         for param in params.children:
             if param.type not in ("required_parameter", "optional_parameter"):
+                continue
+            text = _text(src, param)
+            # The modifier is what turns a parameter into a field declaration.
+            if not any(
+                text.lstrip().startswith(mod)
+                for mod in ("private", "public", "protected", "readonly")
+            ):
                 continue
             name: str | None = None
             ty: str | None = None
