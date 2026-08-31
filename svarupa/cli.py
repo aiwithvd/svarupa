@@ -7,6 +7,7 @@ import sys
 
 from svarupa import __version__
 from svarupa.build import build
+from svarupa.cluster import cluster
 from svarupa.detect import FileRole, ScanLimits, detect
 from svarupa.extract import declared_dependencies, extract
 
@@ -66,8 +67,18 @@ def _scan(path: str, max_files: int) -> int:
         for d in graph_errors[:5]:
             print("   " + d.render())
 
+    clustering = cluster(graph)
     print()
-    print("Next: clustering and derivation (P1-4, P1-5) are not implemented yet.")
+    print(
+        f"  grouping: {len(clustering.communities)} communities "
+        f"(presentation only; never reaches the lockfile)"
+    )
+    for c in sorted(clustering.communities, key=lambda c: -c.size)[:8]:
+        head = ", ".join(c.members[:3]) + ("..." if c.size > 3 else "")
+        print(f"    {c.label:<22} n={c.size:<3} cohesion={c.cohesion:.2f}  {head}")
+
+    print()
+    print("Next: derivation and the viewer (P1-5, P1-6) are not implemented yet.")
     return 1 if errors or graph_errors else 0
 
 
