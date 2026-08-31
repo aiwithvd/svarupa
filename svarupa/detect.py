@@ -48,6 +48,7 @@ __all__ = [
     "ScanLimits",
     "Workspace",
     "detect",
+    "load_toml",
 ]
 
 # --------------------------------------------------------------------------
@@ -391,7 +392,7 @@ def _toml_loader() -> Callable[[str], object] | None:
     return None
 
 
-def _load_toml(text: str) -> dict[str, object] | None:
+def load_toml(text: str) -> dict[str, object] | None:
     loader = _toml_loader()
     if loader is None:
         return None
@@ -471,13 +472,13 @@ def _detect_workspaces(root: Path, files: Iterable[FileRec]) -> list[Workspace]:
 
         elif base == "Cargo.toml":
             text = read(rel)
-            cargo = _load_toml(text) if text is not None else None
+            cargo = load_toml(text) if text is not None else None
             if isinstance(_dig(cargo, "workspace"), dict):
                 found.append(Workspace("cargo", parent, rel))
 
         elif base == "pyproject.toml":
             text = read(rel)
-            proj = _load_toml(text) if text is not None else None
+            proj = load_toml(text) if text is not None else None
             if isinstance(_dig(proj, "tool", "uv", "workspace"), dict):
                 found.append(Workspace("uv", parent, rel))
 
