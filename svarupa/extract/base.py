@@ -30,6 +30,7 @@ from svarupa.model import Edge, EdgeKind, Evidence, Node, Resolution
 __all__ = [
     "CallSite",
     "Extractor",
+    "FieldType",
     "FileFacts",
     "ImportRef",
     "Scorecard",
@@ -61,10 +62,16 @@ class CallShape(str, Enum):
       failure and the reason function-level sequence diagrams were cut
     * ``QUALIFIED`` ``mod.f()`` where mod is an imported module
     * ``SUPER`` ``super().m()``
+    * ``SELF_FIELD`` ``this.svc.m()`` where ``svc`` is a typed constructor
+      parameter — 99-100% on DI-heavy TypeScript, because the annotation names
+      an intra-repo class. Python's nearest equivalent named framework classes
+      and pinned at nearly nothing, which is why the shape is tracked
+      separately rather than folded into MEMBER.
     """
 
     BARE = "bare"
     SELF = "self"
+    SELF_FIELD = "self_field"
     MEMBER = "member"
     QUALIFIED = "qualified"
     SUPER = "super"
@@ -106,6 +113,22 @@ class ImportRef:
     # for every plain intra-repo import, so the resolver has to know which
     # kind it is holding.
     is_from: bool = True
+    # `export { x } from './y'` is a re-export, the TypeScript barrel pattern
+    # and direct analogue of a package __init__.
+    is_reexport: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class FieldType:
+    """A class field whose declared type names another class.
+
+    The single highest-yield fact in TypeScript extraction: it is what makes
+    `this.svc.method()` resolvable at all.
+    """
+
+    owner: str
+    field: str
+    type_name: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -129,6 +152,7 @@ class FileFacts:
     symbols: tuple[SymbolRef, ...] = ()
     imports: tuple[ImportRef, ...] = ()
     calls: tuple[CallSite, ...] = ()
+    fields: tuple[FieldType, ...] = ()
     reexports: tuple[str, ...] = ()
     diagnostics: tuple[Diagnostic, ...] = ()
 

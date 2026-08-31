@@ -47,6 +47,85 @@ from svarupa.model import (
 __all__ = ["Resolver", "resolve"]
 
 _STDLIB = frozenset(sys.stdlib_module_names)
+_SUFFIXES = (".py", "/__init__.py", ".pyi")
+
+# Bundler-handled assets. Importing a PNG or a stylesheet is a real dependency
+# but not a code one, so it belongs in the external bin rather than being
+# reported as a resolution failure the user is expected to act on.
+_ASSET_SUFFIXES = (
+    ".css",
+    ".scss",
+    ".sass",
+    ".less",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".svg",
+    ".webp",
+    ".avif",
+    ".ico",
+    ".woff",
+    ".woff2",
+    ".ttf",
+    ".otf",
+    ".mp4",
+    ".webm",
+    ".wasm",
+    ".txt",
+    ".md",
+    ".html",
+    ".graphql",
+    ".gql",
+    ".yaml",
+    ".yml",
+)
+_NODE_BUILTINS = frozenset(
+    {
+        "assert",
+        "async_hooks",
+        "buffer",
+        "child_process",
+        "cluster",
+        "console",
+        "constants",
+        "crypto",
+        "dgram",
+        "diagnostics_channel",
+        "dns",
+        "domain",
+        "events",
+        "fs",
+        "http",
+        "http2",
+        "https",
+        "inspector",
+        "module",
+        "net",
+        "os",
+        "path",
+        "perf_hooks",
+        "process",
+        "punycode",
+        "querystring",
+        "readline",
+        "repl",
+        "stream",
+        "string_decoder",
+        "sys",
+        "timers",
+        "tls",
+        "trace_events",
+        "tty",
+        "url",
+        "util",
+        "v8",
+        "vm",
+        "wasi",
+        "worker_threads",
+        "zlib",
+    }
+)
 
 _KIND_MAP = {
     "function": NodeKind.FUNCTION,
@@ -146,6 +225,10 @@ def _d_meth() -> dict[tuple[str, str], list[tuple[str, str]]]:
     return {}
 
 
+def _d_fields() -> dict[tuple[str, str, str], str]:
+    return {}
+
+
 @dataclass
 class _Index:
     by_file: dict[str, FileFacts] = field(default_factory=_d_facts)
@@ -156,6 +239,7 @@ class _Index:
     class_by_id: dict[tuple[str, str], object] = field(default_factory=_d_any)
     methods_of: dict[tuple[str, str], list[tuple[str, str]]] = field(default_factory=_d_meth)
     bases_of: dict[str, tuple[str, ...]] = field(default_factory=_d_bases)
+    field_types: dict[tuple[str, str, str], str] = field(default_factory=_d_fields)
     files: set[str] = field(default_factory=_s_str)
 
 
@@ -165,9 +249,14 @@ class Resolver:
         facts: Sequence[FileFacts],
         declared_deps: frozenset[str] = frozenset(),
         source_roots: Sequence[str] = (),
+        ts_aliases: Sequence[tuple[str, str]] = (),
+        ts_packages: Sequence[tuple[str, str]] = (),
     ) -> None:
         self.facts = list(facts)
         self.deps = declared_deps
+        # Longest alias first, so `@/store/x` prefers `@/store` over `@`.
+        self.ts_aliases = tuple(sorted(ts_aliases, key=lambda kv: -len(kv[0])))
+        self.ts_packages = tuple(sorted(ts_packages, key=lambda kv: -len(kv[0])))
         self.scorecard = Scorecard()
         self.diagnostics: list[Diagnostic] = []
         self.idx = self._build_index()
@@ -212,6 +301,8 @@ class Resolver:
         for f in self.facts:
             idx.by_file[f.path] = f
             idx.files.add(f.path)
+            for fld in f.fields:
+                idx.field_types[(f.path, fld.owner, fld.field)] = fld.type_name
             for s in f.symbols:
                 key = (f.path, s.qualified_name)
                 idx.by_qualname.setdefault(s.qualified_name, key)
@@ -222,6 +313,11 @@ class Resolver:
                     # Keyed by identity, not bare name. Keeping `classes`
                     # first-seen while `bases_of` kept last-seen silently fused
                     # one class's identity with another class's bases.
+                    idx.classes.setdefault(s.name, key)
+                    idx.class_by_id[key] = s
+                    idx.bases_of.setdefault(s.name, s.bases)
+                    idx.methods_of.setdefault(key, [])
+                if s.kind == "interface":
                     idx.classes.setdefault(s.name, key)
                     idx.class_by_id[key] = s
                     idx.bases_of.setdefault(s.name, s.bases)
@@ -237,7 +333,33 @@ class Resolver:
 
     # ------------------------------------------------------------------
 
-    def _is_external(self, top: str) -> bool:
+    @staticmethod
+    def _package_root(spec: str, lang: str) -> str:
+        """The distribution name a specifier belongs to.
+
+        Language-specific, and getting it wrong is silent: splitting a
+        TypeScript specifier on "." (Python's rule) turns
+        `typeorm/common/DeepPartial` into itself, which matches no declared
+        dependency, so a perfectly ordinary framework import lands in the
+        unresolved bin and the scorecard cries wolf.
+        """
+        if lang in ("typescript", "javascript"):
+            bare = spec.removeprefix("node:")
+            if bare.lower().endswith(_ASSET_SUFFIXES):
+                return bare
+            parts = bare.split("/")
+            if bare.startswith("@") and len(parts) >= 2:
+                return "/".join(parts[:2])
+            return parts[0]
+        return spec.lstrip(".").split(".")[0]
+
+    def _is_external(self, top: str, lang: str = "python") -> bool:
+        if lang in ("typescript", "javascript"):
+            if top.startswith("node:") or top in _NODE_BUILTINS:
+                return True
+            if top.lower().endswith(_ASSET_SUFFIXES):
+                return True
+            return top in self.deps
         return top in _STDLIB or top in self.deps
 
     def _mro_ids(
@@ -276,7 +398,7 @@ class Resolver:
             for imp in facts.imports:
                 if not imp.is_from or name not in imp.names:
                     continue
-                target = self._resolve_module(imp.specifier, from_file, imp.level)
+                target = self._resolve_module(imp.specifier, from_file, imp.level, facts.lang)
                 if target is None:
                     continue
                 hit = [
@@ -290,7 +412,14 @@ class Resolver:
         repo_wide = [cid for cid in self.idx.class_by_id if cid[1].endswith(f".{name}")]
         return repo_wide[0] if len(repo_wide) == 1 else None
 
-    def _resolve_module(self, spec: str, from_file: str, level: int) -> str | None:
+    def _resolve_module(
+        self, spec: str, from_file: str, level: int, lang: str = "python"
+    ) -> str | None:
+        if lang == "typescript":
+            return self._resolve_ts(spec, from_file)
+        return self._resolve_python(spec, from_file, level)
+
+    def _resolve_python(self, spec: str, from_file: str, level: int) -> str | None:
         """Map an import specifier to a file in the repo.
 
         Tries `x.py`, then `x/__init__.py`, then walks up. A specifier that
@@ -329,10 +458,82 @@ class Resolver:
         return None
 
     def _hit(self, base: str) -> str | None:
-        for suffix in (".py", "/__init__.py", ".pyi"):
+        for suffix in _SUFFIXES:
             if (c := base + suffix) in self.idx.files:
                 return c
         return base if base in self.idx.files else None
+
+    def _resolve_ts(self, spec: str, from_file: str) -> str | None:
+        """TypeScript module resolution.
+
+        Three traps, all measured in Spike 0c before any of this was written:
+
+        1. **ESM writes `./foo.js` for a file that is `foo.ts` on disk.**
+           Without remapping, zod scored 0.0% import resolution; with it,
+           96.3%. Modern ESM TypeScript does this universally.
+        2. **tsconfig `paths` aliases** live behind `references`/`extends` in
+           the project-references layout, and the aliases are what make
+           `@/store` resolvable at all.
+        3. Relative specifiers must not fall back to a package search, or an
+           unresolvable relative import silently matches something unrelated.
+        """
+        if spec.startswith("."):
+            cur = from_file.split("/")[:-1]
+            for part in spec.split("/"):
+                if part in ("", "."):
+                    continue
+                if part == "..":
+                    cur = cur[:-1]
+                else:
+                    cur.append(part)
+            return self._hit_ts("/".join(cur))
+
+        # A monorepo publishes `packages/zod` as the package `zod`, so
+        # `zod/v4` is an intra-repo import that no tsconfig alias covers.
+        for pkg_name, pkg_dir in self.ts_packages:
+            if spec == pkg_name or spec.startswith(pkg_name + "/"):
+                rest = spec[len(pkg_name) :].lstrip("/")
+                cand = f"{pkg_dir}/{rest}" if rest else pkg_dir
+                for probe in (cand, f"{pkg_dir}/src/{rest}" if rest else f"{pkg_dir}/src"):
+                    if (hit := self._hit_ts(probe)) is not None:
+                        return hit
+
+        for alias, target in self.ts_aliases:
+            if spec == alias or spec.startswith(alias + "/"):
+                rest = spec[len(alias) :].lstrip("/")
+                cand = f"{target}/{rest}" if rest else target
+                if (hit := self._hit_ts(cand)) is not None:
+                    return hit
+        return None
+
+    def _hit_ts(self, base: str) -> str | None:
+        # `./foo.js` usually names `foo.ts` on disk (the ESM convention), but in
+        # a plain JavaScript project it names `foo.js`. Try the file as written
+        # first, then the source-extension remap.
+        if base in self.idx.files:
+            return base
+        for ext in (".js", ".mjs", ".cjs", ".jsx"):
+            if base.endswith(ext):
+                base = base[: -len(ext)]
+                break
+        for suffix in (
+            ".ts",
+            ".tsx",
+            ".mts",
+            ".cts",
+            ".js",
+            ".jsx",
+            ".mjs",
+            ".cjs",
+            "/index.ts",
+            "/index.tsx",
+            "/index.js",
+            "/index.jsx",
+            "",
+        ):
+            if (c := base + suffix) in self.idx.files:
+                return c
+        return None
 
     def _follow_reexport(self, file: str, name: str, depth: int = 0) -> tuple[str, str] | None:
         """Chase `__init__.py` re-export chains to the real definition.
@@ -354,7 +555,7 @@ class Resolver:
         for imp in facts.imports:
             if name not in imp.names:
                 continue
-            target = self._resolve_module(imp.specifier, file, imp.level)
+            target = self._resolve_module(imp.specifier, file, imp.level, facts.lang)
             if (
                 target
                 and target != file
@@ -449,11 +650,18 @@ class Resolver:
     def _import_edges(self, f: FileFacts) -> list[Edge]:
         out: list[Edge] = []
         for imp in f.imports:
-            top = imp.specifier.lstrip(".").split(".")[0]
-            target = self._resolve_module(imp.specifier, f.path, imp.level)
+            top = self._package_root(imp.specifier, f.lang)
+            target = self._resolve_module(imp.specifier, f.path, imp.level, f.lang)
 
             if target is None:
-                external = not imp.is_relative and self._is_external(top)
+                # An asset import is external whether or not it is relative:
+                # `./logo.png` is a real dependency the bundler handles, not
+                # something the user should be told we failed to resolve.
+                is_asset = f.lang in (
+                    "typescript",
+                    "javascript",
+                ) and imp.specifier.lower().endswith(_ASSET_SUFFIXES)
+                external = is_asset or (not imp.is_relative and self._is_external(top, f.lang))
                 self.scorecard.record(
                     f.lang,
                     EdgeKind.IMPORTS,
@@ -631,6 +839,29 @@ class Resolver:
         assert isinstance(call, CallSite)
         name = call.name
 
+        if call.shape is CallShape.SELF_FIELD:
+            # `this.svc.method()`. The constructor's type annotation names the
+            # class, which is why this shape pins at 99-100% on DI-heavy
+            # TypeScript while Python's nearest equivalent pins at nearly
+            # nothing: the annotation there names a framework class.
+            if not call.enclosing_class or not call.receiver:
+                return []
+            type_name = self.idx.field_types.get((f.path, call.enclosing_class, call.receiver))
+            if type_name is None:
+                return []
+            owner = self._resolve_class_name(type_name, f.path)
+            if owner is None:
+                # Typed to something outside the repo: external, not a failure.
+                return None
+            return _dedupe(
+                [
+                    m
+                    for cls_id in self._mro_ids(owner)
+                    for m in self.idx.methods_of.get(cls_id, [])
+                    if m[1].rsplit(".", 1)[-1] == name
+                ]
+            )[:MAX_CANDIDATE_ARITY]
+
         if call.shape in (CallShape.SELF, CallShape.SUPER):
             if not call.enclosing_class:
                 return []
@@ -668,10 +899,10 @@ class Resolver:
                 return local[:MAX_CANDIDATE_ARITY]
             if name in import_names:
                 spec, level = import_names[name]
-                top = spec.lstrip(".").split(".")[0]
-                target = self._resolve_module(spec, f.path, level)
+                top = self._package_root(spec, f.lang)
+                target = self._resolve_module(spec, f.path, level, f.lang)
                 if target is None:
-                    return None if self._is_external(top) else []
+                    return None if self._is_external(top, f.lang) else []
                 found = self._follow_reexport(target, name)
                 return [found] if found else []
             hits = _dedupe([h for h in self.idx.by_name.get(name, []) if h not in methods])
@@ -683,10 +914,10 @@ class Resolver:
             recv = call.receiver or ""
             if recv in import_names:
                 spec, level = import_names[recv]
-                top = spec.lstrip(".").split(".")[0]
-                target = self._resolve_module(spec, f.path, level)
+                top = self._package_root(spec, f.lang)
+                target = self._resolve_module(spec, f.path, level, f.lang)
                 if target is None:
-                    return None if self._is_external(top) else []
+                    return None if self._is_external(top, f.lang) else []
                 found = self._follow_reexport(target, name)
                 return [found] if found else []
             owner = self._resolve_class_name(recv, f.path)
@@ -723,8 +954,8 @@ class Resolver:
                 continue
             if imp.is_relative:
                 return False
-            top = imp.specifier.lstrip(".").split(".")[0]
-            return self._is_external(top)
+            top = self._package_root(imp.specifier, f.lang)
+            return self._is_external(top, f.lang)
         return False
 
     def _inherit_edges(self, f: FileFacts) -> list[Edge]:
@@ -766,5 +997,7 @@ def resolve(
     facts: Sequence[FileFacts],
     declared_deps: frozenset[str] = frozenset(),
     source_roots: Sequence[str] = (),
+    ts_aliases: Sequence[tuple[str, str]] = (),
+    ts_packages: Sequence[tuple[str, str]] = (),
 ) -> ExtractResult:
-    return Resolver(facts, declared_deps, source_roots).run()
+    return Resolver(facts, declared_deps, source_roots, ts_aliases, ts_packages).run()

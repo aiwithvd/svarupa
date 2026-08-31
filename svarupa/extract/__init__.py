@@ -21,6 +21,8 @@ from svarupa.extract.base import (
 )
 from svarupa.extract.python import PythonExtractor
 from svarupa.extract.resolve import Resolver, resolve
+from svarupa.extract.typescript import TypeScriptExtractor
+from svarupa.tsconfig import load_aliases
 
 __all__ = [
     "CallShape",
@@ -38,7 +40,12 @@ __all__ = [
     "resolve",
 ]
 
-_EXTRACTORS: dict[str, Extractor] = {"python": PythonExtractor()}
+_EXTRACTORS: dict[str, Extractor] = {
+    "python": PythonExtractor(),
+    "typescript": TypeScriptExtractor(),
+    # .js/.jsx parse fine with the TypeScript grammar, which is a superset.
+    "javascript": TypeScriptExtractor(),
+}
 
 GRAMMAR_VERSIONS: dict[str, str] = {
     lang: ex.grammar_version for lang, ex in _EXTRACTORS.items()
@@ -66,7 +73,35 @@ def extract(scan: Scan, declared_deps: frozenset[str] = frozenset()) -> ExtractR
     # through is the integration that was missing: the resolver otherwise
     # guesses at layout from the tree alone.
     roots = [w.root for w in scan.workspaces if w.root]
-    return resolve(facts, declared_deps, roots)
+    return resolve(
+        facts, declared_deps, roots, load_aliases(scan.root), workspace_packages(scan)
+    )
+
+
+def workspace_packages(scan: Scan) -> tuple[tuple[str, str], ...]:
+    """Map each package.json `name` to the directory that declares it.
+
+    A monorepo publishes `packages/zod` as the package `zod`, so `zod/v4` is an
+    intra-repo import that no tsconfig alias covers. Without this it lands in
+    the unresolved bin despite being right there in the tree.
+    """
+    out: dict[str, str] = {}
+    for rec in scan.files:
+        if Path(rec.path).name != "package.json":
+            continue
+        try:
+            loaded: object = json.loads(
+                (scan.root / rec.path).read_text(encoding="utf8", errors="replace")
+            )
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(loaded, dict):
+            continue
+        name = cast("dict[str, object]", loaded).get("name")
+        if isinstance(name, str) and name:
+            parent = str(Path(rec.path).parent)
+            out.setdefault(name, "" if parent == "." else parent)
+    return tuple(sorted(out.items()))
 
 
 def _norm_dep(raw: str) -> str | None:
