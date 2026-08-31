@@ -24,7 +24,7 @@ import sys
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 
-from svarupa.diagnostics import Diagnostic
+from svarupa.diagnostics import Diagnostic, Severity
 from svarupa.extract.base import (
     CallShape,
     ExtractResult,
@@ -61,6 +61,59 @@ _KIND_MAP = {
 # and would swamp the diagram, so it is honestly counted as unresolved instead.
 MAX_CANDIDATE_ARITY = 8
 
+# Bases that are genuinely external without needing an import statement.
+_BUILTIN_TYPES = frozenset(
+    {
+        "object",
+        "Exception",
+        "BaseException",
+        "ValueError",
+        "TypeError",
+        "KeyError",
+        "IndexError",
+        "RuntimeError",
+        "NotImplementedError",
+        "AttributeError",
+        "OSError",
+        "IOError",
+        "StopIteration",
+        "dict",
+        "list",
+        "set",
+        "tuple",
+        "str",
+        "int",
+        "float",
+        "bytes",
+        "type",
+        "Enum",
+        "IntEnum",
+        "StrEnum",
+        "Protocol",
+        "ABC",
+        "NamedTuple",
+        "TypedDict",
+        "Generic",
+    }
+)
+
+
+def _dedupe(items: list[tuple[str, str]]) -> list[tuple[str, str]]:
+    """Order-preserving dedupe, applied before the resolved/candidate split.
+
+    Diamond inheritance converges: `D(B, C)` where both reach `A.m` yields the
+    same definition twice, which was then reported as CANDIDATE with arity 2.
+    Arity is a claim shown to a reader ("one of N"); an inflated N is an
+    invented fact carried in the evidence itself.
+    """
+    seen: set[tuple[str, str]] = set()
+    out: list[tuple[str, str]] = []
+    for x in items:
+        if x not in seen:
+            seen.add(x)
+            out.append(x)
+    return out
+
 
 # pyright --strict cannot infer through a bare `dict`/`set` default_factory,
 # so each gets a typed nullary factory. Verbose, but it keeps the index fully
@@ -85,6 +138,14 @@ def _s_str() -> set[str]:
     return set()
 
 
+def _d_any() -> dict[tuple[str, str], object]:
+    return {}
+
+
+def _d_meth() -> dict[tuple[str, str], list[tuple[str, str]]]:
+    return {}
+
+
 @dataclass
 class _Index:
     by_file: dict[str, FileFacts] = field(default_factory=_d_facts)
@@ -92,6 +153,8 @@ class _Index:
     by_name: dict[str, list[tuple[str, str]]] = field(default_factory=_d_locs)
     methods_by_name: dict[str, list[tuple[str, str]]] = field(default_factory=_d_locs)
     classes: dict[str, tuple[str, str]] = field(default_factory=_d_loc)
+    class_by_id: dict[tuple[str, str], object] = field(default_factory=_d_any)
+    methods_of: dict[tuple[str, str], list[tuple[str, str]]] = field(default_factory=_d_meth)
     bases_of: dict[str, tuple[str, ...]] = field(default_factory=_d_bases)
     files: set[str] = field(default_factory=_s_str)
 
@@ -156,8 +219,16 @@ class Resolver:
                 if s.kind == "method":
                     idx.methods_by_name.setdefault(s.name, []).append(key)
                 if s.kind == "class":
+                    # Keyed by identity, not bare name. Keeping `classes`
+                    # first-seen while `bases_of` kept last-seen silently fused
+                    # one class's identity with another class's bases.
                     idx.classes.setdefault(s.name, key)
-                    idx.bases_of[s.name] = s.bases
+                    idx.class_by_id[key] = s
+                    idx.bases_of.setdefault(s.name, s.bases)
+                    idx.methods_of.setdefault(key, [])
+                if s.kind == "method" and s.enclosing_class:
+                    owner = (f.path, s.qualified_name.rsplit(".", 1)[0])
+                    idx.methods_of.setdefault(owner, []).append(key)
         for lst in idx.by_name.values():
             lst.sort()
         for lst in idx.methods_by_name.values():
@@ -169,13 +240,55 @@ class Resolver:
     def _is_external(self, top: str) -> bool:
         return top in _STDLIB or top in self.deps
 
-    def _mro(self, cls: str, seen: frozenset[str] = frozenset()) -> list[str]:
-        if cls in seen:
+    def _mro_ids(
+        self, cls_id: tuple[str, str], seen: frozenset[tuple[str, str]] = frozenset()
+    ) -> list[tuple[str, str]]:
+        """Linearize by class identity, resolving base names in the defining file.
+
+        Resolving bases by bare name across the whole repo made `self.helper()`
+        bind to an unrelated same-named class in another file. A base name is
+        looked up first among classes defined in the same file, then through
+        that file's own import table, and only then repo-wide -- and a repo-wide
+        hit that is ambiguous is not used at all.
+        """
+        if cls_id in seen:
             return []
-        out = [cls]
-        for base in self.idx.bases_of.get(cls, ()):
-            out.extend(self._mro(base, seen | {cls}))
+        out = [cls_id]
+        sym = self.idx.class_by_id.get(cls_id)
+        bases = getattr(sym, "bases", ()) if sym is not None else ()
+        for base in bases:
+            resolved = self._resolve_class_name(base, cls_id[0])
+            if resolved is not None:
+                out.extend(self._mro_ids(resolved, seen | {cls_id}))
         return out
+
+    def _resolve_class_name(self, name: str, from_file: str) -> tuple[str, str] | None:
+        same_file = [
+            cid
+            for cid in self.idx.class_by_id
+            if cid[0] == from_file and cid[1].endswith(f".{name}")
+        ]
+        if len(same_file) == 1:
+            return same_file[0]
+
+        facts = self.idx.by_file.get(from_file)
+        if facts is not None:
+            for imp in facts.imports:
+                if not imp.is_from or name not in imp.names:
+                    continue
+                target = self._resolve_module(imp.specifier, from_file, imp.level)
+                if target is None:
+                    continue
+                hit = [
+                    cid
+                    for cid in self.idx.class_by_id
+                    if cid[0] == target and cid[1].endswith(f".{name}")
+                ]
+                if len(hit) == 1:
+                    return hit[0]
+
+        repo_wide = [cid for cid in self.idx.class_by_id if cid[1].endswith(f".{name}")]
+        return repo_wide[0] if len(repo_wide) == 1 else None
 
     def _resolve_module(self, spec: str, from_file: str, level: int) -> str | None:
         """Map an import specifier to a file in the repo.
@@ -200,7 +313,14 @@ class Resolver:
         parts = [p for p in spec.split(".") if p]
         if not parts:
             return None
-        for root in self.roots:
+        # An ancestor of the importing file wins over any other root. Sorting
+        # roots by name length let `examples/pkg/utils.py` beat
+        # `src/pkg/utils.py` for an import made from inside `src/pkg`, purely
+        # because "examples" is longer than "src".
+        ancestors = [
+            r for r in self.roots if r and (from_file == r or from_file.startswith(r + "/"))
+        ]
+        for root in [*ancestors, *self.roots]:
             for n in range(len(parts), 0, -1):
                 cand = "/".join(parts[:n])
                 full = f"{root}/{cand}" if root else cand
@@ -286,7 +406,29 @@ class Resolver:
 
     def _nodes_for(self, f: FileFacts) -> list[Node]:
         out: list[Node] = []
+        # A `try/except ImportError` fallback defines the same name twice, which
+        # emitted two Nodes claiming one id with different evidence. Node ids
+        # must be unique -- build re-validates that independently -- and a
+        # conditional definition is a fact worth surfacing rather than
+        # silently collapsing.
+        seen_ids: set[str] = set()
         for s in f.symbols:
+            nid = node_id(f.path, s.qualified_name)
+            if nid in seen_ids:
+                self.diagnostics.append(
+                    Diagnostic(
+                        code="SVA-X-002",
+                        severity=Severity.INFO,
+                        message=(
+                            "defined more than once in this file (a conditional "
+                            "or fallback definition); keeping the first"
+                        ),
+                        subject=s.qualified_name,
+                        location=str(s.evidence),
+                    )
+                )
+                continue
+            seen_ids.add(nid)
             attrs: list[tuple[str, str]] = [("exported", "true" if s.exported else "false")]
             if s.enclosing_class:
                 attrs.append(("class", s.enclosing_class))
@@ -311,12 +453,25 @@ class Resolver:
             target = self._resolve_module(imp.specifier, f.path, imp.level)
 
             if target is None:
-                if not imp.is_relative and self._is_external(top):
-                    self.scorecard.record(f.lang, EdgeKind.IMPORTS, Resolution.EXTERNAL)
-                else:
-                    self.scorecard.record(
-                        f.lang, EdgeKind.IMPORTS, Resolution.UNRESOLVED, imp.specifier
-                    )
+                external = not imp.is_relative and self._is_external(top)
+                self.scorecard.record(
+                    f.lang,
+                    EdgeKind.IMPORTS,
+                    Resolution.EXTERNAL if external else Resolution.UNRESOLVED,
+                    None if external else imp.specifier,
+                )
+                # Every reference must land in exactly one bin. These used to
+                # fall through the `continue` and be counted nowhere, so the
+                # references denominator silently excluded every symbol
+                # imported from a framework.
+                if imp.is_from:
+                    for _ in imp.names:
+                        self.scorecard.record(
+                            f.lang,
+                            "references",
+                            Resolution.EXTERNAL if external else Resolution.UNRESOLVED,
+                            None if external else f"{imp.specifier}",
+                        )
                 continue
 
             if target == f.path:
@@ -336,8 +491,35 @@ class Resolver:
                 )
             )
 
+            # `names` are module paths for a plain `import x.y`, not symbols.
+            # Running the reference loop over them recorded a guaranteed
+            # phantom miss for every intra-repo plain import.
+            if not imp.is_from:
+                continue
+
             # Symbol-level references, chasing re-export chains.
             for name in imp.names:
+                # `from . import sub` names a submodule. Treating it as a
+                # symbol lookup inside __init__.py misses the real dependency.
+                sibling = self._resolve_module(
+                    f"{imp.specifier}.{name}" if imp.specifier.strip(".") else f".{name}",
+                    f.path,
+                    imp.level,
+                )
+                if sibling is not None and sibling != target and sibling != f.path:
+                    self.scorecard.record(f.lang, "references", Resolution.RESOLVED)
+                    out.append(
+                        Edge(
+                            src=f.path,
+                            dst=sibling,
+                            kind=EdgeKind.IMPORTS,
+                            evidence=(imp.evidence,),
+                            confidence=Confidence.RESOLVED,
+                            resolution=Resolution.RESOLVED,
+                            producer=f"{f.lang}.imports",
+                        )
+                    )
+                    continue
                 found = self._follow_reexport(target, name)
                 if found is None:
                     self.scorecard.record(
@@ -361,14 +543,20 @@ class Resolver:
 
     def _call_edges(self, f: FileFacts) -> list[Edge]:
         out: list[Edge] = []
-        import_names: dict[str, str] = {}
+        # Carry the level pass 1 computed. Re-deriving it as `spec.count(".")`
+        # is a second parser that disagrees: `from ..pkg.mod import x` has
+        # level 2 (leading dots) but three dots total, so the recomputation
+        # anchored at the wrong directory -- a wrong-edge generator, not just
+        # recall loss.
+        import_names: dict[str, tuple[str, int]] = {}
         for imp in f.imports:
             for alias, real in imp.alias_of.items():
-                import_names[alias] = imp.specifier or real
+                import_names[alias] = (imp.specifier or real, imp.level)
             for n in imp.names:
-                import_names[n] = imp.specifier or n
-            if not imp.names and imp.specifier:
-                import_names[imp.specifier.split(".")[0]] = imp.specifier
+                if imp.is_from:
+                    import_names[n] = (imp.specifier or n, imp.level)
+            if not imp.is_from and imp.specifier:
+                import_names[imp.specifier.split(".")[0]] = (imp.specifier, 0)
 
         for call in f.calls:
             src_id = node_id(f.path, call.enclosing) if call.enclosing else f.path
@@ -435,7 +623,7 @@ class Resolver:
         return None
 
     def _call_targets(
-        self, f: FileFacts, call: object, import_names: Mapping[str, str]
+        self, f: FileFacts, call: object, import_names: Mapping[str, tuple[str, int]]
     ) -> list[tuple[str, str]] | None:
         """Return targets, [] for unresolved, or None for known-external."""
         from svarupa.extract.base import CallSite
@@ -446,58 +634,71 @@ class Resolver:
         if call.shape in (CallShape.SELF, CallShape.SUPER):
             if not call.enclosing_class:
                 return []
-            chain = self._mro(call.enclosing_class)
+            own = self._resolve_class_name(call.enclosing_class, f.path)
+            if own is None:
+                return []
+            chain = self._mro_ids(own)
             if call.shape is CallShape.SUPER:
                 chain = chain[1:]
-            hits = [
-                (path, qual)
-                for cls in chain
-                for path, qual in self.idx.methods_by_name.get(name, [])
-                if qual.rsplit(".", 2)[-2:-1] == [cls]
-            ]
+            hits = _dedupe(
+                [
+                    m
+                    for cls_id in chain
+                    for m in self.idx.methods_of.get(cls_id, [])
+                    if m[1].rsplit(".", 1)[-1] == name
+                ]
+            )
             return hits[:MAX_CANDIDATE_ARITY] if len(hits) <= MAX_CANDIDATE_ARITY else []
 
         if call.shape is CallShape.BARE:
-            local = [(p, q) for p, q in self.idx.by_name.get(name, []) if p == f.path]
+            # A bare name in Python can never dispatch to an instance method,
+            # so a method hit is not merely arbitrary, it is impossible.
+            # Lexicographic order was picking `A.f` over module-level `f`.
+            methods = set(self.idx.methods_by_name.get(name, []))
+            local = _dedupe(
+                [
+                    (p, q)
+                    for p, q in self.idx.by_name.get(name, [])
+                    if p == f.path and (p, q) not in methods
+                ]
+            )
+            if len(local) == 1:
+                return local
             if local:
-                return local[:1]
+                return local[:MAX_CANDIDATE_ARITY]
             if name in import_names:
-                spec = import_names[name]
+                spec, level = import_names[name]
                 top = spec.lstrip(".").split(".")[0]
-                target = self._resolve_module(
-                    spec, f.path, spec.count(".") if spec.startswith(".") else 0
-                )
+                target = self._resolve_module(spec, f.path, level)
                 if target is None:
                     return None if self._is_external(top) else []
                 found = self._follow_reexport(target, name)
                 return [found] if found else []
-            hits = self.idx.by_name.get(name, [])
+            hits = _dedupe([h for h in self.idx.by_name.get(name, []) if h not in methods])
             if len(hits) == 1:
-                return list(hits)
-            return (
-                list(hits[:MAX_CANDIDATE_ARITY]) if 1 < len(hits) <= MAX_CANDIDATE_ARITY else []
-            )
+                return hits
+            return hits[:MAX_CANDIDATE_ARITY] if 1 < len(hits) <= MAX_CANDIDATE_ARITY else []
 
         if call.shape is CallShape.QUALIFIED:
             recv = call.receiver or ""
             if recv in import_names:
-                spec = import_names[recv]
+                spec, level = import_names[recv]
                 top = spec.lstrip(".").split(".")[0]
-                target = self._resolve_module(
-                    spec, f.path, spec.count(".") if spec.startswith(".") else 0
-                )
+                target = self._resolve_module(spec, f.path, level)
                 if target is None:
                     return None if self._is_external(top) else []
                 found = self._follow_reexport(target, name)
                 return [found] if found else []
-            if recv in self.idx.classes:
-                chain = self._mro(recv)
-                hits = [
-                    (p, q)
-                    for cls in chain
-                    for p, q in self.idx.methods_by_name.get(name, [])
-                    if q.rsplit(".", 2)[-2:-1] == [cls]
-                ]
+            owner = self._resolve_class_name(recv, f.path)
+            if owner is not None:
+                hits = _dedupe(
+                    [
+                        m
+                        for cls_id in self._mro_ids(owner)
+                        for m in self.idx.methods_of.get(cls_id, [])
+                        if m[1].rsplit(".", 1)[-1] == name
+                    ]
+                )
                 if hits:
                     return hits[:MAX_CANDIDATE_ARITY]
             # Receiver is a local variable of unknown type. This is the
@@ -508,15 +709,43 @@ class Resolver:
         # MEMBER: chained receiver, type unknowable without inference.
         return []
 
+    def _base_is_external(self, f: FileFacts, base: str) -> bool:
+        """A base counts external only if we can point at why.
+
+        Either it is a Python builtin exception/type, or the file imports it
+        from something we classified external. Anything else we simply failed
+        to resolve, and saying so is the whole point of the third bin.
+        """
+        if base in _BUILTIN_TYPES:
+            return True
+        for imp in f.imports:
+            if base not in imp.names and base not in imp.alias_of:
+                continue
+            if imp.is_relative:
+                return False
+            top = imp.specifier.lstrip(".").split(".")[0]
+            return self._is_external(top)
+        return False
+
     def _inherit_edges(self, f: FileFacts) -> list[Edge]:
         out: list[Edge] = []
         for s in f.symbols:
             if s.kind != "class":
                 continue
             for base in s.bases:
-                hit = self.idx.classes.get(base)
+                hit = self._resolve_class_name(base, f.path)
                 if hit is None:
-                    self.scorecard.record(f.lang, EdgeKind.INHERITS, Resolution.EXTERNAL, base)
+                    # Recording EXTERNAL unconditionally re-collapses the
+                    # scorecard to two bins: a resolver bug that lost every
+                    # intra-repo base would have scored 100% external and 0%
+                    # unresolved, which is exactly the laundering the third
+                    # bin exists to prevent.
+                    if self._base_is_external(f, base):
+                        self.scorecard.record(f.lang, EdgeKind.INHERITS, Resolution.EXTERNAL)
+                    else:
+                        self.scorecard.record(
+                            f.lang, EdgeKind.INHERITS, Resolution.UNRESOLVED, base
+                        )
                     continue
                 self.scorecard.record(f.lang, EdgeKind.INHERITS, Resolution.RESOLVED)
                 out.append(

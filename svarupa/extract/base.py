@@ -100,6 +100,12 @@ class ImportRef:
     is_relative: bool = False
     level: int = 0
     type_only: bool = False
+    # `names` means different things for the two statement kinds: symbols for
+    # `from x import a, b`, module paths for `import x.y`. Running the
+    # symbol-reference loop over the latter records a guaranteed phantom miss
+    # for every plain intra-repo import, so the resolver has to know which
+    # kind it is holding.
+    is_from: bool = True
 
 
 @dataclass(frozen=True, slots=True)

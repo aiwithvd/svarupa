@@ -267,6 +267,7 @@ class PythonExtractor(Extractor):
                 evidence=ev,
                 is_relative=False,
                 level=0,
+                is_from=False,
             )
 
         # import_from_statement
@@ -278,7 +279,12 @@ class PythonExtractor(Extractor):
         wildcard = False
 
         for child in node.children:
-            if child is module_node:
+            # `is` is wrong here: py-tree-sitter hands back a fresh wrapper
+            # object per `child_by_field_name` call, so identity never matches
+            # and the module name was captured as if it were an imported
+            # symbol. Every absolute `from x.y import z` then produced a
+            # phantom reference that dominated the unresolved bin.
+            if module_node is not None and child.id == module_node.id:
                 continue
             if child.type == "wildcard_import":
                 wildcard = True

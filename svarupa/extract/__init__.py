@@ -149,6 +149,16 @@ def _iter_pep508(data: Mapping[str, object]) -> Iterator[str]:
                 if isinstance(group, list):
                     yield from (str(d) for d in cast("list[object]", group))
 
+    # PEP 735. Without this the tool cries wolf about its own build: svarupa's
+    # `pytest` is declared right here and still landed in the unresolved bin.
+    groups = data.get("dependency-groups")
+    if isinstance(groups, dict):
+        for group in cast("dict[str, object]", groups).values():
+            if isinstance(group, list):
+                for item in cast("list[object]", group):
+                    if isinstance(item, str):
+                        yield item
+
     tool = data.get("tool")
     if not isinstance(tool, dict):
         return

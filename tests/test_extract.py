@@ -450,3 +450,236 @@ def test_cycles_terminate(tmp_path: Path, files: dict[str, str], why: str) -> No
         write(tmp_path, rel, text)
     res = run(tmp_path)  # must not hang or recurse forever
     assert res.nodes, why
+
+
+# --------------------------------------------------------------------------
+# Decoy fixtures: catching a WRONG resolution, not just a missing one
+#
+# Review #4's central criticism: every prior test used a repo with exactly one
+# plausible target, so first-match-wins, bare-name indexing and length-sorted
+# roots were indistinguishable from correct resolution. Each fixture below
+# places a decoy so the assertion names the specific expected dst.
+# --------------------------------------------------------------------------
+
+
+def test_bare_call_binds_the_function_not_the_method(tmp_path: Path) -> None:
+    """A bare name in Python cannot dispatch to an instance method.
+
+    Lexicographic ordering put `src.mod.A.f` before `src.mod.f`, so the
+    resolver emitted a confident RESOLVED edge to a target that is not merely
+    arbitrary but impossible.
+    """
+    write(
+        tmp_path,
+        "src/mod.py",
+        "class A:\n    def f(self):\n        pass\n\n\ndef f():\n    pass\n\n\ndef go():\n    return f()\n",
+    )
+    res = run(tmp_path)
+    calls = [e for e in res.edges if e.kind is EdgeKind.CALLS]
+    assert len(calls) == 1
+    assert calls[0].dst == node_id("src/mod.py", "src.mod.f")
+
+
+def test_mro_does_not_bind_a_same_named_class_in_another_file(tmp_path: Path) -> None:
+    """Bases were resolved by bare name across the whole repo.
+
+    `Child(Base)` importing the real `Base` from `.a` bound `self.helper()` to
+    an unrelated `Base` in `z.py` that happened to define `helper`.
+    """
+    write(tmp_path, "src/__init__.py", "")
+    write(tmp_path, "src/a.py", "class Base:\n    pass\n")
+    write(tmp_path, "src/z.py", "class Base:\n    def helper(self):\n        pass\n")
+    write(
+        tmp_path,
+        "src/c.py",
+        "from .a import Base\n\n\nclass Child(Base):\n    def go(self):\n        return self.helper()\n",
+    )
+    res = run(tmp_path)
+    wrong = [e for e in res.edges if e.kind is EdgeKind.CALLS and "z.py" in e.dst]
+    assert not wrong, f"bound to the decoy class: {[e.dst for e in wrong]}"
+
+
+def test_import_prefers_a_root_that_is_an_ancestor_of_the_importer(tmp_path: Path) -> None:
+    """Roots sorted by name length let `examples` beat `src`.
+
+    The decoy uses the SAME package name as the real one, which is the only
+    arrangement where the collision actually fires. An earlier version of this
+    test used different names and so could never have caught it.
+    """
+    write(tmp_path, "src/pkg/__init__.py", "")
+    write(tmp_path, "src/pkg/utils.py", "def real():\n    pass\n")
+    write(tmp_path, "examples/pkg/__init__.py", "")
+    write(tmp_path, "examples/pkg/utils.py", "def decoy():\n    pass\n")
+    write(tmp_path, "src/pkg/main.py", "from pkg.utils import real\n")
+    res = run(tmp_path)
+    targets = {
+        e.dst for e in res.edges if e.kind is EdgeKind.IMPORTS and e.src == "src/pkg/main.py"
+    }
+    assert "src/pkg/utils.py" in targets
+    assert "examples/pkg/utils.py" not in targets
+
+
+def test_diamond_inheritance_is_one_definition_not_a_two_way_ambiguity(tmp_path: Path) -> None:
+    """`_mro` deduped cycles but not converging branches.
+
+    `D(B, C)` where both reach `A.m` produced two identical edges claiming
+    arity 2, while exactly one definition exists. Arity is a claim shown to a
+    reader; an inflated one is an invented fact carried in the evidence.
+    """
+    write(
+        tmp_path,
+        "src/d.py",
+        "class A:\n    def m(self):\n        pass\n\n\nclass B(A):\n    pass\n\n\n"
+        "class C(A):\n    pass\n\n\nclass D(B, C):\n    def go(self):\n        return self.m()\n",
+    )
+    res = run(tmp_path)
+    calls = [e for e in res.edges if e.kind is EdgeKind.CALLS]
+    assert len(calls) == 1
+    assert calls[0].resolution is Resolution.RESOLVED
+    assert calls[0].arity == 1
+
+
+def test_multi_segment_relative_import_anchors_correctly(tmp_path: Path) -> None:
+    """Level was re-derived in pass 2 as `spec.count(".")`.
+
+    `from ..util.mod import helper` has level 2 (leading dots) but three dots
+    total, so the recomputation anchored at the wrong directory. Pass 1 already
+    computed the right value; pass 2 must carry it rather than re-parse.
+    """
+    for rel in ("src/__init__.py", "src/util/__init__.py", "src/app/__init__.py"):
+        write(tmp_path, rel, "")
+    write(tmp_path, "src/util/mod.py", "def helper():\n    pass\n")
+    write(
+        tmp_path,
+        "src/app/main.py",
+        "from ..util.mod import helper\n\n\ndef go():\n    return helper()\n",
+    )
+    res = run(tmp_path)
+    calls = [e for e in res.edges if e.kind is EdgeKind.CALLS]
+    assert calls, "multi-segment relative import failed to anchor"
+    assert calls[0].dst == node_id("src/util/mod.py", "src.util.mod.helper")
+
+
+# --------------------------------------------------------------------------
+# Scorecard honesty regressions
+# --------------------------------------------------------------------------
+
+
+def test_absolute_from_import_does_not_record_a_phantom_name() -> None:
+    """`child is module_node` never matched.
+
+    py-tree-sitter returns a fresh wrapper per `child_by_field_name` call, so
+    identity comparison always failed and the module path was captured as if
+    it were an imported symbol. Every absolute from-import then produced a
+    phantom unresolved reference, polluting the headline honesty feature with
+    the extractor's own bug.
+    """
+    from svarupa.extract.python import PythonExtractor
+
+    f = PythonExtractor().parse("src/a.py", b"from mypkg.b import helper\n")
+    assert f.imports[0].names == ("helper",)
+    assert f.imports[0].specifier == "mypkg.b"
+
+
+def test_plain_import_is_not_treated_as_a_symbol_reference(tmp_path: Path) -> None:
+    """`names` means module paths for `import x.y`, symbols for `from x import y`."""
+    write(tmp_path, "pkg/__init__.py", "")
+    write(tmp_path, "pkg/b.py", "def thing():\n    pass\n")
+    write(tmp_path, "app.py", "import pkg.b\n")
+    res = run(tmp_path)
+    assert res.scorecard.get("python", "references", Resolution.UNRESOLVED) == 0
+
+
+@pytest.mark.parametrize(
+    ("src", "manifest", "expect_external"),
+    [
+        ("class T(CompletelyUnknownBase):\n    pass\n", None, False),
+        ("class T(Exception):\n    pass\n", None, True),
+        (
+            "from django.db import Model\n\n\nclass T(Model):\n    pass\n",
+            '[project]\ndependencies = ["django"]\n',
+            True,
+        ),
+    ],
+)
+def test_base_class_external_is_a_claim_not_a_fallback(
+    tmp_path: Path, src: str, manifest: str | None, expect_external: bool
+) -> None:
+    """An unknown base was recorded EXTERNAL unconditionally.
+
+    A resolver bug losing every intra-repo base would then have scored 100%
+    external and 0% unresolved, which is precisely the laundering the third
+    bin exists to prevent.
+    """
+    write(tmp_path, "src/a.py", src)
+    if manifest:
+        write(tmp_path, "pyproject.toml", manifest)
+    res = run(tmp_path)
+    ext = res.scorecard.get("python", "inherits", Resolution.EXTERNAL)
+    unres = res.scorecard.get("python", "inherits", Resolution.UNRESOLVED)
+    assert (ext, unres) == ((1, 0) if expect_external else (0, 1))
+
+
+def test_external_symbol_imports_land_in_a_bin(tmp_path: Path) -> None:
+    """These fell through a `continue` and were counted nowhere.
+
+    Every reference must land in exactly one bin, or the denominators are
+    fiction.
+    """
+    write(tmp_path, "pyproject.toml", '[project]\ndependencies = ["requests"]\n')
+    write(tmp_path, "src/a.py", "from requests import Session, Response\n")
+    res = run(tmp_path)
+    assert res.scorecard.get("python", "references", Resolution.EXTERNAL) == 2
+
+
+def test_dependency_groups_are_declared_dependencies(tmp_path: Path) -> None:
+    """PEP 735. Without it the tool cried wolf about its own build."""
+    write(tmp_path, "pyproject.toml", '[dependency-groups]\ndev = ["pytest>=8"]\n')
+    write(tmp_path, "src/a.py", "import pytest\n")
+    res = run(tmp_path)
+    assert res.scorecard.get("python", "imports", Resolution.EXTERNAL) == 1
+    assert res.scorecard.get("python", "imports", Resolution.UNRESOLVED) == 0
+
+
+def test_grammar_version_matches_the_installed_pin() -> None:
+    """Guards against silent drift when the grammar pin is bumped."""
+    from importlib.metadata import version
+
+    from svarupa.extract.python import PythonExtractor
+
+    assert PythonExtractor.grammar_version == version("tree-sitter-python")
+
+
+def test_conditional_definition_yields_one_node_and_a_diagnostic(tmp_path: Path) -> None:
+    """`try/except ImportError` defines the same name twice.
+
+    Two Nodes claiming one id with different evidence is a graph-integrity
+    violation. Keeping the first and saying so beats silently collapsing them,
+    since a conditional definition is itself a fact worth surfacing.
+    """
+    write(
+        tmp_path,
+        "src/mod.py",
+        "try:\n    from fast import connect\nexcept ImportError:\n"
+        "    def connect():\n        pass\n\n\ndef connect():\n    pass\n",
+    )
+    res = run(tmp_path)
+    ids = [n.id for n in res.nodes]
+    assert len(ids) == len(set(ids)), "duplicate node ids"
+    assert "SVA-X-002" in {d.code for d in res.diagnostics}
+
+
+def test_repeated_imports_keep_their_own_evidence(tmp_path: Path) -> None:
+    """Two import lines to the same target are two facts, not one.
+
+    They share an (src, dst, kind) key but carry different lines. Deduping
+    here would discard evidence; merging is `build`'s job, and it must union
+    rather than drop.
+    """
+    write(tmp_path, "pkg/__init__.py", "")
+    write(tmp_path, "pkg/target.py", "def a():\n    pass\n\n\ndef b():\n    pass\n")
+    write(tmp_path, "pkg/user.py", "from .target import a\nfrom .target import b\n")
+    res = run(tmp_path)
+    imports = [e for e in res.edges if e.kind is EdgeKind.IMPORTS and e.src == "pkg/user.py"]
+    lines = sorted(ev.start_line for e in imports for ev in e.evidence)
+    assert lines == [1, 2], f"lost an import site: {lines}"
