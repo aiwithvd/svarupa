@@ -35,6 +35,7 @@ from typing import Any
 import pathspec  # pyright: ignore[reportMissingTypeStubs]
 
 from svarupa.diagnostics import Diagnostic, Severity
+from svarupa.lock.grammar import collision_check
 from svarupa.model import norm_path
 
 __all__ = [
@@ -403,6 +404,7 @@ def detect(root: str | Path, limits: ScanLimits | None = None) -> Scan:
 
     files: list[FileRec] = []
     diags: list[Diagnostic] = []
+    raw_names: list[str] = []
     skipped = _Counter()
 
     def walk(directory: Path, rel_dir: str, depth: int) -> None:
@@ -418,7 +420,15 @@ def detect(root: str | Path, limits: ScanLimits | None = None) -> Scan:
             )
             return
         try:
-            entries = sorted(os.scandir(directory), key=lambda e: e.name)
+            # Normalize BEFORE sorting, not after. `os.scandir` may return NFD
+            # on one machine and NFC on another for the same logical name, and
+            # those sort differently ("café" vs "cafz" flips). Visit order then
+            # differs, and since `max_files` truncation keeps whichever files
+            # were reached first, two machines would retain different sets.
+            entries = sorted(
+                ((unicodedata.normalize("NFC", e.name), e) for e in os.scandir(directory)),
+                key=lambda pair: pair[0],
+            )
         except OSError as exc:
             skipped.hit("unreadable-dir")
             diags.append(
@@ -431,9 +441,10 @@ def detect(root: str | Path, limits: ScanLimits | None = None) -> Scan:
             )
             return
 
-        for entry in entries:
-            name = unicodedata.normalize("NFC", entry.name)
+        for name, entry in entries:
             rel = f"{rel_dir}/{name}" if rel_dir else name
+            raw_name = entry.name
+            raw_rel = f"{rel_dir}/{raw_name}" if rel_dir else raw_name
 
             if entry.is_symlink():
                 # Never followed. A symlink into the tree would double-count
@@ -511,6 +522,7 @@ def detect(root: str | Path, limits: ScanLimits | None = None) -> Scan:
                 skipped.hit("unreadable-entry")
                 continue
 
+            raw_names.append(raw_rel)
             files.append(
                 FileRec(
                     path=rel,
@@ -537,6 +549,12 @@ def detect(root: str | Path, limits: ScanLimits | None = None) -> Scan:
                 suggested_fixes=("Narrow the scan with .svarupaignore, or raise max_files.",),
             )
         )
+
+    # Collision detection must run on the RAW names, before normalization
+    # collapsed them: once normalized the pre-images are gone. Review #2 F3
+    # found this claimed-but-unimplemented one layer up; it belongs here,
+    # where identities are actually created.
+    diags.extend(collision_check(raw_names))
 
     ordered = tuple(sorted(files))
     return Scan(

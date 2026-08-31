@@ -137,10 +137,6 @@ def test_svarupaignore_is_honoured(repo: Path) -> None:
     assert "src/api/main.py" in paths
 
 
-def test_negation_reinstates_a_file_when_its_parent_is_not_excluded() -> None:
-    """Negation works at file level."""
-
-
 def test_negation_cannot_reinstate_under_an_excluded_directory(repo: Path) -> None:
     """Matches git, deliberately.
 
@@ -326,3 +322,48 @@ def test_absolute_path_of_the_repo_never_leaks(tmp_path: Path) -> None:
     one = tuple(detect(tmp_path / "here").files)
     two = tuple(detect(tmp_path / "somewhere/else/deeper").files)
     assert one == two
+
+
+@pytest.mark.determinism
+def test_visit_order_is_normalized_before_sorting(tmp_path: Path) -> None:
+    """Regression: normalize BEFORE sorting, not after.
+
+    `os.scandir` can return NFD on one machine and NFC on another for the same
+    logical name, and the two sort differently: NFD "café" sorts before "cafz"
+    while NFC "café" sorts after it. Sorting raw names therefore gives two
+    machines different visit orders. That matters because `max_files`
+    truncation keeps whichever files were reached first, so a capped scan would
+    retain different file sets.
+    """
+    nfd, nfc = unicodedata.normalize("NFD", "café"), unicodedata.normalize("NFC", "café")
+    assert nfd != nfc
+
+    a, b = tmp_path / "a", tmp_path / "b"
+    for root, spelling in ((a, nfd), (b, nfc)):
+        root.mkdir()
+        for n in ("cafz.py", f"{spelling}.py", "cag.py"):
+            write(root, f"src/{n}")
+
+    # Cap below the file count, so which files survive depends on visit order.
+    limits = ScanLimits(max_files=2)
+    kept_a = [f.path for f in detect(a, limits).files]
+    kept_b = [f.path for f in detect(b, limits).files]
+    assert kept_a == kept_b, "capped scan kept different files depending on NFD vs NFC"
+
+
+def test_case_collision_is_diagnosed(tmp_path: Path) -> None:
+    """Two directories on Linux, one file on a case-insensitive volume.
+
+    On macOS the second write lands in the same directory, so there is nothing
+    to collide and the test skips. On Linux it is a genuine collision that must
+    be diagnosed rather than silently merged into one lockfile key.
+    """
+    r = tmp_path / "repo"
+    r.mkdir()
+    write(r, "src/Utils/a.py")
+    write(r, "src/utils/b.py")
+    if len({p.name for p in (r / "src").iterdir()}) < 2:
+        pytest.skip("case-insensitive filesystem; the two paths are one directory here")
+
+    codes = {d.code for d in detect(r).diagnostics}
+    assert "SVA-L-007" in codes, "case collision must be diagnosed, never silently merged"
