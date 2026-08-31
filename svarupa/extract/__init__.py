@@ -61,7 +61,12 @@ def extract(scan: Scan, declared_deps: frozenset[str] = frozenset()) -> ExtractR
         except OSError:
             continue
         facts.append(ex.parse(rec.path, data))
-    return resolve(facts, declared_deps)
+
+    # Workspace roots discovered by `detect` are import roots. Passing them
+    # through is the integration that was missing: the resolver otherwise
+    # guesses at layout from the tree alone.
+    roots = [w.root for w in scan.workspaces if w.root]
+    return resolve(facts, declared_deps, roots)
 
 
 def _norm_dep(raw: str) -> str | None:

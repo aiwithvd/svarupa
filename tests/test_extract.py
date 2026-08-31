@@ -346,3 +346,107 @@ def test_pass_one_reads_only_its_own_file(tmp_path: Path) -> None:
     write(tmp_path, "src/other.py", "def thing():\n    pass\n")
     b = PythonExtractor().parse("src/a.py", src.encode())
     assert a == b, "pass 1 output changed when an unrelated file appeared"
+
+
+# --------------------------------------------------------------------------
+# Graph integrity and source roots
+# --------------------------------------------------------------------------
+
+
+def test_every_edge_endpoint_is_a_real_node(tmp_path: Path) -> None:
+    """A dangling endpoint is a missing-node bug wearing a graph-shaped mask.
+
+    Import edges connect file to file and module-level calls are attributed to
+    the file, so a Node must exist per file. Without one, `build` would see
+    endpoints referencing ids that exist nowhere.
+    """
+    write(tmp_path, "src/__init__.py", "")
+    write(tmp_path, "src/a.py", "def helper():\n    pass\n")
+    write(tmp_path, "src/b.py", "from .a import helper\n\nhelper()\n")
+    res = run(tmp_path)
+    ids = {n.id for n in res.nodes}
+    dangling = [
+        (e.src, e.dst, e.kind.value) for e in res.edges if e.src not in ids or e.dst not in ids
+    ]
+    assert not dangling, f"edges reference non-existent nodes: {dangling}"
+
+
+def test_a_module_node_exists_per_file(tmp_path: Path) -> None:
+    from svarupa.model import NodeKind
+
+    write(tmp_path, "src/a.py", "x = 1\n")
+    write(tmp_path, "src/b.py", "y = 2\n")
+    res = run(tmp_path)
+    modules = {n.id for n in res.nodes if n.kind is NodeKind.MODULE}
+    assert modules == {"src/a.py", "src/b.py"}
+
+
+def test_package_under_a_non_standard_root_resolves(tmp_path: Path) -> None:
+    """`src`, `lib`, `app` were hardcoded, so `backend/mylib/` resolved nothing.
+
+    Import roots are now derived from where packages actually live, plus any
+    workspace roots `detect` discovered.
+    """
+    write(tmp_path, "backend/mylib/__init__.py", "")
+    write(tmp_path, "backend/mylib/core.py", "def go():\n    pass\n")
+    write(tmp_path, "backend/mylib/api.py", "from mylib.core import go\n")
+    res = run(tmp_path)
+    imports = {(e.src, e.dst) for e in res.edges if e.kind is EdgeKind.IMPORTS}
+    assert ("backend/mylib/api.py", "backend/mylib/core.py") in imports
+
+
+def test_source_roots_do_not_swallow_the_standard_library(tmp_path: Path) -> None:
+    """Regression for a fix that over-corrected.
+
+    Allowing the resolver to fall back to the root directory itself made every
+    import match: `import typing` resolved to `src/pkg/__init__.py` merely
+    because that package existed. External dropped to zero and the scorecard
+    claimed 100% import resolution while being entirely wrong. Stripping now
+    happens only within the dotted specifier, never into the root prefix.
+    """
+    write(tmp_path, "src/pkg/__init__.py", "")
+    write(tmp_path, "src/pkg/thing.py", "import typing\nimport os\nimport collections\n")
+    res = run(tmp_path)
+    assert not [e for e in res.edges if e.kind is EdgeKind.IMPORTS]
+    assert res.scorecard.get("python", "imports", Resolution.EXTERNAL) == 3
+    assert res.scorecard.get("python", "imports", Resolution.RESOLVED) == 0
+
+
+def test_roots_do_not_reach_across_unrelated_trees(tmp_path: Path) -> None:
+    """A specifier must not match a same-named module anywhere in the repo."""
+    write(tmp_path, "src/pkg/__init__.py", "")
+    write(tmp_path, "src/pkg/utils.py", "def real():\n    pass\n")
+    write(tmp_path, "examples/demo/__init__.py", "")
+    write(tmp_path, "examples/demo/utils.py", "def decoy():\n    pass\n")
+    write(tmp_path, "src/pkg/main.py", "from pkg.utils import real\n")
+    res = run(tmp_path)
+    imports = {(e.src, e.dst) for e in res.edges if e.kind is EdgeKind.IMPORTS}
+    assert ("src/pkg/main.py", "src/pkg/utils.py") in imports
+    assert ("src/pkg/main.py", "examples/demo/utils.py") not in imports
+
+
+@pytest.mark.parametrize(
+    ("files", "why"),
+    [
+        (
+            {
+                "pkg/__init__.py": "",
+                "pkg/a.py": "from .b import thing\n",
+                "pkg/b.py": "from .a import thing\n",
+                "app.py": "from pkg.a import thing\n",
+            },
+            "circular re-export must terminate",
+        ),
+        (
+            {
+                "src/x.py": "class A(B):\n    pass\n\n\nclass B(A):\n    def m(self):\n        return self.m()\n"
+            },
+            "circular inheritance is invalid Python but parseable",
+        ),
+    ],
+)
+def test_cycles_terminate(tmp_path: Path, files: dict[str, str], why: str) -> None:
+    for rel, text in files.items():
+        write(tmp_path, rel, text)
+    res = run(tmp_path)  # must not hang or recurse forever
+    assert res.nodes, why

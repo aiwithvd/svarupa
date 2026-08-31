@@ -101,12 +101,46 @@ class Resolver:
         self,
         facts: Sequence[FileFacts],
         declared_deps: frozenset[str] = frozenset(),
+        source_roots: Sequence[str] = (),
     ) -> None:
         self.facts = list(facts)
         self.deps = declared_deps
         self.scorecard = Scorecard()
         self.diagnostics: list[Diagnostic] = []
         self.idx = self._build_index()
+        self.roots = self._source_roots(source_roots)
+
+    def _source_roots(self, declared: Sequence[str]) -> tuple[str, ...]:
+        """Every directory an absolute import could be rooted at.
+
+        Hardcoding `src`, `lib`, `app` silently failed on any other layout: a
+        package at `backend/mylib/` resolved nothing at all. Instead, derive
+        the candidates from the tree itself, since any ancestor directory of a
+        file is a possible import root, and let the caller add roots that
+        `detect` discovered from workspace manifests.
+
+        Sorted longest-first so the most specific root wins, then by name so
+        the order never depends on set iteration.
+        """
+        roots: set[str] = {""}
+        roots.update(r.strip("/") for r in declared if r.strip("/"))
+
+        # A root is the *parent of a top-level package*, not every ancestor
+        # directory. Treating every ancestor as a root lets a specifier match
+        # a same-named module anywhere in the tree, including examples/ and
+        # docs/, which is over-eager in exactly the direction that invents
+        # edges. The parent of any `__init__.py` package is precise and small.
+        for path in self.idx.files:
+            if path.endswith("/__init__.py"):
+                pkg_dir = path[: -len("/__init__.py")]
+                parent = "/".join(pkg_dir.split("/")[:-1])
+                roots.add(parent)
+            elif "/" not in path:
+                roots.add("")
+
+        # Longest first so the most specific root wins; then by name so the
+        # order never depends on set iteration.
+        return tuple(sorted(roots, key=lambda r: (-r.count("/"), -len(r), r)))
 
     # ------------------------------------------------------------------
 
@@ -158,16 +192,20 @@ class Resolver:
             base = "/".join([*anchor, rest]) if rest else "/".join(anchor)
             return self._hit(base)
 
-        dotted = spec.replace(".", "/")
-        candidates = [dotted]
-        for root in ("src", "lib", "app"):
-            candidates.append(f"{root}/{dotted}")
-        for cand in candidates:
-            cur = cand
-            while cur:
-                if (hit := self._hit(cur)) is not None:
+        # Strip only within the dotted specifier, never into the root prefix.
+        # Falling back to the root directory itself made every import match:
+        # `import typing` resolved to src/flask/__init__.py simply because that
+        # package existed, which drove flask's external count to zero and made
+        # the scorecard claim 100% import resolution while being entirely wrong.
+        parts = [p for p in spec.split(".") if p]
+        if not parts:
+            return None
+        for root in self.roots:
+            for n in range(len(parts), 0, -1):
+                cand = "/".join(parts[:n])
+                full = f"{root}/{cand}" if root else cand
+                if (hit := self._hit(full)) is not None:
                     return hit
-                cur = "/".join(cur.split("/")[:-1])
         return None
 
     def _hit(self, base: str) -> str | None:
@@ -213,6 +251,7 @@ class Resolver:
 
         for f in self.facts:
             self.diagnostics.extend(f.diagnostics)
+            nodes.append(self._module_node(f))
             nodes.extend(self._nodes_for(f))
             edges.extend(self._import_edges(f))
             edges.extend(self._call_edges(f))
@@ -223,6 +262,26 @@ class Resolver:
             edges=sorted_edges(edges),
             scorecard=self.scorecard,
             diagnostics=tuple(self.diagnostics),
+        )
+
+    def _module_node(self, f: FileFacts) -> Node:
+        """One node per file.
+
+        Import edges connect file to file, and module-level calls are attributed
+        to the file. Without this node those edges referenced an id that existed
+        nowhere in the graph, which would surface in `build` as a dangling
+        endpoint rather than as the missing-node bug it actually is.
+
+        Evidence is line 1: the file's own existence is the claim.
+        """
+        return Node(
+            id=f.path,
+            kind=NodeKind.MODULE,
+            label=f.path.rsplit("/", 1)[-1],
+            qualified_name=f.path,
+            evidence=(Evidence(f.path, 1, 1),),
+            lang=f.lang,
+            producer=f"{f.lang}.module",
         )
 
     def _nodes_for(self, f: FileFacts) -> list[Node]:
@@ -475,6 +534,8 @@ class Resolver:
 
 
 def resolve(
-    facts: Sequence[FileFacts], declared_deps: frozenset[str] = frozenset()
+    facts: Sequence[FileFacts],
+    declared_deps: frozenset[str] = frozenset(),
+    source_roots: Sequence[str] = (),
 ) -> ExtractResult:
-    return Resolver(facts, declared_deps).run()
+    return Resolver(facts, declared_deps, source_roots).run()
