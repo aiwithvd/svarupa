@@ -33,6 +33,9 @@ dependencies = [
   "tree-sitter-typescript==0.23.2",
   "networkx>=3.2,<4",
   "PyYAML>=6,<7",
+  # MPL-2.0: file-level copyleft, so as an unmodified dependency it imposes
+  # nothing on our license and does not foreclose the license revisit.
+  "pathspec>=0.12,<2",
 ]
 
 [project.optional-dependencies]
@@ -68,6 +71,8 @@ include = ["svarupa"]
 pythonVersion = "3.10"
 typeCheckingMode = "strict"
 reportMissingTypeStubs = false
+venvPath = "."
+venv = ".venv"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

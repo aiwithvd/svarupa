@@ -90,14 +90,13 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --dev
-      - name: render canonical corpus
-        run: |
-          uv run python -c "
-          import sys; sys.path.insert(0, '.')
-          from tests.test_determinism import render
-          import pathlib
-          pathlib.Path('lockfile.out').write_text(render())
-          "
+      # Builds from a real fixture tree on disk, not an in-memory string.
+      # An in-memory corpus is pure str manipulation and can essentially never
+      # differ across platforms, so it verified the serializer's determinism
+      # rather than the product's. NFD paths, dirent ordering and
+      # case-insensitive volumes only enter through an actual filesystem walk.
+      - name: build from a real fixture tree
+        run: uv run python scripts/render_fixture_lock.py lockfile.out
       - name: hash
         run: |
           python3 -c "

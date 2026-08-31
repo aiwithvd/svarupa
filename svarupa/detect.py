@@ -1,0 +1,548 @@
+"""Stage 1: walk the tree, classify what we find.
+
+Everything downstream inherits this stage's determinism. If the file set or its
+ordering varies between machines, the lockfile varies, every pull request shows
+architecture changes that did not happen, and the CI pillar is worthless.
+
+Three properties this stage must hold:
+
+1. **One code path.** We never shell out to ``git ls-files``, tempting as it is.
+   Output would then depend on whether git is installed and which version, so
+   the same commit could produce two different lockfiles. Ignore handling is
+   implemented in-process against the same rules everywhere.
+2. **NFC at the boundary.** Nothing downstream ever sees a non-normalized path.
+3. **Explicit ordering.** Directory entries are sorted by codepoint before
+   recursion. ``os.scandir`` order is filesystem-dependent and is never trusted.
+
+Test, generated, and vendored code is classified but **excluded from
+architecture derivation and the lockfile**. On a typical repository it is
+30-50% of files and imports everything, which would wreck module layering and
+bury the real structure.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import os
+import re
+import unicodedata
+from collections.abc import Iterable, Sequence
+from dataclasses import dataclass, field
+from enum import Enum
+from pathlib import Path
+from typing import Any
+
+import pathspec  # pyright: ignore[reportMissingTypeStubs]
+
+from svarupa.diagnostics import Diagnostic, Severity
+from svarupa.model import norm_path
+
+__all__ = [
+    "DEFAULT_EXCLUDES",
+    "FileRec",
+    "FileRole",
+    "Scan",
+    "ScanLimits",
+    "Workspace",
+    "detect",
+]
+
+# --------------------------------------------------------------------------
+# Classification tables
+# --------------------------------------------------------------------------
+
+LANG_BY_EXT: dict[str, str] = {
+    ".py": "python",
+    ".pyi": "python",
+    ".ts": "typescript",
+    ".tsx": "typescript",
+    ".mts": "typescript",
+    ".cts": "typescript",
+    ".js": "javascript",
+    ".jsx": "javascript",
+    ".mjs": "javascript",
+    ".cjs": "javascript",
+    ".go": "go",
+    ".rs": "rust",
+    ".java": "java",
+    ".sql": "sql",
+}
+
+# Structured files where architecture actually lives. These parse
+# deterministically and are pure signal: compose tells you the service
+# topology, OpenAPI the API surface, SQL the data model.
+CONFIG_NAMES: dict[str, str] = {
+    "docker-compose.yml": "compose",
+    "docker-compose.yaml": "compose",
+    "compose.yml": "compose",
+    "compose.yaml": "compose",
+    "package.json": "manifest-npm",
+    "pyproject.toml": "manifest-python",
+    "go.mod": "manifest-go",
+    "Cargo.toml": "manifest-cargo",
+    "pom.xml": "manifest-maven",
+    "requirements.txt": "manifest-python",
+    "pnpm-workspace.yaml": "workspace-pnpm",
+    "go.work": "workspace-go",
+}
+CONFIG_GLOBS: tuple[tuple[str, str], ...] = (
+    (r"^openapi\.(ya?ml|json)$", "openapi"),
+    (r"^swagger\.(ya?ml|json)$", "openapi"),
+    (r".*\.tf$", "terraform"),
+    (r"^\.github/workflows/.*\.ya?ml$", "ci-github"),
+    (r"^\.gitlab-ci\.ya?ml$", "ci-gitlab"),
+)
+
+# Directories never walked at all: huge, uncommitted, and zero architectural
+# signal. Skipped before recursion, so a large node_modules costs nothing.
+#
+# `vendor/` is deliberately NOT here. It is committed source that a user may
+# legitimately ask about, so it is walked and classified VENDORED: present in
+# the graph, excluded from architecture and the lockfile. Hard-excluding it
+# while also defining a VENDORED role would have made that role unreachable.
+DEFAULT_EXCLUDES: frozenset[str] = frozenset(
+    {
+        ".git",
+        ".hg",
+        ".svn",
+        ".venv",
+        "venv",
+        "env",
+        "node_modules",
+        "__pycache__",
+        ".mypy_cache",
+        ".pytest_cache",
+        ".ruff_cache",
+        ".tox",
+        "dist",
+        "build",
+        "out",
+        "target",
+        ".next",
+        ".nuxt",
+        ".svelte-kit",
+        ".terraform",
+        ".gradle",
+        ".idea",
+        ".vscode",
+        "site-packages",
+        ".turbo",
+        "coverage",
+        ".coverage",
+        "htmlcov",
+        ".cache",
+        ".parcel-cache",
+    }
+)
+
+_TEST_DIR_NAMES = frozenset(
+    {"test", "tests", "__tests__", "spec", "specs", "e2e", "testing", "fixtures"}
+)
+_TEST_FILE_RE = re.compile(
+    r"(^test_|_test\.|\.test\.|\.spec\.|_spec\.|^conftest\.py$|Test\.java$|Tests\.java$)"
+)
+_GENERATED_RE = re.compile(
+    r"(_pb2\.pyi?$|_pb2_grpc\.py$|\.pb\.go$|_generated\.|\.generated\.|"
+    r"\.g\.dart$|_gen\.go$|\.designer\.cs$)"
+)
+_GENERATED_DIRS = frozenset({"__generated__", "generated", "gen", "migrations", "protogen"})
+_VENDOR_DIRS = frozenset({"vendor", "third_party", "thirdparty", "external", "extern"})
+
+# A generated file often says so in its first lines. Cheap and high precision.
+_GENERATED_BANNER = re.compile(
+    rb"(@generated|DO NOT EDIT|Code generated by|autogenerated|@auto-generated)",
+    re.IGNORECASE,
+)
+_BANNER_BYTES = 2048
+
+
+class FileRole(str, Enum):
+    SOURCE = "source"
+    TEST = "test"
+    GENERATED = "generated"
+    VENDORED = "vendored"
+    CONFIG = "config"
+
+    @property
+    def in_architecture(self) -> bool:
+        """Whether this role feeds architecture derivation and the lockfile.
+
+        Test, generated, and vendored files stay in the graph so a user can
+        still ask about them, but they never shape the architecture picture.
+        """
+        return self in (FileRole.SOURCE, FileRole.CONFIG)
+
+
+@dataclass(frozen=True, order=True, slots=True)
+class FileRec:
+    path: str
+    role: FileRole
+    lang: str | None
+    config_kind: str | None
+    size: int
+    content_hash: str
+
+    @property
+    def in_architecture(self) -> bool:
+        return self.role.in_architecture
+
+
+@dataclass(frozen=True, order=True, slots=True)
+class Workspace:
+    """A declared workspace member.
+
+    This is the source of structural module identity, which is what the
+    lockfile is keyed on. Communities are never used for identity because they
+    are chaotically sensitive to input perturbation; a declared workspace
+    member changes only when a human moves it.
+    """
+
+    kind: str
+    root: str
+    manifest: str
+
+
+@dataclass(frozen=True, slots=True)
+class ScanLimits:
+    max_file_bytes: int = 2_000_000
+    max_files: int = 200_000
+    max_depth: int = 40
+
+
+@dataclass(frozen=True, slots=True)
+class Scan:
+    root: Path
+    files: tuple[FileRec, ...]
+    workspaces: tuple[Workspace, ...]
+    diagnostics: tuple[Diagnostic, ...] = ()
+    skipped: tuple[tuple[str, int], ...] = ()
+
+    def by_role(self, role: FileRole) -> tuple[FileRec, ...]:
+        return tuple(f for f in self.files if f.role is role)
+
+    @property
+    def architecture_files(self) -> tuple[FileRec, ...]:
+        return tuple(f for f in self.files if f.in_architecture)
+
+    def languages(self) -> tuple[tuple[str, int], ...]:
+        counts: dict[str, int] = {}
+        for f in self.files:
+            if f.lang:
+                counts[f.lang] = counts.get(f.lang, 0) + 1
+        return tuple(sorted(counts.items()))
+
+
+# --------------------------------------------------------------------------
+# Ignore handling
+# --------------------------------------------------------------------------
+
+
+class _Ignore:
+    """gitignore-style matching, implemented in-process.
+
+    Deliberately not ``git check-ignore``: shelling out would make the file set
+    depend on whether git is installed and on its version, so the same commit
+    could yield two different lockfiles on two machines.
+    """
+
+    __slots__ = ("_spec",)
+
+    def __init__(self, patterns: Sequence[str]) -> None:
+        # pathspec ships no type stubs, so the boundary is explicitly Any and
+        # narrowed to bool at the single call site below.
+        self._spec: Any = None
+        if not patterns:
+            return
+        # pathspec 1.x renamed "gitwildmatch" to "gitignore" and deprecated the
+        # old name. Try the new one first so we do not emit warnings, and fall
+        # back so the supported version range keeps working.
+        for style in ("gitignore", "gitwildmatch"):
+            try:
+                self._spec = pathspec.PathSpec.from_lines(  # pyright: ignore[reportUnknownMemberType]
+                    style, patterns
+                )
+                return
+            except (KeyError, ValueError, LookupError):
+                continue
+
+    def matches(self, rel: str, is_dir: bool) -> bool:
+        if self._spec is None:
+            return False
+        probe = rel + "/" if is_dir else rel
+        return bool(self._spec.match_file(probe))
+
+
+def _read_ignore_files(root: Path) -> list[str]:
+    patterns: list[str] = []
+    for name in (".gitignore", ".svarupaignore"):
+        p = root / name
+        if not p.is_file():
+            continue
+        try:
+            text = p.read_text(encoding="utf8", errors="replace")
+        except OSError:
+            continue
+        patterns.extend(
+            ln.strip() for ln in text.splitlines() if ln.strip() and not ln.startswith("#")
+        )
+    return patterns
+
+
+# --------------------------------------------------------------------------
+# Classification
+# --------------------------------------------------------------------------
+
+
+def _config_kind(rel: str, name: str) -> str | None:
+    if (kind := CONFIG_NAMES.get(name)) is not None:
+        return kind
+    for pattern, kind in CONFIG_GLOBS:
+        if re.match(pattern, rel) or re.match(pattern, name):
+            return kind
+    return None
+
+
+def _looks_generated(full: Path) -> bool:
+    try:
+        with full.open("rb") as fh:
+            return bool(_GENERATED_BANNER.search(fh.read(_BANNER_BYTES)))
+    except OSError:
+        return False
+
+
+def classify(rel: str, full: Path, lang: str | None, config_kind: str | None) -> FileRole:
+    parts = rel.split("/")
+    dirs, name = parts[:-1], parts[-1]
+
+    if any(d in _VENDOR_DIRS for d in dirs):
+        return FileRole.VENDORED
+    if any(d in _GENERATED_DIRS for d in dirs) or _GENERATED_RE.search(name):
+        return FileRole.GENERATED
+    if any(d in _TEST_DIR_NAMES for d in dirs) or _TEST_FILE_RE.search(name):
+        return FileRole.TEST
+    if config_kind is not None:
+        return FileRole.CONFIG
+    if lang is not None and _looks_generated(full):
+        return FileRole.GENERATED
+    return FileRole.SOURCE
+
+
+# --------------------------------------------------------------------------
+# Workspace detection
+# --------------------------------------------------------------------------
+
+
+def _detect_workspaces(root: Path, files: Iterable[FileRec]) -> list[Workspace]:
+    """Find declared workspace roots.
+
+    Only the manifests are read; member globs are resolved in `build`, where
+    the full file list is already indexed. Detecting the *roots* here is what
+    lets module identity follow what developers declared.
+    """
+    found: list[Workspace] = []
+    paths = {f.path for f in files}
+
+    markers: tuple[tuple[str, str], ...] = (
+        ("pnpm-workspace.yaml", "pnpm"),
+        ("go.work", "go"),
+    )
+    for name, kind in markers:
+        for p in sorted(paths):
+            if p == name or p.endswith("/" + name):
+                found.append(Workspace(kind, norm_path(str(Path(p).parent)), p))
+
+    for p in sorted(paths):
+        base = Path(p).name
+        parent = norm_path(str(Path(p).parent))
+        try:
+            text = (root / p).read_text(encoding="utf8", errors="replace")
+        except OSError:
+            continue
+        if base == "package.json" and '"workspaces"' in text:
+            found.append(Workspace("npm", parent, p))
+        elif base == "Cargo.toml" and "[workspace]" in text:
+            found.append(Workspace("cargo", parent, p))
+        elif base == "pyproject.toml" and (
+            "[tool.uv.workspace]" in text or "[tool.poetry.group" in text
+        ):
+            found.append(Workspace("python", parent, p))
+
+    return sorted(set(found))
+
+
+# --------------------------------------------------------------------------
+# The walk
+# --------------------------------------------------------------------------
+
+
+def _empty_counts() -> dict[str, int]:
+    return {}
+
+
+@dataclass
+class _Counter:
+    counts: dict[str, int] = field(default_factory=_empty_counts)
+
+    def hit(self, reason: str) -> None:
+        self.counts[reason] = self.counts.get(reason, 0) + 1
+
+    def frozen(self) -> tuple[tuple[str, int], ...]:
+        return tuple(sorted(self.counts.items()))
+
+
+def detect(root: str | Path, limits: ScanLimits | None = None) -> Scan:
+    """Walk `root` and classify every file.
+
+    Deterministic: entries are sorted by codepoint before recursion, so
+    filesystem dirent order never leaks into the result.
+    """
+    limits = limits or ScanLimits()
+    root_path = Path(root).resolve()
+    real_root = os.path.realpath(root_path)
+    ignore = _Ignore(_read_ignore_files(root_path))
+
+    files: list[FileRec] = []
+    diags: list[Diagnostic] = []
+    skipped = _Counter()
+
+    def walk(directory: Path, rel_dir: str, depth: int) -> None:
+        if depth > limits.max_depth:
+            skipped.hit("max-depth")
+            diags.append(
+                Diagnostic(
+                    code="SVA-D-004",
+                    severity=Severity.WARNING,
+                    message=f"directory nesting exceeded {limits.max_depth}; not descending",
+                    subject=rel_dir or ".",
+                )
+            )
+            return
+        try:
+            entries = sorted(os.scandir(directory), key=lambda e: e.name)
+        except OSError as exc:
+            skipped.hit("unreadable-dir")
+            diags.append(
+                Diagnostic(
+                    code="SVA-D-005",
+                    severity=Severity.WARNING,
+                    message=f"could not read directory: {exc.strerror}",
+                    subject=rel_dir or ".",
+                )
+            )
+            return
+
+        for entry in entries:
+            name = unicodedata.normalize("NFC", entry.name)
+            rel = f"{rel_dir}/{name}" if rel_dir else name
+
+            if entry.is_symlink():
+                # Never followed. A symlink into the tree would double-count
+                # files; one pointing outside would pull in code that is not
+                # part of this repository at all.
+                target = os.path.realpath(entry.path)
+                if not (target == real_root or target.startswith(real_root + os.sep)):
+                    diags.append(
+                        Diagnostic(
+                            code="SVA-D-001",
+                            severity=Severity.WARNING,
+                            message="symlink points outside the repository; not followed",
+                            subject=rel,
+                            location=target,
+                        )
+                    )
+                skipped.hit("symlink")
+                continue
+
+            try:
+                is_dir = entry.is_dir()
+            except OSError:
+                skipped.hit("unreadable-entry")
+                continue
+
+            if is_dir:
+                if name in DEFAULT_EXCLUDES:
+                    skipped.hit(f"excluded-dir:{name}")
+                    continue
+                if ignore.matches(rel, is_dir=True):
+                    skipped.hit("ignored")
+                    continue
+                walk(Path(entry.path), rel, depth + 1)
+                continue
+
+            if ignore.matches(rel, is_dir=False):
+                skipped.hit("ignored")
+                continue
+
+            lang = LANG_BY_EXT.get(Path(name).suffix)
+            config_kind = _config_kind(rel, name)
+            if lang is None and config_kind is None:
+                skipped.hit("unrecognized-type")
+                continue
+
+            try:
+                size = entry.stat(follow_symlinks=False).st_size
+            except OSError:
+                skipped.hit("unreadable-entry")
+                continue
+            if size > limits.max_file_bytes:
+                skipped.hit("too-large")
+                diags.append(
+                    Diagnostic(
+                        code="SVA-D-002",
+                        severity=Severity.INFO,
+                        message=(
+                            f"file is {size} bytes, over the "
+                            f"{limits.max_file_bytes} limit; skipped"
+                        ),
+                        subject=rel,
+                    )
+                )
+                continue
+
+            if len(files) >= limits.max_files:
+                skipped.hit("max-files")
+                continue
+
+            full = Path(entry.path)
+            role = classify(rel, full, lang, config_kind)
+            try:
+                digest = hashlib.sha256(full.read_bytes()).hexdigest()
+            except OSError:
+                skipped.hit("unreadable-entry")
+                continue
+
+            files.append(
+                FileRec(
+                    path=rel,
+                    role=role,
+                    lang=lang,
+                    config_kind=config_kind,
+                    size=size,
+                    content_hash=digest,
+                )
+            )
+
+    walk(root_path, "", 0)
+
+    if len(files) >= limits.max_files:
+        diags.append(
+            Diagnostic(
+                code="SVA-D-003",
+                severity=Severity.WARNING,
+                message=(
+                    f"hit the {limits.max_files} file limit; the scan is incomplete "
+                    "and results will be partial"
+                ),
+                subject=str(root_path),
+                suggested_fixes=("Narrow the scan with .svarupaignore, or raise max_files.",),
+            )
+        )
+
+    ordered = tuple(sorted(files))
+    return Scan(
+        root=root_path,
+        files=ordered,
+        workspaces=tuple(_detect_workspaces(root_path, ordered)),
+        diagnostics=tuple(diags),
+        skipped=skipped.frozen(),
+    )
