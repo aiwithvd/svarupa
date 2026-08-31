@@ -6,7 +6,9 @@ import argparse
 import sys
 
 from svarupa import __version__
+from svarupa.build import build
 from svarupa.detect import FileRole, ScanLimits, detect
+from svarupa.extract import declared_dependencies, extract
 
 
 def _scan(path: str, max_files: int) -> int:
@@ -46,8 +48,27 @@ def _scan(path: str, max_files: int) -> int:
             print(f"    ... and {len(scan.diagnostics) - 10} more")
 
     print()
-    print("Next: extraction (P1-2) is not implemented yet.")
-    return 1 if errors else 0
+    graph = build(scan, extract(scan, declared_dependencies(scan)), strict=False)
+    print(
+        f"  graph: {len(graph.nodes)} nodes, {len(graph.edges)} edges, "
+        f"{len(graph.modules)} modules, {len(graph.module_deps)} module deps"
+    )
+    print()
+    print(graph.scorecard.render())
+    for (lang, kind), samples in sorted(graph.scorecard.samples.items()):
+        if samples:
+            print(f"  {lang}/{kind} unresolved e.g. " + ", ".join(samples[:5]))
+
+    graph_errors = graph.errors
+    if graph_errors:
+        print()
+        print(f"  {len(graph_errors)} graph integrity error(s)")
+        for d in graph_errors[:5]:
+            print("   " + d.render())
+
+    print()
+    print("Next: clustering and derivation (P1-4, P1-5) are not implemented yet.")
+    return 1 if errors or graph_errors else 0
 
 
 def main(argv: list[str] | None = None) -> int:
