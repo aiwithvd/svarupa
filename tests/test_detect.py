@@ -9,12 +9,15 @@ NFD paths, symlinks, and size caps actually enter.
 from __future__ import annotations
 
 import os
+import shutil
+import subprocess
 import unicodedata
 from pathlib import Path
 
 import pytest
 
 from svarupa.detect import FileRole, ScanLimits, detect
+from svarupa.lock import collision_check
 
 
 def write(root: Path, rel: str, text: str = "x = 1\n") -> Path:
@@ -351,19 +354,289 @@ def test_visit_order_is_normalized_before_sorting(tmp_path: Path) -> None:
     assert kept_a == kept_b, "capped scan kept different files depending on NFD vs NFC"
 
 
-def test_case_collision_is_diagnosed(tmp_path: Path) -> None:
-    """Two directories on Linux, one file on a case-insensitive volume.
+def test_collision_detection_runs_per_sibling_set_on_raw_names() -> None:
+    """Platform-independent, unlike the version this replaces.
 
-    On macOS the second write lands in the same directory, so there is nothing
-    to collide and the test skips. On Linux it is a genuine collision that must
-    be diagnosed rather than silently merged into one lockfile key.
+    That one built two directories on disk and asserted a diagnostic. It
+    skipped on case-insensitive APFS -- the only platform it was ever run on --
+    and failed on every Linux CI job, because `collision_check` was being given
+    whole paths whose parent components had already been normalized. Two
+    colliding sibling directories with differently-named children never share
+    a path key, so nothing was ever detected.
+
+    Detection is component-wise on raw sibling names, so it is testable without
+    needing a filesystem that can hold both spellings.
     """
+    nfd = unicodedata.normalize("NFD", "café")
+    nfc = unicodedata.normalize("NFC", "café")
+
+    assert [d.code for d in collision_check(["Utils", "utils"])] == ["SVA-L-007"]
+    assert [d.code for d in collision_check([nfd, nfc])] == ["SVA-L-007"]
+    assert collision_check(["api", "auth", "billing"]) == []
+
+
+def test_case_collision_is_diagnosed_on_disk(tmp_path: Path) -> None:
+    """The on-disk leg. Skips where the filesystem cannot represent it."""
     r = tmp_path / "repo"
     r.mkdir()
     write(r, "src/Utils/a.py")
     write(r, "src/utils/b.py")
     if len({p.name for p in (r / "src").iterdir()}) < 2:
-        pytest.skip("case-insensitive filesystem; the two paths are one directory here")
+        pytest.skip("case-insensitive filesystem; both paths are one directory here")
 
     codes = {d.code for d in detect(r).diagnostics}
     assert "SVA-L-007" in codes, "case collision must be diagnosed, never silently merged"
+
+
+# --------------------------------------------------------------------------
+# Regressions from review #3
+# --------------------------------------------------------------------------
+
+
+def test_exact_file_count_is_not_reported_as_truncated(tmp_path: Path) -> None:
+    """A repo with exactly max_files files is a COMPLETE scan.
+
+    The diagnostic used to restate the pre-append condition rather than check
+    whether anything was actually dropped, so it claimed a partial scan on a
+    complete one. A tool whose pitch is verified claims must not make a false
+    claim about its own scan.
+    """
+    r = tmp_path / "repo"
+    r.mkdir()
+    for n in "abc":
+        write(r, f"src/{n}.py")
+    scan = detect(r, ScanLimits(max_files=3))
+    assert len(scan.files) == 3
+    assert "SVA-D-003" not in {d.code for d in scan.diagnostics}
+
+
+def test_one_bad_ignore_pattern_does_not_disable_the_rest(tmp_path: Path) -> None:
+    """Compiling the whole list at once meant a typo dropped every pattern.
+
+    pathspec raises for a trailing backslash or a bare "!". The old code caught
+    it, left the spec None, and silently ignored nothing at all -- letting
+    ignored files, possibly secrets, into the graph with no diagnostic.
+    """
+    r = tmp_path / "repo"
+    r.mkdir()
+    write(r, "src/a.py")
+    write(r, "secret/token.py")
+    (r / ".gitignore").write_text("secret/\nfoo\\\n")
+
+    scan = detect(r)
+    paths = {f.path for f in scan.files}
+    assert "secret/token.py" not in paths, "a valid pattern must still apply"
+    assert "src/a.py" in paths
+    assert "SVA-D-006" in {d.code for d in scan.diagnostics}, "the bad line must be reported"
+
+
+@pytest.mark.parametrize(
+    ("manifest", "content"),
+    [
+        (
+            "pyproject.toml",
+            "[tool.poetry]\nname='x'\n[tool.poetry.group.dev.dependencies]\np='*'\n",
+        ),
+        ("Cargo.toml", "# we moved [workspace] to the parent\n[package]\nname='x'\n"),
+        ("package.json", '{"name":"x","keywords":["workspaces","monorepo"]}'),
+    ],
+)
+def test_workspace_detection_does_not_false_positive(
+    tmp_path: Path, manifest: str, content: str
+) -> None:
+    """Manifests are parsed, never substring-matched.
+
+    Poetry dependency groups appear in essentially every modern Poetry project
+    and are not workspaces. A false workspace root becomes a false module
+    boundary, and module identity is what the lockfile is keyed on.
+    """
+    r = tmp_path / "repo"
+    r.mkdir()
+    write(r, "src/a.py")
+    (r / manifest).write_text(content)
+    assert detect(r).workspaces == ()
+
+
+@pytest.mark.parametrize(
+    ("manifest", "content", "kind"),
+    [
+        ("pyproject.toml", "[tool.uv.workspace]\nmembers=['pkgs/*']\n", "uv"),
+        ("Cargo.toml", "[workspace]\nmembers=['a']\n", "cargo"),
+        ("package.json", '{"name":"x","workspaces":["pkgs/*"]}', "npm"),
+    ],
+)
+def test_real_workspaces_are_still_detected(
+    tmp_path: Path, manifest: str, content: str, kind: str
+) -> None:
+    r = tmp_path / "repo"
+    r.mkdir()
+    write(r, "src/a.py")
+    (r / manifest).write_text(content)
+    assert {w.kind for w in detect(r).workspaces} == {kind}
+
+
+@pytest.mark.parametrize(
+    ("name", "body"),
+    [
+        ("cleanup.py", "# remove autogenerated artifacts from dist/\nx = 1\n"),
+        ("lint.py", '"""Checks that files marked DO NOT EDIT are untouched."""\nx = 1\n'),
+    ],
+)
+def test_files_that_merely_mention_generation_are_not_generated(
+    tmp_path: Path, name: str, body: str
+) -> None:
+    """Banner sniffing matched anywhere in the first 2KB, case-insensitively.
+
+    Any tooling script that talks *about* generated files silently vanished
+    from architecture.
+    """
+    r = tmp_path / "repo"
+    r.mkdir()
+    write(r, f"scripts/{name}", body)
+    roles = {f.path: f.role for f in detect(r).files}
+    assert roles[f"scripts/{name}"] is FileRole.SOURCE
+
+
+@pytest.mark.parametrize(
+    "banner",
+    [
+        "// Code generated by protoc-gen-go. DO NOT EDIT.\n",
+        "# @generated by thing\n",
+        "# DO NOT EDIT\n",
+    ],
+)
+def test_real_banners_are_still_caught(tmp_path: Path, banner: str) -> None:
+    r = tmp_path / "repo"
+    r.mkdir()
+    write(r, "src/thing.py", banner + "x = 1\n")
+    roles = {f.path: f.role for f in detect(r).files}
+    assert roles["src/thing.py"] is FileRole.GENERATED
+
+
+def test_fixtures_is_a_domain_noun_not_a_test_marker(tmp_path: Path) -> None:
+    """A sports app has fixtures. A data pipeline has fixtures."""
+    r = tmp_path / "repo"
+    r.mkdir()
+    write(r, "src/fixtures/loader.py")
+    write(r, "tests/fixtures/sample.py")
+    roles = {f.path: f.role for f in detect(r).files}
+    assert roles["src/fixtures/loader.py"] is FileRole.SOURCE
+    assert roles["tests/fixtures/sample.py"] is FileRole.TEST, "still caught under tests/"
+
+
+def test_sql_migrations_stay_in_architecture(tmp_path: Path) -> None:
+    """Django and Alembic migrations are often the only DDL in the repo.
+
+    Design 4.3 names *.sql the ERD source of truth, so excluding them as
+    generated would make the ERD deriver honestly return None for a codebase
+    that has a complete schema.
+    """
+    r = tmp_path / "repo"
+    r.mkdir()
+    write(r, "db/migrations/001_init.sql", "CREATE TABLE t (id int);\n")
+    write(r, "db/migrations/0002_auto.py", "x = 1\n")
+    roles = {f.path: f.role for f in detect(r).files}
+    assert roles["db/migrations/001_init.sql"] is FileRole.CONFIG
+    assert roles["db/migrations/0002_auto.py"] is FileRole.GENERATED
+
+
+# --------------------------------------------------------------------------
+# git parity oracle
+#
+# Review #3's riskiest remaining assumption: "in-process pathspec matching over
+# a root-only pattern list reproduces git's view of the repository."
+#
+# The production rule against shelling out to git is correct -- the file set
+# must not depend on whether git is installed. But nothing stops the TEST suite
+# from using `git ls-files` as an oracle, which is the only way that claim gets
+# weighed at all.
+# --------------------------------------------------------------------------
+
+
+def _git(repo: Path, *args: str) -> str:
+    return subprocess.run(
+        ["git", *args], cwd=repo, capture_output=True, text=True, check=True
+    ).stdout
+
+
+def _git_visible(repo: Path) -> set[str]:
+    """What git considers part of the repo: tracked plus untracked-not-ignored."""
+    out = _git(
+        repo,
+        "-c",
+        "core.quotepath=false",
+        "ls-files",
+        "-z",
+        "--cached",
+        "--others",
+        "--exclude-standard",
+    )
+    return {p for p in out.split("\0") if p}
+
+
+@pytest.fixture
+def git_repo(tmp_path: Path) -> Path:
+    if not shutil.which("git"):
+        pytest.skip("git unavailable")
+    r = tmp_path / "repo"
+    r.mkdir()
+    _git(r, "init", "-q")
+    _git(r, "config", "user.email", "t@t.t")
+    _git(r, "config", "user.name", "t")
+    return r
+
+
+def test_matches_git_on_root_patterns_and_file_negation(git_repo: Path) -> None:
+    write(git_repo, "src/a.py")
+    write(git_repo, "src/b.py")
+    write(git_repo, "build/out.py")
+    write(git_repo, "tools/helper.py")
+    (git_repo / ".gitignore").write_text("build/\ntools/*.py\n!tools/helper.py\n")
+
+    ours = {f.path for f in detect(git_repo).files}
+    theirs = {p for p in _git_visible(git_repo) if p.endswith(".py")}
+    assert ours == theirs, (
+        f"diverged from git: only-ours={ours - theirs} only-git={theirs - ours}"
+    )
+
+
+@pytest.mark.xfail(
+    reason=(
+        "pathspec diverges from git on directory negation. Given '*.py' then "
+        "'!keep/', git still ignores keep/important.py, because un-ignoring a "
+        "directory does not un-ignore files inside it that another pattern "
+        "matches. pathspec reports it visible. Verified against real git "
+        "check-ignore. Strict, so this goes red if pathspec ever changes."
+    ),
+    strict=True,
+)
+def test_pathspec_diverges_from_git_on_directory_negation(git_repo: Path) -> None:
+    write(git_repo, "src/a.py")
+    write(git_repo, "keep/important.py")
+    (git_repo / ".gitignore").write_text("*.py\n!src/*.py\n!keep/\n")
+
+    ours = {f.path for f in detect(git_repo).files}
+    theirs = {p for p in _git_visible(git_repo) if p.endswith(".py")}
+    assert ours == theirs
+
+
+@pytest.mark.xfail(
+    reason="nested .gitignore files are not yet honoured (review #3 F5); "
+    "this oracle documents the exact divergence rather than hiding it",
+    strict=True,
+)
+def test_matches_git_on_nested_gitignore(git_repo: Path) -> None:
+    """Real repos carry per-directory .gitignore files.
+
+    git applies each relative to its own directory. We read only the root pair,
+    so files git ignores currently enter the graph. Marked strict-xfail so it
+    turns red the moment F5 is fixed and this becomes a passing guarantee.
+    """
+    write(git_repo, "src/a.py")
+    write(git_repo, "src/nested/keepme.py")
+    write(git_repo, "src/nested/skipme.py")
+    (git_repo / "src" / "nested" / ".gitignore").write_text("skipme.py\n")
+
+    ours = {f.path for f in detect(git_repo).files}
+    theirs = {p for p in _git_visible(git_repo) if p.endswith(".py")}
+    assert ours == theirs
