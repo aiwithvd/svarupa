@@ -197,6 +197,10 @@ class FileRec:
     config_kind: str | None
     size: int
     content_hash: str
+    # Captured here because the bytes are already in hand for hashing. `build`
+    # uses it to verify that every evidence range points at a line that
+    # actually exists, which is the difference between a claim and a promise.
+    line_count: int = 0
 
     @property
     def in_architecture(self) -> bool:
@@ -337,6 +341,19 @@ def _config_kind(rel: str, name: str) -> str | None:
         if re.match(pattern, rel) or re.match(pattern, name):
             return kind
     return None
+
+
+def _line_count(data: bytes) -> int:
+    """Lines in a file, floored at one.
+
+    An empty file has no content, but it does have a line 1: that is where an
+    editor puts the cursor, and it is the conventional way to point at a file
+    rather than at something inside it. Module nodes are evidenced there, and
+    an empty `__init__.py` is extremely common.
+    """
+    if not data:
+        return 1
+    return data.count(b"\n") + (0 if data.endswith(b"\n") else 1)
 
 
 def _looks_generated(data: bytes) -> bool:
@@ -674,6 +691,7 @@ def detect(root: str | Path, limits: ScanLimits | None = None) -> Scan:
                     config_kind=config_kind,
                     size=len(data),
                     content_hash=hashlib.sha256(data).hexdigest(),
+                    line_count=_line_count(data),
                 )
             )
 

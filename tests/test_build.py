@@ -64,6 +64,18 @@ def result(nodes: list[Node], edges: list[Edge]) -> ExtractResult:
 
 
 def scan_of(root: Path):
+    """Scan a tree that actually contains the files the fixtures cite.
+
+    Build now verifies that every evidence range exists in a scanned file, so
+    a fixture asserting evidence at `src/a.py:7` has to put seven lines there.
+    That is the point: evidence naming a file nobody scanned, or a line past
+    its end, is an extractor bug the graph should refuse.
+    """
+    for name in ("a", "b", "nowhere"):
+        f = root / "src" / f"{name}.py"
+        if not f.exists():
+            f.parent.mkdir(parents=True, exist_ok=True)
+            f.write_text("x = 1\n" * 12, encoding="utf8")
     return detect(root)
 
 
@@ -356,3 +368,62 @@ def test_module_records_are_canonically_ordered(tmp_path: Path) -> None:
     recs = module_records(full(tmp_path))
     ids = [mid for mid, _ in recs]
     assert ids == sorted(ids)
+
+
+# --------------------------------------------------------------------------
+# Evidence must point at a line that exists
+# --------------------------------------------------------------------------
+
+
+def test_evidence_past_the_end_of_the_file_is_rejected(tmp_path: Path) -> None:
+    """A well-formed range is not the same as a real one.
+
+    Line 9999 of a one-line file passes every structural check and still sends
+    a reader nowhere. Design 12 lists this as a property test, and it was the
+    one contract build claimed but did not enforce.
+    """
+    write(tmp_path, "src/tiny.py", "x = 1\n")
+    n = node("src/tiny.py#ghost", evidence=(Evidence("src/tiny.py", 9999, 9999),))
+    with pytest.raises(DiagnosticError) as exc:
+        build(detect(tmp_path), result([n], []))
+    assert exc.value.diagnostic.code == "SVA-B-006"
+
+
+def test_evidence_naming_an_unscanned_file_is_rejected(tmp_path: Path) -> None:
+    write(tmp_path, "src/real.py", "x = 1\n")
+    n = node("src/ghost.py#x", evidence=(Evidence("src/ghost.py", 1, 1),))
+    with pytest.raises(DiagnosticError) as exc:
+        build(detect(tmp_path), result([n], []))
+    assert exc.value.diagnostic.code == "SVA-B-005"
+
+
+def test_an_empty_file_still_has_line_one(tmp_path: Path) -> None:
+    """An empty `__init__.py` is extremely common, and its module node is
+    evidenced at line 1: that is where an editor puts the cursor, and the
+    conventional way to point at a file rather than into it."""
+    write(tmp_path, "src/__init__.py", "")
+    write(tmp_path, "src/mod.py", "x = 1\n")
+    g = full(tmp_path)  # strict; would raise if line 1 were out of range
+    assert "src/__init__.py" in g.nodes
+
+
+@pytest.mark.parametrize(
+    ("content", "expected"),
+    [("", 1), ("one\n", 1), ("one", 1), ("a\nb\n", 2), ("a\nb", 2), ("a\n\nb\n", 3)],
+)
+def test_line_count(content: str, expected: int) -> None:
+    from svarupa.detect import _line_count
+
+    assert _line_count(content.encode()) == expected
+
+
+def test_real_extraction_never_points_past_a_file_end(tmp_path: Path) -> None:
+    """The property design 12 asks for, run against real extraction."""
+    write(tmp_path, "src/__init__.py", "")
+    write(tmp_path, "src/a.py", "class A:\n    def m(self):\n        return helper()\n")
+    write(tmp_path, "src/b.py", "def helper():\n    return 1\n")
+    g = full(tmp_path)
+    counts = {rec.path: rec.line_count for rec in detect(tmp_path).files}
+    for el in (*g.nodes.values(), *g.edges):
+        for ev in el.evidence:
+            assert ev.end_line <= counts[ev.file], f"{el} cites {ev}"

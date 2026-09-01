@@ -85,12 +85,20 @@ class Graph:
         return tuple(d for d in self.diagnostics if d.severity is Severity.ERROR)
 
 
-def _verify_evidence(el: Node | Edge, subject: str) -> None:
+def _verify_evidence(
+    el: Node | Edge, subject: str, lines: Mapping[str, int] | None = None
+) -> None:
     """The independent re-check.
 
     Deliberately duplicates the constructor's work. Trusting the model here
     would mean the invariant holds only for elements that went through
     `__init__`, which is not something Python can guarantee.
+
+    When line counts are available it also verifies the range **exists in the
+    file**. A well-formed range is not the same as a real one: evidence
+    pointing at line 9999 of a ten-line file passes every structural check and
+    still sends a reader nowhere, which is precisely the failure the product
+    defines itself against.
     """
     if not el.evidence:
         raise MissingEvidenceError(type(el).__name__, subject, el.producer)
@@ -103,6 +111,34 @@ def _verify_evidence(el: Node | Edge, subject: str) -> None:
                     message="evidence range is not a valid source location",
                     subject=subject,
                     location=str(ev),
+                )
+            )
+        if lines is None:
+            continue
+        known = lines.get(ev.file)
+        if known is None:
+            raise DiagnosticError(
+                Diagnostic(
+                    code="SVA-B-005",
+                    severity=Severity.ERROR,
+                    message="evidence names a file that was never scanned",
+                    subject=subject,
+                    location=str(ev),
+                )
+            )
+        if ev.end_line > known:
+            raise DiagnosticError(
+                Diagnostic(
+                    code="SVA-B-006",
+                    severity=Severity.ERROR,
+                    message=(
+                        f"evidence points past the end of the file "
+                        f"({known} line{'s' if known != 1 else ''}); a reader "
+                        "clicking this would land nowhere"
+                    ),
+                    subject=subject,
+                    location=str(ev),
+                    suggested_fixes=("This is an extractor bug; please report it.",),
                 )
             )
 
@@ -312,10 +348,11 @@ def build(scan: Scan, extracted: ExtractResult, strict: bool = True) -> Graph:
     does not.
     """
     acc = _Acc()
+    lines = {rec.path: rec.line_count for rec in scan.files}
 
     # --- nodes: unique ids, evidence re-verified -------------------------
     for node in extracted.nodes:
-        _verify_evidence(node, node.id)
+        _verify_evidence(node, node.id, lines)
         existing = acc.nodes.get(node.id)
         if existing is None:
             acc.nodes[node.id] = node
@@ -340,7 +377,7 @@ def build(scan: Scan, extracted: ExtractResult, strict: bool = True) -> Graph:
     # --- edges: endpoints must exist, evidence re-verified ---------------
     kept: list[Edge] = []
     for edge in extracted.edges:
-        _verify_evidence(edge, f"{edge.src} -> {edge.dst}")
+        _verify_evidence(edge, f"{edge.src} -> {edge.dst}", lines)
         missing = [end for end in (edge.src, edge.dst) if end not in acc.nodes]
         if missing:
             diag = Diagnostic(
