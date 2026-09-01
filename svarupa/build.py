@@ -23,6 +23,7 @@ finding rather than invented here:
 from __future__ import annotations
 
 import json
+import posixpath
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -86,8 +87,18 @@ class Graph:
 
 
 def _verify_evidence(
-    el: Node | Edge, subject: str, lines: Mapping[str, int] | None = None
-) -> None:
+    el: Node | Edge,
+    subject: str,
+    lines: Mapping[str, int] | None = None,
+    strict: bool = True,
+    sink: list[Diagnostic] | None = None,
+) -> bool:
+    """Returns True if the element is usable.
+
+    In non-strict mode a problem is appended to `sink` and the element is
+    dropped, rather than aborting the run. One malformed extractor emission
+    should not disable an entire report.
+    """
     """The independent re-check.
 
     Deliberately duplicates the constructor's work. Trusting the model here
@@ -100,11 +111,29 @@ def _verify_evidence(
     still sends a reader nowhere, which is precisely the failure the product
     defines itself against.
     """
+
+    def fail(diag: Diagnostic) -> bool:
+        if strict:
+            raise DiagnosticError(diag)
+        if sink is not None:
+            sink.append(diag)
+        return False
+
     if not el.evidence:
-        raise MissingEvidenceError(type(el).__name__, subject, el.producer)
+        if strict:
+            raise MissingEvidenceError(type(el).__name__, subject, el.producer)
+        return fail(
+            Diagnostic(
+                code="SVA-B-007",
+                severity=Severity.ERROR,
+                message="element has no evidence",
+                subject=subject,
+                location=el.producer,
+            )
+        )
     for ev in el.evidence:
         if not ev.file or ev.start_line < 1 or ev.end_line < ev.start_line:
-            raise DiagnosticError(
+            return fail(
                 Diagnostic(
                     code="SVA-B-002",
                     severity=Severity.ERROR,
@@ -117,7 +146,7 @@ def _verify_evidence(
             continue
         known = lines.get(ev.file)
         if known is None:
-            raise DiagnosticError(
+            return fail(
                 Diagnostic(
                     code="SVA-B-005",
                     severity=Severity.ERROR,
@@ -127,7 +156,7 @@ def _verify_evidence(
                 )
             )
         if ev.end_line > known:
-            raise DiagnosticError(
+            return fail(
                 Diagnostic(
                     code="SVA-B-006",
                     severity=Severity.ERROR,
@@ -141,6 +170,7 @@ def _verify_evidence(
                     suggested_fixes=("This is an extractor bug; please report it.",),
                 )
             )
+    return True
 
 
 def _merge_edges(edges: Iterable[Edge]) -> tuple[tuple[Edge, ...], list[Diagnostic]]:
@@ -170,7 +200,14 @@ def _merge_edges(edges: Iterable[Edge]) -> tuple[tuple[Edge, ...], list[Diagnost
         # Prefer the least confident classification present.
         order = ["unresolved", "external", "candidate", "resolved"]
         chosen = min(resolutions, key=lambda r: order.index(r.value))
-        base = next(e for e in group if e.resolution is chosen)
+        # Deterministic base. Taking the first matching edge made the merged
+        # attrs, producer and confidence depend on extractor emission order,
+        # which is an implementation detail feeding a byte-identical lockfile.
+        candidates = sorted(
+            (e for e in group if e.resolution is chosen),
+            key=lambda e: (e.producer or "", e.confidence.value, e.attrs),
+        )
+        base = candidates[0]
 
         if len(resolutions) > 1:
             diags.append(
@@ -185,7 +222,23 @@ def _merge_edges(edges: Iterable[Edge]) -> tuple[tuple[Edge, ...], list[Diagnost
                 )
             )
 
-        attrs = dict(base.attrs)
+        # Attributes whose meaning is per-relationship need an explicit rule,
+        # not a copy from whichever edge happened to be base. `type_only` is
+        # the sharp case: one runtime site makes the whole relationship a
+        # runtime dependency, and mislabelling it would make impact analysis
+        # silently drop a real edge.
+        attrs: dict[str, str] = {}
+        for key in sorted({k for e in group for k, _ in e.attrs}):
+            values = {e.attr(key) for e in group}
+            values.discard(None)
+            if key == "type_only":
+                runtime = any(e.attr("type_only") != "true" for e in group)
+                if not runtime:
+                    attrs[key] = "true"
+            elif len(values) == 1:
+                attrs[key] = next(iter(values))  # type: ignore[arg-type]
+            else:
+                attrs[key] = ",".join(sorted(v for v in values if v))
         attrs["sites"] = str(len(evidence))
         out.append(
             Edge(
@@ -301,14 +354,55 @@ def _member_patterns(scan: Scan, manifest: str, kind: str) -> list[str]:
         return []
 
     if kind == "go":
-        out: list[str] = []
-        for line in text.splitlines():
-            stripped = line.strip()
-            if stripped.startswith("use "):
-                out.append(stripped[4:].strip().strip("()").lstrip("./"))
-        return [x for x in out if x]
+        return _go_work_uses(text)
 
     return []
+
+
+def _go_work_uses(text: str) -> list[str]:
+    """Parse `use` directives, single-line and block form.
+
+    Two bugs lived here. `lstrip("./")` is a character-set operation applied to
+    a path, so `use ../shared` was re-anchored onto any in-repo directory named
+    `shared` -- the exact class already promoted to the decision log after the
+    TypeScript alias targets, reintroduced one component later. And only
+    single-line `use ./x` was read, so the standard multi-module block form
+    returned nothing at all.
+
+    Targets that escape the repository are dropped rather than re-anchored: a
+    workspace member is structural module identity, and a wrong module boundary
+    is worse than a missing one.
+    """
+    out: list[str] = []
+    in_block = False
+    for raw in text.splitlines():
+        line = raw.split("//")[0].strip()
+        if not line:
+            continue
+        if in_block:
+            if line.startswith(")"):
+                in_block = False
+                continue
+            out.append(line)
+            continue
+        if line == "use (" or line.startswith("use ("):
+            in_block = True
+            rest = line[len("use (") :].strip()
+            if rest and rest != ")":
+                out.append(rest)
+            continue
+        if line.startswith("use "):
+            out.append(line[4:].strip())
+
+    cleaned: list[str] = []
+    for target in out:
+        norm = posixpath.normpath(target.strip().strip('"'))
+        if norm.startswith("..") or norm.startswith("/"):
+            continue  # escapes the repo; never re-anchor onto a same-named decoy
+        if norm in (".", ""):
+            continue
+        cleaned.append(norm)
+    return cleaned
 
 
 def _module_of(path: str) -> str:
@@ -352,7 +446,8 @@ def build(scan: Scan, extracted: ExtractResult, strict: bool = True) -> Graph:
 
     # --- nodes: unique ids, evidence re-verified -------------------------
     for node in extracted.nodes:
-        _verify_evidence(node, node.id, lines)
+        if not _verify_evidence(node, node.id, lines, strict, acc.diagnostics):
+            continue
         existing = acc.nodes.get(node.id)
         if existing is None:
             acc.nodes[node.id] = node
@@ -377,7 +472,10 @@ def build(scan: Scan, extracted: ExtractResult, strict: bool = True) -> Graph:
     # --- edges: endpoints must exist, evidence re-verified ---------------
     kept: list[Edge] = []
     for edge in extracted.edges:
-        _verify_evidence(edge, f"{edge.src} -> {edge.dst}", lines)
+        if not _verify_evidence(
+            edge, f"{edge.src} -> {edge.dst}", lines, strict, acc.diagnostics
+        ):
+            continue
         missing = [end for end in (edge.src, edge.dst) if end not in acc.nodes]
         if missing:
             diag = Diagnostic(

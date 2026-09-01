@@ -41,6 +41,10 @@ DEFAULT_RESOLUTION = 1.0
 _OVERSIZED_SHARE = 0.25
 _MIN_SPLIT_MEMBERS = 8
 _LOW_COHESION = 0.05
+# Above this, a group is genuinely one thing and is never split for size.
+_COHESIVE_ENOUGH = 0.6
+# A resplit that is mostly singletons has shattered rather than divided.
+_MAX_SINGLETON_SHARE = 0.5
 
 
 @dataclass(frozen=True, order=True, slots=True)
@@ -98,10 +102,30 @@ def _weighted_module_graph(graph: Graph) -> nx.Graph[str]:
     Built in canonical order so that any tie-breaking inside the algorithm sees
     the same input everywhere.
     """
+    # Counted from the file-level edges, NOT from `module_deps`.
+    #
+    # `module_deps` is a deduplicated set of pairs, so counting it yields 1 for
+    # every relationship and 2 only for a reciprocal one. The weighting this
+    # function exists to provide was therefore dead: twenty imports between two
+    # modules scored exactly the same as one. Verified before fixing.
+    from svarupa.model import EdgeKind
+
+    modules = set(graph.modules)
     weights: dict[tuple[str, str], int] = {}
+    for e in graph.edges:
+        if e.kind is not EdgeKind.IMPORTS:
+            continue
+        a, b = _module_of(e.src), _module_of(e.dst)
+        if a == b or a not in modules or b not in modules:
+            continue
+        key = (a, b) if a <= b else (b, a)
+        # Each distinct source site is a separate act of depending.
+        weights[key] = weights.get(key, 0) + max(1, len(e.evidence))
+
+    # A declared dependency with no surviving file edge still connects.
     for a, b in graph.module_deps:
         key = (a, b) if a <= b else (b, a)
-        weights[key] = weights.get(key, 0) + 1
+        weights.setdefault(key, 1)
 
     g: nx.Graph[str] = nx.Graph()
     for mid in sorted(graph.modules):
@@ -109,6 +133,17 @@ def _weighted_module_graph(graph: Graph) -> nx.Graph[str]:
     for (a, b), w in sorted(weights.items()):
         g.add_edge(a, b, weight=w)
     return g
+
+
+def _module_of(node_id: str) -> str:
+    """The module a node id belongs to.
+
+    Both shapes appear: a file node is a bare path, a symbol node is
+    `path#qualname`. Only the path part decides the module.
+    """
+    path = node_id.split("#", 1)[0]
+    parent = path.rsplit("/", 1)[0] if "/" in path else ""
+    return parent
 
 
 def _cohesion(g: nx.Graph[str], members: Sequence[str]) -> float:
@@ -257,8 +292,15 @@ def _split_oversized(
     total = g.number_of_nodes()
     out: list[list[str]] = []
     for members in groups:
-        oversized = len(members) > max(_MIN_SPLIT_MEMBERS, total * _OVERSIZED_SHARE)
-        weak = len(members) >= _MIN_SPLIT_MEMBERS and _cohesion(g, members) < _LOW_COHESION
+        cohesion = _cohesion(g, members)
+        # A tightly-connected group explains itself, however large. Splitting a
+        # clique produces N singletons and turns a three-box diagram into
+        # twenty-two, which is worse than the crowding it was meant to fix.
+        cohesive = cohesion >= _COHESIVE_ENOUGH
+        oversized = not cohesive and len(members) > max(
+            _MIN_SPLIT_MEMBERS, total * _OVERSIZED_SHARE
+        )
+        weak = len(members) >= _MIN_SPLIT_MEMBERS and cohesion < _LOW_COHESION
         if not (oversized or weak):
             out.append(members)
             continue
@@ -270,7 +312,23 @@ def _split_oversized(
             out.append(members)
             continue
 
-        if len(resplit) <= 1:
+        singletons = sum(1 for r in resplit if len(r) == 1)
+        degenerate = len(resplit) <= 1 or singletons > len(resplit) * _MAX_SINGLETON_SHARE
+        if degenerate:
+            # Keeping a crowded group beats replacing it with rubble, but the
+            # derivation stage has to know the top level will be crowded.
+            diags.append(
+                Diagnostic(
+                    code="SVA-C-004",
+                    severity=Severity.WARNING,
+                    message=(
+                        f"community of {len(members)} modules could not be split "
+                        f"usefully ({len(resplit)} groups, {singletons} singletons); "
+                        "the top-level diagram will be crowded"
+                    ),
+                    subject=_anchor(g, members),
+                )
+            )
             out.append(members)
             continue
 

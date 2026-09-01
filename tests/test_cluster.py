@@ -99,6 +99,48 @@ def test_lockfile_is_unchanged_by_reclustering(tmp_path: Path) -> None:
 # --------------------------------------------------------------------------
 
 
+def test_planted_structure_is_recovered(tmp_path: Path) -> None:
+    """Clustering quality, which nothing previously asserted.
+
+    A stub returning arbitrary per-seed partitions passed every other test in
+    this file. This one fails if the backend regresses to noise.
+    """
+    layered(tmp_path)
+    cl = cluster(graph_of(tmp_path))
+    api = cl.of("src/api/routes")
+    assert api is not None
+    assert "src/api/views" in api.members, "api routes and views were separated"
+    worker = cl.of("src/worker/tasks")
+    assert worker is not None
+    assert "src/worker/queue" in worker.members, "worker tasks and queue were separated"
+
+
+def test_a_cohesive_group_is_not_split_for_size() -> None:
+    """A clique explains itself, however large.
+
+    Splitting one produced N singletons, turning a three-box diagram into
+    twenty-two: worse than the crowding it was meant to fix.
+    """
+    from svarupa.build import Graph
+    from svarupa.cluster import cluster as run_cluster
+
+    names = [f"src/m{i:02d}" for i in range(20)]
+    deps = tuple(sorted((a, b) for a in names for b in names if a < b))
+    from svarupa.build import Module
+    from svarupa.extract.base import Scorecard
+
+    g = Graph(
+        nodes={},
+        edges=(),
+        modules={n: Module(n, None, 1) for n in names},
+        module_deps=deps,
+        scorecard=Scorecard(),
+    )
+    cl = run_cluster(g)
+    biggest = max(cl.communities, key=lambda c: c.size)
+    assert biggest.size == 20, f"clique shattered into {[c.size for c in cl.communities]}"
+
+
 @pytest.mark.determinism
 def test_same_seed_gives_the_same_partition(tmp_path: Path) -> None:
     layered(tmp_path)
@@ -141,17 +183,50 @@ def test_anchor_ties_break_lexicographically(tmp_path: Path) -> None:
 # --------------------------------------------------------------------------
 
 
-def test_edge_weights_are_used(tmp_path: Path) -> None:
+def test_edge_weights_reflect_import_multiplicity(tmp_path: Path) -> None:
     """Forty imports between two modules is not the same as one.
 
-    Discarding weights flattens exactly the signal clustering exists to find.
+    The original version of this test asserted only that a `weight` key
+    existed, which was true of a constant: weights were counted from
+    `module_deps`, a deduplicated set of pairs, so twenty imports scored
+    exactly the same as one. The feature was dead and the test could not see it.
     """
     from svarupa.cluster import _weighted_module_graph
 
-    layered(tmp_path)
+    for pkg in ("a", "b"):
+        write(tmp_path, f"src/{pkg}/__init__.py", "")
+    write(tmp_path, "src/__init__.py", "")
+    write(tmp_path, "src/b/impl.py", "def h():\n    pass\n")
+    for i in range(12):
+        write(tmp_path, f"src/a/m{i}.py", "from ...src.b.impl import h\n")
+
+    wg = _weighted_module_graph(graph_of(tmp_path))
+    assert wg["src/a"]["src/b"]["weight"] >= 12
+
+
+def test_weights_change_the_partition(tmp_path: Path) -> None:
+    """The claim the previous test could not make.
+
+    Two candidate merges, one backed by many imports and one by a single
+    import. A weighted partition must keep the heavily-coupled pair together.
+    """
+    from svarupa.cluster import _weighted_module_graph
+
+    for pkg in ("hot", "hotdep", "cold", "colddep"):
+        write(tmp_path, f"src/{pkg}/__init__.py", "")
+    write(tmp_path, "src/__init__.py", "")
+    write(tmp_path, "src/hotdep/impl.py", "def h():\n    pass\n")
+    write(tmp_path, "src/colddep/impl.py", "def c():\n    pass\n")
+    for i in range(15):
+        write(tmp_path, f"src/hot/m{i}.py", "from ...src.hotdep.impl import h\n")
+    write(tmp_path, "src/cold/one.py", "from ...src.colddep.impl import c\n")
+
     g = graph_of(tmp_path)
     wg = _weighted_module_graph(g)
-    assert all("weight" in wg[a][b] for a, b in wg.edges)
+    assert wg["src/hot"]["src/hotdep"]["weight"] > wg["src/cold"]["src/colddep"]["weight"]
+
+    cl = cluster(g)
+    assert cl.of("src/hot") is cl.of("src/hotdep"), "heavily-coupled pair was separated"
 
 
 def test_cohesion_is_reported(tmp_path: Path) -> None:

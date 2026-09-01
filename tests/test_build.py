@@ -17,6 +17,7 @@ from svarupa.diagnostics import DiagnosticError
 from svarupa.extract import declared_dependencies, extract
 from svarupa.extract.base import ExtractResult, Scorecard
 from svarupa.model import (
+    Confidence,
     Edge,
     EdgeKind,
     Evidence,
@@ -427,3 +428,112 @@ def test_real_extraction_never_points_past_a_file_end(tmp_path: Path) -> None:
     for el in (*g.nodes.values(), *g.edges):
         for ev in el.evidence:
             assert ev.end_line <= counts[ev.file], f"{el} cites {ev}"
+
+
+# --------------------------------------------------------------------------
+# Review #6 regressions
+# --------------------------------------------------------------------------
+
+
+def test_merge_base_is_order_independent_on_every_field(tmp_path: Path) -> None:
+    """The original varied only evidence, the one field merging canonicalizes.
+
+    On that axis the test was tautological, while `attrs`, `producer` and
+    `confidence` were all taken from whichever edge happened to come first.
+    """
+    from svarupa.model import Confidence
+
+    n1, n2 = node("src/a.py"), node("src/b.py")
+    e1 = edge(
+        "src/a.py",
+        "src/b.py",
+        evidence=(EV1,),
+        attrs=(("shape", "runtime"),),
+        producer="p1",
+        confidence=Confidence.EXTRACTED,
+    )
+    e2 = edge(
+        "src/a.py",
+        "src/b.py",
+        evidence=(EV2,),
+        attrs=(("lang", "python"),),
+        producer="p2",
+        confidence=Confidence.RESOLVED,
+    )
+    fwd = build(scan_of(tmp_path), result([n1, n2], [e1, e2]))
+    rev = build(scan_of(tmp_path), result([n2, n1], [e2, e1]))
+    assert fwd.edges == rev.edges
+
+
+def test_one_runtime_site_makes_the_relationship_runtime(tmp_path: Path) -> None:
+    """`type_only` merged by base-copy could mislabel a real runtime import.
+
+    Impact analysis is contracted to skip type-only edges, so a mislabelled
+    one is silently dropped from the answer.
+    """
+    n1, n2 = node("src/a.py"), node("src/b.py")
+    type_site = edge("src/a.py", "src/b.py", evidence=(EV1,), attrs=(("type_only", "true"),))
+    runtime = edge("src/a.py", "src/b.py", evidence=(EV2,))
+    g = build(scan_of(tmp_path), result([n1, n2], [type_site, runtime]))
+    assert g.edges[0].attr("type_only") is None, "a runtime site must win"
+
+
+def test_all_type_only_sites_stay_type_only(tmp_path: Path) -> None:
+    n1, n2 = node("src/a.py"), node("src/b.py")
+    a = edge("src/a.py", "src/b.py", evidence=(EV1,), attrs=(("type_only", "true"),))
+    b = edge("src/a.py", "src/b.py", evidence=(EV2,), attrs=(("type_only", "true"),))
+    g = build(scan_of(tmp_path), result([n1, n2], [a, b]))
+    assert g.edges[0].attr("type_only") == "true"
+
+
+def test_non_strict_collects_evidence_errors_instead_of_aborting(tmp_path: Path) -> None:
+    """One malformed emission should not disable an entire report."""
+    write(tmp_path, "src/tiny.py", "x = 1\n")
+    good = node("src/tiny.py#ok", evidence=(Evidence("src/tiny.py", 1, 1),))
+    bad = node("src/tiny.py#bad", evidence=(Evidence("src/tiny.py", 9999, 9999),))
+    g = build(detect(tmp_path), result([good, bad], []), strict=False)
+    assert "src/tiny.py#ok" in g.nodes, "the good node was lost"
+    assert "src/tiny.py#bad" not in g.nodes
+    assert "SVA-B-006" in {d.code for d in g.errors}
+
+
+def test_evidence_free_edge_is_rejected_bypassing_the_constructor(tmp_path: Path) -> None:
+    """The Node twin of this was tested; the Edge one guards the same point."""
+    smuggled = object.__new__(Edge)
+    for f, v in (
+        ("src", "src/a.py"),
+        ("dst", "src/b.py"),
+        ("kind", EdgeKind.IMPORTS),
+        ("evidence", ()),
+        ("confidence", Confidence.EXTRACTED),
+        ("resolution", Resolution.RESOLVED),
+        ("arity", 1),
+        ("attrs", ()),
+        ("producer", "smuggler"),
+    ):
+        object.__setattr__(smuggled, f, v)
+    assert not smuggled.evidence
+    with pytest.raises(MissingEvidenceError):
+        build(scan_of(tmp_path), result([node("src/a.py"), node("src/b.py")], [smuggled]))
+
+
+@pytest.mark.parametrize(
+    ("content", "expected"),
+    [
+        ("go 1.22\nuse ./svc\n", ("svc",)),
+        ("go 1.22\nuse (\n\t./svc\n\t./lib\n)\n", ("lib", "svc")),
+        ("go 1.22\nuse ../outside\n", ()),
+        ("go 1.22\nuse ./svc // a comment\n", ("svc",)),
+    ],
+)
+def test_go_work_use_directives(
+    tmp_path: Path, content: str, expected: tuple[str, ...]
+) -> None:
+    """`lstrip("./")` re-anchored `../shared` onto an in-repo decoy, and the
+    standard block form parsed to nothing at all."""
+    from svarupa.build import workspace_members
+
+    write(tmp_path, "go.work", content)
+    for d in ("svc", "lib", "outside", "shared"):
+        write(tmp_path, f"{d}/main.go", "package main\n")
+    assert workspace_members(detect(tmp_path)) == expected
