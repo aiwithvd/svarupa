@@ -211,9 +211,13 @@ def module_evidence(graph: Graph, module_id: str) -> tuple[Evidence, ...]:
         # Only architecture-eligible files may stand for a module. The graph
         # keeps test and generated code on purpose, but a box citing
         # `access-control.test.ts` as the evidence for `src/gateway` sends a
-        # reader to the wrong place, which is the failure this product exists
-        # to prevent.
-        if eligible and nid not in eligible:
+        # reader to the wrong place.
+        #
+        # No `if eligible and ...` escape: an empty allow-list allows nothing.
+        # That is both the safe default and the correct one, since a repository
+        # with no architecture-eligible files has nothing to draw and the
+        # deriver already declines.
+        if nid not in eligible:
             continue
         hits.extend(node.evidence)
         if len(hits) >= _MAX_EVIDENCE_PER_BOX:

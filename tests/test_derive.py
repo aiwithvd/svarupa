@@ -302,3 +302,83 @@ def test_dependency_layers_survive_a_cycle(tmp_path: Path) -> None:
     assert ds is not None
     if ds.specs:
         assert all(n.attr("layer") is not None for n in ds.root_spec.nodes)
+
+
+def test_an_empty_allow_list_allows_nothing(tmp_path: Path) -> None:
+    """`if eligible and nid not in eligible` was a guard with an escape hatch.
+
+    With `architecture_paths` empty the check was skipped entirely, so a
+    directly-constructed graph could cite a test file. An empty allow-list must
+    allow nothing: that is the safe default and also the correct one, since a
+    repository with no architecture-eligible files has nothing to draw.
+    """
+    from svarupa.build import Graph
+
+    write(tmp_path, "src/gateway/impl.py", "def go():\n    pass\n")
+    write(tmp_path, "src/gateway/test_impl.py", "def test_go():\n    pass\n")
+    graph, _ = pipeline(tmp_path)
+    assert module_evidence(graph, "src/gateway"), "sanity: normally there is evidence"
+
+    stripped = Graph(
+        nodes=graph.nodes,
+        edges=graph.edges,
+        modules=graph.modules,
+        module_deps=graph.module_deps,
+        scorecard=graph.scorecard,
+    )
+    assert module_evidence(stripped, "src/gateway") == ()
+
+
+def test_group_evidence_is_order_independent(tmp_path: Path) -> None:
+    """The anchor leads, but the rest must not depend on input order."""
+    write(tmp_path, "src/__init__.py", "")
+    for name in ("zeta", "alpha", "mid"):
+        write(tmp_path, f"src/{name}/__init__.py", "")
+        write(tmp_path, f"src/{name}/mod.py", "x = 1\n")
+    graph, _ = pipeline(tmp_path)
+    members = ["src/zeta", "src/alpha", "src/mid"]
+    a = group_evidence(graph, members, anchor="src/mid")
+    b = group_evidence(graph, list(reversed(members)), anchor="src/mid")
+    assert a == b
+    assert a[0].file.startswith("src/mid/"), "anchor did not lead"
+
+
+def test_the_top_box_cap_is_actually_exercised(tmp_path: Path) -> None:
+    """A cap test proves nothing if the fixture stays under the cap.
+
+    Verified: this fixture yields 41 communities, so the merge path runs.
+    """
+    write(tmp_path, "src/__init__.py", "")
+    for i in range(40):
+        write(tmp_path, f"src/p{i:02d}/__init__.py", "")
+        write(tmp_path, f"src/p{i:02d}/mod.py", "x = 1\n")
+    graph, clustering = pipeline(tmp_path)
+    assert len(clustering.communities) > MAX_TOP_BOXES, "fixture did not exceed the cap"
+
+    ds = ArchitectureDeriver().derive(graph, clustering)
+    assert ds is not None
+    assert len(ds.root_spec.nodes) <= MAX_TOP_BOXES
+    # Nothing may be lost to capping: every drawable module still appears
+    # somewhere, either as a top box or inside one.
+    seen = {n.id for s in ds.specs.values() for n in s.nodes}
+    drawable = {m for m in graph.modules if module_evidence(graph, m)}
+    assert drawable <= seen, f"capping lost modules: {sorted(drawable - seen)[:5]}"
+
+
+def test_a_type_only_pair_is_runtime_if_any_site_is(tmp_path: Path) -> None:
+    """End-to-end across build's merge rule and derive's exclusion.
+
+    One type-only and one runtime import between the same pair must render as a
+    runtime dependency, or impact analysis silently drops a real edge.
+    """
+    write(
+        tmp_path, "src/model.ts", "export interface User { id: string }\nexport const K = 1;\n"
+    )
+    write(tmp_path, "src/a/one.ts", "import type { User } from '../model';\n")
+    write(tmp_path, "src/a/two.ts", "import { K } from '../model';\n")
+
+    graph, clustering = pipeline(tmp_path)
+    ds = ModuleDepsDeriver().derive(graph, clustering)
+    assert ds is not None and ds.specs, "expected a dependency diagram"
+    pairs = {(e.src, e.dst) for e in ds.root_spec.edges}
+    assert ("src/a", "src") in pairs, f"runtime site was excluded: {pairs}"
