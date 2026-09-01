@@ -8,6 +8,7 @@ import sys
 from svarupa import __version__
 from svarupa.build import build
 from svarupa.cluster import cluster
+from svarupa.derive import derive_all
 from svarupa.detect import FileRole, ScanLimits, detect
 from svarupa.extract import declared_dependencies, extract
 
@@ -77,8 +78,25 @@ def _scan(path: str, max_files: int) -> int:
         head = ", ".join(c.members[:3]) + ("..." if c.size > 3 else "")
         print(f"    {c.label:<22} n={c.size:<3} cohesion={c.cohesion:.2f}  {head}")
 
+    produced, notes = derive_all(graph, clustering)
     print()
-    print("Next: derivation and the viewer (P1-5, P1-6) are not implemented yet.")
+    print(f"  diagrams: {len(produced)}")
+    for kind, ds in sorted(produced.items(), key=lambda kv: kv[0].value):
+        root = ds.root_spec
+        print(
+            f"    {kind.value:<14} {len(root.nodes):>3} boxes  {len(root.edges):>3} edges  "
+            f"depth {ds.depth()}  ({ds.total_nodes()} nodes across {len(ds.specs)} views)"
+        )
+        for n in root.nodes[:5]:
+            drill = "  >" if n.is_drillable else "   "
+            print(f"      {drill} {n.label:<20} {n.evidence[0]}")
+        if len(root.nodes) > 5:
+            print(f"        ... and {len(root.nodes) - 5} more")
+    for note in notes:
+        print(f"    - {note}")
+
+    print()
+    print("Next: layout and the viewer (P1-6) are not implemented yet.")
     return 1 if errors or graph_errors else 0
 
 

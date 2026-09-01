@@ -64,6 +64,17 @@ class Graph:
     module_deps: tuple[tuple[str, str], ...]
     scorecard: Scorecard
     diagnostics: tuple[Diagnostic, ...] = ()
+    # Files eligible to shape the architecture picture. The graph deliberately
+    # contains test, generated and vendored code so a user can still ask about
+    # it, which means every consumer that draws architecture has to know which
+    # files may stand for a module. Without this, a box for `src/gateway` cited
+    # `access-control.test.ts` simply because it sorted first.
+    architecture_paths: frozenset[str] = frozenset()
+    # What the scanner saw, per language. Carried because a deriver otherwise
+    # cannot tell "this repository has no SQL" from "nothing extracts SQL yet":
+    # with no extractor, no nodes exist either way, and those are different
+    # facts -- only one of them is about the user's codebase.
+    file_languages: tuple[tuple[str, int], ...] = ()
 
     def nx(self, directed: bool = True) -> nx.DiGraph[str] | nx.Graph[str]:
         """A NetworkX view for the algorithms later stages need.
@@ -533,6 +544,8 @@ def build(scan: Scan, extracted: ExtractResult, strict: bool = True) -> Graph:
         module_deps=tuple(sorted(deps)),
         scorecard=extracted.scorecard,
         diagnostics=tuple(acc.diagnostics) + extracted.diagnostics,
+        architecture_paths=frozenset(eligible),
+        file_languages=scan.languages(),
     )
 
 
