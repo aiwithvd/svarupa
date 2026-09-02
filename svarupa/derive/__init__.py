@@ -14,6 +14,7 @@ from svarupa.derive.base import (
     DiagramNode,
     DiagramSet,
     DiagramSpec,
+    UnnavigableDiagramSet,
 )
 from svarupa.derive.erd import ErdDeriver
 
@@ -30,6 +31,7 @@ __all__ = [
     "DiagramSpec",
     "ErdDeriver",
     "ModuleDepsDeriver",
+    "UnnavigableDiagramSet",
     "derive_all",
 ]
 
@@ -63,6 +65,21 @@ def derive_all(
         if not result.specs:
             for d in result.diagnostics:
                 notes.append(f"{deriver.kind.value}: {d.message}")
+            continue
+
+        # The navigation invariant is enforced here, not in the DiagramSet
+        # constructor. Derivers build sets incrementally, so a constructor
+        # check would force each one to build a mutable shadow type first.
+        # Same reasoning as `build` re-validating evidence at insertion rather
+        # than trusting `Node.__post_init__`: the model check is a
+        # convenience, the pipeline check is the contract.
+        #
+        # A broken set is dropped, not repaired. Guessing at the missing link
+        # would put an invented drill-down in front of a reader.
+        broken = result.validate()
+        if broken:
+            for d in broken:
+                notes.append(f"{deriver.kind.value}: unnavigable, dropped ({d.render()})")
             continue
         produced[deriver.kind] = result
     return produced, tuple(notes)

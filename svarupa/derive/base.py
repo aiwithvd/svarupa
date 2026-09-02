@@ -42,6 +42,7 @@ __all__ = [
     "DiagramSet",
     "DiagramSpec",
     "ModulePair",
+    "UnnavigableDiagramSet",
 ]
 
 # The top view is always about this many boxes, at any repository size. This is
@@ -135,9 +136,36 @@ class DiagramSpec:
         return next((n for n in self.nodes if n.id == node_id), None)
 
 
+class UnnavigableDiagramSet(Exception):
+    """A diagram set the viewer cannot navigate.
+
+    Separate from `MissingEvidenceError` because the failure is structural
+    rather than evidential: every element may cite a real line while the
+    navigation graph is still broken.
+    """
+
+
 @dataclass(frozen=True, slots=True)
 class DiagramSet:
-    """A root spec plus the sub-diagrams reachable by drilling into it."""
+    """A root spec plus the sub-diagrams reachable by drilling into it.
+
+    The viewer navigates this by following `child_spec` from `root`, so the
+    structure carries an invariant of its own, checked by `validate`:
+
+    1. `root` is a key in `specs`.
+    2. Every `child_spec` is a key in `specs`.
+    3. Every spec is reachable from `root`. An unreachable spec is shipped to
+       the browser and never shown, so it is either dead weight or a lost
+       drill-down link. Either way it is a bug in the deriver.
+    4. Drilling terminates. A cycle is an infinite navigation loop.
+    5. `parent` agrees with the link that reaches the spec.
+
+    Deliberately **not** enforced in `__post_init__`. Derivers build these
+    incrementally, and a constructor that rejects an intermediate state would
+    push every deriver into building a throwaway mutable shadow of this type.
+    `derive_all` is the enforcement point, which mirrors how `build`
+    re-validates evidence rather than trusting the model constructor.
+    """
 
     kind: DiagramKind
     root: str
@@ -146,7 +174,89 @@ class DiagramSet:
 
     @property
     def root_spec(self) -> DiagramSpec:
-        return self.specs[self.root]
+        """The entry diagram.
+
+        Raises `UnnavigableDiagramSet` rather than letting a bare `KeyError`
+        surface. A `KeyError: '/spec/root'` reaching a user says nothing about
+        which diagram broke or what to do about it.
+        """
+        try:
+            return self.specs[self.root]
+        except KeyError:
+            raise UnnavigableDiagramSet(
+                f"{self.kind.value}: root spec {self.root!r} is missing from a set of "
+                f"{len(self.specs)} spec(s): {sorted(self.specs)}"
+            ) from None
+
+    def links(self) -> tuple[tuple[str, str], ...]:
+        """Every drill-down link, as (from spec, to spec), in canonical order."""
+        return tuple(
+            sorted(
+                (sid, n.child_spec)
+                for sid, spec in self.specs.items()
+                for n in spec.nodes
+                if n.child_spec is not None
+            )
+        )
+
+    def validate(self) -> tuple[Diagnostic, ...]:
+        """Check the five navigation invariants. Empty result means navigable."""
+        out: list[Diagnostic] = []
+
+        def fail(message: str, subject: str) -> None:
+            out.append(
+                Diagnostic(
+                    code="SVA-R-005",
+                    severity=Severity.ERROR,
+                    message=message,
+                    subject=subject,
+                )
+            )
+
+        if self.root not in self.specs:
+            fail(
+                f"root spec {self.root!r} is missing; the viewer has no entry point",
+                self.kind.value,
+            )
+            return tuple(out)
+
+        for src, dst in self.links():
+            if dst not in self.specs:
+                fail(f"drills into {dst!r}, which does not exist", src)
+
+        # Reachability and termination in one walk. `path` is the current
+        # chain, not everything seen, so a diamond (two boxes drilling into one
+        # shared sub-diagram) is not mistaken for a cycle.
+        reached: set[str] = set()
+
+        def walk(sid: str, path: tuple[str, ...]) -> None:
+            if sid in path:
+                fail(f"drill-down cycle: {' -> '.join([*path, sid])}", self.kind.value)
+                return
+            if sid in reached or sid not in self.specs:
+                return
+            reached.add(sid)
+            for n in self.specs[sid].nodes:
+                if n.child_spec is not None:
+                    walk(n.child_spec, (*path, sid))
+
+        walk(self.root, ())
+
+        for sid in sorted(set(self.specs) - reached):
+            fail("unreachable from the root; no box drills into it", sid)
+
+        parents = {dst: src for src, dst in self.links()}
+        for sid in sorted(reached):
+            spec = self.specs[sid]
+            expected = parents.get(sid)
+            if sid == self.root:
+                expected = None
+            if spec.parent != expected:
+                fail(
+                    f"declares parent {spec.parent!r} but is reached from {expected!r}",
+                    sid,
+                )
+        return tuple(out)
 
     def depth(self) -> int:
         """Deepest drill-down chain, for reporting."""

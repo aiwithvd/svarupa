@@ -19,15 +19,18 @@ from svarupa.derive import DiagramKind, derive_all
 from svarupa.derive.architecture import ArchitectureDeriver, ModuleDepsDeriver
 from svarupa.derive.base import (
     MAX_TOP_BOXES,
+    ROOT,
     DiagramNode,
     DiagramSet,
+    DiagramSpec,
+    UnnavigableDiagramSet,
     group_evidence,
     module_evidence,
 )
 from svarupa.derive.erd import ErdDeriver
 from svarupa.detect import detect
 from svarupa.extract import declared_dependencies, extract
-from svarupa.model import MissingEvidenceError
+from svarupa.model import Evidence, MissingEvidenceError
 
 
 def write(root: Path, rel: str, text: str) -> None:
@@ -672,3 +675,124 @@ def test_sub_diagram_ids_cannot_collide_with_module_ids(tmp_path: Path) -> None:
         assert spec_key.startswith(SPEC_PREFIX)
         assert spec_key not in module_ids
     assert not any(m.startswith(SPEC_PREFIX) for m in module_ids)
+
+
+# --------------------------------------------------------------------------
+# Navigation invariant (review #7 F7, deferred from P1-5 to here)
+# --------------------------------------------------------------------------
+
+
+def _spec(sid: str, *children: str, parent: str | None = None) -> DiagramSpec:
+    """A minimal spec whose boxes drill into `children`."""
+    ev = (Evidence(file="a.py", start_line=1, end_line=1),)
+    nodes = tuple(
+        DiagramNode(
+            id=f"{sid}:box{i}", label=f"box{i}", kind="module", evidence=ev, child_spec=c
+        )
+        for i, c in enumerate(children)
+    ) or (DiagramNode(id=f"{sid}:leaf", label="leaf", kind="module", evidence=ev),)
+    return DiagramSpec(
+        kind=DiagramKind.ARCHITECTURE, id=sid, title=sid, nodes=nodes, edges=(), parent=parent
+    )
+
+
+def _set(root: str, *specs: DiagramSpec) -> DiagramSet:
+    return DiagramSet(DiagramKind.ARCHITECTURE, root, {s.id: s for s in specs})
+
+
+def test_a_navigable_set_reports_no_problems() -> None:
+    """The baseline. Without it, every test below could pass on a validator
+    that always complains."""
+    ds = _set(ROOT, _spec(ROOT, "/spec/a"), _spec("/spec/a", parent=ROOT))
+    assert ds.validate() == ()
+    assert ds.root_spec.id == ROOT
+
+
+def test_a_missing_root_is_reported_not_raised_as_keyerror() -> None:
+    ds = _set(ROOT, _spec("/spec/a"))
+    problems = ds.validate()
+    assert [d.code for d in problems] == ["SVA-R-005"]
+    assert "no entry point" in problems[0].message
+    # And the accessor names the diagram instead of leaking a bare KeyError.
+    with pytest.raises(UnnavigableDiagramSet, match="root spec"):
+        _ = ds.root_spec
+
+
+def test_a_dangling_child_spec_is_reported() -> None:
+    ds = _set(ROOT, _spec(ROOT, "/spec/gone"))
+    assert any("does not exist" in d.message for d in ds.validate())
+
+
+def test_an_unreachable_spec_is_reported() -> None:
+    """Dead weight shipped to the browser, or a lost drill-down link."""
+    ds = _set(
+        ROOT,
+        _spec(ROOT, "/spec/a"),
+        _spec("/spec/a", parent=ROOT),
+        _spec("/spec/orphan", parent=ROOT),
+    )
+    problems = ds.validate()
+    assert [d.subject for d in problems if "unreachable" in d.message] == ["/spec/orphan"]
+
+
+def test_a_drill_down_cycle_is_reported_and_does_not_hang() -> None:
+    ds = _set(
+        ROOT,
+        _spec(ROOT, "/spec/a"),
+        _spec("/spec/a", "/spec/b", parent=ROOT),
+        _spec("/spec/b", "/spec/a", parent="/spec/a"),
+    )
+    assert any("cycle" in d.message for d in ds.validate())
+
+
+def test_a_shared_sub_diagram_is_not_mistaken_for_a_cycle() -> None:
+    """Two boxes drilling into one spec is a diamond, not a loop.
+
+    Tracking "everything seen" rather than "the current chain" would report
+    this as a cycle, so the distinction is asserted rather than assumed.
+    """
+    ds = _set(
+        ROOT,
+        _spec(ROOT, "/spec/a", "/spec/b"),
+        _spec("/spec/a", "/spec/shared", parent=ROOT),
+        _spec("/spec/b", "/spec/shared", parent=ROOT),
+        _spec("/spec/shared", parent="/spec/a"),
+    )
+    assert not any("cycle" in d.message for d in ds.validate())
+
+
+def test_a_lying_parent_pointer_is_reported() -> None:
+    """`parent` is what the viewer's back button uses, so a wrong one navigates
+    the reader somewhere they did not come from."""
+    ds = _set(
+        ROOT,
+        _spec(ROOT, "/spec/a"),
+        _spec("/spec/a", parent="/spec/somewhere-else"),
+    )
+    problems = ds.validate()
+    assert [d.subject for d in problems] == ["/spec/a"]
+    assert "declares parent" in problems[0].message
+
+
+def test_derive_all_drops_an_unnavigable_set_and_keeps_the_others(tmp_path: Path) -> None:
+    """Partial failure degrades. A broken set is dropped, never repaired:
+    inventing the missing link would put a fabricated drill-down in front of a
+    reader."""
+    import svarupa.derive as derive_mod
+
+    class Broken(ArchitectureDeriver):
+        def derive(self, graph: Graph, clustering: Clustering) -> DiagramSet:
+            _ = graph, clustering
+            return _set(ROOT, _spec(ROOT, "/spec/gone"))
+
+    original = derive_mod.DERIVERS
+    derive_mod.DERIVERS = (Broken(), ModuleDepsDeriver())
+    try:
+        layered(tmp_path)
+        produced, notes = derive_mod.derive_all(*pipeline(tmp_path))
+    finally:
+        derive_mod.DERIVERS = original
+
+    assert DiagramKind.ARCHITECTURE not in produced
+    assert DiagramKind.MODULE_DEPS in produced, "one broken set took the others down"
+    assert any("unnavigable, dropped" in n for n in notes)
