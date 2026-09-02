@@ -382,3 +382,95 @@ def test_a_type_only_pair_is_runtime_if_any_site_is(tmp_path: Path) -> None:
     assert ds is not None and ds.specs, "expected a dependency diagram"
     pairs = {(e.src, e.dst) for e in ds.root_spec.edges}
     assert ("src/a", "src") in pairs, f"runtime site was excluded: {pairs}"
+
+
+# --------------------------------------------------------------------------
+# Capping must not invent relationships
+# --------------------------------------------------------------------------
+
+
+def _many_groups(root: Path) -> None:
+    """Four genuine clusters plus fifteen wholly unconnected modules.
+
+    Enough groups to force spill merging, with a decoy structure: the isolated
+    modules live in a different top-level directory from the clusters, so
+    absorbing them into a cluster is visibly wrong.
+    """
+    write(root, "src/__init__.py", "")
+    for grp in ("alpha", "beta", "gamma", "delta"):
+        write(root, f"src/{grp}/__init__.py", "")
+        write(root, f"src/{grp}/core.py", "def go():\n    pass\n")
+        for i in range(3):
+            write(root, f"src/{grp}/sub{i}/__init__.py", "")
+            write(root, f"src/{grp}/sub{i}/m.py", f"from ...{grp}.core import go\n")
+    for i in range(15):
+        write(root, f"lonely/zz{i:02d}/__init__.py", "")
+        write(root, f"lonely/zz{i:02d}/m.py", "import os\n")
+
+
+def test_capping_never_merges_an_unconnected_group_into_a_cluster(tmp_path: Path) -> None:
+    """`best_score` started at -1, so a group connected to nothing still beat
+    the first candidate and was absorbed into an arbitrary neighbour.
+
+    Verified before the fix: eight `lonely/*` modules were pulled into the
+    `alpha` cluster, and the diagnostic reported them as "merged into the
+    groups they connect to most" -- a claim of connection where there was none.
+    """
+    _many_groups(tmp_path)
+    graph, clustering = pipeline(tmp_path)
+    assert len(clustering.communities) > MAX_TOP_BOXES, "fixture must force spill"
+
+    ds = ArchitectureDeriver().derive(graph, clustering)
+    assert ds is not None
+    for n in ds.root_spec.nodes:
+        members = [x.id for x in ds.specs[n.child_spec].nodes] if n.child_spec else [n.id]
+        trees = {m.split("/")[0] for m in members}
+        assert len(trees) == 1, f"box {n.label!r} mixes unrelated trees: {sorted(trees)}"
+
+
+def test_capping_diagnostic_describes_what_actually_happened(tmp_path: Path) -> None:
+    """The old message claimed connection-based merging unconditionally.
+
+    A diagnostic that misreports its own reasoning is worse than none: it
+    launders an invented grouping as a measured one.
+    """
+    _many_groups(tmp_path)
+    graph, clustering = pipeline(tmp_path)
+    ds = ArchitectureDeriver().derive(graph, clustering)
+    assert ds is not None
+    message = next(d.message for d in ds.diagnostics if d.code == "SVA-R-003")
+    assert "shared directory" in message
+    assert "connect to most" not in message
+
+
+def test_capping_prefers_a_real_dependency_over_proximity(tmp_path: Path) -> None:
+    """Proximity is the fallback, not the first choice."""
+    write(tmp_path, "src/__init__.py", "")
+    for grp in ("alpha", "beta", "gamma", "delta"):
+        write(tmp_path, f"src/{grp}/__init__.py", "")
+        write(tmp_path, f"src/{grp}/core.py", "def go():\n    pass\n")
+        for i in range(3):
+            write(tmp_path, f"src/{grp}/sub{i}/__init__.py", "")
+            write(tmp_path, f"src/{grp}/sub{i}/m.py", f"from ...{grp}.core import go\n")
+    # A far-away module that genuinely depends on alpha.
+    write(tmp_path, "far/__init__.py", "")
+    write(tmp_path, "far/dep.py", "from src.alpha.core import go\n")
+    for i in range(12):
+        write(tmp_path, f"far/pad{i:02d}/__init__.py", "")
+        write(tmp_path, f"far/pad{i:02d}/m.py", "import os\n")
+
+    graph, clustering = pipeline(tmp_path)
+    ds = ArchitectureDeriver().derive(graph, clustering)
+    assert ds is not None
+    message = next(d.message for d in ds.diagnostics if d.code == "SVA-R-003")
+    assert "depend on" in message or "shared directory" in message
+
+
+def test_nothing_is_lost_to_capping(tmp_path: Path) -> None:
+    _many_groups(tmp_path)
+    graph, clustering = pipeline(tmp_path)
+    ds = ArchitectureDeriver().derive(graph, clustering)
+    assert ds is not None
+    seen = {n.id for spec in ds.specs.values() for n in spec.nodes}
+    drawable = {m for m in graph.modules if module_evidence(graph, m)}
+    assert drawable <= seen, f"capping dropped: {sorted(drawable - seen)[:5]}"

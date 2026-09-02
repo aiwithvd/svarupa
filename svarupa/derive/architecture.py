@@ -183,27 +183,73 @@ class ArchitectureDeriver(Deriver):
             neighbours.setdefault(b, set()).add(a)
 
         merged: dict[str, list[str]] = {anchor: list(members) for anchor, members in keep}
-        for _spill_anchor, members in spill:
-            best: str | None = None
-            best_score = -1
-            for target_anchor, target_members in merged.items():
-                score = sum(
-                    1
-                    for m in members
-                    for n in neighbours.get(m, ())
-                    if n in set(target_members)
-                )
-                if score > best_score:
-                    best_score, best = score, target_anchor
-            merged[best or keep[0][0]].extend(members)
+        by_connection = 0
+        by_proximity = 0
+        stranded: list[tuple[str, tuple[str, ...]]] = []
 
+        for spill_anchor, members in spill:
+            member_set = set(members)
+
+            # 1. A real dependency is a real reason to group.
+            #
+            # `best_score` starts at 0, not -1. Starting below zero meant a
+            # group connected to nothing still "won" against the first
+            # candidate, so unrelated modules were absorbed into an arbitrary
+            # neighbour and the diagnostic then reported them as connected.
+            # That is an invented architectural claim with a misleading label
+            # attached.
+            best_anchor: str | None = None
+            best_score = 0
+            for target_anchor in sorted(merged):
+                target = set(merged[target_anchor])
+                score = sum(1 for m in member_set for n in neighbours.get(m, ()) if n in target)
+                if score > best_score:
+                    best_anchor, best_score = target_anchor, score
+
+            if best_anchor is not None:
+                merged[best_anchor].extend(members)
+                by_connection += 1
+                continue
+
+            # 2. No dependency, so fall back to structural proximity. Sharing a
+            #    parent directory is a genuine fact about the repository -- the
+            #    same principle module identity itself rests on -- whereas an
+            #    invented dependency is not.
+            best_anchor, best_shared = None, 0
+            for target_anchor in sorted(merged):
+                shared = max(
+                    (_shared_prefix(m, t) for m in member_set for t in merged[target_anchor]),
+                    default=0,
+                )
+                if shared > best_shared:
+                    best_anchor, best_shared = target_anchor, shared
+
+            if best_anchor is not None:
+                merged[best_anchor].extend(members)
+                by_proximity += 1
+                continue
+
+            # 3. Neither connected nor adjacent. Going over budget is more
+            #    honest than asserting a relationship that does not exist.
+            stranded.append((spill_anchor, members))
+
+        for anchor, members in stranded:
+            merged.setdefault(anchor, []).extend(members)
+
+        parts: list[str] = []
+        if by_connection:
+            parts.append(f"{by_connection} merged into a group they depend on")
+        if by_proximity:
+            parts.append(f"{by_proximity} merged by shared directory")
+        if stranded:
+            parts.append(f"{len(stranded)} kept separate, being neither connected nor adjacent")
         diags.append(
             Diagnostic(
                 code="SVA-R-003",
-                severity=Severity.INFO,
+                severity=Severity.WARNING if stranded else Severity.INFO,
                 message=(
-                    f"{len(groups)} groups exceeded the {MAX_TOP_BOXES}-box top level; "
-                    f"{len(spill)} were merged into the groups they connect to most"
+                    f"{len(groups)} groups exceeded the {MAX_TOP_BOXES}-box top level: "
+                    + "; ".join(parts)
                 ),
                 subject=self.kind.value,
             )
@@ -335,6 +381,21 @@ class ModuleDepsDeriver(Deriver):
             edges=edges,
         )
         return DiagramSet(self.kind, ROOT, {ROOT: spec}, tuple(diags))
+
+
+def _shared_prefix(a: str, b: str) -> int:
+    """How many leading path segments two modules share.
+
+    Structural proximity is a real fact about the repository, which is why it
+    is an acceptable second choice when no dependency exists. It is the same
+    principle module identity rests on: what the developers laid out.
+    """
+    shared = 0
+    for x, y in zip(a.split("/"), b.split("/"), strict=False):
+        if x != y:
+            break
+        shared += 1
+    return shared
 
 
 def _label(module_id: str) -> str:
