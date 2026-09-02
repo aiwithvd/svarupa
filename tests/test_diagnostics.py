@@ -34,8 +34,52 @@ def _docstrings(tree: ast.Module) -> set[int]:
     return out
 
 
+def _module_name(path: Path) -> str:
+    rel = path.relative_to(PACKAGE.parent).with_suffix("")
+    parts = list(rel.parts)
+    if parts[-1] == "__init__":
+        parts.pop()
+    return ".".join(parts)
+
+
+def live_modules() -> set[str]:
+    """Package modules reachable by import from the entry points.
+
+    Scanning every `.py` under the package is not enough. Commit `9d7d422`
+    accidentally committed two nested stale copies of the whole layout package
+    (`svarupa/layout/layout/...`), created by a `cp -r src dst` where `dst`
+    already existed. A file-count scan certified those dead copies as live
+    emitters, so the dead-code direction of the registry check, the direction
+    that commit existed to add, could already be satisfied entirely by files
+    nothing imports.
+
+    Reachability is computed from the import graph rather than from the
+    filesystem, because the filesystem is what was wrong.
+    """
+    seen: set[str] = set()
+    queue = ["svarupa", "svarupa.cli"]
+    while queue:
+        name = queue.pop()
+        if name in seen:
+            continue
+        path = PACKAGE.parent / Path(*name.split("."))
+        file = path / "__init__.py" if path.is_dir() else path.with_suffix(".py")
+        if not file.exists():
+            continue
+        seen.add(name)
+        tree = ast.parse(file.read_text(encoding="utf8"), filename=str(file))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
+                if node.module.split(".")[0] == "svarupa":
+                    queue.append(node.module)
+                    queue.extend(f"{node.module}.{a.name}" for a in node.names)
+            elif isinstance(node, ast.Import):
+                queue.extend(a.name for a in node.names if a.name.split(".")[0] == "svarupa")
+    return seen
+
+
 def emitted_codes() -> dict[str, list[str]]:
-    """Every code literal in the package, mapped to the files emitting it.
+    """Every code literal in a **live** package module, mapped to its emitters.
 
     Parsed rather than grepped, for the reason a promoted decision already
     gives about manifests. The first version matched `code="SVA-..."` textually
@@ -46,10 +90,13 @@ def emitted_codes() -> dict[str, list[str]]:
     Comments are skipped for free by parsing; docstrings are skipped
     explicitly, so a module explaining a code does not count as producing it.
     """
+    live = live_modules()
     found: dict[str, list[str]] = {}
     for path in sorted(PACKAGE.rglob("*.py")):
         if path.name == "diagnostics.py":
             continue  # the registry itself is the other side of the comparison
+        if _module_name(path) not in live:
+            continue
         tree = ast.parse(path.read_text(encoding="utf8"), filename=str(path))
         skip = _docstrings(tree)
         for node in ast.walk(tree):
@@ -63,6 +110,33 @@ def emitted_codes() -> dict[str, list[str]]:
     return found
 
 
+def test_every_package_module_is_reachable_by_import() -> None:
+    """No orphan modules in the package.
+
+    Directly the check that would have caught `svarupa/layout/layout/`. An
+    unreachable module is dead code that still satisfies any scan counting
+    files, and the file list of a commit is part of the change, not packaging
+    noise.
+    """
+    # Stages built ahead of the CLI that wires them. Listed by name rather
+    # than pattern-matched, so wiring one up and forgetting to remove it here
+    # fails, and so does adding a new orphan. `svarupa.lock` is P1-7.
+    NOT_WIRED_YET = {"svarupa.lock"}
+
+    live = live_modules()
+    orphans = {
+        _module_name(p)
+        for p in PACKAGE.rglob("*.py")
+        if _module_name(p) not in live and "__pycache__" not in p.parts
+    }
+    assert not orphans - NOT_WIRED_YET, (
+        f"in the package but imported by nothing: {sorted(orphans - NOT_WIRED_YET)}"
+    )
+    assert orphans >= NOT_WIRED_YET, (
+        f"{sorted(NOT_WIRED_YET - orphans)} is wired up now; remove it from NOT_WIRED_YET"
+    )
+
+
 def test_the_scan_finds_emissions_at_all() -> None:
     """Guards the two tests below.
 
@@ -73,6 +147,7 @@ def test_the_scan_finds_emissions_at_all() -> None:
     """
     found = emitted_codes()
     assert len(found) > 20, f"only found {len(found)} emissions; the scan is broken"
+    assert len(live_modules()) > 10, "the reachability walk found almost nothing"
     assert {"detect.py", "cluster.py"} <= {f for files in found.values() for f in files}
     # Positional emissions specifically. The textual version of this scan
     # matched only `code="..."` and silently missed every code passed through
