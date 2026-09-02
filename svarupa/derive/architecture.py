@@ -9,6 +9,7 @@ from __future__ import annotations
 from svarupa.build import Graph
 from svarupa.cluster import Clustering
 from svarupa.derive.base import (
+    MAX_EVIDENCE_PER_BOX,
     MAX_TOP_BOXES,
     ROOT,
     Deriver,
@@ -101,13 +102,14 @@ class ArchitectureDeriver(Deriver):
 
         # Top level: one box per group, edges aggregated between groups.
         member_group = {m: anchor for anchor, members in groups for m in members}
+        top_labels = _labels_for([anchor for anchor, _ in groups])
         top_nodes: list[DiagramNode] = []
         for anchor, members in groups:
             child = spec_id(anchor) if len(members) > 1 else None
             top_nodes.append(
                 DiagramNode(
                     id=anchor,
-                    label=_label(anchor),
+                    label=top_labels[anchor],
                     kind="group" if len(members) > 1 else "module",
                     evidence=group_evidence(graph, members, anchor),
                     child_spec=child,
@@ -137,7 +139,7 @@ class ArchitectureDeriver(Deriver):
                         src=a,
                         dst=b,
                         label=f"{w} import{'s' if w != 1 else ''}",
-                        evidence=tuple(sorted(set(ev)))[:6],
+                        evidence=tuple(sorted(set(ev)))[:MAX_EVIDENCE_PER_BOX],
                         weight=w,
                     )
                     for (a, b), (w, ev) in top_edges.items()
@@ -265,11 +267,12 @@ class ArchitectureDeriver(Deriver):
         pairs: tuple[ModulePair, ...],
     ) -> DiagramSpec:
         inside = set(members)
+        labels = _labels_for(list(members))
         nodes = tuple(
             sorted(
                 DiagramNode(
                     id=m,
-                    label=_label(m),
+                    label=labels[m],
                     kind="module",
                     evidence=module_evidence(graph, m),
                     attrs=(("files", str(graph.modules[m].file_count)),)
@@ -336,11 +339,12 @@ class ModuleDepsDeriver(Deriver):
 
         depth = _layer(pairs, sorted(graph.modules))
         involved = {m for a, b, _w, _e in pairs for m in (a, b)}
+        dep_labels = _labels_for(sorted(involved))
         nodes = tuple(
             sorted(
                 DiagramNode(
                     id=m,
-                    label=_label(m),
+                    label=dep_labels[m],
                     kind="module",
                     evidence=module_evidence(graph, m),
                     attrs=(("layer", str(depth.get(m, 0))),),
@@ -373,6 +377,25 @@ class ModuleDepsDeriver(Deriver):
                     subject=self.kind.value,
                 )
             )
+        # This deriver's whole claim is that nothing was summarized away, so
+        # anything it does drop has to be said out loud. A dependency into a
+        # config-only module was vanishing with no note at all, while the
+        # architecture deriver reported the identical situation.
+        dropped_modules = sorted(involved - known)
+        dropped_edges = sum(1 for a, b, _w, _e in pairs if a not in known or b not in known)
+        if dropped_modules or dropped_edges:
+            diags.append(
+                Diagnostic(
+                    code="SVA-R-004",
+                    severity=Severity.INFO,
+                    message=(
+                        f"{len(dropped_modules)} module(s) and {dropped_edges} "
+                        "dependency(ies) omitted for lack of extractable source; "
+                        "no evidence means no box"
+                    ),
+                    subject=", ".join(dropped_modules[:5]) or self.kind.value,
+                )
+            )
         spec = DiagramSpec(
             kind=self.kind,
             id=ROOT,
@@ -400,7 +423,37 @@ def _shared_prefix(a: str, b: str) -> int:
 
 
 def _label(module_id: str) -> str:
-    return module_id.rsplit("/", 1)[-1] or module_id or "root"
+    """Human-facing name for a module.
+
+    The repository root is `""`, and calling it "root" collided in a reader's
+    head with the root *spec*. `(repo root)` cannot be mistaken for a
+    directory name.
+    """
+    if module_id == "":
+        return "(repo root)"
+    return module_id.rsplit("/", 1)[-1] or module_id
+
+
+def _labels_for(module_ids: list[str]) -> dict[str, str]:
+    """Labels that are unique within one diagram.
+
+    Two modules can share a leaf name -- `src/api/routes` and
+    `src/worker/routes` both label "routes" -- and ids disambiguate while
+    human-facing text does not. Where leaves collide, enough of the path is
+    added to tell them apart.
+    """
+    leaves: dict[str, list[str]] = {}
+    for mid in module_ids:
+        leaves.setdefault(_label(mid), []).append(mid)
+    out: dict[str, str] = {}
+    for leaf, owners in leaves.items():
+        if len(owners) == 1:
+            out[owners[0]] = leaf
+            continue
+        for mid in owners:
+            parts = mid.split("/")
+            out[mid] = "/".join(parts[-2:]) if len(parts) > 1 else leaf
+    return out
 
 
 def _layer(pairs: tuple[ModulePair, ...], modules: list[str]) -> dict[str, int]:

@@ -32,6 +32,7 @@ from svarupa.diagnostics import Diagnostic, Severity
 from svarupa.model import Evidence, MissingEvidenceError, NodeKind, Resolution
 
 __all__ = [
+    "MAX_EVIDENCE_PER_BOX",
     "MAX_TOP_BOXES",
     "ROOT",
     "Deriver",
@@ -47,8 +48,6 @@ __all__ = [
 # the whole answer to the 50,000-node monorepo: the UX is identical at 500
 # nodes and 500,000 because the top level never grows, you drill instead.
 MAX_TOP_BOXES = 12
-ROOT = "root"
-
 # Sub-diagram ids live in their own namespace, and the separation is provable
 # rather than conventional: `detect` builds every path from components, so a
 # repo-relative path can never begin with "/". A prefix like "group:" is not
@@ -62,9 +61,16 @@ def spec_id(name: str) -> str:
     return f"{SPEC_PREFIX}{name}"
 
 
+# The root spec obeys the same rule. It was `"root"`, which collides with a
+# top-level directory named `root/` -- an exemption carved out of the very
+# guarantee the prefix exists to provide, and the previous test skipped it
+# rather than catching it.
+ROOT = spec_id("root")
+
+
 # Evidence per box is capped. A community of forty modules does not need forty
 # citations to be checkable; it needs enough to land a reader somewhere real.
-_MAX_EVIDENCE_PER_BOX = 6
+MAX_EVIDENCE_PER_BOX = 6
 
 # One aggregated module-to-module dependency: source, target, weight, evidence.
 ModulePair = tuple[str, str, int, tuple[Evidence, ...]]
@@ -233,9 +239,9 @@ def module_evidence(graph: Graph, module_id: str) -> tuple[Evidence, ...]:
         if nid not in eligible:
             continue
         hits.extend(node.evidence)
-        if len(hits) >= _MAX_EVIDENCE_PER_BOX:
+        if len(hits) >= MAX_EVIDENCE_PER_BOX:
             break
-    return tuple(sorted(set(hits))[:_MAX_EVIDENCE_PER_BOX])
+    return tuple(sorted(set(hits))[:MAX_EVIDENCE_PER_BOX])
 
 
 def group_evidence(
@@ -256,9 +262,9 @@ def group_evidence(
     out: list[Evidence] = []
     for mid in ordered:
         out.extend(module_evidence(graph, mid))
-        if len(out) >= _MAX_EVIDENCE_PER_BOX:
+        if len(out) >= MAX_EVIDENCE_PER_BOX:
             break
-    return tuple(out[:_MAX_EVIDENCE_PER_BOX])
+    return tuple(out[:MAX_EVIDENCE_PER_BOX])
 
 
 def runtime_edges(graph: Graph) -> tuple[tuple[ModulePair, ...], int]:
@@ -272,7 +278,16 @@ def runtime_edges(graph: Graph) -> tuple[tuple[ModulePair, ...], int]:
     from svarupa.model import EdgeKind
 
     modules = set(graph.modules)
-    acc: dict[tuple[str, str], tuple[int, list[Evidence]]] = {}
+    # Accumulate a SET of citations, and take the weight from its size.
+    #
+    # Summing per node-level edge double-counts submodule fan-out: one
+    # statement `from ..lib import mod_a, mod_b` emits three IMPORTS edges
+    # (the package __init__ plus one per named submodule), all carrying the
+    # *same single* Evidence. That made an arrow read "3 imports" for one
+    # import line, which is precisely the label/evidence disagreement this
+    # stage exists to avoid. Weight is now the number of distinct import
+    # sites, so the number and the citations agree.
+    acc: dict[tuple[str, str], set[Evidence]] = {}
     skipped = 0
     for e in graph.edges:
         if e.kind is not EdgeKind.IMPORTS:
@@ -283,10 +298,9 @@ def runtime_edges(graph: Graph) -> tuple[tuple[ModulePair, ...], int]:
         a, b = module_of(e.src), module_of(e.dst)
         if a == b or a not in modules or b not in modules:
             continue
-        weight, evidence = acc.get((a, b), (0, []))
-        acc[(a, b)] = (weight + max(1, len(e.evidence)), [*evidence, *e.evidence])
+        acc.setdefault((a, b), set()).update(e.evidence)
     pairs: tuple[ModulePair, ...] = tuple(
-        (a, b, w, tuple(sorted(set(ev))[:_MAX_EVIDENCE_PER_BOX]))
-        for (a, b), (w, ev) in sorted(acc.items())
+        (a, b, len(sites), tuple(sorted(sites)[:MAX_EVIDENCE_PER_BOX]))
+        for (a, b), sites in sorted(acc.items())
     )
     return pairs, skipped
