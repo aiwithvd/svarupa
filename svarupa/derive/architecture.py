@@ -21,6 +21,7 @@ from svarupa.derive.base import (
     group_evidence,
     module_evidence,
     runtime_edges,
+    spec_id,
 )
 from svarupa.diagnostics import Diagnostic, Severity
 from svarupa.model import Evidence
@@ -102,7 +103,7 @@ class ArchitectureDeriver(Deriver):
         member_group = {m: anchor for anchor, members in groups for m in members}
         top_nodes: list[DiagramNode] = []
         for anchor, members in groups:
-            child = f"group:{anchor}" if len(members) > 1 else None
+            child = spec_id(anchor) if len(members) > 1 else None
             top_nodes.append(
                 DiagramNode(
                     id=anchor,
@@ -294,7 +295,7 @@ class ArchitectureDeriver(Deriver):
         )
         return DiagramSpec(
             kind=self.kind,
-            id=f"group:{anchor}",
+            id=spec_id(anchor),
             title=f"{_label(anchor)} internals",
             subtitle=f"{len(nodes)} modules",
             nodes=nodes,

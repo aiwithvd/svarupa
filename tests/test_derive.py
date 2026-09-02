@@ -474,3 +474,33 @@ def test_nothing_is_lost_to_capping(tmp_path: Path) -> None:
     seen = {n.id for spec in ds.specs.values() for n in spec.nodes}
     drawable = {m for m in graph.modules if module_evidence(graph, m)}
     assert drawable <= seen, f"capping dropped: {sorted(drawable - seen)[:5]}"
+
+
+def test_sub_diagram_ids_cannot_collide_with_module_ids(tmp_path: Path) -> None:
+    """A directory named `group:payments` is scannable on POSIX.
+
+    So a `group:`-prefixed sub-diagram id shared a namespace with module ids,
+    and the moment a viewer keys both in one map they would collide. Every
+    repo-relative path is built from components and can never begin with "/",
+    which makes a "/spec/" prefix provably disjoint rather than conventionally
+    so.
+    """
+    from svarupa.derive.base import SPEC_PREFIX
+
+    write(tmp_path, "src/__init__.py", "")
+    write(tmp_path, "src/core.py", "def go():\n    pass\n")
+    (tmp_path / "group:core").mkdir()
+    write(tmp_path, "group:core/m.py", "from src.core import go\n")
+
+    graph, clustering = pipeline(tmp_path)
+    assert any("group:" in p for p in graph.architecture_paths), "fixture did not scan"
+
+    ds = ArchitectureDeriver().derive(graph, clustering)
+    assert ds is not None
+    module_ids = set(graph.modules) | set(graph.nodes)
+    for spec_key in ds.specs:
+        if spec_key == "root":
+            continue
+        assert spec_key.startswith(SPEC_PREFIX)
+        assert spec_key not in module_ids
+    assert not any(m.startswith(SPEC_PREFIX) for m in module_ids)

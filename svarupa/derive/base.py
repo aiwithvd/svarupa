@@ -49,6 +49,19 @@ __all__ = [
 MAX_TOP_BOXES = 12
 ROOT = "root"
 
+# Sub-diagram ids live in their own namespace, and the separation is provable
+# rather than conventional: `detect` builds every path from components, so a
+# repo-relative path can never begin with "/". A prefix like "group:" is not
+# safe -- a directory literally named `group:payments` is scannable on POSIX,
+# so its module id would collide with a sub-diagram id the moment a viewer
+# keys both in one map.
+SPEC_PREFIX = "/spec/"
+
+
+def spec_id(name: str) -> str:
+    return f"{SPEC_PREFIX}{name}"
+
+
 # Evidence per box is capped. A community of forty modules does not need forty
 # citations to be checkable; it needs enough to land a reader somewhere real.
 _MAX_EVIDENCE_PER_BOX = 6
