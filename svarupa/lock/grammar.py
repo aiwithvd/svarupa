@@ -116,7 +116,7 @@ def unescape_field(s: str) -> str:
             if nxt not in _ESCAPES:
                 raise DiagnosticError(
                     Diagnostic(
-                        code="SVA-L-004",
+                        code="SVA-L-003",
                         severity=Severity.ERROR,
                         message=(
                             f"unknown escape sequence '\\{nxt}'. "
@@ -368,7 +368,7 @@ def collision_check(module_ids: Sequence[str]) -> list[Diagnostic]:
             seen.add(tuple(uniq))
             out.append(
                 Diagnostic(
-                    code="SVA-L-007",
+                    code="SVA-L-004",
                     severity=Severity.ERROR,
                     message=(
                         "these paths are distinct on disk but identical after "
@@ -389,7 +389,7 @@ def collision_check(module_ids: Sequence[str]) -> list[Diagnostic]:
         if len(uniq) > 1 and tuple(uniq) not in seen:
             out.append(
                 Diagnostic(
-                    code="SVA-L-007",
+                    code="SVA-L-004",
                     severity=Severity.ERROR,
                     message=(
                         "these paths differ only by case, so they are distinct "

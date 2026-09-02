@@ -370,8 +370,8 @@ def test_collision_detection_runs_per_sibling_set_on_raw_names() -> None:
     nfd = unicodedata.normalize("NFD", "café")
     nfc = unicodedata.normalize("NFC", "café")
 
-    assert [d.code for d in collision_check(["Utils", "utils"])] == ["SVA-L-007"]
-    assert [d.code for d in collision_check([nfd, nfc])] == ["SVA-L-007"]
+    assert [d.code for d in collision_check(["Utils", "utils"])] == ["SVA-L-004"]
+    assert [d.code for d in collision_check([nfd, nfc])] == ["SVA-L-004"]
     assert collision_check(["api", "auth", "billing"]) == []
 
 
@@ -385,7 +385,7 @@ def test_case_collision_is_diagnosed_on_disk(tmp_path: Path) -> None:
         pytest.skip("case-insensitive filesystem; both paths are one directory here")
 
     codes = {d.code for d in detect(r).diagnostics}
-    assert "SVA-L-007" in codes, "case collision must be diagnosed, never silently merged"
+    assert "SVA-L-004" in codes, "case collision must be diagnosed, never silently merged"
 
 
 # --------------------------------------------------------------------------

@@ -11,6 +11,7 @@ from svarupa.cluster import cluster
 from svarupa.derive import derive_all
 from svarupa.detect import FileRole, ScanLimits, detect
 from svarupa.extract import declared_dependencies, extract
+from svarupa.layout import lay_out_set
 
 
 def _scan(path: str, max_files: int) -> int:
@@ -96,8 +97,24 @@ def _scan(path: str, max_files: int) -> int:
         print(f"    - {note}")
 
     print()
-    print("Next: layout and the viewer (P1-6) are not implemented yet.")
-    return 1 if errors or graph_errors else 0
+    print("  layout:")
+    withheld = 0
+    for kind, ds in sorted(produced.items(), key=lambda kv: kv[0].value):
+        result = lay_out_set(ds)
+        withheld += len(result.withheld)
+        root = result.canvases.get(ds.root) or result.withheld[ds.root]
+        print(
+            f"    {kind.value:<14} {result.engine_name:<10} {len(result.canvases):>3} drawn  "
+            f"{len(result.withheld):>2} withheld   root {root.width}x{root.height}"
+        )
+        for d in result.problems[:5]:
+            print("      " + d.render())
+        if len(result.problems) > 5:
+            print(f"      ... and {len(result.problems) - 5} more")
+
+    print()
+    print("Next: the viewer and REPORT.md (P1-6 wave 2) are not implemented yet.")
+    return 1 if errors or graph_errors or withheld else 0
 
 
 def main(argv: list[str] | None = None) -> int:

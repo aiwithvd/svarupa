@@ -212,7 +212,7 @@ def test_normalization_collision_is_diagnosed_not_silently_merged() -> None:
 
     diags = collision_check([nfc, nfd])
     assert diags, "NFC/NFD collision must be diagnosed, never silently merged"
-    assert diags[0].code == "SVA-L-007"
+    assert diags[0].code == "SVA-L-004"
     assert "normalization" in diags[0].message.lower()
 
 
@@ -229,7 +229,7 @@ def test_case_and_normalization_are_reported_as_separate_axes() -> None:
 def test_case_collision_is_detected() -> None:
     got = collision_check(["src/Utils", "src/utils"])
     assert len(got) == 1
-    assert got[0].code == "SVA-L-007"
+    assert got[0].code == "SVA-L-004"
     assert "src/Utils" in got[0].subject and "src/utils" in got[0].subject
 
 

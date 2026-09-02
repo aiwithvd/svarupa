@@ -248,7 +248,7 @@ def test_case_collision_is_reported() -> None:
     """Distinct on Linux, one file on a case-insensitive macOS volume."""
     got = collision_check(["src/Utils", "src/utils", "src/api"])
     assert len(got) == 1
-    assert got[0].code == "SVA-L-007"
+    assert got[0].code == "SVA-L-004"
     assert "case" in got[0].message.lower()
     assert got[0].subject == "src/Utils | src/utils"
 
@@ -318,7 +318,7 @@ def test_unknown_escape_refuses(bad: str) -> None:
     """Silently canonicalizing would change bytes with no diagnostic."""
     with pytest.raises(DiagnosticError) as exc:
         Lockfile.parse(f"# schema 1.0\nmodule\t{bad}\n")
-    assert exc.value.diagnostic.code == "SVA-L-004"
+    assert exc.value.diagnostic.code == "SVA-L-003"
 
 
 @pytest.mark.parametrize(
