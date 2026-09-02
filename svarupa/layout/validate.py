@@ -34,12 +34,111 @@ def _err(code: str, subject: str, message: str) -> Diagnostic:
 def validate(canvas: Canvas, style: Style) -> tuple[Diagnostic, ...]:
     """Every geometric claim the canvas makes. Empty result means drawable."""
     out: list[Diagnostic] = []
+    out.extend(_check_integers(canvas))
+    out.extend(_check_evidence(canvas))
     out.extend(_check_ids(canvas))
     out.extend(_check_boxes(canvas, style))
     out.extend(_check_overlap(canvas))
     out.extend(_check_routes(canvas))
+    out.extend(_check_crossings(canvas))
     out.extend(_check_bands(canvas))
     return tuple(out)
+
+
+def _check_integers(canvas: Canvas) -> list[Diagnostic]:
+    """Every coordinate is an `int`, checked by type and not by range.
+
+    This is the check that catches non-finite values, which the plan names and
+    which range comparisons cannot see: `nan < 0`, `nan > width` and every
+    overlap comparison are all `False`, so a box at `(nan, nan)` passed every
+    other check on this canvas. A check against a pathological value has to be
+    a type or identity test, never an ordering test.
+
+    It also moves the integer promise from a property of the engines to a
+    property of the gate. Byte-identity across platforms rests on it, and a
+    float that survives to the artifact differs in its last bits.
+    """
+    out: list[Diagnostic] = []
+
+    def check(subject: str, **values: object) -> None:
+        for name, v in values.items():
+            if type(v) is not int:
+                out.append(
+                    _err(
+                        "SVA-G-010",
+                        subject,
+                        f"{name} is {v!r} ({type(v).__name__}), not an int",
+                    )
+                )
+
+    check(canvas.spec_id, width=canvas.width, height=canvas.height)
+    for b in canvas.boxes:
+        check(b.id, x=b.x, y=b.y, w=b.w, h=b.h)
+    for r in canvas.routes:
+        for i, (px, py) in enumerate(r.points):
+            check(f"{r.src} -> {r.dst}", **{f"points[{i}].x": px, f"points[{i}].y": py})
+    for band in canvas.bands:
+        check(band.label, y=band.y, h=band.h)
+    return out
+
+
+def _check_evidence(canvas: Canvas) -> list[Diagnostic]:
+    """No box, no arrow, without a source location.
+
+    `Box` and `Route` deliberately have no constructor check, so this is the
+    only place the product's central promise is enforced on the drawn form. It
+    is enforced here for the same reason `build` re-validates evidence rather
+    than trusting `Node.__post_init__`: constructor validation is a
+    convenience, the pipeline gate is the contract. Layout is the last gate
+    before a browser.
+    """
+    out: list[Diagnostic] = []
+    out.extend(
+        _err("SVA-G-009", b.id, "box carries no evidence, so it cannot be clicked through")
+        for b in canvas.boxes
+        if not b.evidence
+    )
+    out.extend(
+        _err("SVA-G-009", f"{r.src} -> {r.dst}", "route carries no evidence")
+        for r in canvas.routes
+        if not r.evidence
+    )
+    return out
+
+
+def _check_crossings(canvas: Canvas) -> list[Diagnostic]:
+    """No route segment may pass through a box it does not connect.
+
+    Design section 6.1 names this invariant. It was previously argued away in a
+    routing docstring, which claimed vertical segments stay in the row gaps so
+    the check was unnecessary. Both halves were false: two ordinary shapes, an
+    edge skipping a layer and a two-node cycle, drew arrows straight through
+    box interiors while validation returned nothing.
+
+    Polylines are orthogonal and coordinates are integers, so this is interval
+    arithmetic. The box interior is open: a segment running exactly along a box
+    edge is touching, not crossing, which is how a route legitimately leaves
+    the box it starts on.
+    """
+    out: list[Diagnostic] = []
+    for r in canvas.routes:
+        endpoints = {r.src, r.dst}
+        for (x1, y1), (x2, y2) in zip(r.points, r.points[1:], strict=False):
+            lo_x, hi_x = min(x1, x2), max(x1, x2)
+            lo_y, hi_y = min(y1, y2), max(y1, y2)
+            for b in canvas.boxes:
+                if b.id in endpoints:
+                    continue
+                if lo_x < b.right and hi_x > b.x and lo_y < b.bottom and hi_y > b.y:
+                    out.append(
+                        _err(
+                            "SVA-G-011",
+                            f"{r.src} -> {r.dst}",
+                            f"segment ({x1},{y1})-({x2},{y2}) crosses box {b.id!r} "
+                            f"at ({b.x},{b.y})+{b.w}x{b.h}",
+                        )
+                    )
+    return out
 
 
 def _check_ids(canvas: Canvas) -> list[Diagnostic]:

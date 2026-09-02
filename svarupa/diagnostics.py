@@ -121,6 +121,9 @@ CODES: dict[str, str] = {
     "SVA-G-006": "a band does not contain the boxes it claims",
     "SVA-G-007": "duplicate box ids on one canvas",
     "SVA-G-008": "a label was not sanitized before layout",
+    "SVA-G-009": "a box or route carries no evidence",
+    "SVA-G-010": "a coordinate is not an integer",
+    "SVA-G-011": "a route passes through the interior of a box",
     # lock
     "SVA-L-001": "a record kind violates the published grammar",
     "SVA-L-002": "a record has the wrong number of fields for its kind",

@@ -51,16 +51,50 @@ class Style:
     gap_x: int = 28
     gap_y: int = 56
     margin: int = 32
+    # A vertical corridor to the right of every box, so a route spanning more
+    # than one row has somewhere legal to run. Reserved on every canvas, since
+    # a lane that appears only when a long edge exists would make canvas width
+    # depend on edge topology.
+    lane_gutter: int = 48
     band_pad: int = 16
     band_label_height: int = 22
 
     def __post_init__(self) -> None:
+        """Reject anything that would make the validator agree with a lie.
+
+        The engine sizes a box with these numbers and the validator checks it
+        with the same numbers, so a corrupt value makes producer and checker
+        agree on a falsehood that neither can catch. A negative `box_pad_x`
+        was demonstrated to produce a 202px box holding a 242px label, blessed
+        by the geometry check, because `budget = w - 2 * pad` grew instead of
+        shrinking. Past construction no check here is independent, so the
+        validation has to happen at construction.
+        """
         if self.box_min_width > self.box_max_width:
             raise ValueError(
                 f"box_min_width {self.box_min_width} exceeds box_max_width {self.box_max_width}"
             )
         if min(self.font_size, self.box_height, self.box_min_width) <= 0:
             raise ValueError("font size, box height and min width must be positive")
+        negative = {
+            name: value
+            for name, value in (
+                ("box_pad_x", self.box_pad_x),
+                ("gap_x", self.gap_x),
+                ("gap_y", self.gap_y),
+                ("margin", self.margin),
+                ("lane_gutter", self.lane_gutter),
+                ("band_pad", self.band_pad),
+            )
+            if value < 0
+        }
+        if negative:
+            raise ValueError(f"spacing values cannot be negative: {negative}")
+        if self.text_budget <= 0:
+            raise ValueError(
+                f"box_max_width {self.box_max_width} leaves no room for text after "
+                f"{self.box_pad_x}px of padding on each side"
+            )
 
     @property
     def text_budget(self) -> int:

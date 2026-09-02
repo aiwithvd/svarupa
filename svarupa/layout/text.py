@@ -77,6 +77,12 @@ def sanitize(text: str) -> str:
 
     Replaced rather than dropped. Dropping would silently produce a label that
     reads as a plausible different name; U+FFFD shows that something was there.
+
+    **This is not HTML or SVG escaping and must not be mistaken for it.** It
+    leaves `<`, `&`, `"` and `'` exactly as they are, because they are
+    legitimate characters in a filename and a reader needs to see them. The
+    emitter that puts a label into a document owns escaping it; a directory
+    named `</script>` is scannable on POSIX, so that escaping is not optional.
     """
     out: list[str] = []
     for ch in text:
@@ -138,6 +144,13 @@ def truncate(text: str, font_size: int, max_px: int) -> str:
             break
         kept.append(ch)
         width += w
+    # A cut can land between a base character and its combining marks, leaving
+    # the marks to stack onto the ellipsis: truncating a run of "é" produced
+    # "…\u0301ééé", an accent floating on the ellipsis. Drop the orphans.
+    while kept and (
+        unicodedata.combining(kept[-1]) or unicodedata.category(kept[-1]) in {"Mn", "Me"}
+    ):
+        kept.pop()
     if not kept:
         return ""
     return _ELLIPSIS + "".join(reversed(kept))

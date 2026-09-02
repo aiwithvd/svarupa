@@ -310,7 +310,13 @@ def test_a_partially_declared_layer_is_not_mixed_with_an_inferred_one() -> None:
 
 def test_a_dependency_cycle_still_lays_out() -> None:
     """Refusing a cyclic graph means refusing the repositories that most need
-    the picture."""
+    the picture.
+
+    The `validate == ()` leg of this test used to pass only because the
+    crossing check was missing: a cycle puts both nodes in one row, and the
+    same-row route ran horizontally through the target's interior. The fixture
+    that should have caught the bug certified it instead.
+    """
     s = spec(
         node("a"), node("b"), node("c"), edges=(edge("a", "b"), edge("b", "a"), edge("b", "c"))
     )
@@ -341,7 +347,13 @@ def test_rows_wrap_within_the_stated_bound_including_gaps() -> None:
     """
     s = spec(*[node(f"n{i:02d}", layer="0") for i in range(40)])
     c = lay_out(s, STYLE, "layered")
-    assert c.width - 2 * STYLE.margin <= MAX_ROW_WIDTH
+    content = c.width - 2 * STYLE.margin - STYLE.lane_gutter
+    assert content <= MAX_ROW_WIDTH, (
+        f"content row is {content}px against a stated {MAX_ROW_WIDTH}"
+    )
+    assert max(b.right for b in c.boxes) <= c.width - STYLE.lane_gutter, (
+        "a box grew into the routing lane"
+    )
     assert validate(c, STYLE) == ()
 
 
@@ -452,7 +464,63 @@ def test_a_withheld_canvas_does_not_lose_the_others(tmp_path: Path) -> None:
     impossible = lay_out_set(ds, Style(box_min_width=1, box_max_width=1, box_pad_x=0))
     assert not impossible.ok
     assert impossible.withheld and not impossible.canvases
-    assert {d.code for d in impossible.problems} == {"SVA-G-003"}
+    assert {d.code for d in impossible.problems} == {"SVA-G-003", "SVA-R-005"}
+
+
+def test_withholding_a_sub_view_reports_the_dangling_drill_down(tmp_path: Path) -> None:
+    """`DiagramSet.validate` proved the set navigable, but withholding changes
+    the set.
+
+    Reported rather than repaired: pruning the link would turn a drillable
+    group into a leaf, telling a reader the group has no internal structure.
+    """
+    real_repo(tmp_path)
+    scan = detect(tmp_path)
+    graph = build(scan, extract(scan, declared_dependencies(scan)), strict=False)
+    produced, _ = derive_all(graph, cluster(graph))
+    ds = produced[DiagramKind.ARCHITECTURE]
+    drillable = [n for n in ds.root_spec.nodes if n.child_spec is not None]
+    assert drillable, "fixture has no drill-down, so nothing was tested"
+
+    victim = drillable[0].child_spec
+    assert victim is not None
+    result = lay_out_set(ds)
+    assert result.ok, "fixture must start clean for the withholding to be the cause"
+
+    # Withhold exactly one sub-view, by hand, and re-run the check.
+    good = dict(result.canvases)
+    bad = {victim: good.pop(victim)}
+    from svarupa.layout import _navigability_after_withholding
+
+    found = _navigability_after_withholding(ds, good, bad)
+    assert [d.code for d in found] == ["SVA-R-005"]
+    assert found[0].subject == victim
+
+
+def test_withholding_the_root_reports_the_missing_entry_point(tmp_path: Path) -> None:
+    real_repo(tmp_path)
+    scan = detect(tmp_path)
+    graph = build(scan, extract(scan, declared_dependencies(scan)), strict=False)
+    produced, _ = derive_all(graph, cluster(graph))
+    ds = produced[DiagramKind.ARCHITECTURE]
+    result = lay_out_set(ds)
+    good = dict(result.canvases)
+    bad = {ds.root: good.pop(ds.root)}
+
+    from svarupa.layout import _navigability_after_withholding
+
+    found = _navigability_after_withholding(ds, good, bad)
+    assert any("no entry point" in d.message for d in found)
+
+
+def test_a_clean_set_is_not_told_it_is_unnavigable(tmp_path: Path) -> None:
+    """The baseline for the two tests above."""
+    real_repo(tmp_path)
+    scan = detect(tmp_path)
+    graph = build(scan, extract(scan, declared_dependencies(scan)), strict=False)
+    produced, _ = derive_all(graph, cluster(graph))
+    for ds in produced.values():
+        assert not [d for d in lay_out_set(ds).problems if d.code == "SVA-R-005"]
 
 
 @pytest.mark.determinism
@@ -499,3 +567,325 @@ def test_layout_is_identical_across_hash_seeds(tmp_path: Path) -> None:
     }
     assert len(outputs) == 1, f"hash seed changed the layout ({len(outputs)} variants)"
     assert next(iter(outputs)).strip(), "the subprocess produced no canvases to compare"
+
+
+# --------------------------------------------------------------------------
+# Review #8: routing must miss every box it does not connect
+# --------------------------------------------------------------------------
+
+
+def crossings(c: Canvas) -> list[str]:
+    return [d.message for d in validate(c, STYLE) if d.code == "SVA-G-011"]
+
+
+def test_the_crossing_check_can_fire() -> None:
+    """Guards every no-crossing assertion below.
+
+    Without this, a check that never fires would make all of them pass while
+    proving nothing. Design section 6.1 names this invariant; it was previously
+    argued away in a routing docstring rather than implemented.
+    """
+    through = Route(
+        src="a",
+        dst="z",
+        label="",
+        points=((80, 76), (80, 154), (80, 232)),
+        evidence=EV,
+    )
+    c = canvas(
+        box("a", 32, 32),
+        box("mid", 32, 132),
+        box("z", 32, 232),
+        routes=(through,),
+        size=(800, 600),
+    )
+    assert crossings(c), "a segment straight through a box was not reported"
+
+
+def test_an_edge_skipping_a_layer_does_not_cross_the_row_between() -> None:
+    """Demonstrated failure: the horizontal run was placed at the midpoint of
+    the whole vertical span, which for a skipping edge lands inside the
+    intervening row."""
+    s = spec(
+        node("a", layer="0"),
+        node("mid", layer="1"),
+        node("z", layer="2"),
+        edges=(edge("a", "mid"), edge("mid", "z"), edge("a", "z")),
+    )
+    c = lay_out(s, STYLE, "layered")
+    assert crossings(c) == []
+    assert validate(c, STYLE) == ()
+
+
+def test_a_two_node_cycle_does_not_draw_through_its_own_boxes() -> None:
+    """Cycles have same-row edges by definition, so every cycle used to draw
+    arrows through boxes."""
+    s = spec(node("p"), node("q"), edges=(edge("p", "q"), edge("q", "p")))
+    c = lay_out(s, STYLE, "layered")
+    assert crossings(c) == []
+
+
+def test_a_long_backward_edge_uses_the_lane_and_crosses_nothing() -> None:
+    s = spec(
+        *[node(f"n{i}", layer=str(i)) for i in range(5)],
+        edges=(*[edge(f"n{i}", f"n{i + 1}") for i in range(4)], edge("n4", "n0")),
+    )
+    c = lay_out(s, STYLE, "layered")
+    back = next(r for r in c.routes if r.src == "n4" and r.dst == "n0")
+    assert any(x > max(b.right for b in c.boxes) for x, _ in back.points), (
+        "the backward edge never reached the lane, so it ran through the rows"
+    )
+    assert crossings(c) == []
+
+
+def test_no_route_crosses_a_box_on_a_real_repository(tmp_path: Path) -> None:
+    """The shapes that broke it were ordinary, so the check runs end to end."""
+    real_repo(tmp_path)
+    scan = detect(tmp_path)
+    graph = build(scan, extract(scan, declared_dependencies(scan)), strict=False)
+    produced, _ = derive_all(graph, cluster(graph))
+    assert produced
+    total_routes = 0
+    for ds in produced.values():
+        result = lay_out_set(ds)
+        for c in {**result.canvases, **result.withheld}.values():
+            total_routes += len(c.routes)
+            assert crossings(c) == [], (c.spec_id, crossings(c)[:3])
+    assert total_routes > 0, "no routes were drawn, so nothing was checked"
+
+
+# --------------------------------------------------------------------------
+# Review #8: fail-closed and non-finite at the gate
+# --------------------------------------------------------------------------
+
+
+def test_an_evidence_free_box_is_reported() -> None:
+    """`Box` has no constructor check, so this gate is the only enforcement of
+    the product's central promise on the drawn form."""
+    naked = Box(
+        id="a", label="x", full_label="x", kind="module", x=32, y=32, w=96, h=44, evidence=()
+    )
+    assert "SVA-G-009" in codes(canvas(naked))
+
+
+def test_an_evidence_free_route_is_reported() -> None:
+    r = Route(src="a", dst="b", label="", points=((80, 76), (80, 132), (208, 132)), evidence=())
+    assert "SVA-G-009" in codes(canvas(box("a", 32, 32), box("b", 176, 132), routes=(r,)))
+
+
+def test_a_nan_coordinate_is_reported() -> None:
+    """The check the plan names as "non-finite", and the one ordered
+    comparisons cannot make: `nan < 0` and `nan > width` are both False, so a
+    box at (nan, nan) passed every other check on the canvas."""
+    nan = float("nan")
+    bad = Box(
+        id="a", label="x", full_label="x", kind="module", x=nan, y=nan, w=96, h=44, evidence=EV
+    )  # type: ignore[arg-type]
+    found = codes(canvas(bad))
+    assert "SVA-G-010" in found
+
+
+def test_a_float_coordinate_is_reported_even_when_it_looks_fine() -> None:
+    """Byte-identity across platforms rests on integers, and 32.0 renders
+    identically to 32 while serializing differently."""
+    bad = Box(
+        id="a", label="x", full_label="x", kind="module", x=32.0, y=32, w=96, h=44, evidence=EV
+    )  # type: ignore[arg-type]
+    assert "SVA-G-010" in codes(canvas(bad))
+
+
+def test_a_bool_is_not_an_int_here() -> None:
+    """`isinstance(True, int)` is True in Python, so the check is on `type`."""
+    bad = Box(
+        id="a", label="x", full_label="x", kind="module", x=True, y=32, w=96, h=44, evidence=EV
+    )  # type: ignore[arg-type]
+    assert "SVA-G-010" in codes(canvas(bad))
+
+
+# --------------------------------------------------------------------------
+# Review #8: labels that claim a fact must be computed from that fact
+# --------------------------------------------------------------------------
+
+
+def test_wrapped_rows_produce_one_band_per_level_not_one_per_row() -> None:
+    """Forty boxes all at depth 0 produced bands labelled level 1 through
+    level 4: four confident wrong claims, each geometrically contained so the
+    validator said nothing."""
+    s = spec(*[node(f"n{i:02d}") for i in range(40)])
+    c = lay_out(s, STYLE, "clustered")
+    assert len({b.y for b in c.boxes}) > 1, "fixture did not wrap, so nothing was tested"
+    assert len(c.bands) == 1, [b.label for b in c.bands]
+    assert c.bands[0].label == "level 1"
+    assert set(c.bands[0].members) == {b.id for b in c.boxes}
+    assert validate(c, STYLE) == ()
+
+
+def test_a_cycle_band_says_so_instead_of_claiming_a_level() -> None:
+    """A cyclic node's depth is a placement decision, not a measured fact."""
+    s = spec(
+        node("root"),
+        node("p"),
+        node("q"),
+        edges=(edge("root", "p"), edge("p", "q"), edge("q", "p")),
+    )
+    c = lay_out(s, STYLE, "clustered")
+    labels = [b.label for b in c.bands]
+    assert "in a cycle" in labels, labels
+    cyclic = next(b for b in c.bands if b.label == "in a cycle")
+    assert set(cyclic.members) == {"p", "q"}
+
+
+# --------------------------------------------------------------------------
+# Review #8: silent drops and fan-out collapse
+# --------------------------------------------------------------------------
+
+
+def test_an_edge_to_a_node_that_is_not_in_the_spec_is_diagnosed() -> None:
+    """A `continue` here turned a derive defect into a clean canvas, hiding it
+    from the code that exists to catch it."""
+    s = spec(node("a"), edges=(edge("a", "ghost"),))
+    c = lay_out(s, STYLE, "layered")
+    assert c.routes == ()
+    assert [d.code for d in c.diagnostics] == ["SVA-G-004"]
+    assert "ghost" in c.diagnostics[0].subject
+
+
+def test_fan_out_stays_distinct_past_the_old_slot_budget() -> None:
+    """Seven edges from one box previously yielded five exit points, with
+    edges six and seven landing exactly on one and two. Real out-degrees pass
+    five routinely."""
+    for degree in (4, 6, 7, 12):
+        s = spec(
+            node("a", layer="0"),
+            *[node(f"t{i:02d}", layer="1") for i in range(degree)],
+            edges=tuple(edge("a", f"t{i:02d}") for i in range(degree)),
+        )
+        c = lay_out(s, STYLE, "layered")
+        exits = {r.points[0] for r in c.routes if r.src == "a"}
+        assert len(exits) == degree, f"degree {degree} collapsed to {len(exits)} exits"
+
+
+def test_fan_points_stay_inside_a_box_that_is_too_narrow_for_its_degree() -> None:
+    """Stacking at the centre is honest about crowding; inventing points
+    outside the box is not."""
+    s = spec(
+        node("a", layer="0"),
+        *[node(f"t{i:03d}", layer="1") for i in range(200)],
+        edges=tuple(edge("a", f"t{i:03d}") for i in range(200)),
+    )
+    c = lay_out(s, STYLE, "layered")
+    a = c.box("a")
+    assert a is not None
+    for r in c.routes:
+        if r.src == "a":
+            assert a.x <= r.points[0][0] <= a.right
+    assert crossings(c) == []
+
+
+# --------------------------------------------------------------------------
+# Review #8: Style values the validator would co-compute with
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"box_pad_x": -20},
+        {"gap_x": -1},
+        {"gap_y": -1},
+        {"margin": -1},
+        {"lane_gutter": -1},
+    ],
+)
+def test_negative_spacing_refuses_to_exist(kwargs: dict[str, int]) -> None:
+    """A negative pad produced a 202px box holding a 242px label, blessed by
+    the geometry check, because `budget = w - 2 * pad` grew instead of
+    shrinking. When producer and checker read the same tunable, a corrupt value
+    makes them agree on a falsehood."""
+    with pytest.raises(ValueError, match="cannot be negative"):
+        Style(**kwargs)
+
+
+def test_a_style_leaving_no_room_for_text_refuses_to_exist() -> None:
+    with pytest.raises(ValueError, match="no room for text"):
+        Style(box_min_width=10, box_max_width=20, box_pad_x=10)
+
+
+def test_truncation_never_orphans_a_combining_mark_onto_the_ellipsis() -> None:
+    """A cut landing between a base character and its marks left an accent
+    floating on the ellipsis.
+
+    Written with explicit escapes. The first version of this test used a
+    literal "e-acute", which the editor stored precomposed as U+00E9, so the
+    string contained no combining marks and the test could not fail. Same
+    lesson as the invisible-character deny-list: when the exact codepoint is
+    the subject, write the codepoint.
+    """
+    import unicodedata
+
+    decomposed = "module/caf" + "e\u0301" * 20
+    assert any(unicodedata.combining(c) for c in decomposed), "fixture is not decomposed"
+    out = truncate(decomposed, 13, 40)
+    assert out.startswith("\u2026")
+    assert not unicodedata.combining(out[1]), (
+        f"a combining mark is stacked on the ellipsis: {[hex(ord(c)) for c in out[:3]]}"
+    )
+
+
+def test_a_route_running_along_a_box_edge_is_touching_not_crossing() -> None:
+    """The crossing test is on the box **interior**.
+
+    A closed-interval version of the check passes every fixture here, because
+    nothing in them grazes a box, so the open/closed distinction was asserted
+    in a docstring and tested nowhere. It matters: a route legitimately leaves
+    the edge of the box it starts on, and gap-routed segments can share a y
+    with a row boundary.
+    """
+    grazing = Route(
+        src="a",
+        dst="c",
+        label="",
+        points=((80, 76), (80, 132), (400, 132), (400, 232)),
+        evidence=EV,
+    )
+    # `b` sits in the row whose top edge is exactly y=132, so the horizontal
+    # run lies along its top edge without entering it.
+    c = canvas(
+        box("a", 32, 32),
+        box("b", 200, 132),
+        box("c", 352, 232),
+        routes=(grazing,),
+    )
+    assert crossings(c) == [], crossings(c)
+
+
+def test_a_same_row_edge_is_not_drawn_across_its_own_row() -> None:
+    """The original shape, reconstructed exactly.
+
+    A two-node cycle put both boxes in one row and the route ran from the
+    source's right edge to the target's **right** edge, straight through the
+    target's whole interior at mid-height. A version ending at the target's
+    left edge would have grazed instead of crossed, so the reconstruction has
+    to use the coordinates that failed.
+    """
+    a, b = box("p", 32, 32, w=96), box("q", 176, 32, w=96)
+    original = Route(
+        src="p",
+        dst="q",
+        label="",
+        points=((a.right, a.y + a.h // 2), (b.right, b.y + b.h // 2)),
+        evidence=EV,
+    )
+    # Sanity: that polyline does cross, so the engine assertion below is not
+    # passing because the check is blind to this shape.
+    third = box("r", 176, 32, w=96)
+    assert crossings(canvas(a, box("q", 400, 32), third, routes=(original,))) != []
+
+    s = spec(node("p"), node("q"), edges=(edge("p", "q"), edge("q", "p")))
+    laid = lay_out(s, STYLE, "layered")
+    for r in laid.routes:
+        assert r.points[-1][1] in (
+            laid.box(r.dst).bottom,  # type: ignore[union-attr]
+            laid.box(r.dst).y,  # type: ignore[union-attr]
+        ), "a same-row arrow entered its target from the side, across the row"
+    assert crossings(laid) == []
