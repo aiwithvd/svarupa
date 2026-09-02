@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterator, Mapping
+from dataclasses import replace
 from pathlib import Path
 from typing import cast
 
 from svarupa.detect import Scan, load_toml
+from svarupa.diagnostics import Diagnostic, Severity
 from svarupa.extract.base import (
     CallShape,
     CallSite,
@@ -59,6 +61,7 @@ def extract(scan: Scan, declared_deps: frozenset[str] = frozenset()) -> ExtractR
     to another, so resolution always sees the whole symbol table.
     """
     facts: list[FileFacts] = []
+    crashes: list[Diagnostic] = []
     for rec in scan.files:
         ex = _EXTRACTORS.get(rec.lang or "")
         if ex is None:
@@ -67,15 +70,41 @@ def extract(scan: Scan, declared_deps: frozenset[str] = frozenset()) -> ExtractR
             data = (scan.root / rec.path).read_bytes()
         except OSError:
             continue
-        facts.append(ex.parse(rec.path, data))
+        try:
+            facts.append(ex.parse(rec.path, data))
+        except Exception as exc:
+            # The `try` used to cover only `read_bytes`, so any parser failure
+            # escaped and took the whole analysis with it. Demonstrated on a
+            # real 10,403-file repository: one 16 KB minified bundle raised
+            # RecursionError and nothing else got analyzed.
+            #
+            # This is the stage with the most hostile input in the system, so
+            # it is also where "partial failure must degrade, not disable"
+            # matters most. Broad on purpose: the point is that no extractor
+            # bug, present or future, can cost more than its own file.
+            crashes.append(
+                Diagnostic(
+                    code="SVA-X-004",
+                    severity=Severity.WARNING,
+                    message=(
+                        f"extractor raised {type(exc).__name__}, so this file "
+                        "contributed no facts"
+                    ),
+                    subject=rec.path,
+                    location=rec.path,
+                )
+            )
 
     # Workspace roots discovered by `detect` are import roots. Passing them
     # through is the integration that was missing: the resolver otherwise
     # guesses at layout from the tree alone.
     roots = [w.root for w in scan.workspaces if w.root]
-    return resolve(
+    result = resolve(
         facts, declared_deps, roots, load_aliases(scan.root), workspace_packages(scan)
     )
+    if not crashes:
+        return result
+    return replace(result, diagnostics=result.diagnostics + tuple(crashes))
 
 
 def workspace_packages(scan: Scan) -> tuple[tuple[str, str], ...]:

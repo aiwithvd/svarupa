@@ -93,6 +93,8 @@ CODES: dict[str, str] = {
     # extract
     "SVA-X-001": "a file could not be parsed by its language grammar",
     "SVA-X-002": "a config file could not be read",
+    "SVA-X-003": "a syntax tree exceeded the depth cap and was walked partially",
+    "SVA-X-004": "an extractor raised, so one file contributed no facts",
     # build
     "SVA-B-001": "an element reached the graph without evidence",
     "SVA-B-002": "evidence cites a file that is not in the scan",
@@ -101,6 +103,7 @@ CODES: dict[str, str] = {
     "SVA-B-005": "candidate arity exceeded the cap and was truncated",
     "SVA-B-006": "a workspace member glob matched nothing",
     "SVA-B-007": "a go.work use directive pointed outside the repository",
+    "SVA-B-008": "a merged edge violated its own contract and was dropped",
     # cluster
     "SVA-C-001": "unknown clustering backend",
     "SVA-C-002": "the requested clustering backend is not installed",

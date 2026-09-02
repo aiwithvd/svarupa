@@ -18,12 +18,14 @@ from tree_sitter import Node as TSNode
 
 from svarupa.diagnostics import Diagnostic, Severity
 from svarupa.extract.base import (
+    MAX_AST_DEPTH,
     CallShape,
     CallSite,
     Extractor,
     FileFacts,
     ImportRef,
     SymbolRef,
+    depth_capped,
     qualified_prefix,
 )
 
@@ -152,7 +154,20 @@ class PythonExtractor(Extractor):
         def qual(stack: list[str]) -> str:
             return ".".join([prefix, *stack]) if stack else prefix
 
-        def visit(node: TSNode, stack: list[str], cls: str | None, fn: str | None) -> None:
+        too_deep = False
+
+        def visit(
+            node: TSNode,
+            stack: list[str],
+            cls: str | None,
+            fn: str | None,
+            depth: int = 0,
+        ) -> None:
+            nonlocal too_deep
+            if depth > MAX_AST_DEPTH:
+                too_deep = True
+                return
+
             t = node.type
 
             if t in ("import_statement", "import_from_statement"):
@@ -192,7 +207,7 @@ class PythonExtractor(Extractor):
                 body = node.child_by_field_name("body")
                 if body is not None:
                     for child in body.children:
-                        visit(child, [*stack, name], name, fn)
+                        visit(child, [*stack, name], name, fn, depth=depth + 1)
                 return
 
             if t == "function_definition":
@@ -214,7 +229,7 @@ class PythonExtractor(Extractor):
                 body = node.child_by_field_name("body")
                 if body is not None:
                     for child in body.children:
-                        visit(child, [*stack, name], cls, q)
+                        visit(child, [*stack, name], cls, q, depth=depth + 1)
                 return
 
             if t == "call":
@@ -223,9 +238,11 @@ class PythonExtractor(Extractor):
                     calls.append(site)
 
             for child in node.children:
-                visit(child, stack, cls, fn)
+                visit(child, stack, cls, fn, depth=depth + 1)
 
         visit(tree.root_node, [], None, None)
+        if too_deep:
+            diags.append(depth_capped(path))
 
         return FileFacts(
             path=path,

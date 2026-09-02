@@ -537,3 +537,89 @@ def test_go_work_use_directives(
     for d in ("svc", "lib", "outside", "shared"):
         write(tmp_path, f"{d}/main.go", "package main\n")
     assert workspace_members(detect(tmp_path)) == expected
+
+
+# --------------------------------------------------------------------------
+# Fail-closed drops the element; it does not take the run down
+# --------------------------------------------------------------------------
+
+
+def test_a_candidate_whose_two_sites_coincide_is_dropped_not_raised() -> None:
+    """The exact shape that cost a 10,403-file analysis.
+
+    A candidate edge must cite its call site *and* its definition site. A
+    self-call puts both on the same line, so unioning evidence into a set
+    leaves one citation and the merged edge cannot satisfy its own contract.
+    That contract is right and is not relaxed here; what changes is that the
+    violation drops one edge with a diagnostic instead of raising out of
+    `build`.
+    """
+    from svarupa.build import _merge_edges
+
+    same = Evidence(file="bundle.js", start_line=1, end_line=1)
+    # Legal on the way in: two entries, so the constructor is satisfied.
+    pair = (same, same)
+    edges = [
+        Edge(
+            src="bundle.js",
+            dst="bundle.js#R",
+            kind=EdgeKind.CALLS,
+            evidence=pair,
+            resolution=Resolution.CANDIDATE,
+            arity=2,
+            producer="typescript.calls",
+            attrs=(("shape", "bare"),),
+        ),
+        Edge(
+            src="bundle.js",
+            dst="bundle.js#R",
+            kind=EdgeKind.CALLS,
+            evidence=pair,
+            resolution=Resolution.CANDIDATE,
+            arity=2,
+            producer="typescript.calls",
+            attrs=(("shape", "member"),),
+        ),
+    ]
+    merged, diags = _merge_edges(edges)  # must not raise
+
+    assert merged == (), "an edge that cannot satisfy its contract was emitted anyway"
+    assert [d.code for d in diags] == ["SVA-B-008"]
+    assert "collapsed to 1 citation" in diags[0].message
+
+
+def test_a_candidate_with_two_distinct_sites_still_merges_normally() -> None:
+    """The baseline. Without it the test above would pass on a merge that
+    dropped every candidate edge."""
+    from svarupa.build import _merge_edges
+
+    call = Evidence(file="a.ts", start_line=9, end_line=9)
+    defn = Evidence(file="b.ts", start_line=3, end_line=5)
+    other = Evidence(file="a.ts", start_line=20, end_line=20)
+    edges = [
+        Edge(
+            src="a.ts",
+            dst="b.ts#R",
+            kind=EdgeKind.CALLS,
+            evidence=(call, defn),
+            resolution=Resolution.CANDIDATE,
+            arity=2,
+            producer="typescript.calls",
+            attrs=(("shape", "bare"),),
+        ),
+        Edge(
+            src="a.ts",
+            dst="b.ts#R",
+            kind=EdgeKind.CALLS,
+            evidence=(other, defn),
+            resolution=Resolution.CANDIDATE,
+            arity=2,
+            producer="typescript.calls",
+            attrs=(("shape", "member"),),
+        ),
+    ]
+    merged, diags = _merge_edges(edges)
+
+    assert len(merged) == 1
+    assert set(merged[0].evidence) == {call, defn, other}, "provenance was discarded"
+    assert not [d for d in diags if d.code == "SVA-B-008"]

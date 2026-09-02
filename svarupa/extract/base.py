@@ -24,10 +24,11 @@ from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 
-from svarupa.diagnostics import Diagnostic
+from svarupa.diagnostics import Diagnostic, Severity
 from svarupa.model import Edge, EdgeKind, Evidence, Node, Resolution
 
 __all__ = [
+    "MAX_AST_DEPTH",
     "CallSite",
     "Extractor",
     "FieldType",
@@ -35,6 +36,7 @@ __all__ = [
     "ImportRef",
     "Scorecard",
     "SymbolRef",
+    "depth_capped",
     "node_id",
 ]
 
@@ -250,6 +252,32 @@ class ExtractResult:
     edges: tuple[Edge, ...]
     scorecard: Scorecard
     diagnostics: tuple[Diagnostic, ...] = ()
+
+
+# A syntax tree deeper than this is walked no further. Minified bundles nest
+# thousands of levels: one 16 KB file in a real 10,403-file repository nested
+# past CPython's frame limit and raised RecursionError out of the extractor,
+# taking the whole analysis down. A cap belongs with the file size and count
+# caps design §3 already defines, and it degrades rather than disabling: the
+# shallow part of the file still contributes facts and a diagnostic says the
+# rest was skipped. Comfortably under the default 1000-frame limit, since a
+# visitor burns more than one frame per level.
+MAX_AST_DEPTH = 300
+
+
+def depth_capped(path: str, kind: str = "syntax tree") -> Diagnostic:
+    return Diagnostic(
+        code="SVA-X-003",
+        severity=Severity.WARNING,
+        message=(
+            f"{kind} nests deeper than {MAX_AST_DEPTH} levels; the deeper part was "
+            "not walked, so facts from it are missing"
+        ),
+        subject=path,
+        suggested_fixes=(
+            "this is usually a minified or generated bundle; add it to .svarupaignore",
+        ),
+    )
 
 
 class Extractor(ABC):

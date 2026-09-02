@@ -22,6 +22,7 @@ from tree_sitter import Node as TSNode
 
 from svarupa.diagnostics import Diagnostic, Severity
 from svarupa.extract.base import (
+    MAX_AST_DEPTH,
     CallShape,
     CallSite,
     Extractor,
@@ -29,6 +30,7 @@ from svarupa.extract.base import (
     FileFacts,
     ImportRef,
     SymbolRef,
+    depth_capped,
 )
 
 _TS = Language(tst.language_typescript())
@@ -153,13 +155,25 @@ class TypeScriptExtractor(Extractor):
         def qual(stack: list[str]) -> str:
             return ".".join([prefix, *stack]) if stack else prefix
 
+        too_deep = False
+
         def visit(
             node: TSNode,
             stack: list[str],
             cls: str | None,
             fn: str | None,
             exported: bool = False,
+            depth: int = 0,
         ) -> None:
+            nonlocal too_deep
+            if depth > MAX_AST_DEPTH:
+                # Stop, do not raise. The shallow part of the file has already
+                # contributed real facts and losing them, plus every other
+                # file in the run, is a far worse outcome than losing the
+                # inside of a minified bundle.
+                too_deep = True
+                return
+
             t = node.type
 
             if t == "import_statement" and (ref := self._import(path, data, node)) is not None:
@@ -195,7 +209,7 @@ class TypeScriptExtractor(Extractor):
                     return
                 # A bare `export` wrapper: everything inside it is exported.
                 for child in node.children:
-                    visit(child, stack, cls, fn, exported=True)
+                    visit(child, stack, cls, fn, exported=True, depth=depth + 1)
                 return
 
             if t in ("class_declaration", "abstract_class_declaration"):
@@ -230,7 +244,7 @@ class TypeScriptExtractor(Extractor):
                 body = node.child_by_field_name("body")
                 if body is not None:
                     for child in body.children:
-                        visit(child, [*stack, name], name, fn)
+                        visit(child, [*stack, name], name, fn, depth=depth + 1)
                 return
 
             if t == "interface_declaration":
@@ -273,7 +287,7 @@ class TypeScriptExtractor(Extractor):
                 body = node.child_by_field_name("body")
                 if body is not None:
                     for child in body.children:
-                        visit(child, [*stack, name], cls, q)
+                        visit(child, [*stack, name], cls, q, depth=depth + 1)
                 return
 
             if t in ("public_field_definition", "property_signature") and cls:
@@ -298,7 +312,7 @@ class TypeScriptExtractor(Extractor):
                     body = node.child_by_field_name("body")
                     if body is not None:
                         for child in body.children:
-                            visit(child, [*stack, name], cls, q)
+                            visit(child, [*stack, name], cls, q, depth=depth + 1)
                     return
 
             if t == "variable_declarator":
@@ -323,7 +337,7 @@ class TypeScriptExtractor(Extractor):
                         )
                     )
                     for child in value.children:
-                        visit(child, [*stack, name], cls, q)
+                        visit(child, [*stack, name], cls, q, depth=depth + 1)
                     return
 
             if (
@@ -333,9 +347,11 @@ class TypeScriptExtractor(Extractor):
                 calls.append(site)
 
             for child in node.children:
-                visit(child, stack, cls, fn)
+                visit(child, stack, cls, fn, depth=depth + 1)
 
         visit(tree.root_node, [], None, None)
+        if too_deep:
+            diags.append(depth_capped(path))
 
         return FileFacts(
             path=path,

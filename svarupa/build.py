@@ -251,19 +251,47 @@ def _merge_edges(edges: Iterable[Edge]) -> tuple[tuple[Edge, ...], list[Diagnost
             else:
                 attrs[key] = ",".join(sorted(v for v in values if v))
         attrs["sites"] = str(len(evidence))
-        out.append(
-            Edge(
-                src=base.src,
-                dst=base.dst,
-                kind=base.kind,
-                evidence=evidence,
-                confidence=base.confidence,
-                resolution=chosen,
-                arity=max(e.arity for e in group),
-                attrs=tuple(sorted(attrs.items())),
-                producer=base.producer,
+        try:
+            out.append(
+                Edge(
+                    src=base.src,
+                    dst=base.dst,
+                    kind=base.kind,
+                    evidence=evidence,
+                    confidence=base.confidence,
+                    resolution=chosen,
+                    arity=max(e.arity for e in group),
+                    attrs=tuple(sorted(attrs.items())),
+                    producer=base.producer,
+                )
             )
-        )
+        except (MissingEvidenceError, ValueError) as exc:
+            # Fail-closed means the element is not emitted. It does not mean
+            # the run dies: a `MissingEvidenceError` escaping `build` cost an
+            # entire 10,403-file analysis over one edge in one minified
+            # bundle, which is the disabling that "partial failure must
+            # degrade" exists to prevent.
+            #
+            # The contract itself is right and is not relaxed. What triggers
+            # it here is a self-call: a candidate edge whose call site and
+            # definition site are the *same* line, so deduplicating evidence
+            # into a set leaves one citation where the contract wants two.
+            # Dropping is the honest outcome, because a candidate a reader
+            # cannot see two sides of is exactly what the contract forbids,
+            # and an intra-file edge is discarded by module aggregation
+            # anyway.
+            diags.append(
+                Diagnostic(
+                    code="SVA-B-008",
+                    severity=Severity.WARNING,
+                    message=(
+                        f"merged edge violated its own contract and was dropped "
+                        f"({type(exc).__name__}); "
+                        f"{len(group)} site(s) collapsed to {len(evidence)} citation(s)"
+                    ),
+                    subject=f"{key[0]} -> {key[1]} ({key[2]})",
+                )
+            )
     return tuple(out), diags
 
 

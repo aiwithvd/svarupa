@@ -683,3 +683,70 @@ def test_repeated_imports_keep_their_own_evidence(tmp_path: Path) -> None:
     imports = [e for e in res.edges if e.kind is EdgeKind.IMPORTS and e.src == "pkg/user.py"]
     lines = sorted(ev.start_line for e in imports for ev in e.evidence)
     assert lines == [1, 2], f"lost an import site: {lines}"
+
+
+# --------------------------------------------------------------------------
+# Degrade, do not disable. Both cases found by running on a real repository.
+# --------------------------------------------------------------------------
+
+
+def test_a_deeply_nested_file_is_capped_rather_than_crashing(tmp_path: Path) -> None:
+    """One 16 KB minified bundle raised RecursionError out of the extractor and
+    took a whole 10,403-file analysis down with it.
+
+    The nesting here is generated rather than pasted, so the fixture actually
+    exceeds the cap instead of merely looking deep.
+    """
+    from svarupa.extract.base import MAX_AST_DEPTH
+
+    depth = MAX_AST_DEPTH + 200
+    write(tmp_path, "bundle.js", "const x = " + "(" * depth + "1" + ")" * depth + ";\n")
+    write(tmp_path, "real.ts", "export function keep(): number {\n  return 1;\n}\n")
+
+    scan = detect(tmp_path)
+    result = extract(scan)  # must not raise
+
+    assert any(d.code == "SVA-X-003" for d in result.diagnostics), [
+        d.code for d in result.diagnostics
+    ]
+    # And the rest of the repository still produced facts.
+    assert any(n.id.endswith(".keep") for n in result.nodes), "capping one file lost the others"
+
+
+def test_an_extractor_that_raises_costs_only_its_own_file(tmp_path: Path) -> None:
+    """The `try` used to cover only `read_bytes`, so any parser failure escaped.
+
+    Broad on purpose: the guarantee is that no extractor bug, present or
+    future, can cost more than the file it happened on.
+    """
+    import svarupa.extract as extract_mod
+
+    write(tmp_path, "boom.py", "x = 1\n")
+    write(tmp_path, "fine.py", "def keep():\n    pass\n")
+    scan = detect(tmp_path)
+
+    real = extract_mod._EXTRACTORS["python"]
+
+    class Exploding:
+        lang = real.lang
+        grammar_version = real.grammar_version
+
+        def parse(self, path: str, data: bytes) -> object:
+            if path == "boom.py":
+                raise RuntimeError("kaboom")
+            return real.parse(path, data)
+
+    original = dict(extract_mod._EXTRACTORS)
+    extract_mod._EXTRACTORS["python"] = Exploding()  # type: ignore[assignment]
+    try:
+        result = extract_mod.extract(scan)
+    finally:
+        extract_mod._EXTRACTORS.clear()
+        extract_mod._EXTRACTORS.update(original)
+
+    crashes = [d for d in result.diagnostics if d.code == "SVA-X-004"]
+    assert [d.subject for d in crashes] == ["boom.py"]
+    assert "RuntimeError" in crashes[0].message
+    assert any(n.id.endswith(".keep") for n in result.nodes), (
+        "one exploding file lost the others"
+    )
