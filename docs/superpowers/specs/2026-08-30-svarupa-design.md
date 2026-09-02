@@ -265,7 +265,11 @@ A deriver returning `None` produces no diagram, and the report says why. **An em
 
 Small repos degrade gracefully rather than specially: when a community contains few enough nodes that its sub-diagram would restate the parent box, no `children` reference is emitted and the box is a leaf. A twenty-node project therefore produces one flat diagram through the same code path that produces five levels for a monorepo.
 
-This is the answer to the 50,000-node monorepo. The UX is identical at 500 nodes and 500,000, and it avoids the hairball failure that every competing tool exhibits at scale.
+This is the answer to the 50,000-node monorepo. The UX is identical at 500 nodes and 500,000 *for a repository that is one system*, and it avoids the hairball failure that every competing tool exhibits at scale.
+
+**The measured exception, stated rather than glossed.** The cap holds by merging spilled groups into a group they depend on, or failing that into one they share a directory with. A group that is neither connected nor adjacent to anything kept is left as its own box, because going over budget is more honest than asserting a relationship that does not exist. So the cap is not a hard bound, and a directory of *unrelated* projects defeats it: measured, thirty self-contained top-level projects produce **thirty** top-level boxes, with a diagnostic reading `18 kept separate, being neither connected nor adjacent`.
+
+The diagnostic is honest and the diagram is not wrong, but it is also not twelve boxes, and a claim that "the top level never grows" would be false. Two candidates for the real fix, neither chosen yet: a level *above* architecture that treats each unrelated project as a box and drills into its architecture, or refusing to derive one architecture for a path that contains several unrelated roots and saying so. Both are design decisions rather than tuning, so the number is reported truthfully in the interim and this paragraph is the record that the promise has a known boundary.
 
 ### 5.2 No LLM in the derivation path
 
