@@ -13,11 +13,17 @@ from pathlib import Path
 
 import pytest
 
-from svarupa.build import build
-from svarupa.cluster import cluster
+from svarupa.build import Graph, build
+from svarupa.cluster import Clustering, Community, cluster
 from svarupa.derive import DiagramKind, derive_all
 from svarupa.derive.architecture import ArchitectureDeriver, ModuleDepsDeriver
-from svarupa.derive.base import MAX_TOP_BOXES, group_evidence, module_evidence
+from svarupa.derive.base import (
+    MAX_TOP_BOXES,
+    DiagramNode,
+    DiagramSet,
+    group_evidence,
+    module_evidence,
+)
 from svarupa.derive.erd import ErdDeriver
 from svarupa.detect import detect
 from svarupa.extract import declared_dependencies, extract
@@ -64,6 +70,14 @@ def test_a_diagram_edge_without_evidence_cannot_exist() -> None:
 
 
 def test_every_element_of_every_spec_carries_evidence(tmp_path: Path) -> None:
+    """Tautological by construction, and kept anyway.
+
+    `DiagramNode.__post_init__` raises on empty evidence, so nothing reaching
+    the assertions below can violate them. This is not coverage of the
+    derivers; it is a regression guard against that constructor check being
+    removed. Read it as such. The real evidence coverage is `_verify_evidence`
+    in `build`, which re-reads the file and checks the cited lines exist.
+    """
     layered(tmp_path)
     produced, _ = derive_all(*pipeline(tmp_path))
     assert produced
@@ -533,31 +547,91 @@ def test_capping_prefers_a_real_dependency_over_proximity(tmp_path: Path) -> Non
     assert "shared directory" in message
 
 
-def test_the_connection_merge_tier_is_reachable(tmp_path: Path) -> None:
-    """Drive tier 1 specifically, and assert the member landed in the
-    connected box rather than merely that the message mentions it.
+def _capping_fixture(tmp_path: Path) -> tuple[Graph, Clustering]:
+    """Fourteen groups, so two must spill past the twelve-box budget.
 
-    Reaching this tier needs a group that survives clustering as its own
-    community *and* has a cross-edge into a kept group, which is why the
-    dependent tree is padded to keep it separate.
+    Clustering is supplied by hand rather than by Louvain. The unit under test
+    is the *capping*, and letting Louvain decide the input means the branch the
+    test is named after may never run: the previous attempt at this test
+    skipped, because clustering had already absorbed the dependent group into
+    its target before capping saw it.
     """
     write(tmp_path, "src/__init__.py", "")
-    write(tmp_path, "src/hub/__init__.py", "")
-    write(tmp_path, "src/hub/core.py", "def go():\n    pass\n")
-    for i in range(14):
-        write(tmp_path, f"src/hub/leaf{i:02d}/__init__.py", "")
-        write(tmp_path, f"src/hub/leaf{i:02d}/m.py", "from ...hub.core import go\n")
-    # A separate tree with exactly one dependency into the hub.
-    write(tmp_path, "edge_case/__init__.py", "")
-    write(tmp_path, "edge_case/bridge.py", "from src.hub.core import go\n")
+    big = [f"src/core/p{i}" for i in range(5)]
+    for m in big:
+        write(tmp_path, f"{m}/__init__.py", "")
+        write(tmp_path, f"{m}/m.py", "VALUE = 1\n")
+    pairs: list[list[str]] = []
+    for g in range(11):
+        members = [f"far{g:02d}/a", f"far{g:02d}/b"]
+        for m in members:
+            write(tmp_path, f"{m}/__init__.py", "")
+            write(tmp_path, f"{m}/m.py", "VALUE = 1\n")
+        pairs.append(members)
 
-    graph, clustering = pipeline(tmp_path)
+    # Spills, and depends on the big group. Deliberately placed where its
+    # shared prefix with the big group is zero, so tier 2 cannot rescue it and
+    # only tier 1 can explain the merge.
+    write(tmp_path, "dependent/__init__.py", "")
+    write(tmp_path, "dependent/m.py", "from src.core.p0.m import VALUE\n")
+    # Spills, depends on nothing, but sits under src/ next to the big group.
+    write(tmp_path, "src/quiet/__init__.py", "")
+    write(tmp_path, "src/quiet/m.py", "VALUE = 1\n")
+
+    graph, _ = pipeline(tmp_path)
+    groups = [big, *pairs, ["dependent"], ["src/quiet"]]
+    clustering = Clustering(
+        communities=tuple(
+            Community(anchor=g[0], members=tuple(g), cohesion=1.0) for g in groups
+        ),
+        backend="fixture",
+        seed=0,
+        resolution=1.0,
+    )
+    return graph, clustering
+
+
+def test_capping_merges_a_spilled_group_into_one_it_depends_on(tmp_path: Path) -> None:
+    """Tier 1, asserted on the placement and not only on the message.
+
+    The previous version of this test asserted `"depend on" in msg or "shared
+    directory" in msg`, which passes on either branch. Measured: only the
+    proximity branch ever ran, so the tier this test is named after was
+    entirely uncovered.
+    """
+    graph, clustering = _capping_fixture(tmp_path)
     ds = ArchitectureDeriver().derive(graph, clustering)
     assert ds is not None
-    note = next((d for d in ds.diagnostics if d.code == "SVA-R-003"), None)
-    if note is None:
-        pytest.skip("clustering kept every group under the cap; tier 1 not reached")
-    assert "depend on" in note.message, f"tier 1 never ran: {note.message}"
+    note = next(d for d in ds.diagnostics if d.code == "SVA-R-003")
+    assert "1 merged into a group they depend on" in note.message, note.message
+
+    assert len(ds.root_spec.nodes) <= MAX_TOP_BOXES
+    home = next(n for n in ds.root_spec.nodes if "dependent" in _members(ds, n))
+    assert any(m.startswith("src/core/") for m in _members(ds, home)), (
+        "the spilled module was reported as merged into its dependency but did "
+        "not land in that box"
+    )
+
+
+def test_capping_falls_back_to_shared_directory(tmp_path: Path) -> None:
+    """Tier 2, on the same fixture, so the two tiers are told apart."""
+    graph, clustering = _capping_fixture(tmp_path)
+    ds = ArchitectureDeriver().derive(graph, clustering)
+    assert ds is not None
+    note = next(d for d in ds.diagnostics if d.code == "SVA-R-003")
+    assert "1 merged by shared directory" in note.message, note.message
+
+    home = next(n for n in ds.root_spec.nodes if "src/quiet" in _members(ds, n))
+    assert any(m.startswith("src/") and m != "src/quiet" for m in _members(ds, home)), (
+        "merged by shared directory, into a box sharing no directory"
+    )
+
+
+def _members(ds: DiagramSet, node: DiagramNode) -> list[str]:
+    """Every module a top-level box stands for, via its sub-diagram."""
+    if node.child_spec is None:
+        return [node.id]
+    return [n.id for n in ds.specs[node.child_spec].nodes]
 
 
 def test_nothing_is_lost_to_capping(tmp_path: Path) -> None:
