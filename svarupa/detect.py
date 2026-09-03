@@ -36,7 +36,7 @@ from typing import Any, cast
 
 import pathspec  # pyright: ignore[reportMissingTypeStubs]
 
-from svarupa.diagnostics import Diagnostic, Severity
+from svarupa.diagnostics import Diagnostic, DiagnosticError, Severity
 from svarupa.lock.grammar import collision_check
 from svarupa.model import norm_path
 
@@ -530,6 +530,26 @@ def detect(root: str | Path, limits: ScanLimits | None = None) -> Scan:
     """
     limits = limits or ScanLimits()
     root_path = Path(root).resolve()
+    if not root_path.is_dir():
+        # Refuse, do not degrade. "Partial failure must degrade" is about one
+        # input of many; here there is no input at all, and every downstream
+        # stage would then honestly report nothing. Measured before fixing:
+        # `svarupa /no/such/place` exited **0** and wrote a complete artifact
+        # describing an empty repository, which is indistinguishable from a
+        # real repository containing no code.
+        raise DiagnosticError(
+            Diagnostic(
+                code="SVA-D-007",
+                severity=Severity.ERROR,
+                message=(
+                    "is not a directory"
+                    if root_path.exists()
+                    else "does not exist, so there is nothing to scan"
+                ),
+                subject=str(root_path),
+                suggested_fixes=("Check the path, or run from inside the repository.",),
+            )
+        )
     real_root = os.path.realpath(root_path)
     ignore = _Ignore(_read_ignore_files(root_path))
 

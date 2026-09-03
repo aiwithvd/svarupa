@@ -84,12 +84,13 @@ class DiagnosticError(Exception):
 
 CODES: dict[str, str] = {
     # detect
-    "SVA-D-001": "scan root is missing or not a directory",
-    "SVA-D-002": "file exceeded the size cap and was skipped",
-    "SVA-D-003": "scan hit the file cap and stopped early",
-    "SVA-D-004": "symlink loop or a link pointing outside the root",
-    "SVA-D-005": "an ignore pattern would not compile and was dropped",
-    "SVA-D-006": "a manifest declaring a workspace could not be parsed",
+    "SVA-D-001": "a symlink points outside the repository and was not followed",
+    "SVA-D-002": "a file exceeded the size cap and was skipped",
+    "SVA-D-003": "the scan hit the file cap, so results are partial",
+    "SVA-D-004": "directory nesting exceeded the depth cap",
+    "SVA-D-005": "a directory could not be read",
+    "SVA-D-006": "an ignore pattern would not compile and was dropped",
+    "SVA-D-007": "the scan root does not exist or is not a directory",
     # extract
     "SVA-X-001": "a file could not be parsed by its language grammar",
     "SVA-X-002": "a config file could not be read",

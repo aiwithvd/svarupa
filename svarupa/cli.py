@@ -4,17 +4,19 @@ from __future__ import annotations
 
 import argparse
 import sys
+from pathlib import Path
 
 from svarupa import __version__
 from svarupa.build import build
 from svarupa.cluster import cluster
 from svarupa.derive import derive_all
 from svarupa.detect import FileRole, ScanLimits, detect
+from svarupa.diagnostics import DiagnosticError
+from svarupa.emit import emit
 from svarupa.extract import declared_dependencies, extract
-from svarupa.layout import lay_out_set
 
 
-def _scan(path: str, max_files: int) -> int:
+def _scan(path: str, max_files: int, out: str | None) -> int:
     scan = detect(path, ScanLimits(max_files=max_files))
 
     counts: dict[FileRole, int] = {}
@@ -96,25 +98,30 @@ def _scan(path: str, max_files: int) -> int:
     for note in notes:
         print(f"    - {note}")
 
+    artifact = emit(Path(scan.root), graph, produced, notes, out_dir=Path(out) if out else None)
     print()
-    print("  layout:")
-    withheld = 0
-    for kind, ds in sorted(produced.items(), key=lambda kv: kv[0].value):
-        result = lay_out_set(ds)
-        withheld += len(result.withheld)
-        root = result.canvases.get(ds.root) or result.withheld[ds.root]
-        print(
-            f"    {kind.value:<14} {result.engine_name:<10} {len(result.canvases):>3} drawn  "
-            f"{len(result.withheld):>2} withheld   root {root.width}x{root.height}"
-        )
-        for d in result.problems[:5]:
-            print("      " + d.render())
-        if len(result.problems) > 5:
-            print(f"      ... and {len(result.problems) - 5} more")
+    print(f"  wrote {artifact.directory.name}/")
+    for name, size in artifact.files:
+        print(f"    {name:<28} {size:>9,} bytes")
 
     print()
-    print("Next: the viewer and REPORT.md (P1-6 wave 2) are not implemented yet.")
-    return 1 if errors or graph_errors or withheld else 0
+    print("  layout:")
+    for kind in sorted(produced, key=lambda k: k.value):
+        result = artifact.laid_out[kind]
+        root_canvas = result.canvases.get(produced[kind].root)
+        size = f"{root_canvas.width}x{root_canvas.height}" if root_canvas else "root withheld"
+        print(
+            f"    {kind.value:<14} {result.engine_name:<10} {len(result.canvases):>3} drawn  "
+            f"{len(result.withheld):>2} withheld   root {size}"
+        )
+    for d in artifact.diagnostics[:5]:
+        print("      " + d.render())
+    if len(artifact.diagnostics) > 5:
+        print(f"      ... and {len(artifact.diagnostics) - 5} more")
+
+    print()
+    print(f"  open {artifact.directory / 'index.html'}")
+    return 1 if errors or graph_errors or not artifact.ok else 0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -130,8 +137,22 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--max-files", type=int, default=200_000, help="stop scanning after this many files"
     )
+    parser.add_argument(
+        "--out",
+        default=None,
+        help=(
+            "write the artifact here instead of <repo>/.svarupa. "
+            "Use this to analyze a repository without writing into it."
+        ),
+    )
     args = parser.parse_args(argv)
-    return _scan(args.path, args.max_files)
+    try:
+        return _scan(args.path, args.max_files, args.out)
+    except DiagnosticError as exc:
+        # A structured refusal, printed as one. A traceback here would tell a
+        # user about our call stack instead of about their input.
+        print(exc.diagnostic.render(), file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":

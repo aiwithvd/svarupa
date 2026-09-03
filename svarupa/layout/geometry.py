@@ -128,6 +128,17 @@ class Box:
     def center(self) -> tuple[int, int]:
         return (self.x + self.w // 2, self.y + self.h // 2)
 
+    @property
+    def is_drillable(self) -> bool:
+        """Mirrors `DiagramNode.is_drillable`, on the positioned form.
+
+        Tested against `None` rather than truthiness: a spec id is never empty
+        today, but box *ids* legitimately are (the repository root), and having
+        one of the two read as falsy while the other does not is the kind of
+        near-miss that produces a bug nobody can see.
+        """
+        return self.child_spec is not None
+
     def overlaps(self, other: Box, gap: int = 0) -> bool:
         """Strict: touching edges do not overlap, `gap` demands clearance."""
         return not (

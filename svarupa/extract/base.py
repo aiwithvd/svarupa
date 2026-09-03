@@ -235,6 +235,39 @@ class Scorecard:
             )
         return out
 
+    def to_json_obj(self) -> dict[str, object]:
+        """The scorecard as data, with its own caveat attached.
+
+        The caveat travels with the numbers on purpose. A promoted decision
+        records that this measures **pinning, not correctness**: a confidently
+        wrong edge counts as resolved. A consumer reading `pinned: 96.4` out of
+        a JSON file has no other way to learn that, and a percentage without
+        that sentence reads as an accuracy claim it cannot support.
+        """
+        return {
+            "measures": (
+                "the share of intra-repository references pinned to a target, "
+                "not whether the target is correct; a wrong edge counts as resolved"
+            ),
+            "rows": [
+                {
+                    "lang": lang,
+                    "kind": kind,
+                    "resolved": r,
+                    "candidate": c,
+                    "external": e,
+                    "unresolved": u,
+                    "pinned_pct": round(pct, 2),
+                }
+                for lang, kind, r, c, e, u, pct in self.rows()
+            ],
+            "unresolved_samples": {
+                f"{lang}/{kind}": sorted(v)
+                for (lang, kind), v in sorted(self.samples.items())
+                if v
+            },
+        }
+
     def render(self) -> str:
         lines = [
             f"{'lang':<12}{'kind':<14}{'resolved':>9}{'candidate':>11}"
