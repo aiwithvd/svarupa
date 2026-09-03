@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from svarupa.emit.markup import Markup, esc, join, raw, tag
+from svarupa.emit.markup import EMPTY, Markup, esc, join, raw, tag
 from svarupa.layout.geometry import Box, Canvas, Route, Style
 from svarupa.model import Evidence, Resolution
 
@@ -54,7 +54,7 @@ def _band(label: str, y: int, h: int, width: int, style: Style) -> Markup:
         (
             tag(
                 "rect",
-                "",
+                EMPTY,
                 x=0,
                 y=y - style.band_pad,
                 width=width,
@@ -88,7 +88,7 @@ def _box(box: Box, style: Style) -> Markup:
             ),
             tag(
                 "rect",
-                "",
+                EMPTY,
                 x=box.x,
                 y=box.y,
                 width=box.w,
@@ -148,7 +148,7 @@ def _route(route: Route, style: Style) -> Markup:
         join(
             (
                 tag("title", esc(f"{route.label}\n{evidence_ref(route.evidence)}")),
-                tag("polyline", "", points=points, class_=classes),
+                tag("polyline", EMPTY, points=points, class_=classes),
                 tag(
                     "text",
                     esc(route.label),

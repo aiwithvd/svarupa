@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 import subprocess
 import sys
 from html.parser import HTMLParser
@@ -21,9 +22,9 @@ from svarupa.cli import main
 from svarupa.cluster import cluster
 from svarupa.derive import DiagramKind, derive_all
 from svarupa.detect import detect
-from svarupa.diagnostics import DiagnosticError
-from svarupa.emit import emit
-from svarupa.emit.markup import attrs, esc, json_script, raw, tag
+from svarupa.diagnostics import Diagnostic, DiagnosticError
+from svarupa.emit import MARKER, emit
+from svarupa.emit.markup import attrs, esc, raw, tag
 from svarupa.extract import declared_dependencies, extract
 from svarupa.layout.geometry import Style
 
@@ -84,26 +85,6 @@ def test_attrs_drops_none_instead_of_writing_the_word() -> None:
 
 def test_attrs_escapes_its_values() -> None:
     assert '"&lt;b&gt;"' in str(attrs(title="<b>"))
-
-
-def test_json_script_cannot_end_its_own_element() -> None:
-    """HTML escaping is wrong inside a script element, so the four dangerous
-    characters are written as `\\uXXXX`, which is still valid JSON."""
-    out = str(json_script({"k": "</script><img src=x onerror=alert(1)>"}, "d"))
-    assert "</script><img" not in out
-    assert "\\u003c/script\\u003e" in out
-    payload = out[out.index(">") + 1 : out.rindex("</script>")]
-    assert json.loads(payload)["k"] == "</script><img src=x onerror=alert(1)>"
-
-
-def test_json_script_escapes_the_two_invisible_line_terminators() -> None:
-    """U+2028 and U+2029 end a line in JavaScript while being legal in a JSON
-    string and in a POSIX filename. `json.dumps` leaves them raw."""
-    out = str(json_script({"k": "a\u2028b\u2029c"}, "d"))
-    assert "\u2028" not in out
-    assert "\u2029" not in out
-    payload = out[out.index(">") + 1 : out.rindex("</script>")]
-    assert json.loads(payload)["k"] == "a\u2028b\u2029c"
 
 
 def test_tag_composes_without_reopening_the_hole() -> None:
@@ -469,7 +450,7 @@ def test_the_cli_prints_the_refusal_and_exits_nonzero(
     """A traceback would tell a user about our call stack instead of their
     input."""
     code = main([str(tmp_path / "nope"), "--out", str(tmp_path / "out")])
-    assert code == 2
+    assert code == 1
     err = capsys.readouterr().err
     assert "SVA-D-007" in err
     assert "Traceback" not in err
@@ -622,3 +603,284 @@ def test_the_heading_separates_the_tool_name_from_the_repository(
     run(repo, out)
     html = (out / "index.html").read_text(encoding="utf8")
     assert "svarupa <small>myrepo</small>" in html
+
+
+# --------------------------------------------------------------------------
+# The URL sink: repository text reaches an href, so the scheme is checked
+# --------------------------------------------------------------------------
+
+NODE = shutil.which("node")
+
+
+def extract_js(html: str) -> str:
+    """The viewer's own script, as source."""
+    start = html.rindex("<script>") + len("<script>")
+    return html[start : html.index("</script>", start)]
+
+
+def guard_source(html: str) -> str:
+    """The scheme guard, taken from the shipped artifact rather than retyped.
+
+    Extracted so it cannot drift from what actually ships. `link` itself is
+    closed over inside an IIFE and unreachable from outside, so the guard is
+    driven directly.
+    """
+    js = extract_js(html)
+    return js[js.index("var SAFE") : js.index("function render()")]
+
+
+PROGRAM = """
+globalThis.document = { baseURI: 'https://example.test/artifact/index.html' };
+const base = { value: '' };
+__GUARD__
+const cases = process.argv.slice(1).filter((a) => a !== '--');
+console.log(JSON.stringify(cases.map((c) => {
+  const parts = c.split(':');
+  const line = parts.pop();
+  const file = parts.join(':');
+  return [c, safeHref(file + '#L' + line)];
+})));
+"""
+
+HOSTILE_REFS = [
+    "javascript:alert(1)//x.py:1",
+    "javascript:window.__PWNED=1,void 0/mod.py:1",
+    "data:text/html,<script>alert(1)</script>:1",
+    "vbscript:msgbox(1):1",
+    "JaVaScRiPt:alert(1)//x.py:1",
+]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not available")
+def test_the_evidence_link_refuses_a_dangerous_scheme(tmp_path: Path) -> None:
+    """A directory named `javascript:...` supplied the URL scheme itself.
+
+    It was not executable, but only because the appended `#L<line>` happened to
+    break the payload's syntax. An accident of an unrelated suffix is not a
+    control, and HTML escaping is the wrong escaping for a URL context.
+
+    Run under node, because the branch is in JavaScript and asserting that the
+    source contains a guard would test only that the text is present.
+    """
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    build_repo(repo)
+    out = tmp_path / "out"
+    run(repo, out)
+    html = (out / "index.html").read_text(encoding="utf8")
+
+    ordinary = "src/core/model.py:12"
+    program = PROGRAM.replace("__GUARD__", guard_source(html))
+    proc = subprocess.run(
+        [NODE or "node", "-e", program, "--", ordinary, *HOSTILE_REFS],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    results = dict(json.loads(proc.stdout))
+
+    assert results[ordinary] == "https://example.test/artifact/src/core/model.py#L12", (
+        "an ordinary citation must still produce a working link"
+    )
+    for hostile in HOSTILE_REFS:
+        assert results[hostile] is None, f"{hostile} produced a link"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not available")
+def test_the_scheme_guard_is_present_in_the_emitted_file(tmp_path: Path) -> None:
+    """Guards the test above, which extracts the guard from the artifact.
+
+    Without this, removing the guard would make that test *error* on a missing
+    substring rather than fail on the security regression it is.
+    """
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    build_repo(repo)
+    out = tmp_path / "out"
+    run(repo, out)
+    js = extract_js((out / "index.html").read_text(encoding="utf8"))
+    assert "safeHref" in js, "the URL scheme guard is not in the shipped viewer"
+    assert "'javascript:'" not in js, "no dangerous scheme may be allow-listed"
+
+
+def test_a_dangerous_path_still_appears_as_a_citation(tmp_path: Path) -> None:
+    """Withholding the link must not withhold the evidence.
+
+    The citation is the product's promise. What the guard removes is only the
+    ability to click it, and a reader still needs to be told the path.
+    """
+    build_repo(
+        tmp_path,
+        {
+            "src/javascript:alert(1)/__init__.py": "",
+            "src/javascript:alert(1)/mod.py": "from ...core.model import Thing\n",
+        },
+    )
+    out = tmp_path / "out"
+    run(tmp_path, out)
+    html = (out / "index.html").read_text(encoding="utf8")
+    assert esc("src/javascript:alert(1)") in html, "the path was dropped rather than shown"
+
+
+# --------------------------------------------------------------------------
+# The artifact is a function of this run, not of run history
+# --------------------------------------------------------------------------
+
+
+def test_a_stale_diagram_from_a_previous_run_is_removed(tmp_path: Path) -> None:
+    """Measured before fixing: `diagrams/erd.json` from a run where the ERD was
+    drawable stayed byte-for-byte in place after a run where it was not, so an
+    agent reading `diagrams/*.json` consumes a diagram this commit never
+    produced."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    build_repo(repo)
+    out = tmp_path / "out"
+    run(repo, out)
+
+    stale = out / "diagrams" / "erd.json"
+    stale.write_text('{"stale": true}', encoding="utf8")
+    run(repo, out)
+
+    assert not stale.exists(), "a diagram this run did not produce survived"
+    assert (out / "diagrams" / "architecture.json").is_file()
+
+
+def test_a_renamed_view_does_not_leave_its_old_file_behind(tmp_path: Path) -> None:
+    """View ids are repository-derived, so a renamed module changes them."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    build_repo(repo)
+    out = tmp_path / "out"
+    run(repo, out)
+    (out / "diagrams" / "module-deps.json").write_text("{}", encoding="utf8")
+
+    (repo / "src" / "api").rename(repo / "src" / "gateway")
+    run(repo, out)
+    written = sorted(p.name for p in (out / "diagrams").iterdir())
+    for name in written:
+        text = (out / "diagrams" / name).read_text(encoding="utf8")
+        assert text != "{}", f"{name} is left over from the previous run"
+
+
+def test_the_marker_names_the_directory_as_ours(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    build_repo(repo)
+    out = tmp_path / "out"
+    run(repo, out)
+    marker = out / MARKER
+    assert marker.is_file()
+    assert "replaced on every run" in marker.read_text(encoding="utf8")
+
+
+def test_writing_into_a_directory_with_foreign_files_is_refused(tmp_path: Path) -> None:
+    """`--out` takes an arbitrary path from a command line, so clearing
+    whatever is there would make a reasonable typo destructive."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    build_repo(repo)
+    precious = tmp_path / "precious"
+    precious.mkdir()
+    (precious / "thesis.txt").write_text("years of work", encoding="utf8")
+
+    with pytest.raises(DiagnosticError) as exc:
+        run(repo, precious)
+    assert exc.value.diagnostic.code == "SVA-E-001"
+    assert "thesis.txt" in exc.value.diagnostic.message
+    assert (precious / "thesis.txt").read_text(encoding="utf8") == "years of work"
+
+
+def test_an_empty_directory_is_accepted(tmp_path: Path) -> None:
+    """The refusal is about *foreign* contents, not about existing at all."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    build_repo(repo)
+    out = tmp_path / "out"
+    out.mkdir()
+    run(repo, out)
+    assert (out / "index.html").is_file()
+
+
+def test_a_marked_directory_is_accepted_even_with_extra_files(tmp_path: Path) -> None:
+    """Once marked, the directory is ours; the marker is the consent."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    build_repo(repo)
+    out = tmp_path / "out"
+    out.mkdir()
+    (out / MARKER).write_text("svarupa\n", encoding="utf8")
+    (out / "notes.txt").write_text("kept", encoding="utf8")
+    run(repo, out)
+    assert (out / "index.html").is_file()
+    assert (out / "notes.txt").is_file(), "clearing is scoped to what this stage owns"
+
+
+def test_a_file_where_the_output_directory_should_be_is_refused(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    build_repo(repo)
+    blocker = tmp_path / "out"
+    blocker.write_text("not a directory", encoding="utf8")
+    with pytest.raises(DiagnosticError) as exc:
+        run(repo, blocker)
+    assert exc.value.diagnostic.code == "SVA-E-001"
+
+
+def test_the_cli_refuses_before_doing_the_analysis(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A refusal after several minutes of scanning has already wasted the
+    user's time, and scrolled past a page of output that read as success."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    build_repo(repo)
+    precious = tmp_path / "precious"
+    precious.mkdir()
+    (precious / "thesis.txt").write_text("years of work", encoding="utf8")
+
+    assert main([str(repo), "--out", str(precious)]) == 1
+    captured = capsys.readouterr()
+    assert "SVA-E-001" in captured.err
+    assert "graph:" not in captured.out, "the analysis ran before the refusal"
+
+
+def test_a_refusal_and_a_failed_run_share_one_exit_code(tmp_path: Path) -> None:
+    """Exit codes are a machine contract and CI is the consumer.
+
+    A refusal used to exit 2, which argparse reserves for usage errors, so it
+    was indistinguishable from a mistyped flag while also differing from the
+    tool's own failure code. One non-zero code now means "no usable answer".
+    """
+    assert main([str(tmp_path / "nope"), "--out", str(tmp_path / "out")]) == 1
+
+
+# --------------------------------------------------------------------------
+# Withheld reasons must not be attributed across prefix-related view ids
+# --------------------------------------------------------------------------
+
+
+def test_a_withheld_reason_is_not_taken_from_a_sibling_view() -> None:
+    """Spec ids share a namespace prefix, so `spec_id in d.subject` matched
+    `/spec/root/api` while searching for `/spec/root`, printing one view's
+    failure as another's reason."""
+    from svarupa.diagnostics import Severity
+    from svarupa.emit.report import _first_problem
+    from svarupa.layout import LaidOutDiagram
+
+    problem = Diagnostic(
+        code="SVA-G-001",
+        severity=Severity.ERROR,
+        message="belongs to the child view",
+        subject="/spec/root/api",
+    )
+    lo = LaidOutDiagram(DiagramKind.ARCHITECTURE, "clustered", {}, {}, (problem,))
+
+    child = _first_problem(lo, "/spec/root/api")
+    assert "belongs to the child view" in child
+
+    parent = _first_problem(lo, "/spec/root")
+    assert "belongs to the child view" not in parent, (
+        "the parent view was given its child's failure as its reason"
+    )
+    assert "SVA-G-001" in parent, "the fallback should still name what went wrong"

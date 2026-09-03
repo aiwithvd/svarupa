@@ -17,22 +17,35 @@ Two rules shape it:
 
 from __future__ import annotations
 
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
 from svarupa import __version__
 from svarupa.build import Graph
 from svarupa.derive.base import DiagramKind, DiagramSet
-from svarupa.diagnostics import Diagnostic, Severity
+from svarupa.diagnostics import Diagnostic, DiagnosticError, Severity
 from svarupa.emit.data import diagram_json, graph_json, write_json
 from svarupa.emit.report import render_report
 from svarupa.emit.viewer import render_viewer
 from svarupa.layout import LaidOutDiagram, lay_out_set
 from svarupa.layout.geometry import Style
 
-__all__ = ["OUTPUT_DIR", "Artifact", "emit"]
+__all__ = ["MARKER", "OUTPUT_DIR", "Artifact", "claim", "emit"]
 
 OUTPUT_DIR = ".svarupa"
+
+# A marker naming this directory as ours, so clearing it is a decision about
+# files we wrote rather than a guess. Without it, `--out ~/Documents` would be
+# a destructive command.
+MARKER = ".svarupa-artifact"
+
+# Exactly what this stage owns and will therefore replace. Declared rather than
+# derived from what a run happens to produce: the whole bug is that a *previous*
+# run produced something this one does not, so the set has to include names
+# this run will not write.
+OWNED_FILES = ("index.html", "REPORT.md", "graph.json", MARKER)
+OWNED_DIRS = ("diagrams",)
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,6 +86,7 @@ def emit(
     """
     style = style or Style()
     directory = out_dir or (root / OUTPUT_DIR)
+    claim(directory)
     diagrams_dir = directory / "diagrams"
     diagrams_dir.mkdir(parents=True, exist_ok=True)
 
@@ -101,6 +115,78 @@ def emit(
     written.append(("REPORT.md", _write_text(directory / "REPORT.md", report)))
 
     return Artifact(directory, tuple(written), laid_out, tuple(problems))
+
+
+def claim(directory: Path) -> None:
+    """Take ownership of `directory`, then clear what this stage manages.
+
+    Public and idempotent so the CLI can call it **before** the analysis. A
+    refusal that arrives after several minutes of scanning has already wasted
+    the user's time, and on a large repository the error scrolled past a full
+    page of output that looked like success.
+
+    Two things go wrong without this, both measured. Stale files survive: a
+    `diagrams/erd.json` from a run where the ERD *was* drawable stayed
+    byte-for-byte in place after a run where it was not, so an agent reading
+    `diagrams/*.json` consumes a diagram this commit never produced. And view
+    ids are repository-derived, so a renamed module leaves its old view behind
+    next to the new one.
+
+    The artifact is contracted to be a pure function of the run that wrote it.
+    Writing into a directory without owning its whole contents makes it a
+    function of run history instead, which is the cross-run nondeterminism the
+    byte-identity work exists to remove.
+
+    Clearing is scoped to `OWNED_FILES` and `OWNED_DIRS`, and an existing
+    directory with other contents and no marker is **refused**. `--out` takes
+    an arbitrary path from a command line, so a blind delete of everything
+    inside it would make a reasonable typo destructive.
+    """
+    if directory.exists() and not directory.is_dir():
+        raise DiagnosticError(
+            Diagnostic(
+                code="SVA-E-001",
+                severity=Severity.ERROR,
+                message="exists but is not a directory",
+                subject=str(directory),
+            )
+        )
+    if directory.is_dir() and not (directory / MARKER).exists():
+        owned = set(OWNED_FILES) | set(OWNED_DIRS)
+        foreign = sorted(p.name for p in directory.iterdir() if p.name not in owned)
+        if foreign:
+            raise DiagnosticError(
+                Diagnostic(
+                    code="SVA-E-001",
+                    severity=Severity.ERROR,
+                    message=(
+                        f"holds {len(foreign)} file(s) this tool does not own "
+                        f"({', '.join(foreign[:4])}); refusing to write here, "
+                        "because doing so would mean deleting them on the next run"
+                    ),
+                    subject=str(directory),
+                    suggested_fixes=(
+                        "Point --out at a new or empty directory.",
+                        f"Or, if this really is a svarupa artifact, create {MARKER} in it.",
+                    ),
+                )
+            )
+
+    directory.mkdir(parents=True, exist_ok=True)
+    for name in OWNED_DIRS:
+        target = directory / name
+        if target.is_dir():
+            shutil.rmtree(target)
+    for name in OWNED_FILES:
+        target = directory / name
+        if target.is_file():
+            target.unlink()
+    (directory / MARKER).write_text(
+        f"svarupa {__version__}\nThis directory is managed by svarupa; "
+        "its contents are replaced on every run.\n",
+        encoding="utf8",
+        newline="",
+    )
 
 
 def _write_text(path: Path, text: str) -> int:

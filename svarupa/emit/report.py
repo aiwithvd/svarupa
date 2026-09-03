@@ -184,13 +184,20 @@ def render_report(
 def _first_problem(lo: LaidOutDiagram, spec_id: str) -> str:
     """The first geometry problem naming this view, or an honest fallback.
 
-    A view can be withheld by a problem whose subject is a box rather than the
-    view, so an empty result here means the message is elsewhere, not that
-    nothing was wrong. Saying that is better than printing nothing and letting
-    a reader conclude the view was withheld for no reason.
+    Matched by **equality**, not by substring. Spec ids share a namespace
+    prefix, so `spec_id in d.subject` matched `/spec/root/api` while searching
+    for `/spec/root` and printed one view's failure as another's reason. `in`
+    on identifiers that can be prefixes of one another is a false-match
+    generator; the same lesson as running collision detection on structured
+    pre-images rather than on concatenated text.
+
+    A view can also be withheld by a problem whose subject is a *box*, so an
+    empty result means the message is elsewhere rather than that nothing was
+    wrong. Saying so beats printing nothing and letting a reader conclude the
+    view was withheld for no reason.
     """
     for d in lo.problems:
-        if d.subject and spec_id in d.subject:
+        if d.subject == spec_id:
             return f"`{d.code}` {d.message}"
     codes = sorted({d.code for d in lo.problems})
     return f"failed geometry validation ({', '.join(codes) or 'no code recorded'})"

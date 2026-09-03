@@ -46,16 +46,34 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
         "        if value is False:",
     ),
     (
-        "json_script stops escaping the angle bracket",
-        "svarupa/emit/markup.py",
-        '        ("<", "\\\\u003c"),',
-        '        ("\\x00", "\\\\u003c"),',
+        "the URL scheme guard allows any scheme",
+        "svarupa/emit/viewer.py",
+        "      return SAFE[u.protocol] ? u.href : null;",
+        "      return u.href;",
     ),
     (
-        "json_script stops escaping U+2028",
+        "the output directory is written without clearing what it owns",
+        "svarupa/emit/__init__.py",
+        "    for name in OWNED_DIRS:",
+        "    for name in ():",
+    ),
+    (
+        "a foreign output directory is no longer refused",
+        "svarupa/emit/__init__.py",
+        "        if foreign:",
+        "        if False:",
+    ),
+    (
+        "the withheld reason is attributed by substring again",
+        "svarupa/emit/report.py",
+        "        if d.subject == spec_id:",
+        "        if d.subject and spec_id in d.subject:",
+    ),
+    (
+        "tag accepts a bare str again",
         "svarupa/emit/markup.py",
-        '        ("\\u2028", "\\\\u2028"),',
-        '        ("\\x00", "\\\\u2028"),',
+        "def tag(name: str, body: Markup = EMPTY, /, **pairs: object) -> Markup:",
+        "def tag(name: str, body: object = EMPTY, /, **pairs: object) -> Markup:",
     ),
     (
         "emit writes the absolute path as the display root",
@@ -110,7 +128,7 @@ def main() -> int:
                 continue
             path.write_text(text.replace(old, new, 1), encoding="utf8")
             proc = subprocess.run(
-                [str(PY), "-m", "pytest", "tests/test_emit.py", "-q", "-x"],
+                [str(PY), "-m", "pytest", "tests/test_emit.py", "tests/test_markup_types.py", "-q", "-x"],
                 cwd=ROOT,
                 capture_output=True,
                 text=True,

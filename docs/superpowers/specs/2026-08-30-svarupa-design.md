@@ -324,13 +324,17 @@ Layout runs in Python at build time and writes coordinates into the diagram JSON
 
 ### 6.2 Viewer
 
-`index.html` embeds the rendering engine as JS and lazy-loads the JSON. It draws SVG from pre-positioned specs, so the browser does no layout work.
+`index.html` **contains** the SVG, written in Python from pre-positioned specs. This inverts what this section originally said (embed a JS rendering engine, lazy-load the JSON), and the reason is that layout already computed every coordinate, so there is nothing left for a browser to calculate. Three consequences, each worth more than the lazy loading: the diagram renders with JavaScript disabled; no repository-derived text is turned into markup in the browser, so the escaping guarantee lives in one function in one language; and the artifact is comparable as bytes without a headless browser. JS adds tab switching, drill-down and the evidence panel, and builds DOM with `textContent`, never `innerHTML`.
+
+**One place repository text does reach the browser**, and it needs its own control: a citation path is joined into an `href`. HTML escaping is the wrong escaping for a URL, and a directory named `javascript:...` supplies the scheme itself. Measured in a real browser: it reached `a.href`, and was non-executable only because the appended `#L<line>` failed to parse, which is an accident rather than a control. The scheme is therefore allow-listed at the sink (`http`, `https`, `file`), and a citation that cannot produce a safe URL is rendered as plain text with its path still visible, because withholding the link must not withhold the evidence.
 
 **Navigation:** lands on a generated **Overview** that reads like a briefing with diagrams embedded inline at the points they explain something. Tabs give direct access to each full diagram. A graph explorer tab exposes the full knowledge graph.
 
 **Cross-linking is the point.** Click any box in any diagram and you can jump to that node in the graph explorer, or straight to the source line that proves it. The evidence chain is navigable, not decorative.
 
 **Overview text:** the CLI always emits a templated overview from real graph facts, so a standalone user with no API key gets something useful. When run through the agent skill, the agent rewrites it as prose and saves it into `refinements.yaml`, where it survives rebuilds.
+
+**Phasing of this section, recorded rather than left to inference.** P1-6 shipped the tabs, the inline SVG, the drill-down and evidence click-through, and `REPORT.md`. The following are **deferred, not dropped**, and review #9 was right to call their silent absence out: the in-viewer generated **Overview** (P2 — `REPORT.md` carries the same facts in the interim, but the briefing belongs in the viewer as described above), the **staleness header** (P2, since it needs the git integration the PR bot also needs), the **graph explorer** tab (P2, always), `--bundle` (P3), and `refinements.yaml` (P2, with `refine`). Anything in this section not on that list is either built or a bug.
 
 **Staleness:** the viewer header shows how many commits behind HEAD the graph is, and the command to refresh.
 

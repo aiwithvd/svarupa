@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from svarupa.diagnostics import CODES, Diagnostic, Severity
+from svarupa.diagnostics import CODES, DYNAMIC_MESSAGE_CODES, Diagnostic, Severity
 
 PACKAGE = Path(__file__).resolve().parents[1] / "svarupa"
 _CODE = re.compile(r"^SVA-[A-Z]-\d+$")
@@ -211,3 +211,177 @@ def test_render_and_json_round_trip_every_severity(severity: Severity) -> None:
     assert "a/file.py:3" in rendered
     assert "fix: do the thing" in rendered
     assert '"code": "SVA-D-001"' in d.to_json()
+
+
+# --------------------------------------------------------------------------
+# The check that catches a description which lies
+# --------------------------------------------------------------------------
+
+_STOPWORDS = frozenset(
+    [
+        "a",
+        "an",
+        "the",
+        "and",
+        "or",
+        "of",
+        "to",
+        "in",
+        "for",
+        "is",
+        "are",
+        "was",
+        "were",
+        "be",
+        "been",
+        "it",
+        "its",
+        "this",
+        "that",
+        "not",
+        "no",
+        "any",
+        "all",
+        "one",
+        "two",
+        "with",
+        "from",
+        "into",
+        "on",
+        "at",
+        "by",
+        "as",
+        "so",
+        "than",
+        "then",
+        "their",
+        "there",
+        "here",
+        "what",
+        "which",
+        "who",
+        "whom",
+        "when",
+        "where",
+        "how",
+    ]
+)
+
+
+def _content_words(text: str) -> set[str]:
+    return {
+        w for w in re.findall(r"[a-z]+", text.lower()) if w not in _STOPWORDS and len(w) > 2
+    }
+
+
+def _literal_text(node: ast.expr) -> list[str]:
+    """The static text of a `message=` value, with dynamic slots dropped.
+
+    Handles the shapes actually used: a plain string, an implicitly concatenated
+    f-string, a conditional, and `+`. A shape this does not handle yields no
+    text, which surfaces as a failure rather than as a pass, so an unhandled
+    shape gets noticed instead of quietly exempting a code.
+    """
+    if isinstance(node, ast.Constant):
+        return [node.value] if isinstance(node.value, str) else []
+    if isinstance(node, ast.JoinedStr):
+        return [t for v in node.values for t in _literal_text(v)]
+    if isinstance(node, ast.IfExp):
+        return _literal_text(node.body) + _literal_text(node.orelse)
+    if isinstance(node, ast.BinOp):
+        return _literal_text(node.left) + _literal_text(node.right)
+    return []
+
+
+def emitted_messages() -> dict[str, list[str]]:
+    """Literal message text per code, gathered from live modules.
+
+    Codes are matched both as `code=` keywords and as the first positional
+    argument, because `layout/validate.py` passes them positionally through a
+    helper. That shape is what defeated the first version of the emission scan.
+    """
+    live = live_modules()
+    out: dict[str, list[str]] = {}
+    for path in sorted(PACKAGE.rglob("*.py")):
+        if path.name == "diagnostics.py" or _module_name(path) not in live:
+            continue
+        tree = ast.parse(path.read_text(encoding="utf8"), filename=str(path))
+        for call in (n for n in ast.walk(tree) if isinstance(n, ast.Call)):
+            kw = {k.arg: k.value for k in call.keywords if k.arg}
+            code = None
+            node = kw.get("code")
+            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                code = node.value
+            elif (
+                call.args
+                and isinstance(call.args[0], ast.Constant)
+                and isinstance(call.args[0].value, str)
+                and _CODE.match(call.args[0].value)
+            ):
+                code = call.args[0].value
+            if not code or not _CODE.match(code):
+                continue
+            message = kw.get("message")
+            if message is None and len(call.args) >= 3:
+                message = call.args[2]
+            if message is not None:
+                out.setdefault(code, []).extend(_literal_text(message))
+    return out
+
+
+def test_the_message_scan_finds_text_at_all() -> None:
+    """Guards the drift check below.
+
+    If the scan returned nothing, the drift check would pass vacuously for
+    every code, which is the shape of a test that cannot fail.
+    """
+    found = emitted_messages()
+    assert len(found) > 20, f"only found messages for {len(found)} codes"
+    assert any("clustering backend" in t for t in found.get("SVA-C-001", []))
+
+
+def test_no_registry_description_contradicts_what_its_code_emits() -> None:
+    """The check that was missing, and that a whole wave of wrong descriptions
+    got past.
+
+    Existence and contiguity were checked; agreement was not. Measured when
+    this was first written: **eleven** descriptions shared no content word with
+    the message they label. The entire `SVA-B-*` series was off by several
+    positions, so `SVA-B-001` was documented as "an element reached the graph
+    without evidence" while emitting "two different nodes claim the same id",
+    and that text described `SVA-B-007`.
+
+    One shared content word is a floor, not a proof. It cannot tell a good
+    description from a mediocre one, and it is not meant to: it catches a
+    description that is about something else entirely, which is the failure
+    that actually happened, twice.
+    """
+    messages = emitted_messages()
+    wrong: list[str] = []
+    for code, description in sorted(CODES.items()):
+        if code in DYNAMIC_MESSAGE_CODES:
+            continue
+        emitted = " ".join(messages.get(code, []))
+        shared = _content_words(description) & _content_words(emitted)
+        if not shared:
+            wrong.append(
+                f"{code}\n    described as: {description!r}\n    emits:        {emitted[:120]!r}"
+            )
+    assert not wrong, "descriptions that do not describe what they label:\n" + "\n".join(wrong)
+
+
+def test_every_dynamic_message_code_really_has_no_literal() -> None:
+    """The allow-list is asserted in both directions.
+
+    A code listed as dynamic that has gained a literal message is no longer
+    exempt, and leaving it on the list would carve a permanent hole in the
+    check.
+    """
+    messages = emitted_messages()
+    for code in sorted(DYNAMIC_MESSAGE_CODES):
+        assert code in CODES, f"{code} is allow-listed but not registered"
+        text = " ".join(messages.get(code, [])).strip()
+        assert not text, (
+            f"{code} is allow-listed as dynamic but now emits the literal {text[:80]!r}; "
+            "remove it from DYNAMIC_MESSAGE_CODES so its description is checked"
+        )

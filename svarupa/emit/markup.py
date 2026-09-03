@@ -8,27 +8,38 @@ interpolation wrong is enough.
 
 So the type system carries the invariant. `Markup` is the only thing a document
 accepts, and the only ways to make one are `esc` (which escapes) and `raw`
-(which announces in one word that it does not). Under pyright strict, dropping
-a bare `str` where `Markup` is expected is a type error, which turns "someone
-forgot to escape" from a review miss into a failed build.
+(which announces in one word that it does not). A bare `str` handed to `tag` or
+`join` is a pyright error, which turns "someone forgot to escape" from a review
+miss into a failed build.
 
-A promoted decision says a docstring arguing a check is unnecessary is a check
-that does not exist. This is the opposite construction: the guarantee is a
-property of the types, and `tests/test_emit.py` still attacks it with real
-adversarial names rather than trusting the argument.
+**That claim was false when first written**, and the correction is the reason
+these signatures are as narrow as they are. `tag(name, body: object)` and
+`join(parts: object)` accepted a plain `str` silently and spliced it in
+verbatim, so the guarantee rested on every call site remembering `esc`, which
+is exactly the discipline the types were supposed to replace. Measured:
+`tag("p", hostile_str)` type-checked clean and emitted
+`<p><img src=x onerror=alert(1)></p>`. A type-level guarantee is only as strong
+as the narrowest type on its boundary, and widening a security-critical
+parameter for caller convenience erases the invariant while leaving the
+docstring that claims it.
+
+`tests/test_emit.py` still attacks the property at runtime with names a real
+filesystem accepts, and `tests/test_markup_types.py` asserts the type error
+itself, because a guarantee the type checker is supposed to provide needs a
+test that the type checker actually complains.
 """
 
 from __future__ import annotations
 
-import json
+from collections.abc import Iterable
 from typing import NewType
 
 __all__ = [
+    "EMPTY",
     "Markup",
     "attrs",
     "esc",
     "join",
-    "json_script",
     "raw",
     "tag",
 ]
@@ -67,13 +78,26 @@ def raw(text: str) -> Markup:
     return Markup(text)
 
 
-def join(parts: object, sep: str = "") -> Markup:
-    """Concatenate already-escaped fragments."""
-    return Markup(sep.join(str(p) for p in parts))  # type: ignore[union-attr]
+EMPTY = Markup("")
+
+
+def join(parts: Iterable[Markup], sep: str = "") -> Markup:
+    """Concatenate already-escaped fragments.
+
+    `Iterable[Markup]`, not `object`. The `object` version accepted
+    `join([repo_string])` with no complaint, and the `# type: ignore` that
+    silenced the resulting error was the signal that the signature was wrong.
+    """
+    return Markup(sep.join(parts))
 
 
 def attrs(**pairs: object) -> Markup:
     """Render attributes, escaping every value.
+
+    `object` is correct here, unlike on `tag` and `join`: this function escapes
+    what it is given rather than trusting it, so a caller passing raw
+    repository text is the intended use. The type is wide because the
+    behaviour is safe, not in spite of it.
 
     `None` and `False` drop the attribute entirely rather than rendering the
     string "None", which would silently produce `class="None"`. Underscores in
@@ -91,37 +115,12 @@ def attrs(**pairs: object) -> Markup:
     return Markup("".join(out))
 
 
-def tag(name: str, body: object = "", /, **pairs: object) -> Markup:
-    """One element. `body` must already be `Markup`."""
-    inner = str(body)
-    if not inner:
-        return Markup(f"<{name}{attrs(**pairs)}></{name}>")
-    return Markup(f"<{name}{attrs(**pairs)}>{inner}</{name}>")
+def tag(name: str, body: Markup = EMPTY, /, **pairs: object) -> Markup:
+    """One element.
 
-
-def json_script(data: object, element_id: str) -> Markup:
-    """Embed JSON in a `<script type="application/json">` block, safely.
-
-    HTML escaping is wrong inside a script element: the browser does not decode
-    entities there, so `&lt;` would arrive literally and break the parse.
-    Instead the four characters that can end a script block or a JS string
-    literal are written as `\\uXXXX`, which is valid JSON and cannot escape the
-    element.
-
-    `U+2028` and `U+2029` are included because they terminate a line in
-    JavaScript source while being legal inside a JSON string, and both are
-    legal in a POSIX filename. `json.dumps` leaves them raw by default.
+    `body: Markup` is the whole point. It was `object`, which let
+    `tag("text", node.label)` compile clean and inject.
     """
-    text = json.dumps(data, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
-    # Written as escapes, never as literals. U+2028 and U+2029 are invisible,
-    # so a literal here would be unreviewable in a diff, which is exactly the
-    # property that makes them worth escaping in the first place.
-    for bad, good in (
-        ("<", "\\u003c"),
-        (">", "\\u003e"),
-        ("&", "\\u0026"),
-        ("\u2028", "\\u2028"),
-        ("\u2029", "\\u2029"),
-    ):
-        text = text.replace(bad, good)
-    return Markup(f'<script type="application/json" id="{esc(element_id)}">{text}</script>')
+    if not body:
+        return Markup(f"<{name}{attrs(**pairs)}></{name}>")
+    return Markup(f"<{name}{attrs(**pairs)}>{body}</{name}>")

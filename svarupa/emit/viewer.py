@@ -130,14 +130,37 @@ def _js() -> Markup:
   var list = document.getElementById('panel-list');
   var current = [];
 
+  // Schemes a citation link may use. `file` is repository-derived, and a
+  // directory named `javascript:...` otherwise supplies the scheme itself.
+  // Relying on the trailing '#L<line>' to break the payload's syntax is not
+  // a control, so the scheme is checked here at the sink.
+  var SAFE = { 'http:': 1, 'https:': 1, 'file:': 1 };
+
+  function safeHref(candidate) {
+    try {
+      var u = new URL(candidate, document.baseURI);
+      return SAFE[u.protocol] ? u.href : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
   function link(ref) {
     var parts = ref.split(':');
     var line = parts.pop();
     var file = parts.join(':');
+    var prefix = base.value.replace(/\\/+$/, '');
+    var href = safeHref((prefix ? prefix + '/' : '') + file + '#L' + line);
+    if (href === null) {
+      // Shown, not hidden. The citation is still the evidence; what is
+      // withheld is only the ability to click it.
+      var span = document.createElement('span');
+      span.textContent = ref + ' (no safe link for this path)';
+      return span;
+    }
     var a = document.createElement('a');
     a.textContent = ref;
-    var prefix = base.value.replace(/\\/+$/, '');
-    a.href = (prefix ? prefix + '/' : '') + file + '#L' + line;
+    a.href = href;
     return a;
   }
 

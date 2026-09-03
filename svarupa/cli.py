@@ -12,11 +12,17 @@ from svarupa.cluster import cluster
 from svarupa.derive import derive_all
 from svarupa.detect import FileRole, ScanLimits, detect
 from svarupa.diagnostics import DiagnosticError
-from svarupa.emit import emit
+from svarupa.emit import claim, emit
 from svarupa.extract import declared_dependencies, extract
 
 
 def _scan(path: str, max_files: int, out: str | None) -> int:
+    # Claim the output directory first. Scanning a large repository takes
+    # minutes, and discovering afterwards that the target is unwritable means
+    # the refusal arrives under a page of output that read as success.
+    if out is not None:
+        claim(Path(out))
+
     scan = detect(path, ScanLimits(max_files=max_files))
 
     counts: dict[FileRole, int] = {}
@@ -151,8 +157,15 @@ def main(argv: list[str] | None = None) -> int:
     except DiagnosticError as exc:
         # A structured refusal, printed as one. A traceback here would tell a
         # user about our call stack instead of about their input.
+        #
+        # Exit 1, the same code a completed-but-failed run uses. It was 2,
+        # which argparse reserves for usage errors, so a refusal was
+        # indistinguishable by exit code from a mistyped flag while also
+        # differing from the tool's own failure code. Exit codes are a machine
+        # contract and CI is the consumer: one code means "the tool did not
+        # give you a usable answer", and 2 stays argparse's.
         print(exc.diagnostic.render(), file=sys.stderr)
-        return 2
+        return 1
 
 
 if __name__ == "__main__":

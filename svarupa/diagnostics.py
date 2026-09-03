@@ -23,6 +23,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 
 __all__ = [
+    "CODES",
+    "DYNAMIC_MESSAGE_CODES",
     "Diagnostic",
     "DiagnosticError",
     "Severity",
@@ -92,18 +94,18 @@ CODES: dict[str, str] = {
     "SVA-D-006": "an ignore pattern would not compile and was dropped",
     "SVA-D-007": "the scan root does not exist or is not a directory",
     # extract
-    "SVA-X-001": "a file could not be parsed by its language grammar",
-    "SVA-X-002": "a config file could not be read",
-    "SVA-X-003": "a syntax tree exceeded the depth cap and was walked partially",
+    "SVA-X-001": "a file has syntax errors, so extraction over it is incomplete",
+    "SVA-X-002": "a symbol is defined more than once in one file",
+    "SVA-X-003": "a syntax tree nests deeper than the cap, so it was not fully walked",
     "SVA-X-004": "an extractor raised, so one file contributed no facts",
     # build
-    "SVA-B-001": "an element reached the graph without evidence",
-    "SVA-B-002": "evidence cites a file that is not in the scan",
-    "SVA-B-003": "evidence cites lines that do not exist in the file",
+    "SVA-B-001": "two different nodes claim the same id",
+    "SVA-B-002": "an evidence range is not a valid source location",
+    "SVA-B-003": "one relationship was classified differently by different sites",
     "SVA-B-004": "an edge endpoint is not a node in the graph",
-    "SVA-B-005": "candidate arity exceeded the cap and was truncated",
-    "SVA-B-006": "a workspace member glob matched nothing",
-    "SVA-B-007": "a go.work use directive pointed outside the repository",
+    "SVA-B-005": "evidence names a file that was never scanned",
+    "SVA-B-006": "evidence points past the end of the file",
+    "SVA-B-007": "an element has no evidence",
     "SVA-B-008": "a merged edge violated its own contract and was dropped",
     # cluster
     "SVA-C-001": "unknown clustering backend",
@@ -112,10 +114,10 @@ CODES: dict[str, str] = {
     "SVA-C-004": "a community could not be split usefully",
     # derive
     "SVA-R-001": "a diagram is unavailable, with the reason",
-    "SVA-R-002": "a spill group was stranded or a spec was merged",
+    "SVA-R-002": "type-only imports were excluded from a runtime view",
     "SVA-R-003": "groups exceeded the top-box budget and were merged",
-    "SVA-R-004": "modules or edges were dropped by a cap",
-    "SVA-R-005": "the diagram set is not navigable",
+    "SVA-R-004": "elements were omitted for lack of any extractable source",
+    "SVA-R-005": "a view was withheld or is unreachable, so navigation is broken",
     # geometry / layout
     "SVA-G-001": "boxes overlap",
     "SVA-G-002": "a box falls outside the canvas",
@@ -126,11 +128,19 @@ CODES: dict[str, str] = {
     "SVA-G-007": "duplicate box ids on one canvas",
     "SVA-G-008": "a label was not sanitized before layout",
     "SVA-G-009": "a box or route carries no evidence",
-    "SVA-G-010": "a coordinate is not an integer",
+    "SVA-G-010": "a coordinate is not an int",
     "SVA-G-011": "a route passes through the interior of a box",
+    # emit
+    "SVA-E-001": "the output directory holds files this tool does not own",
     # lock
     "SVA-L-001": "a record kind violates the published grammar",
     "SVA-L-002": "a record has the wrong number of fields for its kind",
     "SVA-L-003": "an unknown escape sequence in a record field",
     "SVA-L-004": "a normalization or case collision between ids",
 }
+
+# Codes whose message text comes from the caller, so there is no literal at the
+# emission site for a drift check to compare a description against. Listed by
+# name rather than inferred, so a *new* code with no literal message fails the
+# check instead of being exempted silently.
+DYNAMIC_MESSAGE_CODES = frozenset({"SVA-R-001"})
