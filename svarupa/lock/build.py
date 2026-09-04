@@ -26,12 +26,35 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from svarupa.build import Graph
-from svarupa.diagnostics import Diagnostic
+from svarupa.diagnostics import Diagnostic, Severity
 from svarupa.extract import GRAMMAR_VERSIONS
 from svarupa.identity import collision_check
 from svarupa.lock.grammar import Lockfile, Record, dep_record, module_record
 
-__all__ = ["LockResult", "build_lock", "lock_records"]
+__all__ = [
+    "ROOT_MODULE",
+    "LockResult",
+    "build_lock",
+    "code_modules",
+    "lock_records",
+    "spell",
+]
+
+# How the repository root is spelled in the lockfile. Its module id is the
+# empty string, which rendered as `module` followed by a bare tab: a line whose
+# entire meaning is trailing whitespace.
+#
+# That is not a parser problem, it is an environment problem. Nearly every
+# repository has architecture files at its root, so nearly every committed
+# lockfile would carry such a line, and pre-commit's `trailing-whitespace` hook
+# and every editor's trim-on-save delete it silently. Measured: after that
+# trim, the file refuses to parse with SVA-L-002 and every CI diff fails until
+# someone regenerates.
+#
+# `.` cannot collide with a real module id, because no directory inside a
+# repository is named `.`. Changed now rather than later: after adoption this
+# would be a major schema bump.
+ROOT_MODULE = "."
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,9 +76,44 @@ def lock_records(graph: Graph) -> tuple[Record, ...]:
     reviewer reads. Deriving it again here would be a second implementation
     that can disagree with the first.
     """
-    records: list[Record] = [module_record(m) for m in sorted(graph.modules)]
-    records.extend(dep_record(src, dst) for src, dst in sorted(graph.module_deps))
+    records: list[Record] = [module_record(spell(m)) for m in sorted(code_modules(graph))]
+    records.extend(dep_record(spell(src), spell(dst)) for src, dst in sorted(graph.module_deps))
     return tuple(records)
+
+
+def code_modules(graph: Graph) -> set[str]:
+    """Modules holding at least one architecture-eligible file in a language
+    this build extracts.
+
+    A directory of YAML is not a module, it is configuration. Nothing in it can
+    ever produce a `dep`, so a `module` line for it is a fact that cannot
+    participate in the structure the lockfile exists to describe, and it is
+    pure churn surface: the first workflow directory or the first Sphinx
+    `docs/` arrives as an architectural change. Measured on a directory of
+    unrelated projects, the unfiltered set was 1,518 module lines, which is not
+    the "small and stable" the design promises.
+
+    Configuration enters the lockfile through the record kinds built for it,
+    `datastore`, `endpoint`, `service` and `queue`, which the grammar already
+    publishes. When the SQL extractor lands, `schema/` returns as a module, and
+    that arrival genuinely is a change in what the tool can see, which the
+    header's grammar versions let a reviewer attribute correctly.
+    """
+    out: set[str] = set()
+    for nid, node in graph.nodes.items():
+        path = nid.split("#", 1)[0]
+        if node.lang and path in graph.architecture_paths:
+            out.add(path.rsplit("/", 1)[0] if "/" in path else "")
+    return out & set(graph.modules)
+
+
+def spell(module_id: str) -> str:
+    """The lockfile spelling of a module id.
+
+    A format concern, not a graph concern: the graph is right to call the root
+    `""`, and the committed file needs a name that survives a text editor.
+    """
+    return module_id or ROOT_MODULE
 
 
 def build_lock(graph: Graph, tool_version: str) -> LockResult:
@@ -66,14 +124,68 @@ def build_lock(graph: Graph, tool_version: str) -> LockResult:
     lockfile diff after a dependency bump is indistinguishable from a diff
     caused by the code changing, and the reviewer has no way to tell.
 
-    Only grammars actually used by this scan are recorded. Stamping every
-    grammar the tool ships with would make the header churn when an unrelated
-    language extractor is added, which is the same churn the format exists to
-    avoid.
+    Only grammars that could have contributed a fact are recorded, which is a
+    narrower set than "languages this scan saw". Keyed on the wider set, adding
+    a single TypeScript **test** file to a pure-Python repository changed the
+    committed lockfile while changing zero records, because
+    `graph.file_languages` counts every scanned file including the test,
+    generated and vendored roles that are excluded from every record.
+
+    Every byte of a committed artifact has to be a function of the facts it
+    commits. Keying any part of it, even a header, to inputs excluded from
+    those facts reopens the churn channel through the exclusion itself.
     """
-    langs = {lang for lang, _count in graph.file_languages}
+    langs = {
+        node.lang
+        for nid, node in graph.nodes.items()
+        if node.lang and nid.split("#", 1)[0] in graph.architecture_paths
+    }
     grammars = {
         lang: version for lang, version in sorted(GRAMMAR_VERSIONS.items()) if lang in langs
     }
-    diagnostics = tuple(collision_check(sorted(graph.modules)))
-    return LockResult(Lockfile.build(tool_version, grammars, lock_records(graph)), diagnostics)
+    records = lock_records(graph)
+    diagnostics = list(collision_check(sorted(code_modules(graph))))
+
+    # A dep whose endpoint has no module line would be a dangling reference in
+    # a committed file. It cannot happen today, because a dependency is derived
+    # from an import and an import needs code at both ends, but "cannot happen"
+    # is what a check is for.
+    named = {f for r in records if r.kind == "module" for f in r.fields}
+    dangling = sorted({f for r in records if r.kind == "dep" for f in r.fields} - named)
+    if dangling:
+        diagnostics.append(
+            Diagnostic(
+                code="SVA-L-009",
+                severity=Severity.ERROR,
+                message=(
+                    "a dependency names a module with no module record, so the "
+                    "lockfile would refer to something it does not declare"
+                ),
+                subject=", ".join(dangling[:5]),
+            )
+        )
+
+    if not records:
+        # An empty lockfile is a claim: "this repository has no architecture".
+        # Committed silently, it becomes the base everyone diffs against, and
+        # the eventual fix arrives as a giant delta attributed to whoever made
+        # it. Every other stage refuses or explains when it has nothing.
+        diagnostics.append(
+            Diagnostic(
+                code="SVA-L-010",
+                severity=Severity.WARNING,
+                message=(
+                    "no architectural facts were found, so this lockfile claims the "
+                    "repository has no architecture. Committing it makes that the "
+                    "base every future diff is measured against"
+                ),
+                subject=tool_version,
+                suggested_fixes=(
+                    "Check the scan root and any .svarupaignore rules.",
+                    "If the repository really has no extractable source, this is "
+                    "correct and can be committed.",
+                ),
+            )
+        )
+
+    return LockResult(Lockfile.build(tool_version, grammars, records), tuple(diagnostics))

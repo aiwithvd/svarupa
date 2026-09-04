@@ -96,6 +96,14 @@ def test_dict_and_set_iteration_do_not_leak() -> None:
 
 
 def test_locale_does_not_affect_collation() -> None:
+    """Live on glibc, inert on macOS, which is where it is usually run.
+
+    BSD libc collation ignores `LC_COLLATE`: measured, `setlocale(LC_ALL, "")`
+    under `tr_TR.UTF-8` sorts `I`, `i` and dotted-I identically to `C`. So on a
+    developer laptop this test cannot fail, and its real execution happens on
+    the Ubuntu CI leg. Recorded rather than left implicit, because a promoted
+    decision says a platform-conditional test is unverified until CI proves it.
+    """
     """Turkish dotless-i is the classic sorting trap."""
     script = _CHILD.format(root=str(Path(__file__).resolve().parents[1]))
     outputs: set[str] = set()

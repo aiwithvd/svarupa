@@ -1,7 +1,14 @@
 """The architecture lockfile: the committed, diffable fingerprint of a system."""
 
 from svarupa.identity import collision_check
-from svarupa.lock.build import LockResult, build_lock, lock_records
+from svarupa.lock.build import (
+    ROOT_MODULE,
+    LockResult,
+    build_lock,
+    code_modules,
+    lock_records,
+    spell,
+)
 from svarupa.lock.diff import ArchitectureDelta, diff, drift_check
 from svarupa.lock.grammar import (
     SCHEMA_MAJOR,
@@ -24,6 +31,7 @@ LOCK_NAME = "architecture.lock"
 
 __all__ = [
     "LOCK_NAME",
+    "ROOT_MODULE",
     "SCHEMA_MAJOR",
     "SCHEMA_MINOR",
     "ArchitectureDelta",
@@ -33,6 +41,7 @@ __all__ = [
     "Record",
     "SchemaMismatch",
     "build_lock",
+    "code_modules",
     "collision_check",
     "dep_record",
     "diff",
@@ -40,5 +49,6 @@ __all__ = [
     "escape_field",
     "lock_records",
     "module_record",
+    "spell",
     "unescape_field",
 ]

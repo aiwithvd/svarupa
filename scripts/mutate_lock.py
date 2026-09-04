@@ -30,20 +30,25 @@ import tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 PY = ROOT / ".venv" / "bin" / "python"
-SUITE = ["tests/test_lock.py", "tests/test_determinism.py", "tests/test_lock_grammar.py"]
+SUITE = [
+    "tests/test_lock.py",
+    "tests/test_determinism.py",
+    "tests/test_lock_grammar.py",
+    "tests/test_diagnostics.py",
+]
 
 MUTATIONS: list[tuple[str, str, str, str]] = [
     (
         "the lockfile records file paths instead of modules",
         "svarupa/lock/build.py",
-        "    records: list[Record] = [module_record(m) for m in sorted(graph.modules)]",
-        "    records: list[Record] = [module_record(m) for m in sorted(graph.nodes)]",
+        "for m in sorted(code_modules(graph))",
+        "for m in sorted(graph.nodes)",
     ),
     (
         "dependencies are dropped from the lockfile",
         "svarupa/lock/build.py",
-        "    records.extend(dep_record(src, dst) for src, dst in sorted(graph.module_deps))",
-        "    records.extend(dep_record(src, dst) for src, dst in sorted(set()))",
+        "for src, dst in sorted(graph.module_deps)",
+        "for src, dst in sorted(set())",
     ),
     (
         "the header stamps every grammar the tool ships, used or not",
@@ -54,8 +59,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     (
         "collision detection is not run when building the lockfile",
         "svarupa/lock/build.py",
-        "    diagnostics = tuple(collision_check(sorted(graph.modules)))",
-        "    diagnostics = ()",
+        "diagnostics = list(collision_check(sorted(code_modules(graph))))",
+        "diagnostics = []",
     ),
     (
         "the diff reports additions but never removals",
@@ -78,22 +83,32 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     (
         "drift is detected but never reported",
         "svarupa/lock/diff.py",
-        "    if delta.empty:\n        return ()",
-        "    if True:\n        return ()",
+        "    delta = diff(committed_base, regenerated_base)\n    if delta.empty:",
+        "    delta = diff(committed_base, regenerated_base)\n    if True:",
     ),
     (
         "drift is reported even when the base is current",
         "svarupa/lock/diff.py",
-        "    if delta.empty:\n        return ()",
-        "    if False:\n        return ()",
+        "    delta = diff(committed_base, regenerated_base)\n    if delta.empty:",
+        "    delta = diff(committed_base, regenerated_base)\n    if False:",
+    ),
+    (
+        "the drift warning predicts what the delta will contain",
+        "svarupa/lock/diff.py",
+        'f"{len(delta.removed)} fact(s) it still claims"',
+        'f"{len(delta.removed)} fact(s) it still claims, which will appear in the delta below as though this change caused them"',
     ),
     (
         "the delta renders additions before removals",
         "svarupa/lock/diff.py",
-        '            out.extend(f"  - {r.render()}" for r in removed)\n'
-        '            out.extend(f"  + {r.render()}" for r in added)',
-        '            out.extend(f"  + {r.render()}" for r in added)\n'
-        '            out.extend(f"  - {r.render()}" for r in removed)',
+        '            out.extend(f"  - {r.render()}" for r in removed)\n            out.extend(f"  + {r.render()}" for r in added)',
+        '            out.extend(f"  + {r.render()}" for r in added)\n            out.extend(f"  - {r.render()}" for r in removed)',
+    ),
+    (
+        "a grammar version change is invisible in the delta",
+        "svarupa/lock/diff.py",
+        "    if moved:",
+        "    if False:",
     ),
     (
         "the CLI shows the delta before the drift warning",
@@ -110,8 +125,50 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     (
         "a lockfile is written even when nobody asked for one",
         "svarupa/cli.py",
-        "    if not (write_lock or diff_base or drift_base):\n        return False",
+        "    if not (write_lock or bases):\n        return False",
         "    write_lock = True\n    if False:\n        return False",
+    ),
+    (
+        "the schema stamp is not checked at load time",
+        "svarupa/cli.py",
+        "    if not lockfile.header.stamped:",
+        "    if False:",
+    ),
+    (
+        "a lockfile is written even when its own build errored",
+        "svarupa/cli.py",
+        "    if write_lock and failed:",
+        "    if False:",
+    ),
+    (
+        "the grammar header counts every scanned file again",
+        "svarupa/lock/build.py",
+        'if node.lang and nid.split("#", 1)[0] in graph.architecture_paths',
+        "if node.lang",
+    ),
+    (
+        "the repository root is spelled as an empty field again",
+        "svarupa/lock/build.py",
+        'ROOT_MODULE = "."',
+        'ROOT_MODULE = ""',
+    ),
+    (
+        "config-only directories are modules again",
+        "svarupa/lock/build.py",
+        "    return out & set(graph.modules)",
+        "    return set(graph.modules)",
+    ),
+    (
+        "an empty lockfile is written without saying so",
+        "svarupa/lock/build.py",
+        "    if not records:",
+        "    if False:",
+    ),
+    (
+        "a dangling dependency reference is not detected",
+        "svarupa/lock/build.py",
+        "    if dangling:",
+        "    if False:",
     ),
 ]
 

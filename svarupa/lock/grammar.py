@@ -80,8 +80,27 @@ _LF = "\n"
 GrammarSpec = Mapping[str, str] | tuple[tuple[str, str], ...]
 
 
-class SchemaMismatch(Exception):
-    """Raised when a lockfile cannot be diffed against this build."""
+class SchemaMismatch(DiagnosticError):
+    """A refusal, not a crash.
+
+    Subclasses `DiagnosticError` so the tool's one refusal path handles it.
+    It was a bare `Exception`, which meant the deliberate refusal this format
+    is designed around reached a user as a raw traceback: the message told them
+    to regenerate, wrapped in a stack telling them about our call frames.
+    """
+
+    def __init__(self, message: str, subject: str | None = None) -> None:
+        super().__init__(
+            Diagnostic(
+                code="SVA-L-007",
+                severity=Severity.ERROR,
+                message=message,
+                subject=subject,
+                suggested_fixes=(
+                    "Regenerate the lockfile with a matching major schema version.",
+                ),
+            )
+        )
 
 
 def escape_field(s: str) -> str:

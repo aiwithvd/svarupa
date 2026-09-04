@@ -126,19 +126,35 @@ def test_a_python_and_typescript_repo_records_both(tmp_path: Path) -> None:
     assert dict(header.grammars_tuple).keys() == {"python", "typescript"}
 
 
-def test_the_repository_root_module_round_trips(tmp_path: Path) -> None:
-    """The repo root is a real module and its id is the empty string, so it
-    renders as `module` plus a tab plus nothing.
+def test_the_repository_root_module_is_spelled_as_a_dot(tmp_path: Path) -> None:
+    """The root module id is the empty string, which rendered as `module` plus
+    a bare tab: a line whose entire meaning is trailing whitespace.
 
-    A committed file's parser has to survive its own output, and an empty
-    trailing field is exactly the shape a naive `split` or `strip` loses.
+    Not a parser problem, an environment problem. Nearly every repository has
+    architecture files at its root, so nearly every committed lockfile would
+    carry such a line, and pre-commit's `trailing-whitespace` hook deletes it.
     """
     write(tmp_path, "top.py", "x = 1\n")
     text = lock_text(tmp_path)
-    assert "module\t\n" in text or text.rstrip("\n").endswith("module\t")
-    parsed = Lockfile.parse(text)
-    assert Record("module", ("",)) in parsed.records
-    assert parsed.render() == text, "the lockfile does not survive its own parser"
+    assert Record("module", (".",)) in Lockfile.parse(text).records
+    assert not any(line.endswith("\t") for line in text.split("\n"))
+
+
+def test_the_lockfile_survives_a_trailing_whitespace_hook(tmp_path: Path) -> None:
+    """What the previous spelling failed. Measured before the fix: after the
+    trim, parsing refused with SVA-L-002 and every CI diff would fail until
+    someone regenerated."""
+    write(tmp_path, "top.py", "x = 1\n")
+    repo(tmp_path)
+    text = lock_text(tmp_path)
+    trimmed = "\n".join(line.rstrip() for line in text.split("\n"))
+    assert Lockfile.parse(trimmed).records == Lockfile.parse(text).records
+
+
+def test_a_lockfile_survives_its_own_parser(tmp_path: Path) -> None:
+    repo(tmp_path)
+    text = lock_text(tmp_path)
+    assert Lockfile.parse(text).render() == text
 
 
 # --------------------------------------------------------------------------
@@ -308,7 +324,12 @@ def test_a_stale_base_lockfile_is_reported_as_drift() -> None:
     assert [d.code for d in found] == ["SVA-L-006"]
     assert found[0].severity is Severity.WARNING
     assert "1 fact(s) missing from it" in found[0].message
-    assert "as though this change caused them" in found[0].message
+    # It must NOT predict what the delta below will contain. The CLI decides
+    # that, and the first version's guidance was false in the only place it was
+    # ever printed: it said the drifted facts would appear below, directly
+    # above a correct "No architectural change."
+    assert "delta below" not in found[0].message
+    assert not any("delta" in f for f in found[0].suggested_fixes)
 
 
 def test_a_current_base_lockfile_reports_no_drift() -> None:
@@ -362,11 +383,22 @@ def test_build_lock_actually_runs_the_collision_check(tmp_path: Path) -> None:
 
     repo(tmp_path)
     graph = graph_of(tmp_path)
+    # Rename a module that really has code, so it survives the code-modules
+    # filter: injecting a name with no files behind it would be dropped before
+    # the collision check ever saw it.
     modules = dict(graph.modules)
+    nodes = dict(graph.nodes)
+    paths = set(graph.architecture_paths)
     sample = next(iter(modules.values()))
     modules["src/Core"] = sample
-    modules["src/core"] = sample
-    colliding = replace(graph, modules=modules)
+    for nid, node in list(nodes.items()):
+        if nid.startswith("src/core/"):
+            twin = nid.replace("src/core/", "src/Core/", 1)
+            nodes[twin] = node
+            paths.add(twin.split("#", 1)[0])
+    colliding = replace(
+        graph, modules=modules, nodes=nodes, architecture_paths=frozenset(paths)
+    )
 
     result = build_lock(colliding, __version__)
     codes = [d.code for d in result.diagnostics]
@@ -487,9 +519,11 @@ def test_drift_base_without_diff_is_refused(
     source = tmp_path / "repo"
     source.mkdir()
     repo(source)
-    code = main(
-        [str(source), "--out", str(tmp_path / "out"), "--drift-base", str(tmp_path / "x.lock")]
-    )
+    lock = tmp_path / "x.lock"
+    main([str(source), "--out", str(tmp_path / "seed"), "--lock"])
+    lock.write_text((tmp_path / "seed" / LOCK_NAME).read_text(encoding="utf8"), encoding="utf8")
+    capsys.readouterr()
+    code = main([str(source), "--out", str(tmp_path / "out"), "--drift-base", str(lock)])
     assert code == 1
     assert "needs --diff" in capsys.readouterr().out
 
@@ -575,3 +609,267 @@ def test_a_non_ascii_module_name_is_recorded_in_one_normalization_form(
             f"{line!r} is not NFC, so this lockfile differs by platform"
         )
     assert any("caf" in ln for ln in module_lines), "the fixture module is missing"
+
+
+# --------------------------------------------------------------------------
+# Review #10: the loading channel is part of the parser's boundary
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("name", "content", "code"),
+    [
+        ("missing", None, "SVA-L-008"),
+        ("empty", "", "SVA-L-007"),
+        ("unstamped", "module\ta\n", "SVA-L-007"),
+        ("conflict", "<<<<<<< HEAD\nmodule\ta\n", "SVA-L-001"),
+        ("wrong_major", "# svarupa t\n# schema 9.0\n# grammars\nmodule\ta\n", "SVA-L-007"),
+    ],
+)
+def test_a_hostile_base_lockfile_refuses_with_a_code(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    name: str,
+    content: str | None,
+    code: str,
+) -> None:
+    """The grammar was hardened for hostile bytes and stopped at the channel.
+
+    Four of six inputs arrived as raw Python tracebacks, including the tool's
+    own designed refusal for a mismatched schema: a message telling the user to
+    regenerate, wrapped in a stack telling them about our call frames.
+    """
+    source = tmp_path / "repo"
+    source.mkdir()
+    repo(source)
+    target = tmp_path / f"{name}.lock"
+    if content is not None:
+        target.write_text(content, encoding="utf8")
+
+    assert main([str(source), "--out", str(tmp_path / "out"), "--diff", str(target)]) == 1
+    captured = capsys.readouterr()
+    assert code in captured.err
+    assert "Traceback" not in captured.err
+
+
+def test_a_directory_given_as_a_lockfile_refuses(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    source = tmp_path / "repo"
+    source.mkdir()
+    repo(source)
+    assert main([str(source), "--out", str(tmp_path / "out"), "--diff", str(tmp_path)]) == 1
+    assert "SVA-L-008" in capsys.readouterr().err
+
+
+def test_a_non_utf8_lockfile_refuses(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    source = tmp_path / "repo"
+    source.mkdir()
+    repo(source)
+    target = tmp_path / "utf16.lock"
+    target.write_bytes("# svarupa 1\n".encode("utf-16"))
+    assert main([str(source), "--out", str(tmp_path / "out"), "--diff", str(target)]) == 1
+    assert "SVA-L-008" in capsys.readouterr().err
+
+
+def test_a_bad_lockfile_refuses_before_the_scan(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The identical failure `claim()` was moved to the front to prevent, one
+    wave later. On a large repository a CI job burned minutes before learning
+    the base path was mistyped."""
+    source = tmp_path / "repo"
+    source.mkdir()
+    repo(source)
+    main([str(source), "--out", str(tmp_path / "out"), "--diff", str(tmp_path / "nope.lock")])
+    captured = capsys.readouterr()
+    assert captured.out == "", f"the scan ran before the refusal: {captured.out[:120]!r}"
+
+
+# --------------------------------------------------------------------------
+# Review #10: churn channels the verification table does not name
+# --------------------------------------------------------------------------
+
+
+def test_a_test_file_in_another_language_does_not_touch_the_lockfile(
+    tmp_path: Path,
+) -> None:
+    """Demonstrated: one TypeScript **test** file, excluded from every record,
+    changed the committed lockfile's grammar header while changing zero facts.
+
+    Every byte of a committed artifact has to be a function of the facts it
+    commits.
+    """
+    repo(tmp_path)
+    before = lock_text(tmp_path)
+    write(tmp_path, "tests/util.test.ts", "export const t = 1;\n")
+    assert (tmp_path / "tests/util.test.ts").is_file(), "the fixture was not created"
+    assert lock_text(tmp_path) == before
+
+
+def test_a_real_source_file_in_another_language_does_register(tmp_path: Path) -> None:
+    """The other side: the filter must not filter everything."""
+    repo(tmp_path)
+    before = lock_text(tmp_path)
+    write(tmp_path, "web/app.ts", "export const x = 1;\n")
+    after = lock_text(tmp_path)
+    assert after != before
+    assert "typescript@" in after
+
+
+def test_a_config_only_directory_is_not_a_module(tmp_path: Path) -> None:
+    """A directory of YAML is configuration, not a module. Nothing in it can
+    produce a dep, so a module line for it is pure churn surface: the first
+    workflow directory arrives as an architectural change."""
+    repo(tmp_path)
+    before = lock_text(tmp_path)
+    write(tmp_path, ".github/workflows/ci.yml", "on: push\njobs: {}\n")
+    write(tmp_path, "deploy/values.yaml", "replicas: 1\n")
+    assert lock_text(tmp_path) == before
+
+
+def test_a_directory_with_code_is_still_a_module(tmp_path: Path) -> None:
+    """The baseline for the test above."""
+    repo(tmp_path)
+    write(tmp_path, "tools/__init__.py", "")
+    write(tmp_path, "tools/run.py", "from ..src.core.model import Thing\n")
+    assert "module\ttools" in lock_text(tmp_path)
+
+
+def test_every_dependency_names_a_declared_module(tmp_path: Path) -> None:
+    """Filtering modules must not leave a dep pointing at nothing."""
+    repo(tmp_path)
+    write(tmp_path, ".github/workflows/ci.yml", "on: push\n")
+    records = lock_records(graph_of(tmp_path))
+    declared = {f for r in records if r.kind == "module" for f in r.fields}
+    for r in records:
+        if r.kind == "dep":
+            assert set(r.fields) <= declared, f"{r.render()} names an undeclared module"
+
+
+# --------------------------------------------------------------------------
+# Review #10: a wrong lockfile must not be written, and an empty one explains
+# --------------------------------------------------------------------------
+
+
+def test_a_repository_with_no_extractable_source_says_so(tmp_path: Path) -> None:
+    """An empty lockfile is a claim: "this repository has no architecture".
+    Committed silently, it becomes the base every future diff is measured
+    against."""
+    write(tmp_path, "README.md", "# hi\n")
+    result = build_lock(graph_of(tmp_path), __version__)
+    assert result.lockfile.records == ()
+    assert [d.code for d in result.diagnostics] == ["SVA-L-010"]
+
+
+def test_a_normal_repository_does_not_claim_emptiness(tmp_path: Path) -> None:
+    repo(tmp_path)
+    result = build_lock(graph_of(tmp_path), __version__)
+    assert not [d for d in result.diagnostics if d.code == "SVA-L-010"]
+
+
+def test_a_grammar_version_change_is_reported_in_the_delta() -> None:
+    """Design §7.2 records grammar versions so a reviewer can tell a grammar
+    bump from a code change. Recording them and never comparing them leaves
+    exactly the ambiguity they were added to remove."""
+    base = Lockfile.build("t", {"python": "0.25.0"}, [Record("module", ("a",))])
+    head = Lockfile.build("t", {"python": "0.26.0"}, [Record("module", ("a",))])
+    codes = [d.code for d in diff(base, head).diagnostics]
+    assert codes == ["SVA-L-011"]
+
+
+def test_an_unchanged_grammar_version_is_not_reported() -> None:
+    """The baseline: it must not be a constant."""
+    base = Lockfile.build("t", {"python": "0.25.0"}, [Record("module", ("a",))])
+    head = Lockfile.build("t", {"python": "0.25.0"}, [Record("module", ("b",))])
+    assert not [d for d in diff(base, head).diagnostics if d.code == "SVA-L-011"]
+
+
+def test_an_unstamped_lockfile_refuses_before_the_scan(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`assert_diffable` refuses an unstamped file, which is right, and it does
+    so at diff time, which is too late.
+
+    Without this the load-time check could be deleted and the suite would stay
+    green, because the later refusal produces the same code.
+    """
+    source = tmp_path / "repo"
+    source.mkdir()
+    repo(source)
+    target = tmp_path / "unstamped.lock"
+    target.write_text("module\ta\n", encoding="utf8")
+
+    assert main([str(source), "--out", str(tmp_path / "out"), "--diff", str(target)]) == 1
+    captured = capsys.readouterr()
+    assert "SVA-L-007" in captured.err
+    assert captured.out == "", f"the scan ran before the refusal: {captured.out[:120]!r}"
+
+
+def test_a_lockfile_whose_build_errored_is_not_written(tmp_path: Path) -> None:
+    """It was written first and the error only set the exit code, so a user who
+    does not check exit codes had a known-wrong lockfile on disk, ready to
+    commit as the base every future diff is measured against."""
+    source = tmp_path / "repo"
+    source.mkdir()
+    repo(source)
+    out = tmp_path / "out"
+
+    from svarupa import cli as cli_mod
+
+    real = cli_mod.build_lock
+
+    def erroring(graph: Graph, version: str) -> object:
+        from dataclasses import replace as dc_replace
+
+        from svarupa.diagnostics import Diagnostic
+
+        result = real(graph, version)
+        bad = Diagnostic(
+            code="SVA-L-004",
+            severity=Severity.ERROR,
+            message="synthetic collision",
+            subject="a | A",
+        )
+        return dc_replace(result, diagnostics=(*result.diagnostics, bad))
+
+    cli_mod.build_lock = erroring  # type: ignore[assignment]
+    try:
+        assert main([str(source), "--out", str(out), "--lock"]) == 1
+    finally:
+        cli_mod.build_lock = real  # type: ignore[assignment]
+
+    assert not (out / LOCK_NAME).exists(), (
+        "a lockfile whose own build reported an error was written to disk"
+    )
+
+
+def test_a_dangling_dependency_reference_is_detected(tmp_path: Path) -> None:
+    """Cannot happen today: a dependency comes from an import and an import
+    needs code at both ends. "Cannot happen" is what a check is for, and the
+    module filter added this wave is exactly the kind of change that could
+    break it.
+
+    Driven through `build_lock` rather than by reimplementing the check here.
+    An inline reimplementation would assert that the test agrees with itself.
+    """
+    from dataclasses import replace
+
+    repo(tmp_path)
+    graph = graph_of(tmp_path)
+    # A dependency on a module with no code, which the filter therefore drops.
+    broken = replace(graph, module_deps=(*graph.module_deps, ("src/core", "config")))
+
+    result = build_lock(broken, __version__)
+    codes = [d.code for d in result.diagnostics]
+    assert "SVA-L-009" in codes, codes
+    assert "config" in (result.diagnostics[codes.index("SVA-L-009")].subject or "")
+
+
+def test_a_normal_repository_has_no_dangling_references(tmp_path: Path) -> None:
+    """The baseline: the check must not be a constant."""
+    repo(tmp_path)
+    result = build_lock(graph_of(tmp_path), __version__)
+    assert not [d for d in result.diagnostics if d.code == "SVA-L-009"]

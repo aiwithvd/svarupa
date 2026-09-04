@@ -139,10 +139,15 @@ CODES: dict[str, str] = {
     "SVA-L-004": "a normalization or case collision between ids",
     "SVA-L-005": "the delta contains record kinds this build does not understand",
     "SVA-L-006": "the committed base lockfile is out of date with its own code",
+    "SVA-L-007": "a lockfile schema stamp is missing or a major version apart",
+    "SVA-L-008": "a lockfile given on the command line could not be read",
+    "SVA-L-009": "a dependency names a module the lockfile does not declare",
+    "SVA-L-010": "no architectural facts were found, so the lockfile claims none",
+    "SVA-L-011": "a grammar version changed between two lockfiles",
 }
 
 # Codes whose message text comes from the caller, so there is no literal at the
 # emission site for a drift check to compare a description against. Listed by
 # name rather than inferred, so a *new* code with no literal message fails the
 # check instead of being exempted silently.
-DYNAMIC_MESSAGE_CODES = frozenset({"SVA-R-001"})
+DYNAMIC_MESSAGE_CODES = frozenset({"SVA-R-001", "SVA-L-007"})

@@ -354,16 +354,34 @@ Plain text, canonically ordered, designed so `git diff` renders architecture cha
 
 ```
 # svarupa 1.0.0
-# schema 1
+# schema 1.0
 # grammars python@0.25.0 typescript@0.23.2
-module	api
-module	billing
+datastore	postgres
 dep	api	auth
 dep	api	billing
 dep	billing	auth
 endpoint	POST /refunds	billing.refunds
-datastore	postgres
+module	.
+module	api
+module	billing
 ```
+
+Records are sorted by `(kind, fields...)` in codepoint order, so `dep` precedes
+`module` and `datastore` precedes both. An earlier version of this example
+listed the kinds in a reading order the serializer does not produce.
+
+The repository root is spelled `.`, not the empty string its module id uses.
+An empty trailing field renders as a line whose entire meaning is trailing
+whitespace, and the ecosystem's default tooling, `trailing-whitespace` hooks
+and editor trim-on-save, deletes it silently, after which the file refuses to
+parse. A committed plain-text format is designed against its environment, not
+only against its own parser.
+
+A `module` record is emitted only for a directory holding source this build can
+extract. A directory of YAML is configuration, not a module: nothing in it can
+produce a `dep`, so a `module` line for it is pure churn surface. Configuration
+enters through the kinds built for it, `datastore`, `endpoint`, `service` and
+`queue`.
 
 It records **architecture-level facts only**: modules and their dependencies, endpoints, datastores, queues, service topology, and public type surfaces. Not every function. It stays small and stable so that a refactor inside a module produces no diff, while a new cross-module dependency produces exactly one line.
 

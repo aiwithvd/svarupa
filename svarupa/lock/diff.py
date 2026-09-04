@@ -106,6 +106,29 @@ def diff(base: Lockfile, head: Lockfile) -> ArchitectureDelta:
     }
 
     diagnostics: list[Diagnostic] = []
+
+    # Design §7.2 records grammar versions so a reviewer can tell a grammar
+    # bump from a code change. Recording them and then never comparing them
+    # leaves exactly the ambiguity they were added to remove.
+    moved = sorted(
+        f"{lang} {dict(base.header.grammars_tuple)[lang]} -> {version}"
+        for lang, version in head.header.grammars_tuple
+        if dict(base.header.grammars_tuple).get(lang, version) != version
+    )
+    if moved:
+        diagnostics.append(
+            Diagnostic(
+                code="SVA-L-011",
+                severity=Severity.INFO,
+                message=(
+                    "a grammar version changed between these lockfiles; a grammar "
+                    "release can change extraction output, so some of the delta below "
+                    "may be the parser seeing differently rather than the code changing"
+                ),
+                subject="; ".join(moved),
+            )
+        )
+
     if unknown:
         diagnostics.append(
             Diagnostic(
@@ -132,9 +155,18 @@ def drift_check(committed_base: Lockfile, regenerated_base: Lockfile) -> tuple[D
     in the head delta as though this change caused it, so a bot would tell an
     author they added a dependency that was already there.
 
-    Returns diagnostics rather than raising. The delta is still worth showing;
-    what changes is that the drift has to be stated first, because otherwise
-    the numbers below it are wrong in a way the reader cannot see.
+    Returns diagnostics rather than raising, and **describes only what it
+    detected**. It deliberately says nothing about what the delta below will
+    contain, because it cannot know: that is the caller's decision, and the
+    caller is the layer that must describe it.
+
+    The first version got this wrong in a way worth recording. It said the
+    drifted facts "will appear in the delta below as though this change caused
+    them", while the CLI substituted the regenerated base so they did not. The
+    substitution was right and every sentence of guidance was false, printed
+    directly above a correct "No architectural change." A diagnostic that
+    predicts its consumer's behaviour couples free text to a caller it cannot
+    see, and the next caller-side change silently falsifies it.
     """
     delta = diff(committed_base, regenerated_base)
     if delta.empty:
@@ -146,15 +178,9 @@ def drift_check(committed_base: Lockfile, regenerated_base: Lockfile) -> tuple[D
             message=(
                 f"the committed base lockfile is out of date with the code at the same "
                 f"commit: {len(delta.added)} fact(s) missing from it and "
-                f"{len(delta.removed)} fact(s) it still claims. Those "
-                f"{len(delta.added) + len(delta.removed)} difference(s) will appear in "
-                "the delta below as though this change caused them"
+                f"{len(delta.removed)} fact(s) it still claims"
             ),
             subject="architecture.lock",
-            suggested_fixes=(
-                "Regenerate the lockfile on the base branch and commit it.",
-                "Until then, read the delta as base-drift plus this change, not as "
-                "this change alone.",
-            ),
+            suggested_fixes=("Regenerate the lockfile on the base branch and commit it.",),
         ),
     )

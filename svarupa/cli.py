@@ -11,10 +11,18 @@ from svarupa.build import Graph, build
 from svarupa.cluster import cluster
 from svarupa.derive import derive_all
 from svarupa.detect import FileRole, ScanLimits, detect
-from svarupa.diagnostics import DiagnosticError, Severity
+from svarupa.diagnostics import Diagnostic, DiagnosticError, Severity
 from svarupa.emit import claim, emit
 from svarupa.extract import declared_dependencies, extract
-from svarupa.lock import LOCK_NAME, Lockfile, build_lock, diff, drift_check
+from svarupa.lock import (
+    LOCK_NAME,
+    SCHEMA_MAJOR,
+    Lockfile,
+    SchemaMismatch,
+    build_lock,
+    diff,
+    drift_check,
+)
 
 
 def _scan(
@@ -25,11 +33,18 @@ def _scan(
     diff_base: str | None,
     drift_base: str | None,
 ) -> int:
-    # Claim the output directory first. Scanning a large repository takes
-    # minutes, and discovering afterwards that the target is unwritable means
-    # the refusal arrives under a page of output that read as success.
+    # Validate everything that can be validated before the expensive work.
+    # Scanning a large repository takes minutes, and a refusal that arrives
+    # afterwards has already wasted that time under a page of output that read
+    # as success. The output directory was moved here last wave; the lockfile
+    # arguments belong here for exactly the same reason, and were not.
     if out is not None:
         claim(Path(out))
+    bases = {
+        name: _read_lock(value, name)
+        for name, value in (("--diff", diff_base), ("--drift-base", drift_base))
+        if value is not None
+    }
 
     scan = detect(path, ScanLimits(max_files=max_files))
 
@@ -136,15 +151,65 @@ def _scan(
     print()
     print(f"  open {artifact.directory / 'index.html'}")
 
-    lock_failed = _lockfile(artifact.directory, graph, write_lock, diff_base, drift_base)
+    lock_failed = _lockfile(artifact.directory, graph, write_lock, bases, drift_base)
     return 1 if errors or graph_errors or not artifact.ok or lock_failed else 0
+
+
+def _read_lock(path: str, flag: str) -> Lockfile:
+    """Load a lockfile named on the command line, refusing rather than crashing.
+
+    The grammar was hardened on the premise that malformed input is the
+    expected case for a committed file. That premise covers the bytes and
+    stopped at the channel: a missing path, a directory, or a file that is not
+    UTF-8 each reached the user as a raw traceback, and so did the tool's own
+    designed refusal for a mismatched schema. The loading channel is part of
+    the parser's boundary, and every failure it can produce has to arrive as
+    the same structured refusal a malformed line does.
+    """
+    try:
+        text = Path(path).read_text(encoding="utf8")
+    except (OSError, UnicodeDecodeError) as exc:
+        raise DiagnosticError(
+            Diagnostic(
+                code="SVA-L-008",
+                severity=Severity.ERROR,
+                message=f"could not be read as a lockfile for {flag} ({type(exc).__name__}: {exc})",
+                subject=path,
+                suggested_fixes=(
+                    f"Check the path given to {flag}.",
+                    "Generate one with: svarupa <repo> --lock",
+                ),
+            )
+        ) from exc
+
+    lockfile = Lockfile.parse(text)
+    # Check the stamp here, not at diff time. `parse` accepts an unstamped file
+    # and `assert_diffable` refuses it, which is the right place semantically
+    # and the wrong place in time: the refusal then arrives after the whole
+    # scan. Everything knowable about an input before the expensive work should
+    # be known before it.
+    if not lockfile.header.stamped:
+        raise SchemaMismatch(
+            f"carries no '# schema' stamp, so its format cannot be established. "
+            f"A missing stamp is less trustworthy than a mismatched one: refusing "
+            f"rather than assuming the current schema (given to {flag})",
+            subject=path,
+        )
+    if lockfile.header.schema_major != SCHEMA_MAJOR:
+        raise SchemaMismatch(
+            f"is schema {lockfile.header.schema_major}.x and this build writes "
+            f"{SCHEMA_MAJOR}.x; a field's meaning may differ, so a delta would be "
+            f"nonsense (given to {flag})",
+            subject=path,
+        )
+    return lockfile
 
 
 def _lockfile(
     directory: Path,
     graph: Graph,
     write_lock: bool,
-    diff_base: str | None,
+    bases: dict[str, Lockfile],
     drift_base: str | None,
 ) -> bool:
     """Build, optionally write, and optionally diff the architecture lockfile.
@@ -154,7 +219,7 @@ def _lockfile(
     because the delta is still worth reading, it just has to be read
     differently.
     """
-    if not (write_lock or diff_base or drift_base):
+    if not (write_lock or bases):
         return False
 
     result = build_lock(graph, __version__)
@@ -163,7 +228,15 @@ def _lockfile(
     for d in result.diagnostics:
         print("    " + d.render().replace("\n", "\n    "))
 
-    if write_lock:
+    failed = any(d.severity is Severity.ERROR for d in result.diagnostics)
+
+    if write_lock and failed:
+        # Refuse to write a file whose own build reported an error. It was
+        # written first and the error only set the exit code, so a user who
+        # does not check exit codes had a known-wrong lockfile on disk, ready
+        # to commit as the base every future diff is measured against.
+        print("    not written: the errors above would make it silently wrong")
+    elif write_lock:
         # Written next to the artifact but deliberately not part of it: this
         # is the one file in that directory meant to be committed, so `emit`
         # must never list it among the names it clears.
@@ -172,25 +245,38 @@ def _lockfile(
         path.write_text(result.lockfile.render(), encoding="utf8", newline="")
         print(f"    wrote {path}")
 
-    failed = any(d.severity is Severity.ERROR for d in result.diagnostics)
-
-    if drift_base and not diff_base:
+    if drift_base and "--diff" not in bases:
         print("    --drift-base needs --diff; nothing to compare drift against")
         return True
 
-    if diff_base:
-        base = Lockfile.parse(Path(diff_base).read_text(encoding="utf8"))
+    if "--diff" in bases:
+        base = bases["--diff"]
         if drift_base:
-            regenerated = Lockfile.parse(Path(drift_base).read_text(encoding="utf8"))
+            regenerated = bases["--drift-base"]
             drift = drift_check(base, regenerated)
             for d in drift:
                 print()
                 print("  " + d.render().replace("\n", "\n  "))
             if drift:
-                # Read the delta against the code, not against the stale file.
-                # Reporting the delta from a stale base would attribute other
-                # people's changes to this one.
+                # Read the delta against the code, not against the stale file:
+                # reporting from a stale base attributes other people's changes
+                # to this one.
+                #
+                # This layer says so, because this layer decided it. The
+                # diagnostic above reports only what it detected; it cannot
+                # know what its caller will do, and a message that guesses is
+                # false the moment the caller changes.
                 base = regenerated
+                print(
+                    "    The delta below is taken against the regenerated base, so it "
+                    "excludes those differences and shows this change alone."
+                )
+        else:
+            print(
+                "    No --drift-base given, so the delta below is against the committed "
+                "base as-is. If that file is stale, changes made by other commits will "
+                "appear here as though this change caused them."
+            )
         delta = diff(base, result.lockfile)
         print()
         print("  " + delta.render().replace("\n", "\n  "))
