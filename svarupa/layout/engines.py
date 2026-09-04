@@ -13,12 +13,13 @@ and the artifact is promised byte-identical on Linux and macOS.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 
 from svarupa.derive.base import DiagramEdge, DiagramSpec
 from svarupa.diagnostics import Diagnostic, Severity
 from svarupa.layout.geometry import Band, Box, Canvas, Route, Style
+from svarupa.layout.sugiyama import DUMMY_WIDTH, Chain, layer_out
 from svarupa.layout.text import advance, sanitize, truncate
 
 __all__ = ["ENGINES", "clustered", "grid", "lay_out", "layered"]
@@ -168,31 +169,96 @@ def _cyclic_ids(spec: DiagramSpec) -> frozenset[str]:
     return _inferred_layers_cyclic(spec)
 
 
-def _rows(spec: DiagramSpec, boxes: Sequence[Box], style_gap: int) -> list[list[Box]]:
-    """Group boxes into rows, wrapping any row that would exceed MAX_ROW_WIDTH."""
-    layers = _levels(spec, boxes)
-    by_layer: dict[int, list[Box]] = {}
-    for b in boxes:
-        by_layer.setdefault(layers.get(b.id, 0), []).append(b)
+def _dummy_box(nid: str, style: Style) -> Box:
+    """A waypoint that occupies a slot in a row.
 
+    Evidence is not required of it and it carries none: it is not a claim about
+    the codebase, it is a bend in a line. The renderer skips it, and `validate`
+    is told which ids are waypoints so it does not demand a citation for a
+    corner.
+    """
+    return Box(
+        id=nid,
+        label="",
+        full_label="",
+        kind="waypoint",
+        x=0,
+        y=0,
+        w=DUMMY_WIDTH,
+        h=style.box_height,
+        evidence=(),
+    )
+
+
+def _ordered_rows(
+    spec: DiagramSpec, boxes: Sequence[Box], style: Style
+) -> tuple[list[list[Box]], list[Chain], frozenset[str], list[tuple[str, str]]]:
+    """Rows ordered to reduce crossings, with waypoints for long edges.
+
+    Replaces sorting each row by id, which is deterministic and close to the
+    worst possible ordering: it ignores where a node's neighbours are, so edges
+    cross maximally. The canonical id order is kept as the seed the sweep
+    refines, so the result is still the same everywhere.
+    """
+    levels = _levels(spec, boxes)
+    ids = [b.id for b in sorted(boxes, key=lambda b: b.id)]
+    pairs = [(e.src, e.dst) for e in spec.edges]
+    layered_out = layer_out(ids, pairs, levels)
+
+    by_id = {b.id: b for b in boxes}
     rows: list[list[Box]] = []
-    for layer in sorted(by_layer):
+    for row in layered_out.rows:
+        rows.append([by_id[nid] if nid in by_id else _dummy_box(nid, style) for nid in row])
+    # Edges the layering dropped because an endpoint is not a node here. They
+    # travel back out rather than vanishing: the layering discards them
+    # silently, and a producer-side guard that skips input the validator would
+    # reject converts a failure into a pass.
+    dropped = sorted(
+        (e.src, e.dst) for e in spec.edges if e.src not in by_id or e.dst not in by_id
+    )
+    return rows, list(layered_out.chains), layered_out.dummies, dropped
+
+
+def _dangling(dropped: Sequence[tuple[str, str]]) -> list[Diagnostic]:
+    return [
+        Diagnostic(
+            code="SVA-G-004",
+            severity=Severity.ERROR,
+            message="edge endpoint is not a node in this spec, so no arrow was drawn",
+            subject=f"{src} -> {dst}",
+        )
+        for src, dst in dropped
+    ]
+
+
+def _wrap(rows: list[list[Box]], style: Style) -> list[list[Box]]:
+    """Split any row that would exceed the width bound.
+
+    **Only for `grid`.** Wrapping is incompatible with layered routing: a long
+    edge owns one waypoint per *layer*, and wrapping turns one layer into
+    several rows, so a hop that was between adjacent rows suddenly spans three
+    of them and runs straight through whatever is in between. Measured: a
+    200-edge fixture produced 1,900 route-through-box violations.
+
+    A layered diagram is therefore as wide as its widest layer, which is what
+    every layered drawing tool does. The answer to a very wide layer is
+    hierarchy, not folding, and that is the drill-down the architecture view
+    already has and module-deps still needs.
+    """
+    out: list[list[Box]] = []
+    for row in rows:
         current: list[Box] = []
         width = 0
-        for b in sorted(by_layer[layer], key=lambda b: b.id):
-            # The gap counts. Measuring only box widths made the wrap threshold
-            # a different number from the width it produced: 26 boxes wrapped
-            # into a 1515px row against a stated bound of 1280.
-            step = b.w + (style_gap if current else 0)
+        for b in row:
+            step = b.w + (style.gap_x if current else 0)
             if current and width + step > MAX_ROW_WIDTH:
-                rows.append(current)
+                out.append(current)
                 current, width = [], 0
                 step = b.w
             current.append(b)
             width += step
-        if current:
-            rows.append(current)
-    return rows
+        out.append(current)
+    return out
 
 
 @dataclass(frozen=True, slots=True)
@@ -217,22 +283,25 @@ class Placement:
         return index[box_id]
 
 
-def _place(rows: list[list[Box]], style: Style) -> Placement:
+def _place(rows: list[list[Box]], style: Style, demand: Sequence[int] = ()) -> Placement:
     """Assign coordinates row by row, each row centred.
 
-    A right-hand lane is reserved on every canvas, wide enough for a vertical
-    run beyond every box. Reserved unconditionally rather than only when a
-    long edge exists, because a lane that appears and disappears makes the
-    canvas width depend on edge topology, and two diagrams of the same
-    repository would then differ in width for no reason a reader can see.
+    The row *order* is decided before this runs. Placing is arithmetic; which
+    box sits where is the part that decides whether the picture is readable.
+
+    `demand[i]` is how many horizontal tracks the gap below row `i` must hold.
+    The gap grows to fit them: twenty same-row edges squeezed into a fixed
+    56px gap sat two pixels apart and read as one smear, which is the same
+    failure as the shared rail at a smaller scale. Space is made for the lines
+    the diagram actually has.
     """
     row_widths = [sum(b.w for b in row) + style.gap_x * max(0, len(row) - 1) for row in rows]
     content = max(row_widths, default=0)
-    width = content + 2 * style.margin + style.lane_gutter
+    width = content + 2 * style.margin
     placed: list[Box] = []
     extents: list[range] = []
     y = style.margin
-    for row, row_width in zip(rows, row_widths, strict=True):
+    for i, (row, row_width) in enumerate(zip(rows, row_widths, strict=True)):
         x = style.margin + (content - row_width) // 2
         for b in row:
             placed.append(
@@ -252,18 +321,18 @@ def _place(rows: list[list[Box]], style: Style) -> Placement:
             )
             x += b.w + style.gap_x
         extents.append(range(y, y + style.box_height))
-        y += style.box_height + style.gap_y
-    height = max(y - style.gap_y + style.margin, 2 * style.margin + style.box_height)
+        tracks = demand[i] if i < len(demand) else 0
+        gap = max(style.gap_y, 12 + 10 * tracks)
+        y += style.box_height + gap
+    # A full gap below the last row, not just the margin: same-row edges route
+    # through the gap beneath their own row, and the bottom row has one too.
+    height = max(y + style.margin - style.gap_y // 2, 2 * style.margin + style.box_height)
 
-    # One gap band per row, being the empty space below it. The last row's gap
-    # is the bottom margin, which is why routing never needs to leave the
-    # canvas to get underneath the final row.
     gaps: list[range] = []
     for i, extent in enumerate(extents):
-        end = extents[i + 1].start if i + 1 < len(extents) else height
-        gaps.append(range(extent.stop, end))
-    lane_x = style.margin + content + style.lane_gutter // 2
-    return Placement(placed, width, height, extents, gaps, lane_x)
+        end_y = extents[i + 1].start if i + 1 < len(extents) else height
+        gaps.append(range(extent.stop, end_y))
+    return Placement(placed, width, height, extents, gaps, width - style.margin // 2)
 
 
 # --------------------------------------------------------------------------
@@ -272,107 +341,142 @@ def _place(rows: list[list[Box]], style: Style) -> Placement:
 
 
 def _routes(
-    edges: Sequence[DiagramEdge],
+    chains: Sequence[Chain],
     place: Placement,
+    edges: Mapping[tuple[str, str], DiagramEdge],
     diags: list[Diagnostic],
 ) -> list[Route]:
-    """Orthogonal polylines that provably miss every box they do not connect.
+    """One polyline per edge, following the slots its chain passes through.
 
-    The previous version argued the invariant instead of guaranteeing it: it
-    put the horizontal run at the midpoint of the whole vertical span, which
-    for any edge skipping a layer lands *inside* an intervening row, and it
-    routed same-row edges straight across their own row. Two ordinary shapes,
-    a layer-skipping edge and a two-node cycle, drew arrows through box
-    interiors while validation returned nothing, because the check the design
-    names was omitted on the strength of that argument.
+    Because a long edge owns a dummy slot in every row it crosses, each hop is
+    between adjacent rows and runs in the empty gap between them. No shared
+    side lane, so no rail, and the invariant that mattered still holds: every
+    horizontal run is inside a gap and every vertical run is inside one gap.
 
-    The rule now is structural, so it holds whatever the rows contain:
-
-    * every **horizontal** run lies inside a row gap, which has no boxes;
-    * every **vertical** run lies inside a single gap, or in the side lane
-      beyond every box.
-
-    Three cases follow from it. Adjacent rows drop through the one gap between
-    them. A longer forward edge goes out into the gap below the source, across
-    to the lane, down the lane, and back in along the gap above the target.
-    Same-row and backward edges leave and re-enter from below, since an arrow
-    entering a box from above would read as a forward dependency.
+    Attachment points are spread across a box's width by the edge's rank among
+    that box's connections, so parallel edges leave from visibly different
+    places instead of stacking into one thick line.
     """
-    index = {b.id: i for i, row in enumerate(place.rows) for b in place.boxes if _in(b, row)}
     by_id = {b.id: b for b in place.boxes}
-    degree_out: dict[str, int] = {}
-    degree_in: dict[str, int] = {}
-    usable: list[DiagramEdge] = []
-    for e in sorted(edges, key=lambda e: (e.src, e.dst)):
-        if e.src not in by_id or e.dst not in by_id:
-            # Diagnosed, never silently skipped. A `continue` here would turn a
-            # derive defect into a clean canvas, hiding it from SVA-G-004,
-            # which exists to catch exactly this.
+    rows = place.rows
+
+    exits: dict[str, list[str]] = {}
+    entries: dict[str, list[str]] = {}
+    for c in sorted(chains, key=lambda c: (c.src, c.dst)):
+        head, tail = c.nodes[0], c.nodes[-1]
+        if head in by_id and tail in by_id:
+            exits.setdefault(head, []).append(tail)
+            entries.setdefault(tail, []).append(head)
+
+    def row_index(box: Box) -> int:
+        return _row_of(box, rows)
+
+    # Every edge that runs horizontally through a gap gets its own y inside
+    # it. Sharing one track is what turned a cycle-heavy diagram into a row of
+    # overlapping stubs: the routes were individually correct and collectively
+    # one thick line.
+    tracks: dict[int, dict[tuple[str, str], int]] = {}
+    for c in sorted(chains, key=lambda c: (c.src, c.dst)):
+        head, tail = c.nodes[0], c.nodes[-1]
+        if head not in by_id or tail not in by_id:
+            continue
+        gap = _row_of(by_id[head], rows)
+        tracks.setdefault(gap, {})[(c.src, c.dst)] = len(tracks.get(gap, {}))
+
+    out: list[Route] = []
+    for c in sorted(chains, key=lambda c: (c.src, c.dst)):
+        edge = edges.get((c.src, c.dst))
+        if edge is None or c.src not in by_id or c.dst not in by_id:
             diags.append(
                 Diagnostic(
                     code="SVA-G-004",
                     severity=Severity.ERROR,
                     message="edge endpoint is not a node in this spec, so no arrow was drawn",
-                    subject=f"{e.src} -> {e.dst}",
+                    subject=f"{c.src} -> {c.dst}",
                 )
             )
             continue
-        usable.append(e)
-        degree_out[e.src] = degree_out.get(e.src, 0) + 1
-        degree_in[e.dst] = degree_in.get(e.dst, 0) + 1
 
-    out: list[Route] = []
-    exits: dict[str, int] = {}
-    entries: dict[str, int] = {}
-    for e in usable:
-        a, b = by_id[e.src], by_id[e.dst]
-        exits[e.src] = exits.get(e.src, 0) + 1
-        entries[e.dst] = entries.get(e.dst, 0) + 1
-        ax = _fan(a, exits[e.src], degree_out[e.src])
-        bx = _fan(b, entries[e.dst], degree_in[e.dst])
-        ra, rb = index[e.src], index[e.dst]
-        gap_a = _mid(place.gaps[ra])
+        # `nodes` is in layer order, so the polyline is built from its ends
+        # rather than from src/dst, which for a reversed edge point the other
+        # way. The Route still records the true src and dst.
+        head, tail = c.nodes[0], c.nodes[-1]
+        if head not in by_id or tail not in by_id:
+            continue
+        a, b = by_id[head], by_id[tail]
+        ax = _fan(a, exits[head].index(tail) + 1, len(exits[head]))
+        bx = _fan(b, entries[tail].index(head) + 1, len(entries[tail]))
+        ra, rb = row_index(a), row_index(b)
 
-        if rb == ra + 1:
-            points = ((ax, a.bottom), (ax, gap_a), (bx, gap_a), (bx, b.y))
-        elif rb > ra:
+        points: list[tuple[int, int]] = []
+        if rb == ra:
+            # Same row: down into the gap below, across, back up. The gap is
+            # empty of boxes by construction, and each such edge gets its own
+            # track inside it so they do not stack.
+            mid = _track(place.gaps[ra], tracks[ra][(c.src, c.dst)], len(tracks[ra]))
+            points = [(ax, a.bottom), (ax, mid), (bx, mid), (bx, b.bottom)]
+        elif rb > ra and not [n for n in c.nodes[1:-1] if n in by_id] and rb > ra + 1:
+            # No waypoints and not adjacent: `grid` builds rows that are not
+            # layers, so nothing reserved space in between. Go round the side,
+            # which is ugly and correct, rather than through.
+            gap_a = _mid(place.gaps[ra])
             gap_b = _mid(place.gaps[rb - 1])
-            points = (
+            lane = place.lane_x
+            points = [
                 (ax, a.bottom),
                 (ax, gap_a),
-                (place.lane_x, gap_a),
-                (place.lane_x, gap_b),
+                (lane, gap_a),
+                (lane, gap_b),
                 (bx, gap_b),
                 (bx, b.y),
-            )
-        elif rb == ra:
-            points = ((ax, a.bottom), (ax, gap_a), (bx, gap_a), (bx, b.bottom))
+            ]
+        elif rb > ra:
+            waypoints = [by_id[n] for n in c.nodes[1:-1] if n in by_id]
+            points = [(ax, a.bottom)]
+            previous = a
+            for w in waypoints:
+                gap = _mid(place.gaps[row_index(previous)])
+                wx = w.x + w.w // 2
+                points += [(points[-1][0], gap), (wx, gap), (wx, w.y), (wx, w.bottom)]
+                previous = w
+            gap = _mid(place.gaps[row_index(previous)])
+            points += [(points[-1][0], gap), (bx, gap), (bx, b.y)]
         else:
+            # A reversed edge: it was flipped for layering, so it runs upward
+            # here. Enter the target from below so the arrowhead still points
+            # at the real dependency.
+            gap_a = _mid(place.gaps[ra])
             gap_b = _mid(place.gaps[rb])
-            points = (
-                (ax, a.bottom),
-                (ax, gap_a),
-                (place.lane_x, gap_a),
-                (place.lane_x, gap_b),
-                (bx, gap_b),
-                (bx, b.bottom),
-            )
+            points = [(ax, a.bottom), (ax, gap_a), (bx, gap_a), (bx, gap_b), (bx, b.bottom)]
+
+        # A reversed chain was laid out downward for the layering, so its
+        # polyline runs from the layering source. Flipping the point order
+        # makes it run from the real source instead: the same pixels, but the
+        # arrowhead now lands on the module that is actually depended upon.
+        # Without this a dependency cycle draws both of its arrows backwards,
+        # which is a wrong claim rather than an ugly one.
+        if c.reversed_:
+            points.reverse()
+
         out.append(
             Route(
-                src=e.src,
-                dst=e.dst,
-                label=sanitize(e.label),
-                points=points,
-                evidence=e.evidence,
-                resolution=e.resolution,
-                weight=e.weight,
+                src=c.src,
+                dst=c.dst,
+                label=sanitize(edge.label),
+                points=tuple(points),
+                evidence=edge.evidence,
+                resolution=edge.resolution,
+                weight=edge.weight,
             )
         )
     return out
 
 
-def _in(box: Box, row: range) -> bool:
-    return box.y == row.start
+def _row_of(box: Box, rows: Sequence[range]) -> int:
+    for i, extent in enumerate(rows):
+        if box.y == extent.start:
+            return i
+    return 0
 
 
 def _mid(gap: range) -> int:
@@ -380,23 +484,28 @@ def _mid(gap: range) -> int:
     return (gap.start + gap.stop) // 2
 
 
+def _track(gap: range, nth: int, total: int) -> int:
+    """The nth of `total` horizontal tracks inside a gap.
+
+    Kept clear of both edges so a track never grazes the row above or below,
+    which the crossing check treats as touching rather than crossing but which
+    reads as a line stuck to a box.
+    """
+    usable = max(1, (gap.stop - gap.start) - 12)
+    step = max(1, usable // max(1, total + 1))
+    return gap.start + 6 + step * (nth % max(1, total) + 1)
+
+
 def _fan(box: Box, nth: int, degree: int) -> int:
     """The nth of `degree` attachment points, spread across the box width.
 
-    Spread over the box's actual degree, not over a fixed number of slots. A
-    fixed five collapsed at out-degree six: edges six and seven landed exactly
-    on edges one and two, which is verbatim the failure this function exists to
-    prevent, and the test that covered it used four edges. Real module
-    out-degrees pass five routinely.
-
-    Clamped so a narrow box still yields a point strictly inside itself rather
-    than on its corner.
+    Spread over the actual degree, not a fixed slot count: a fixed five
+    collapsed at out-degree six, landing edges six and seven exactly on one and
+    two, which is the failure this exists to prevent.
     """
     slots = max(1, degree)
     step = box.w // (slots + 1)
     if step < 1:
-        # More edges than the box has pixels. Stacking at the centre is honest
-        # about the crowding; inventing points outside the box is not.
         return box.x + box.w // 2
     return box.x + step * (1 + (nth - 1) % slots)
 
@@ -409,9 +518,34 @@ def _fan(box: Box, nth: int, degree: int) -> int:
 def layered(spec: DiagramSpec, style: Style) -> Canvas:
     """Rows by dependency depth. Module deps, class hierarchy."""
     diags: list[Diagnostic] = []
-    place = _place(_rows(spec, _boxes(spec, style), style.gap_x), style)
-    routes = _routes(spec.edges, place, diags)
-    return _canvas(spec, "layered", place, routes, diagnostics=tuple(diags))
+    rows, chains, dummies, dropped = _ordered_rows(spec, _boxes(spec, style), style)
+    diags.extend(_dangling(dropped))
+    place = _place(rows, style, _gap_demand(rows, chains))
+    routes = _routes(chains, place, _edge_map(spec), diags)
+    return _canvas(spec, "layered", place, routes, diagnostics=tuple(diags), waypoints=dummies)
+
+
+def _edge_map(spec: DiagramSpec) -> dict[tuple[str, str], DiagramEdge]:
+    return {(e.src, e.dst): e for e in spec.edges}
+
+
+def _gap_demand(rows: Sequence[Sequence[Box]], chains: Sequence[Chain]) -> list[int]:
+    """How many horizontal tracks each row's lower gap needs.
+
+    Same-row edges take one track each in the gap below their row; a hop of a
+    multi-row chain takes one in the gap it crosses. Counted here so placement
+    can size the gaps before any route exists.
+    """
+    row_of = {b.id: i for i, row in enumerate(rows) for b in row}
+    demand = [0] * len(rows)
+    for c in chains:
+        hops = list(zip(c.nodes, c.nodes[1:], strict=False))
+        for a, b in hops:
+            ra, rb = row_of.get(a), row_of.get(b)
+            if ra is None or rb is None:
+                continue
+            demand[min(ra, rb) if ra != rb else ra] += 1
+    return demand
 
 
 def clustered(spec: DiagramSpec, style: Style) -> Canvas:
@@ -436,14 +570,16 @@ def clustered(spec: DiagramSpec, style: Style) -> Canvas:
     """
     boxes = _boxes(spec, style)
     levels = _levels(spec, boxes)
-    rows = _rows(spec, boxes, style.gap_x)
-    diags: list[Diagnostic] = []
-    place = _place(rows, style)
-    routes = _routes(spec.edges, place, diags)
+    rows, chains, dummies, dropped = _ordered_rows(spec, boxes, style)
+    diags: list[Diagnostic] = list(_dangling(dropped))
+    place = _place(rows, style, _gap_demand(rows, chains))
+    routes = _routes(chains, place, _edge_map(spec), diags)
 
     cyclic = _cyclic_ids(spec)
     by_level: dict[int, list[Box]] = {}
     for b in place.boxes:
+        if b.id in dummies:
+            continue
         by_level.setdefault(levels.get(b.id, 0), []).append(b)
     bands = tuple(
         Band(
@@ -458,7 +594,7 @@ def clustered(spec: DiagramSpec, style: Style) -> Canvas:
         )
         for level, members in sorted(by_level.items())
     )
-    return _canvas(spec, "clustered", place, routes, bands, tuple(diags))
+    return _canvas(spec, "clustered", place, routes, bands, tuple(diags), waypoints=dummies)
 
 
 def grid(spec: DiagramSpec, style: Style) -> Canvas:
@@ -474,9 +610,10 @@ def grid(spec: DiagramSpec, style: Style) -> Canvas:
     widest = max(b.w for b in boxes)
     per_row = max(1, (MAX_ROW_WIDTH + style.gap_x) // (widest + style.gap_x))
     ordered = sorted(boxes, key=lambda b: b.id)
-    rows = [ordered[i : i + per_row] for i in range(0, len(ordered), per_row)]
+    rows = _wrap([ordered[i : i + per_row] for i in range(0, len(ordered), per_row)], style)
     place = _place(rows, style)
-    routes = _routes(spec.edges, place, diags)
+    chains = [Chain(e.src, e.dst, (e.src, e.dst)) for e in spec.edges]
+    routes = _routes(chains, place, _edge_map(spec), diags)
     return _canvas(spec, "grid", place, routes, diagnostics=tuple(diags))
 
 
@@ -487,6 +624,7 @@ def _canvas(
     routes: Sequence[Route],
     bands: tuple[Band, ...] = (),
     diagnostics: tuple[Diagnostic, ...] = (),
+    waypoints: frozenset[str] = frozenset(),
 ) -> Canvas:
     return Canvas(
         spec_id=spec.id,
@@ -501,6 +639,7 @@ def _canvas(
         bands=bands,
         parent=spec.parent,
         diagnostics=diagnostics,
+        waypoints=waypoints,
     )
 
 

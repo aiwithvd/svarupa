@@ -28,80 +28,160 @@ __all__ = ["render_viewer"]
 
 
 def _css() -> Markup:
+    """The visual system.
+
+    Written after looking at a real 36-module repository and finding the output
+    unreadable. Three things were wrong and all three were invisible to the
+    geometry validator, which checks boxes against boxes and nothing else:
+    every edge stamped its count in the same band, every long edge ran through
+    one shared rail, and everything was set in the monospace face the width
+    model needs, which makes a diagram look like a terminal.
+
+    Monospace is now used where it is true (paths, code, citations) and a UI
+    face everywhere else. The width model still measures in monospace and the
+    SVG clamps text to the measured width, so the estimate cannot overflow a
+    box whatever the browser resolves.
+    """
     return raw(
         """
 :root {
-  --bg: #11131a; --panel: #171a23; --line: #262b38; --ink: #e6e9ef;
-  --dim: #8b93a7; --accent: #7aa2f7; --warn: #e0af68; --edge: #4a5568;
+  --bg: #0d1017; --surface: #151a23; --raised: #1c2230; --line: #2a3242;
+  --ink: #e8ecf4; --dim: #93a0b8; --faint: #5d6b85;
+  --accent: #7aa2f7; --accent-soft: #7aa2f733;
+  --group: #9d7cd8; --group-soft: #9d7cd826;
+  --warn: #e0af68; --edge: #3d4661;
+  --ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, sans-serif;
+  --mono: MONO_PLACEHOLDER;
+  --r: 10px;
 }
 * { box-sizing: border-box; }
+html { color-scheme: dark; }
 body {
   margin: 0; background: var(--bg); color: var(--ink);
-  font-family: FONT_STACK_PLACEHOLDER; font-size: 13px;
+  font-family: var(--ui); font-size: 14px; line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
 }
+code, .mono { font-family: var(--mono); }
+
 header {
-  position: sticky; top: 0; z-index: 5; background: var(--panel);
-  border-bottom: 1px solid var(--line); padding: 10px 16px;
-  display: flex; gap: 16px; align-items: center; flex-wrap: wrap;
+  position: sticky; top: 0; z-index: 5;
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--line); padding: 12px 20px;
+  display: flex; gap: 20px; align-items: center; flex-wrap: wrap;
 }
-h1 { font-size: 14px; margin: 0; font-weight: 600; }
-h1 small { color: var(--dim); font-weight: 400; margin-left: 8px; }
-nav { display: flex; gap: 4px; flex-wrap: wrap; }
+h1 { font-size: 15px; margin: 0; font-weight: 650; letter-spacing: -0.01em; }
+h1 small {
+  color: var(--dim); font-weight: 400; margin-left: 10px;
+  font-family: var(--mono); font-size: 12px;
+}
+nav { display: flex; gap: 6px; flex-wrap: wrap; }
 nav a {
-  color: var(--dim); text-decoration: none; padding: 4px 10px;
-  border: 1px solid var(--line); border-radius: 5px;
+  color: var(--dim); text-decoration: none; padding: 5px 12px;
+  border: 1px solid transparent; border-radius: 7px; font-size: 13px;
+  transition: background .12s, color .12s;
 }
-nav a:hover { color: var(--ink); border-color: var(--accent); }
-.base { margin-left: auto; display: flex; gap: 6px; align-items: center; }
+nav a:hover { color: var(--ink); background: var(--raised); }
+.base { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+.base label { color: var(--dim); font-size: 12px; }
 .base input {
   background: var(--bg); color: var(--ink); border: 1px solid var(--line);
-  border-radius: 5px; padding: 4px 8px; font: inherit; width: 22em;
+  border-radius: 7px; padding: 6px 10px; font: inherit; font-size: 12px;
+  font-family: var(--mono); width: 24em;
 }
-.tab { display: none; padding: 16px; }
-.tab:target { display: block; }
-/* Without :target, and without JS, the first tab must still be visible. */
+.base input:focus { outline: none; border-color: var(--accent); }
+
+.tab { display: none; padding: 24px 20px 64px; }
 .tab:first-of-type { display: block; }
 body:has(.tab:target) .tab:first-of-type { display: none; }
 body:has(.tab:target) .tab:target { display: block; }
-.meta { color: var(--dim); margin: 0 0 12px; }
-.crumbs { margin: 0 0 10px; color: var(--dim); }
-.crumbs a { color: var(--accent); }
+
+h2 { font-size: 20px; margin: 0 0 4px; font-weight: 650; letter-spacing: -0.02em; }
+.meta { color: var(--dim); margin: 0 0 20px; font-size: 13px; }
+.crumbs { margin: 0 0 12px; font-size: 13px; }
+.crumbs a { color: var(--accent); text-decoration: none; }
+.crumbs a:hover { text-decoration: underline; }
 .view { display: none; }
-.view.is-open { display: block; }
-.sv-canvas { max-width: 100%; height: auto; background: var(--bg); }
-.sv-band { fill: #ffffff06; }
-.sv-band-label { fill: var(--dim); font-size: 11px; }
-.sv-box { fill: var(--panel); stroke: var(--line); stroke-width: 1; }
-.sv-drillable .sv-box { stroke: var(--accent); }
+.view.is-open { display: block; animation: sv-enter .18s ease; }
+/* A drill-down that appears with a small rise reads as "you went somewhere",
+   which is the mental model the navigation is built on. Honouring
+   prefers-reduced-motion is not optional polish. */
+@keyframes sv-enter {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .view.is-open { animation: none; }
+  aside { transition: none; }
+}
+
+/* Never scaled down to fit. A layered diagram is as wide as its widest
+   layer, and shrinking a 2700px canvas into a 1200px column makes every
+   label unreadable, which defeats the point of drawing it. Wide diagrams
+   scroll at their natural size; narrow ones sit centred rather than
+   huddling in the top-left corner of an empty page. */
+.scroller {
+  overflow-x: auto; overflow-y: hidden; padding-bottom: 12px;
+  scrollbar-color: var(--line) transparent;
+}
+.sv-canvas { display: block; margin: 0 auto; }
+.sv-band { fill: #ffffff05; rx: 12; }
+.sv-band-label {
+  fill: var(--faint); font-size: 10px; font-family: var(--ui);
+  letter-spacing: .08em; text-transform: uppercase;
+}
+.sv-box { fill: var(--surface); stroke: var(--line); stroke-width: 1.25; }
+.sv-drillable .sv-box { fill: var(--raised); stroke: var(--group); }
+.sv-kind-group .sv-box { fill: var(--group-soft); stroke: var(--group); }
 .sv-box-label {
   fill: var(--ink); text-anchor: middle; dominant-baseline: middle;
+  font-family: var(--mono); font-weight: 500;
 }
-.sv-drill { fill: var(--accent); text-anchor: end; dominant-baseline: middle; }
+.sv-drill { fill: var(--group); text-anchor: end; dominant-baseline: middle; }
 .sv-node { cursor: pointer; }
+.sv-node .sv-box { transition: stroke .1s, fill .1s; }
 .sv-node:hover .sv-box { stroke: var(--accent); stroke-width: 2; }
-.sv-edge {
-  fill: none; stroke: var(--edge); stroke-width: 1.5;
-  marker-end: url(#sv-arrow);
-}
-.sv-edge-weak { stroke-dasharray: 4 3; stroke: var(--warn); }
+.sv-node:hover .sv-box-label { fill: #fff; }
+
+.sv-edge { fill: none; stroke: var(--edge); stroke-linecap: round; }
+.sv-w1 { stroke-width: 1.25; opacity: .55; }
+.sv-w2 { stroke-width: 2; opacity: .75; }
+.sv-w3 { stroke-width: 3; opacity: .95; }
+.sv-edge-weak { stroke: var(--warn); stroke-dasharray: 5 4; }
+.sv-route { cursor: pointer; }
+.sv-route:hover .sv-edge { stroke: var(--accent); opacity: 1; }
 .sv-arrowhead { fill: var(--edge); }
-.sv-edge-label {
-  fill: var(--dim); font-size: 11px; text-anchor: middle;
-  paint-order: stroke; stroke: var(--bg); stroke-width: 3px;
-}
+.sv-route:hover .sv-arrowhead { fill: var(--accent); }
+
 aside {
-  position: fixed; right: 0; top: 0; bottom: 0; width: 26em; overflow: auto;
-  background: var(--panel); border-left: 1px solid var(--line);
-  padding: 16px; transform: translateX(100%); transition: transform .12s;
+  position: fixed; right: 0; top: 0; bottom: 0; width: 28em; overflow: auto;
+  background: var(--surface); border-left: 1px solid var(--line);
+  padding: 20px; transform: translateX(100%); transition: transform .16s ease;
+  box-shadow: -16px 0 40px #0006;
 }
 aside.is-open { transform: none; }
-aside h2 { font-size: 13px; margin: 0 0 4px; }
-aside ul { list-style: none; padding: 0; }
-aside li { margin: 3px 0; }
-aside a { color: var(--accent); }
-.hint { color: var(--dim); margin-top: 10px; }
-.withheld { border-left: 3px solid var(--warn); padding-left: 10px; }
+aside h2 { font-size: 14px; margin: 0 0 2px; font-family: var(--mono); }
+aside .sub { color: var(--dim); font-size: 12px; margin: 0 0 14px; }
+aside ul { list-style: none; padding: 0; margin: 0; }
+aside li { margin: 0 0 2px; }
+aside a, aside span.dead {
+  color: var(--accent); font-family: var(--mono); font-size: 12px;
+  text-decoration: none; display: block; padding: 5px 8px; border-radius: 6px;
+}
+aside a:hover { background: var(--raised); }
+aside span.dead { color: var(--warn); }
+
+.hint { color: var(--dim); font-size: 13px; }
+.withheld {
+  border-left: 3px solid var(--warn); padding: 2px 0 2px 14px;
+  margin-top: 24px; color: var(--dim); font-size: 13px;
+}
 noscript .hint { color: var(--warn); }
+.legend {
+  display: flex; gap: 18px; flex-wrap: wrap; align-items: center;
+  color: var(--faint); font-size: 12px; margin: 18px 0 0;
+}
+.legend b { color: var(--dim); font-weight: 500; }
 """
     )
 
@@ -247,7 +327,7 @@ def _view(ds: DiagramSet, lo: LaidOutDiagram, spec_id: str, style: Style) -> Mar
                 crumb,
                 tag("h2", esc(spec.title)),
                 tag("p", esc(spec.subtitle), class_="meta"),
-                canvas_svg(canvas, style),
+                tag("div", canvas_svg(canvas, style), class_="scroller"),
             )
         ),
         class_="view" + (" is-open" if spec_id == ds.root else ""),
@@ -399,7 +479,7 @@ def render_viewer(
             tag("script", _js()),
         )
     )
-    css = str(_css()).replace("FONT_STACK_PLACEHOLDER", FONT_STACK)
+    css = str(_css()).replace("MONO_PLACEHOLDER", FONT_STACK)
     return (
         "<!doctype html>\n"
         '<html lang="en"><head><meta charset="utf-8">'

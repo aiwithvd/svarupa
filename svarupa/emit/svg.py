@@ -22,6 +22,7 @@ from collections.abc import Iterable
 
 from svarupa.emit.markup import EMPTY, Markup, esc, join, raw, tag
 from svarupa.layout.geometry import Box, Canvas, Route, Style
+from svarupa.layout.text import advance
 from svarupa.model import Evidence, Resolution
 
 __all__ = ["EVIDENCE_ATTR", "canvas_svg", "evidence_ref"]
@@ -65,7 +66,9 @@ def _band(label: str, y: int, h: int, width: int, style: Style) -> Markup:
                 "text",
                 esc(label),
                 x=style.margin // 2,
-                y=y - style.band_pad + style.band_label_height,
+                # Above the band's top edge. Inside it, the label sat behind
+                # whichever box happened to be leftmost and was unreadable.
+                y=y - style.band_pad - 6,
                 class_="sv-band-label",
             ),
         )
@@ -103,6 +106,13 @@ def _box(box: Box, style: Style) -> Markup:
                 y=box.y + box.h // 2,
                 class_="sv-box-label",
                 font_size=style.font_size,
+                # A rendering backstop for the width model. `textLength` makes
+                # the browser fit the text to the measured width whatever font
+                # it actually resolved, so a script the stack lacks produces a
+                # squeezed label rather than one that overflows its box. The
+                # model is an estimate; this makes its failure mode safe.
+                textLength=max(1, advance(box.label, style.font_size)),
+                lengthAdjust="spacingAndGlyphs",
             ),
             _drill_marker(box, style),
         )
@@ -137,33 +147,82 @@ def _drill_marker(box: Box, style: Style) -> Markup:
     )
 
 
+def _weight_class(weight: int) -> str:
+    """Coarse buckets rather than a continuous width.
+
+    Three widths a reader can tell apart beats forty they cannot, and bucketing
+    keeps the stroke width out of the SVG attributes, so the same relationship
+    renders identically whether it has eleven imports or twelve.
+    """
+    if weight >= 8:
+        return "sv-w3"
+    if weight >= 3:
+        return "sv-w2"
+    return "sv-w1"
+
+
 def _route(route: Route, style: Style) -> Markup:
-    points = " ".join(f"{x},{y}" for x, y in route.points)
-    label_at = route.points[len(route.points) // 2]
-    classes = "sv-edge" + (
-        " sv-edge-weak" if route.resolution is not Resolution.RESOLVED else ""
+    """An edge as a rounded path, with no text on it.
+
+    Every edge used to stamp its count at its polyline midpoint. On a real
+    diagram they all landed in the same band and collapsed into strings like
+    `7122.26.62.5nimports`. The count is still there, in the tooltip and in the
+    evidence panel, where it can be read.
+
+    Corners are rounded because a diagram of hard right angles reads as a
+    circuit board. Weight is a stroke width, which shows the same information
+    the labels were carrying, at a glance and without collision.
+    """
+    _ = style
+    classes = " ".join(
+        (
+            "sv-edge",
+            _weight_class(route.weight),
+            *(("sv-edge-weak",) if route.resolution is not Resolution.RESOLVED else ()),
+        )
     )
     return tag(
         "g",
         join(
             (
                 tag("title", esc(f"{route.label}\n{evidence_ref(route.evidence)}")),
-                tag("polyline", EMPTY, points=points, class_=classes),
-                tag(
-                    "text",
-                    esc(route.label),
-                    x=label_at[0],
-                    y=label_at[1] - 4,
-                    class_="sv-edge-label",
-                    font_size=style.label_font_size,
-                ),
+                tag("path", EMPTY, d=_rounded(route.points), class_=classes),
             )
         ),
         class_="sv-route",
         data_src=route.src,
         data_dst=route.dst,
+        data_label=route.label,
         **{EVIDENCE_ATTR: evidence_ref(route.evidence)},
     )
+
+
+def _rounded(points: tuple[tuple[int, int], ...], radius: int = 8) -> str:
+    """An orthogonal polyline with rounded corners, as an SVG path.
+
+    The corner radius is clamped to half the shorter adjacent segment, so a
+    short segment cannot make two corners overlap into a loop.
+    """
+    if len(points) < 3:
+        return "M " + " L ".join(f"{x} {y}" for x, y in points)
+
+    out = [f"M {points[0][0]} {points[0][1]}"]
+    for i in range(1, len(points) - 1):
+        (px, py), (cx, cy), (nx, ny) = points[i - 1], points[i], points[i + 1]
+        before = max(abs(cx - px), abs(cy - py))
+        after = max(abs(nx - cx), abs(ny - cy))
+        r = max(0, min(radius, before // 2, after // 2))
+        if r == 0:
+            out.append(f"L {cx} {cy}")
+            continue
+        sx = cx + (r if px > cx else -r if px < cx else 0)
+        sy = cy + (r if py > cy else -r if py < cy else 0)
+        ex = cx + (r if nx > cx else -r if nx < cx else 0)
+        ey = cy + (r if ny > cy else -r if ny < cy else 0)
+        out.append(f"L {sx} {sy}")
+        out.append(f"Q {cx} {cy} {ex} {ey}")
+    out.append(f"L {points[-1][0]} {points[-1][1]}")
+    return " ".join(out)
 
 
 def canvas_svg(canvas: Canvas, style: Style) -> Markup:
@@ -180,7 +239,7 @@ def canvas_svg(canvas: Canvas, style: Style) -> Markup:
                 _arrow_defs(),
                 join(_band(b.label, b.y, b.h, canvas.width, style) for b in canvas.bands),
                 join(_route(r, style) for r in canvas.routes),
-                join(_box(b, style) for b in canvas.boxes),
+                join(_box(b, style) for b in canvas.boxes if b.id not in canvas.waypoints),
             )
         ),
         viewBox=f"0 0 {canvas.width} {canvas.height}",

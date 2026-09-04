@@ -193,6 +193,11 @@ class Canvas:
     bands: tuple[Band, ...] = ()
     parent: str | None = None
     diagnostics: tuple[Diagnostic, ...] = field(default=())
+    # Boxes that are bends in a line rather than claims about the codebase.
+    # A long edge owns a slot in every row it crosses so it has somewhere of
+    # its own to run; those slots are not drawn, carry no evidence, and are
+    # exempt from the checks that demand a citation and a readable label.
+    waypoints: frozenset[str] = frozenset()
 
     def box(self, box_id: str) -> Box | None:
         return next((b for b in self.boxes if b.id == box_id), None)

@@ -884,3 +884,119 @@ def test_a_withheld_reason_is_not_taken_from_a_sibling_view() -> None:
         "the parent view was given its child's failure as its reason"
     )
     assert "SVA-G-001" in parent, "the fallback should still name what went wrong"
+
+
+# --------------------------------------------------------------------------
+# The stylesheet is code too, and it has been corrupted twice
+# --------------------------------------------------------------------------
+
+
+def stylesheet(html: str) -> str:
+    return html[html.index("<style>") + len("<style>") : html.index("</style>")]
+
+
+def test_every_colour_in_the_stylesheet_is_a_valid_hex_value(tmp_path: Path) -> None:
+    """Twice now a CSS declaration has been written with corrupt text in it:
+    once `#4a5<arabic>`, once `#3d4counting`.
+
+    A browser drops a malformed declaration silently, so the diagram renders
+    with a default colour and nothing anywhere says why. Cheap to check, and
+    neither instance was caught by anything else.
+    """
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    build_repo(repo)
+    out = tmp_path / "out"
+    run(repo, out)
+    css = stylesheet((out / "index.html").read_text(encoding="utf8"))
+
+    colours = re.findall(r"#[0-9A-Za-z_-]+", css)
+    assert colours, "no colours found, so this test proved nothing"
+    malformed = [c for c in colours if not re.fullmatch(r"#[0-9a-fA-F]{3,8}", c)]
+    assert not malformed, f"malformed colour values: {malformed}"
+
+
+def test_every_css_variable_used_is_defined(tmp_path: Path) -> None:
+    """A `var(--typo)` renders as nothing at all, silently."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    build_repo(repo)
+    out = tmp_path / "out"
+    run(repo, out)
+    css = stylesheet((out / "index.html").read_text(encoding="utf8"))
+
+    defined = set(re.findall(r"(--[a-z-]+)\s*:", css))
+    used = set(re.findall(r"var\((--[a-z-]+)", css))
+    assert used, "no variables used, so this test proved nothing"
+    assert used <= defined, f"undefined CSS variables: {sorted(used - defined)}"
+
+
+def test_the_stylesheet_is_ascii(tmp_path: Path) -> None:
+    """Both corruptions arrived as non-ASCII bytes inside a declaration."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    build_repo(repo)
+    out = tmp_path / "out"
+    run(repo, out)
+    css = stylesheet((out / "index.html").read_text(encoding="utf8"))
+    odd = sorted({f"U+{ord(c):04X}" for c in css if ord(c) > 127})
+    assert not odd, f"non-ASCII in the stylesheet: {odd}"
+
+
+def test_edges_carry_no_text_labels(tmp_path: Path) -> None:
+    """Every edge used to stamp its count at its polyline midpoint. On a real
+    diagram they landed in the same band and collapsed into strings like
+    `7122.26.62.5nimports`.
+
+    The count is still reachable: it is in the tooltip and the evidence panel.
+    """
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    build_repo(repo)
+    out = tmp_path / "out"
+    artifact = run(repo, out)
+    html = (out / "index.html").read_text(encoding="utf8")
+
+    routes = [
+        r for lo in artifact.laid_out.values() for c in lo.canvases.values() for r in c.routes
+    ]  # type: ignore[attr-defined]
+    assert routes, "the fixture drew no edges, so this test proved nothing"
+    assert "sv-edge-label" not in html
+    labels = {r.label for r in routes if r.label}
+    assert labels, "the fixture's edges have no labels to have been suppressed"
+    for label in labels:
+        assert f">{esc(label)}<" not in html, f"edge label {label!r} is drawn as text"
+        assert esc(label) in html, f"edge label {label!r} is not reachable at all"
+
+
+def test_waypoints_are_not_drawn(tmp_path: Path) -> None:
+    """A waypoint is a bend in a line, not a claim about the codebase."""
+    s = spec_with_long_edge()
+    from svarupa.emit.svg import canvas_svg
+    from svarupa.layout import lay_out
+    from svarupa.layout.geometry import Style as S
+
+    canvas = lay_out(s, S(), "layered")
+    assert canvas.waypoints, "the fixture produced no long edge"
+    svg = str(canvas_svg(canvas, S()))
+    for wid in canvas.waypoints:
+        assert wid not in svg, "a waypoint was drawn as a box"
+    _ = tmp_path
+
+
+def spec_with_long_edge():
+    from svarupa.derive.base import DiagramEdge, DiagramKind, DiagramNode, DiagramSpec
+    from svarupa.model import Evidence
+
+    ev = (Evidence(file="a.py", start_line=1, end_line=1),)
+    nodes = tuple(
+        DiagramNode(id=n, label=n, kind="module", evidence=ev, attrs=(("layer", str(i)),))
+        for i, n in enumerate(("a", "mid", "z"))
+    )
+    return DiagramSpec(
+        kind=DiagramKind.MODULE_DEPS,
+        id="/spec/root",
+        title="t",
+        nodes=nodes,
+        edges=(DiagramEdge(src="a", dst="z", label="1", evidence=ev),),
+    )

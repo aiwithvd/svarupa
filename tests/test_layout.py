@@ -338,22 +338,35 @@ def test_a_node_in_a_cycle_is_placed_below_everything_resolved() -> None:
     assert d["a"] > 0 and d["b"] > 0
 
 
-def test_rows_wrap_within_the_stated_bound_including_gaps() -> None:
-    """The bound must be the number the constant states.
+def test_grid_rows_wrap_within_the_stated_bound_including_gaps() -> None:
+    """Wrapping belongs to `grid` only.
 
-    Counting only box widths made the threshold and the produced width two
-    different numbers: 26 boxes wrapped into a 1515px row against a stated
-    1280.
+    Counting box widths without the gaps made the threshold and the produced
+    width two different numbers: 26 boxes wrapped into a 1515px row against a
+    stated 1280.
+    """
+    s = spec(*[node(f"n{i:02d}") for i in range(40)])
+    c = lay_out(s, STYLE, "grid")
+    content = c.width - 2 * STYLE.margin
+    assert content <= MAX_ROW_WIDTH, f"content row is {content}px against {MAX_ROW_WIDTH}"
+    assert validate(c, STYLE) == ()
+
+
+def test_a_layered_diagram_is_as_wide_as_its_widest_layer() -> None:
+    """Layered engines deliberately do not wrap.
+
+    A long edge owns one waypoint per *layer*. Wrapping turns one layer into
+    several rows, so a hop that was between adjacent rows spans three of them
+    and runs through whatever is in between. Measured on a 200-edge fixture
+    before this was removed: 1,900 route-through-box violations.
+
+    The answer to a very wide layer is hierarchy, not folding, which is the
+    drill-down the architecture view has and module-deps still needs.
     """
     s = spec(*[node(f"n{i:02d}", layer="0") for i in range(40)])
     c = lay_out(s, STYLE, "layered")
-    content = c.width - 2 * STYLE.margin - STYLE.lane_gutter
-    assert content <= MAX_ROW_WIDTH, (
-        f"content row is {content}px against a stated {MAX_ROW_WIDTH}"
-    )
-    assert max(b.right for b in c.boxes) <= c.width - STYLE.lane_gutter, (
-        "a box grew into the routing lane"
-    )
+    assert len({b.y for b in c.boxes}) == 1, "a single layer was folded into rows"
+    assert c.width > MAX_ROW_WIDTH, "the fixture is not wide enough to test this"
     assert validate(c, STYLE) == ()
 
 
@@ -625,15 +638,28 @@ def test_a_two_node_cycle_does_not_draw_through_its_own_boxes() -> None:
     assert crossings(c) == []
 
 
-def test_a_long_backward_edge_uses_the_lane_and_crosses_nothing() -> None:
+def test_a_long_backward_edge_crosses_nothing_and_points_the_right_way() -> None:
+    """A backward edge is flipped to make the graph acyclic, then flipped back.
+
+    The polyline is built in layer order and reversed, so it occupies the same
+    pixels but travels from the real source. Without that, every edge in a
+    dependency cycle draws its arrowhead at the wrong end, which is a wrong
+    claim rather than an ugly one.
+    """
     s = spec(
         *[node(f"n{i}", layer=str(i)) for i in range(5)],
         edges=(*[edge(f"n{i}", f"n{i + 1}") for i in range(4)], edge("n4", "n0")),
     )
     c = lay_out(s, STYLE, "layered")
     back = next(r for r in c.routes if r.src == "n4" and r.dst == "n0")
-    assert any(x > max(b.right for b in c.boxes) for x, _ in back.points), (
-        "the backward edge never reached the lane, so it ran through the rows"
+
+    start, finish = c.box("n4"), c.box("n0")
+    assert start is not None and finish is not None
+    assert start.x <= back.points[0][0] <= start.right, (
+        "the arrow does not start on the module that does the depending"
+    )
+    assert finish.x <= back.points[-1][0] <= finish.right, (
+        "the arrowhead is not on the module being depended upon"
     )
     assert crossings(c) == []
 
@@ -707,13 +733,16 @@ def test_a_bool_is_not_an_int_here() -> None:
 # --------------------------------------------------------------------------
 
 
-def test_wrapped_rows_produce_one_band_per_level_not_one_per_row() -> None:
-    """Forty boxes all at depth 0 produced bands labelled level 1 through
-    level 4: four confident wrong claims, each geometrically contained so the
-    validator said nothing."""
+def test_bands_are_one_per_level_and_never_per_row() -> None:
+    """Bands were labelled by row index while claiming a dependency level.
+
+    Forty boxes all at depth 0 produced "level 1" through "level 4": four
+    confident wrong claims, each geometrically contained so validation said
+    nothing. Layered engines no longer wrap, so the two can only diverge again
+    if someone reintroduces folding, which is exactly when this must fail.
+    """
     s = spec(*[node(f"n{i:02d}") for i in range(40)])
     c = lay_out(s, STYLE, "clustered")
-    assert len({b.y for b in c.boxes}) > 1, "fixture did not wrap, so nothing was tested"
     assert len(c.bands) == 1, [b.label for b in c.bands]
     assert c.bands[0].label == "level 1"
     assert set(c.bands[0].members) == {b.id for b in c.boxes}

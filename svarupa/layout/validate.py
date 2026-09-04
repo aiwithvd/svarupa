@@ -32,15 +32,26 @@ def _err(code: str, subject: str, message: str) -> Diagnostic:
 
 
 def validate(canvas: Canvas, style: Style) -> tuple[Diagnostic, ...]:
-    """Every geometric claim the canvas makes. Empty result means drawable."""
+    """Every geometric claim the canvas makes. Empty result means drawable.
+
+    **Waypoints are exempt from three checks, and the exemption is about what
+    they are rather than about making the checks pass.** A waypoint is a slot a
+    long edge owns in a row it crosses, so it has somewhere of its own to run.
+    It is never drawn, so it cannot be crossed and it has no label to fit; it is
+    not a claim about the codebase, so it has no source location to cite.
+
+    It is *not* exempt from overlap or bounds. Occupying real space is the
+    entire reason it exists, and a waypoint sitting on top of a box would put
+    two things in one place.
+    """
     out: list[Diagnostic] = []
     out.extend(_check_integers(canvas))
-    out.extend(_check_evidence(canvas))
+    out.extend(_check_evidence(canvas, canvas.waypoints))
     out.extend(_check_ids(canvas))
-    out.extend(_check_boxes(canvas, style))
+    out.extend(_check_boxes(canvas, style, canvas.waypoints))
     out.extend(_check_overlap(canvas))
     out.extend(_check_routes(canvas))
-    out.extend(_check_crossings(canvas))
+    out.extend(_check_crossings(canvas, canvas.waypoints))
     out.extend(_check_bands(canvas))
     return tuple(out)
 
@@ -82,7 +93,7 @@ def _check_integers(canvas: Canvas) -> list[Diagnostic]:
     return out
 
 
-def _check_evidence(canvas: Canvas) -> list[Diagnostic]:
+def _check_evidence(canvas: Canvas, waypoints: frozenset[str]) -> list[Diagnostic]:
     """No box, no arrow, without a source location.
 
     `Box` and `Route` deliberately have no constructor check, so this is the
@@ -96,7 +107,7 @@ def _check_evidence(canvas: Canvas) -> list[Diagnostic]:
     out.extend(
         _err("SVA-G-009", b.id, "box carries no evidence, so it cannot be clicked through")
         for b in canvas.boxes
-        if not b.evidence
+        if not b.evidence and b.id not in waypoints
     )
     out.extend(
         _err("SVA-G-009", f"{r.src} -> {r.dst}", "route carries no evidence")
@@ -106,7 +117,7 @@ def _check_evidence(canvas: Canvas) -> list[Diagnostic]:
     return out
 
 
-def _check_crossings(canvas: Canvas) -> list[Diagnostic]:
+def _check_crossings(canvas: Canvas, waypoints: frozenset[str]) -> list[Diagnostic]:
     """No route segment may pass through a box it does not connect.
 
     Design section 6.1 names this invariant. It was previously argued away in a
@@ -127,7 +138,7 @@ def _check_crossings(canvas: Canvas) -> list[Diagnostic]:
             lo_x, hi_x = min(x1, x2), max(x1, x2)
             lo_y, hi_y = min(y1, y2), max(y1, y2)
             for b in canvas.boxes:
-                if b.id in endpoints:
+                if b.id in endpoints or b.id in waypoints:
                     continue
                 if lo_x < b.right and hi_x > b.x and lo_y < b.bottom and hi_y > b.y:
                     out.append(
@@ -162,9 +173,15 @@ def _check_ids(canvas: Canvas) -> list[Diagnostic]:
     ]
 
 
-def _check_boxes(canvas: Canvas, style: Style) -> list[Diagnostic]:
+def _check_boxes(canvas: Canvas, style: Style, waypoints: frozenset[str]) -> list[Diagnostic]:
     out: list[Diagnostic] = []
     for b in canvas.boxes:
+        if b.id in waypoints:
+            # Still bounds-checked below via the shared branch; a waypoint has
+            # no text, so only the label checks are skipped.
+            if b.x < 0 or b.y < 0 or b.right > canvas.width or b.bottom > canvas.height:
+                out.append(_err("SVA-G-002", b.id, "waypoint falls outside the canvas"))
+            continue
         if b.w <= 0 or b.h <= 0:
             out.append(_err("SVA-G-002", b.id, f"has non-positive size {b.w}x{b.h}"))
             continue
