@@ -13,6 +13,7 @@ report a real change.
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import pytest
@@ -873,3 +874,132 @@ def test_a_normal_repository_has_no_dangling_references(tmp_path: Path) -> None:
     repo(tmp_path)
     result = build_lock(graph_of(tmp_path), __version__)
     assert not [d for d in result.diagnostics if d.code == "SVA-L-009"]
+
+
+# --------------------------------------------------------------------------
+# The replay harness: real history, on a repository built for the purpose
+# --------------------------------------------------------------------------
+
+
+def git_repo(root: Path) -> list[str]:
+    """A real git repository whose commits are the shapes that matter.
+
+    Built here rather than pointing at a foreign checkout, so the harness is
+    exercised in CI where no foreign repository exists. The measured corpus in
+    `docs/reviews/2026-09-04-replay-corpus.md` is the real evidence; this keeps
+    the machinery that produced it from rotting.
+    """
+    import subprocess
+
+    def run(*args: str) -> None:
+        subprocess.run(
+            ["git", "-C", str(root), *args],
+            check=True,
+            capture_output=True,
+            env={
+                "GIT_AUTHOR_NAME": "t",
+                "GIT_AUTHOR_EMAIL": "t@t",
+                "GIT_COMMITTER_NAME": "t",
+                "GIT_COMMITTER_EMAIL": "t@t",
+                "PATH": "/usr/bin:/bin:/usr/local/bin",
+            },
+        )
+
+    root.mkdir(parents=True, exist_ok=True)
+    run("init", "-q", "-b", "main")
+    subjects: list[str] = []
+
+    repo(root)
+    run("add", "-A")
+    run("commit", "-qm", "initial")
+    subjects.append("initial")
+
+    # A refactor inside a module: no architectural change.
+    target = root / "src/api/routes.py"
+    target.write_text(
+        target.read_text(encoding="utf8").replace("def show()", "def render()"),
+        encoding="utf8",
+    )
+    run("add", "-A")
+    run("commit", "-qm", "rename a local")
+    subjects.append("rename a local")
+
+    # A new module with a dependency: exactly the lines that describes.
+    write(root, "src/billing/__init__.py", "")
+    write(root, "src/billing/charge.py", "from ..core.model import Thing\n")
+    run("add", "-A")
+    run("commit", "-qm", "add billing")
+    subjects.append("add billing")
+
+    # Removing it again: the same lines, as removals.
+    import shutil
+
+    shutil.rmtree(root / "src/billing")
+    run("add", "-A")
+    run("commit", "-qm", "drop billing")
+    subjects.append("drop billing")
+    return subjects
+
+
+def test_the_replay_harness_measures_real_history(tmp_path: Path) -> None:
+    """Four commits: quiet, quiet, loud, loud-in-reverse."""
+    import shutil
+
+    if shutil.which("git") is None:  # pragma: no cover - git is always present here
+        pytest.skip("git is not available")
+
+    from svarupa.detect import ScanLimits
+    from svarupa.lock import ROOT_MODULE
+
+    _ = ROOT_MODULE
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    from replay_history import replay
+
+    source = tmp_path / "repo"
+    git_repo(source)
+    report = replay(source, count=4, limits=ScanLimits())
+
+    steps = {s.subject: s for s in report.steps}
+    assert not [s for s in report.steps if s.error], [s.error for s in report.steps]
+    assert len(steps) == 3, sorted(steps)
+
+    assert steps["rename a local"].lines == 0, steps["rename a local"].added
+
+    added = steps["add billing"]
+    assert "+ module\tsrc/billing" in added.added
+    assert "+ dep\tsrc/billing\tsrc/core" in added.added
+    assert added.removed == ()
+
+    dropped = steps["drop billing"]
+    assert "- module\tsrc/billing" in dropped.removed
+    assert dropped.added == ()
+
+
+def test_the_replay_harness_does_not_touch_the_source_repository(tmp_path: Path) -> None:
+    """`git worktree` would write under the source `.git`. Measuring someone's
+    repository must not modify it, and that is a property worth asserting
+    rather than trusting to the choice of command."""
+    import shutil
+
+    if shutil.which("git") is None:  # pragma: no cover
+        pytest.skip("git is not available")
+
+    from svarupa.detect import ScanLimits
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    from replay_history import replay
+
+    source = tmp_path / "repo"
+    git_repo(source)
+    before = {
+        str(p.relative_to(source)): p.stat().st_mtime_ns
+        for p in sorted((source / ".git").rglob("*"))
+        if p.is_file()
+    }
+    replay(source, count=4, limits=ScanLimits())
+    after = {
+        str(p.relative_to(source)): p.stat().st_mtime_ns
+        for p in sorted((source / ".git").rglob("*"))
+        if p.is_file()
+    }
+    assert before == after, "the replay modified the repository it was measuring"
