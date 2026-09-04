@@ -37,7 +37,7 @@ from typing import Any, cast
 import pathspec  # pyright: ignore[reportMissingTypeStubs]
 
 from svarupa.diagnostics import Diagnostic, DiagnosticError, Severity
-from svarupa.lock.grammar import collision_check
+from svarupa.identity import collision_check
 from svarupa.model import norm_path
 
 __all__ = [

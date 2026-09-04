@@ -1,13 +1,17 @@
+# The artifact directory is regenerated on every run, with one exception:
+# `architecture.lock` is committed on purpose. It is the diffable fingerprint
+# of the architecture, and a reviewer is meant to see `dep api -> auth` appear
+# as a green line in the pull request before CI even runs. Ignoring the whole
+# directory would ignore the one file the design says to commit.
+.svarupa/*
+!.svarupa/architecture.lock
+
 *.egg-info/
 *.pyc
 .pytest_cache/
 .ruff_cache/
-.svarupa/cache/
 .venv/
 .venv2/
 __pycache__/
 build/
 dist/
-lockfile.out
-spike/.venv*/
-svarupa-out/

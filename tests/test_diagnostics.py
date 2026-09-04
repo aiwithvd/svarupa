@@ -120,8 +120,11 @@ def test_every_package_module_is_reachable_by_import() -> None:
     """
     # Stages built ahead of the CLI that wires them. Listed by name rather
     # than pattern-matched, so wiring one up and forgetting to remove it here
-    # fails, and so does adding a new orphan. `svarupa.lock` is P1-7.
-    NOT_WIRED_YET = {"svarupa.lock"}
+    # fails, and so does adding a new orphan.
+    #
+    # Empty as of P1-7: `svarupa.lock` was the last entry, and wiring it made
+    # this assertion fail, which is what the list is for.
+    NOT_WIRED_YET: set[str] = set()
 
     live = live_modules()
     orphans = {

@@ -137,6 +137,8 @@ CODES: dict[str, str] = {
     "SVA-L-002": "a record has the wrong number of fields for its kind",
     "SVA-L-003": "an unknown escape sequence in a record field",
     "SVA-L-004": "a normalization or case collision between ids",
+    "SVA-L-005": "the delta contains record kinds this build does not understand",
+    "SVA-L-006": "the committed base lockfile is out of date with its own code",
 }
 
 # Codes whose message text comes from the caller, so there is no literal at the

@@ -128,7 +128,15 @@ def main() -> int:
                 continue
             path.write_text(text.replace(old, new, 1), encoding="utf8")
             proc = subprocess.run(
-                [str(PY), "-m", "pytest", "tests/test_emit.py", "tests/test_markup_types.py", "-q", "-x"],
+                [
+                    str(PY),
+                    "-m",
+                    "pytest",
+                    "tests/test_emit.py",
+                    "tests/test_markup_types.py",
+                    "-q",
+                    "-x",
+                ],
                 cwd=ROOT,
                 capture_output=True,
                 text=True,

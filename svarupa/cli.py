@@ -7,16 +7,24 @@ import sys
 from pathlib import Path
 
 from svarupa import __version__
-from svarupa.build import build
+from svarupa.build import Graph, build
 from svarupa.cluster import cluster
 from svarupa.derive import derive_all
 from svarupa.detect import FileRole, ScanLimits, detect
-from svarupa.diagnostics import DiagnosticError
+from svarupa.diagnostics import DiagnosticError, Severity
 from svarupa.emit import claim, emit
 from svarupa.extract import declared_dependencies, extract
+from svarupa.lock import LOCK_NAME, Lockfile, build_lock, diff, drift_check
 
 
-def _scan(path: str, max_files: int, out: str | None) -> int:
+def _scan(
+    path: str,
+    max_files: int,
+    out: str | None,
+    write_lock: bool,
+    diff_base: str | None,
+    drift_base: str | None,
+) -> int:
     # Claim the output directory first. Scanning a large repository takes
     # minutes, and discovering afterwards that the target is unwritable means
     # the refusal arrives under a page of output that read as success.
@@ -127,7 +135,68 @@ def _scan(path: str, max_files: int, out: str | None) -> int:
 
     print()
     print(f"  open {artifact.directory / 'index.html'}")
-    return 1 if errors or graph_errors or not artifact.ok else 0
+
+    lock_failed = _lockfile(artifact.directory, graph, write_lock, diff_base, drift_base)
+    return 1 if errors or graph_errors or not artifact.ok or lock_failed else 0
+
+
+def _lockfile(
+    directory: Path,
+    graph: Graph,
+    write_lock: bool,
+    diff_base: str | None,
+    drift_base: str | None,
+) -> bool:
+    """Build, optionally write, and optionally diff the architecture lockfile.
+
+    Returns whether anything here should fail the run. A collision is an error
+    because it would make a committed file silently wrong; drift is a warning
+    because the delta is still worth reading, it just has to be read
+    differently.
+    """
+    if not (write_lock or diff_base or drift_base):
+        return False
+
+    result = build_lock(graph, __version__)
+    print()
+    print(f"  lockfile: {len(result.lockfile.records)} record(s)")
+    for d in result.diagnostics:
+        print("    " + d.render().replace("\n", "\n    "))
+
+    if write_lock:
+        # Written next to the artifact but deliberately not part of it: this
+        # is the one file in that directory meant to be committed, so `emit`
+        # must never list it among the names it clears.
+        path = directory / LOCK_NAME
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(result.lockfile.render(), encoding="utf8", newline="")
+        print(f"    wrote {path}")
+
+    failed = any(d.severity is Severity.ERROR for d in result.diagnostics)
+
+    if drift_base and not diff_base:
+        print("    --drift-base needs --diff; nothing to compare drift against")
+        return True
+
+    if diff_base:
+        base = Lockfile.parse(Path(diff_base).read_text(encoding="utf8"))
+        if drift_base:
+            regenerated = Lockfile.parse(Path(drift_base).read_text(encoding="utf8"))
+            drift = drift_check(base, regenerated)
+            for d in drift:
+                print()
+                print("  " + d.render().replace("\n", "\n  "))
+            if drift:
+                # Read the delta against the code, not against the stale file.
+                # Reporting the delta from a stale base would attribute other
+                # people's changes to this one.
+                base = regenerated
+        delta = diff(base, result.lockfile)
+        print()
+        print("  " + delta.render().replace("\n", "\n  "))
+        for d in delta.diagnostics:
+            print("  " + d.render())
+    return failed
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -144,6 +213,27 @@ def main(argv: list[str] | None = None) -> int:
         "--max-files", type=int, default=200_000, help="stop scanning after this many files"
     )
     parser.add_argument(
+        "--lock",
+        action="store_true",
+        help=f"write the committed architecture lockfile ({LOCK_NAME})",
+    )
+    parser.add_argument(
+        "--diff",
+        metavar="BASE_LOCK",
+        default=None,
+        help="print the architecture delta against a base lockfile",
+    )
+    parser.add_argument(
+        "--drift-base",
+        metavar="REGENERATED_BASE_LOCK",
+        default=None,
+        help=(
+            "the base lockfile regenerated from base-branch code. With --diff, "
+            "reports whether the committed base is stale before showing the delta, "
+            "because a stale base attributes other commits' changes to this one"
+        ),
+    )
+    parser.add_argument(
         "--out",
         default=None,
         help=(
@@ -153,7 +243,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
     try:
-        return _scan(args.path, args.max_files, args.out)
+        return _scan(args.path, args.max_files, args.out, args.lock, args.diff, args.drift_base)
     except DiagnosticError as exc:
         # A structured refusal, printed as one. A traceback here would tell a
         # user about our call stack instead of about their input.

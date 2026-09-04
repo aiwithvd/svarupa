@@ -23,8 +23,7 @@ Four properties it must have (design 7.1):
 from __future__ import annotations
 
 import re
-import unicodedata
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 
 from svarupa.diagnostics import Diagnostic, DiagnosticError, Severity
@@ -327,77 +326,3 @@ def module_record(module_id: str) -> Record:
 
 def dep_record(src: str, dst: str) -> Record:
     return Record("dep", (src, dst))
-
-
-def collision_check(module_ids: Sequence[str]) -> list[Diagnostic]:
-    """Diagnose ids that would merge into one lockfile key.
-
-    Must be given the **raw** ids, before normalization: once `norm_path` has
-    run, the pre-images are gone and there is nothing left to compare.
-
-    Two separate axes, reported separately because the remedy differs:
-
-    * **normalization** — NFC and NFD of one name are two distinct files on
-      Linux but one file on macOS. `casefold()` alone does not catch this,
-      because it does not normalize.
-    * **case** — distinct on Linux, one file on a case-insensitive APFS or
-      NTFS volume.
-
-    Silently merging either would produce a silently wrong lockfile, which is
-    worse than failing, so this returns diagnostics rather than a merged view.
-    """
-    out: list[Diagnostic] = []
-
-    def bucket(key: Callable[[str], str]) -> dict[str, list[str]]:
-        b: dict[str, list[str]] = {}
-        for mid in module_ids:
-            b.setdefault(key(mid), []).append(mid)
-        return b
-
-    def to_nfc(x: str) -> str:
-        return unicodedata.normalize("NFC", x)
-
-    def to_nfc_folded(x: str) -> str:
-        return unicodedata.normalize("NFC", x).casefold()
-
-    seen: set[tuple[str, ...]] = set()
-
-    for norm_key, group in sorted(bucket(to_nfc).items()):
-        uniq = sorted(set(group))
-        if len(uniq) > 1:
-            seen.add(tuple(uniq))
-            out.append(
-                Diagnostic(
-                    code="SVA-L-004",
-                    severity=Severity.ERROR,
-                    message=(
-                        "these paths are distinct on disk but identical after "
-                        "Unicode NFC normalization, so they would collapse into "
-                        "one lockfile key"
-                    ),
-                    subject=" | ".join(uniq),
-                    location=norm_key,
-                    suggested_fixes=(
-                        "Rename one path so the two differ by more than "
-                        "Unicode normalization form.",
-                    ),
-                )
-            )
-
-    for fold_key, group in sorted(bucket(to_nfc_folded).items()):
-        uniq = sorted(set(group))
-        if len(uniq) > 1 and tuple(uniq) not in seen:
-            out.append(
-                Diagnostic(
-                    code="SVA-L-004",
-                    severity=Severity.ERROR,
-                    message=(
-                        "these paths differ only by case, so they are distinct "
-                        "on Linux but one file on a case-insensitive volume"
-                    ),
-                    subject=" | ".join(uniq),
-                    location=fold_key,
-                    suggested_fixes=("Rename one path so the two differ by more than case.",),
-                )
-            )
-    return out
