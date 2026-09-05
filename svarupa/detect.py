@@ -80,6 +80,12 @@ CONFIG_NAMES: dict[str, str] = {
     "docker-compose.yaml": "compose",
     "compose.yml": "compose",
     "compose.yaml": "compose",
+    # Variants are part of the deployed shape, not an exotic case:
+    # docker-compose auto-loads the override file, and a service defined only
+    # there was silently missing from a view whose whole claim is the deployed
+    # system.
+    "docker-compose.override.yml": "compose",
+    "docker-compose.override.yaml": "compose",
     "package.json": "manifest-npm",
     "pyproject.toml": "manifest-python",
     "go.mod": "manifest-go",
@@ -89,6 +95,10 @@ CONFIG_NAMES: dict[str, str] = {
     "pnpm-workspace.yaml": "workspace-pnpm",
     "go.work": "workspace-go",
 }
+
+# docker-compose.<env>.yml and compose.<env>.yaml. Matched by shape, not by an
+# enumeration of environment names, because teams invent those freely.
+_COMPOSE_VARIANT = re.compile(r"^(docker-)?compose\.[A-Za-z0-9_-]+\.ya?ml$")
 CONFIG_GLOBS: tuple[tuple[str, str], ...] = (
     (r"^openapi\.(ya?ml|json)$", "openapi"),
     (r"^swagger\.(ya?ml|json)$", "openapi"),
@@ -337,6 +347,8 @@ def _read_ignore_files(root: Path) -> list[str]:
 def _config_kind(rel: str, name: str) -> str | None:
     if (kind := CONFIG_NAMES.get(name)) is not None:
         return kind
+    if _COMPOSE_VARIANT.match(name):
+        return "compose"
     for pattern, kind in CONFIG_GLOBS:
         if re.match(pattern, rel) or re.match(pattern, name):
             return kind

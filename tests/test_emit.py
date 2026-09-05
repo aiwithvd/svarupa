@@ -1197,3 +1197,83 @@ def test_the_drill_chain_reaches_code_level(tmp_path: Path) -> None:
     kinds = {n.kind for spec in code for n in spec.nodes}
     assert "class" in kinds and "function" in kinds
     assert ds.depth() >= 3, f"the drill chain is only {ds.depth()} deep"
+
+
+@pytest.mark.determinism
+def test_the_whole_artifact_is_byte_identical_at_clustering_scale(
+    tmp_path: Path,
+) -> None:
+    """The gate that was missing, stated with its reason.
+
+    Every prior cross-seed gate passed while the property was false on the
+    first real repository tried, because every fixture was below the size
+    where Louvain's multi-level aggregation phase engages, and networkx
+    iterates sets of node names inside it. A determinism gate is scoped not
+    just to shapes but to scale.
+
+    This fixture is generated to force aggregation: six dense clusters of
+    eight modules with sparse bridges. The test asserts both halves: that
+    clustering actually grouped (otherwise the gate is running below scale and
+    proving nothing), and that every artifact byte matches across seeds.
+    """
+    import os
+    import subprocess
+    import sys
+
+    repo = tmp_path / "repo"
+    for c in range(6):
+        for m in range(8):
+            mod = repo / f"c{c}" / f"m{m}"
+            mod.mkdir(parents=True, exist_ok=True)
+            (mod / "__init__.py").write_text("", encoding="utf8")
+            body = "".join(f"from ..m{o} import core as core_{o}\n" for o in range(8) if o != m)
+            (mod / "core.py").write_text(body + "VALUE = 1\n", encoding="utf8")
+        (repo / f"c{c}" / "__init__.py").write_text("", encoding="utf8")
+        if c:
+            bridge = repo / f"c{c}" / "bridge.py"
+            bridge.write_text(f"from ..c{c - 1}.m0 import core\n", encoding="utf8")
+
+    script = (
+        f"import sys; sys.path.insert(0, {str(Path(__file__).resolve().parents[1])!r})\n"
+        "import hashlib, pathlib\n"
+        "from svarupa.detect import detect\n"
+        "from svarupa.extract import extract, declared_dependencies\n"
+        "from svarupa.build import build\n"
+        "from svarupa.cluster import cluster\n"
+        "from svarupa.derive import derive_all\n"
+        "from svarupa.emit import emit\n"
+        f"root = pathlib.Path({str(repo)!r})\n"
+        "s = detect(root)\n"
+        "g = build(s, extract(s, declared_dependencies(s)), strict=False)\n"
+        "c = cluster(g)\n"
+        "print('MODULES', len(g.modules), 'COMMUNITIES', len(c.communities))\n"
+        "p, n = derive_all(g, c)\n"
+        "emit(root, g, p, n, out_dir=pathlib.Path(sys.argv[1]))\n"
+        "for f in sorted(pathlib.Path(sys.argv[1]).rglob('*')):\n"
+        "    if f.is_file():\n"
+        "        print(f.name, hashlib.sha256(f.read_bytes()).hexdigest())\n"
+    )
+    outputs: set[str] = set()
+    grouped = None
+    for i, seed in enumerate(("0", "7", "4242")):
+        out = tmp_path / f"seed{i}"
+        proc = subprocess.run(
+            [sys.executable, "-c", script, str(out)],
+            capture_output=True,
+            text=True,
+            env={**os.environ, "PYTHONHASHSEED": seed},
+            check=True,
+        )
+        first, _, rest = proc.stdout.partition("\n")
+        outputs.add(rest)
+        parts = first.split()
+        grouped = (int(parts[1]), int(parts[3]))
+
+    assert grouped is not None
+    modules, communities = grouped
+    assert modules >= 40, f"only {modules} modules; the gate is running below scale"
+    assert communities < modules // 2, (
+        f"{communities} communities for {modules} modules: clustering never "
+        "aggregated, so this gate proves nothing about the phase that churns"
+    )
+    assert len(outputs) == 1, f"the artifact differed across hash seeds ({len(outputs)})"

@@ -14,8 +14,6 @@ builds, so the story view and the evidence view are one navigation.
 
 from __future__ import annotations
 
-import posixpath
-
 from svarupa.build import Graph
 from svarupa.cluster import Clustering
 from svarupa.derive.base import (
@@ -61,20 +59,40 @@ class SystemDeriver(Deriver):
             )
 
         diags: list[Diagnostic] = []
+        # Two compose files can both define a `web`. Ids stay distinct, and the
+        # human-facing label gains the file's directory when names collide,
+        # because two identical boxes force the reader to click to tell them
+        # apart, which is the label failing at its one job.
+        by_label: dict[str, int] = {}
+        for node in members.values():
+            by_label[node.label] = by_label.get(node.label, 0) + 1
+
         nodes: list[DiagramNode] = []
         for nid, node in sorted(members.items()):
             build_context = node.attr("build_context")
+            label = node.label
+            if by_label[label] > 1:
+                where = nid.split("#", 1)[0].rsplit("/", 1)[0] or "."
+                label = f"{label} ({where})"
             nodes.append(
                 DiagramNode(
                     id=nid,
-                    label=node.label,
+                    label=label,
                     kind=node.kind.value,
                     evidence=node.evidence,
-                    # A service built from this repository is the door into the
-                    # code: it drills to the structural architecture. Image-only
-                    # services are external and are leaves here.
-                    child_spec=self._code_door(graph, nid, build_context),
-                    attrs=(("image", node.attr("image") or ""),) if node.attr("image") else (),
+                    # No drill link yet: this diagram set holds only its own
+                    # root, and a child_spec into another set would rightly
+                    # fail navigability. The build context is recorded as a
+                    # fact instead, so the panel can say which code a built
+                    # service comes from; cross-diagram navigation is P2.
+                    attrs=tuple(
+                        (k, v)
+                        for k, v in (
+                            ("image", node.attr("image") or ""),
+                            ("build_context", build_context or ""),
+                        )
+                        if v
+                    ),
                 )
             )
 
@@ -90,42 +108,20 @@ class SystemDeriver(Deriver):
                 if e.kind is EdgeKind.DEPENDS_ON and e.src in members and e.dst in members
             )
         )
-        services = sum(1 for n in nodes if n.kind == "service")
-        stores = len(nodes) - services
+        tally = {"service": 0, "datastore": 0, "queue": 0}
+        for n in nodes:
+            tally[n.kind] = tally.get(n.kind, 0) + 1
+        subtitle = ", ".join(
+            f"{count} {kind}{'s' if count != 1 else ''}"
+            for kind, count in tally.items()
+            if count
+        )
         spec = DiagramSpec(
             kind=self.kind,
             id=ROOT,
             title=self.title,
-            subtitle=(
-                f"{services} service{'s' if services != 1 else ''}, "
-                f"{stores} backing store{'s' if stores != 1 else ''}"
-            ),
+            subtitle=subtitle,
             nodes=tuple(sorted(nodes)),
             edges=edges,
         )
         return DiagramSet(self.kind, ROOT, {ROOT: spec}, tuple(diags))
-
-    def _code_door(
-        self, graph: Graph, service_id: str, build_context: str | None
-    ) -> str | None:
-        """The module a built service's context lands on, as a drill target.
-
-        Only when the context resolves to a module this graph actually has:
-        pointing a drill at a guess would be an invented link. `.` maps to the
-        repository root module when one exists.
-
-        The target is a *module id*, not a spec id, because this diagram set
-        contains only its own root; cross-diagram navigation is the viewer's
-        job in P2 and a dangling child_spec here would fail navigability, and
-        should. So today a resolvable context is recorded as an attribute-level
-        fact rather than a drill link.
-        """
-        _ = service_id
-        if build_context is None:
-            return None
-        compose_dir = ""  # contexts are relative to the compose file's directory
-        target = posixpath.normpath(posixpath.join(compose_dir, build_context))
-        if target in (".", ""):
-            target = ""
-        _ = target, graph
-        return None

@@ -706,12 +706,19 @@ def flow(
 
     # The corridor above the boxes, sized by how many skipping edges need it.
     ids = {b.id for b in boxes}
+
+    # Everything that is not a simple forward hop takes the corridor: skips,
+    # same-column edges, and backward edges. The first version collected skips
+    # with abs(diff) != 1 but routed with `diff == 1`, so a backward edge
+    # between adjacent columns fell between the two definitions and crashed on
+    # a list lookup. One predicate, used by both sides.
+    def takes_corridor(src: str, dst: str) -> bool:
+        return levels.get(dst, 0) - levels.get(src, 0) != 1
+
     skips = sorted(
         (e.src, e.dst)
         for e in spec.edges
-        if e.src in ids
-        and e.dst in ids
-        and abs(levels.get(e.dst, 0) - levels.get(e.src, 0)) != 1
+        if e.src in ids and e.dst in ids and takes_corridor(e.src, e.dst)
     )
     corridor_h = 12 + 12 * len(skips)
     top = style.margin + corridor_h
@@ -746,8 +753,16 @@ def flow(
     # Routes. Adjacent columns cross their shared gap on a per-edge track;
     # skipping edges climb into the corridor.
     routes: list[Route] = []
-    track_use: dict[int, int] = {}
+    # Tracks are budgeted per gap, not per diagram. Dividing by the whole
+    # spec's edge count skewed every track toward the gap's left edge and let
+    # two edges through one gap land on the same x, which is the smear failure
+    # the layered rewrite was named for, at smaller scale.
+    gap_budget: dict[int, int] = {}
     edge_map = _edge_map(spec)
+    for (src, dst), _e in sorted(edge_map.items()):
+        if src in placed and dst in placed and not takes_corridor(src, dst):
+            gap_budget[levels.get(src, 0)] = gap_budget.get(levels.get(src, 0), 0) + 1
+    track_use: dict[int, int] = {}
     exits: dict[str, list[str]] = {}
     entries: dict[str, list[str]] = {}
     for e in sorted(spec.edges, key=lambda e: (e.src, e.dst)):
@@ -767,24 +782,34 @@ def flow(
         ay = fan_y(a, exits[src].index(dst) + 1, len(exits[src]))
         by = fan_y(b, entries[dst].index(src) + 1, len(entries[dst]))
         la, lb = levels.get(src, 0), levels.get(dst, 0)
-        if lb - la == 1:
+        if not takes_corridor(src, dst):
             gx0, gx1 = gaps[sorted(columns).index(la)]
             used = track_use.get(la, 0)
             track_use[la] = used + 1
-            tx = gx0 + 8 + (used * (gx1 - gx0 - 16)) // max(1, len(edge_map))
+            span = max(1, gx1 - gx0 - 16)
+            tx = gx0 + 8 + (used * span) // max(1, gap_budget.get(la, 1))
             points = ((a.right, ay), (tx, ay), (tx, by), (b.x, by))
         else:
-            # Through the corridor above everything, one lane per skip.
+            # Through the corridor above everything, one lane per edge.
             lane_y = style.margin + 6 + 12 * skips.index((src, dst))
             out_x = a.right + 10 + 4 * (exits[src].index(dst))
-            in_x = b.x - 10 - 4 * (entries[dst].index(src))
+            backward = lb <= la
+            # A backward edge enters its target from the right, so the
+            # arrowhead points against the flow, which is what a backward
+            # dependency is.
+            in_edge = b.right if backward else b.x
+            in_x = (
+                (b.right + 10 + 4 * entries[dst].index(src))
+                if backward
+                else (b.x - 10 - 4 * entries[dst].index(src))
+            )
             points = (
                 (a.right, ay),
                 (out_x, ay),
                 (out_x, lane_y),
                 (in_x, lane_y),
                 (in_x, by),
-                (b.x, by),
+                (in_edge, by),
             )
         routes.append(
             Route(

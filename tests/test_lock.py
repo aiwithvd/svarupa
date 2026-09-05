@@ -1087,3 +1087,52 @@ def test_editing_compose_environment_does_not_churn_the_lockfile(tmp_path: Path)
         "  data:\n",
     )
     assert lock_text(tmp_path) == before
+
+
+def test_a_compose_only_directory_is_not_a_module(tmp_path: Path) -> None:
+    """Review #11 F2: the config-directory guard was scoped to config that
+    produces no graph nodes. The compose extractor produces node-bearing
+    config (lang="compose"), and the truthiness filter `if node.lang` promptly
+    let it resurrect the exact churn the filter exists to prevent, one wave
+    after review #10 F3 fixed it. The guard now enumerates grammar-backed
+    languages, and this fixture uses the shape that broke."""
+    repo(tmp_path)
+    before = lock_text(tmp_path)
+    write(
+        tmp_path,
+        "deploy/docker-compose.yml",
+        "services:\n  helper:\n    image: nginx\n",
+    )
+    after = lock_text(tmp_path)
+    assert "module\tdeploy" not in after, "a compose-only directory became a module"
+    # The service itself is a fact and must appear; only the module line is churn.
+    assert "service\thelper" in after
+    module_lines = [ln for ln in before.splitlines() if ln.startswith("module")]
+    module_lines_after = [ln for ln in after.splitlines() if ln.startswith("module")]
+    assert module_lines == module_lines_after
+
+
+def test_same_label_services_are_diagnosed_not_silently_merged(tmp_path: Path) -> None:
+    """Two services named `web` in different compose files are two facts and
+    one lockfile record; deleting one produces a zero-line diff, which is
+    precisely the missed line the format exists to show."""
+    repo(tmp_path)
+    write(tmp_path, "a/docker-compose.yml", "services:\n  web:\n    image: nginx\n")
+    write(tmp_path, "b/docker-compose.yml", "services:\n  web:\n    image: nginx\n")
+    result = build_lock(graph_of(tmp_path), __version__)
+    warnings = [d for d in result.diagnostics if d.code == "SVA-L-004"]
+    assert warnings, "two same-named services merged with no diagnostic"
+    assert "web" in warnings[0].message
+    assert "will not show in the diff" in warnings[0].message
+
+
+def test_distinctly_named_services_do_not_trip_the_collision_check(tmp_path: Path) -> None:
+    """The baseline: the check must not be a constant."""
+    repo(tmp_path)
+    write(
+        tmp_path,
+        "docker-compose.yml",
+        "services:\n  web:\n    image: nginx\n  db:\n    image: postgres\n",
+    )
+    result = build_lock(graph_of(tmp_path), __version__)
+    assert not [d for d in result.diagnostics if d.code == "SVA-L-004"]

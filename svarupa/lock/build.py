@@ -32,6 +32,8 @@ from svarupa.identity import collision_check
 from svarupa.lock.grammar import Lockfile, Record, dep_record, module_record
 from svarupa.model import NodeKind
 
+_SYSTEM_KINDS = (NodeKind.SERVICE, NodeKind.DATASTORE, NodeKind.QUEUE)
+
 __all__ = [
     "ROOT_MODULE",
     "LockResult",
@@ -119,7 +121,15 @@ def code_modules(graph: Graph) -> set[str]:
     out: set[str] = set()
     for nid, node in graph.nodes.items():
         path = nid.split("#", 1)[0]
-        if node.lang and path in graph.architecture_paths:
+        # `node.lang in GRAMMAR_VERSIONS`, never truthiness. The filter used to
+        # be `if node.lang`, which is a claim about every value any future
+        # producer will put in that field, and the compose extractor promptly
+        # falsified it: service nodes carry lang="compose", so a directory
+        # holding only a docker-compose file was a "module with extractable
+        # source" and the config-directory churn this function exists to
+        # prevent came straight back, one wave after it was fixed. A guard
+        # over an open-ended field enumerates what it accepts.
+        if node.lang in GRAMMAR_VERSIONS and path in graph.architecture_paths:
             out.add(path.rsplit("/", 1)[0] if "/" in path else "")
     return out & set(graph.modules)
 
@@ -162,6 +172,31 @@ def build_lock(graph: Graph, tool_version: str) -> LockResult:
     }
     records = lock_records(graph)
     diagnostics = list(collision_check(sorted(code_modules(graph))))
+
+    # Two services with the same name in different compose files are two graph
+    # nodes and would be ONE lockfile record, because records are facts and the
+    # set-dedup collapses them. Deleting one of the two would then produce a
+    # zero-line diff, which is exactly the missed line the format exists to
+    # show. Collisions diagnose, never merge; that decision was applied to
+    # module keys and has to hold for every record kind added later.
+    by_label: dict[tuple[str, str], list[str]] = {}
+    for nid, node in graph.nodes.items():
+        if node.kind in _SYSTEM_KINDS:
+            by_label.setdefault((node.kind.value, node.label), []).append(nid)
+    for (kind_name, label), holders in sorted(by_label.items()):
+        if len(holders) > 1:
+            diagnostics.append(
+                Diagnostic(
+                    code="SVA-L-004",
+                    severity=Severity.WARNING,
+                    message=(
+                        f"{len(holders)} {kind_name} definitions share the name "
+                        f"{label!r}, so they collapse into one lockfile record and "
+                        "removing one of them will not show in the diff"
+                    ),
+                    subject=" | ".join(sorted(holders)),
+                )
+            )
 
     # A dep whose endpoint has no module line would be a dangling reference in
     # a committed file. It cannot happen today, because a dependency is derived

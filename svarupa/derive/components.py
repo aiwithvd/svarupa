@@ -142,10 +142,17 @@ def flow_spec(
         nodes=tuple(sorted(nodes)),
         edges=tuple(
             sorted(
+                # The label's count and the clickable citations must agree or
+                # say why they do not: "8 uses" over six links reads as two of
+                # them lost. The cap is stated in the label when it applies.
                 DiagramEdge(
                     src=a,
                     dst=b,
-                    label=f"{len(ev)} use{'s' if len(ev) != 1 else ''}",
+                    label=(
+                        f"{len(ev)} uses, first 6 cited"
+                        if len(ev) > 6
+                        else f"{len(ev)} use{'s' if len(ev) != 1 else ''}"
+                    ),
                     evidence=tuple(sorted(ev))[:6],
                     weight=len(ev),
                 )
@@ -239,15 +246,15 @@ def code_spec(
             if e.src in kept and e.dst in kept
         )
     )
-    classes = sum(1 for n in nodes if n.kind == "class")
-    functions = len(nodes) - classes
+    # Counted per kind, never by subtraction: `len - classes` counted three
+    # interfaces as three functions, and a subtitle is a claim.
+    tally = {"class": 0, "function": 0, "interface": 0}
+    for n in nodes:
+        tally[n.kind] = tally.get(n.kind, 0) + 1
     parts = [
-        p
-        for p in (
-            f"{classes} class{'es' if classes != 1 else ''}" if classes else "",
-            f"{functions} function{'s' if functions != 1 else ''}" if functions else "",
-        )
-        if p
+        f"{count} {kind}{'es' if kind == 'class' and count != 1 else 's' if count != 1 else ''}"
+        for kind, count in tally.items()
+        if count
     ]
     return (
         DiagramSpec(

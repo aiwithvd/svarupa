@@ -264,3 +264,63 @@ def test_adding_an_unrelated_module_does_not_touch_existing_records() -> None:
     after = Lockfile.build(TOOL, GRAMMARS, recs).render().splitlines()
     assert [ln for ln in before if ln not in after] == []
     assert [ln for ln in after if ln not in before] == ["module\tsrc/brand_new"]
+
+
+@pytest.mark.determinism
+def test_louvain_is_seed_independent_on_the_graph_that_broke() -> None:
+    """The committed fixture is descovo-data-core's real module graph, the
+    smallest graph observed to make networkx's Louvain depend on
+    PYTHONHASHSEED despite `seed=`: networkx iterates *sets of node names*
+    inside its aggregation phase. Synthetic shapes did not reproduce it, which
+    is itself the lesson: a determinism gate is scoped to scale and structure,
+    and a real graph is the fixture of record.
+
+    The fix relabels nodes to sorted consecutive integers before clustering,
+    because small ints hash to themselves. The first version of this gate
+    aimed at the first-level pass and stayed green with the fix removed: the
+    sensitive stage is the oversized-community *resplit*, which re-runs the
+    backend on a subgraph. Removing the relabelling turns this red; verified
+    by mutation, after aiming the gate at the stage that actually churns.
+    """
+    import json as jsonlib
+    import os
+    import subprocess
+    import sys
+
+    fixture = Path(__file__).parent / "fixtures" / "louvain_seed_sensitive.json"
+    data = jsonlib.loads(fixture.read_text(encoding="utf8"))
+    assert len(data["nodes"]) >= 30, "the fixture shrank below reproduction scale"
+
+    # The sensitive stage is not the first Louvain pass, which was measured
+    # stable on this graph even without the fix. It is `_split_oversized`'s
+    # re-run over a *subgraph*: three seeds produced three different splits.
+    # The gate therefore drives both stages, exactly as `cluster()` does.
+    script = (
+        f"import sys; sys.path.insert(0, {str(Path(__file__).resolve().parents[1])!r})\n"
+        "import hashlib, json\n"
+        "import networkx as nx\n"
+        "from svarupa.cluster import _louvain, _split_oversized\n"
+        f"data = json.loads(open({str(fixture)!r}).read())\n"
+        "g = nx.Graph()\n"
+        "g.add_nodes_from(data['nodes'])\n"
+        "for a, b, w in data['edges']:\n"
+        "    g.add_edge(a, b, weight=w)\n"
+        "groups = _louvain(g, seed=1729, resolution=1.0)\n"
+        "split = _split_oversized(g, groups, 1729, 1.0, 'louvain', [])\n"
+        "sig = sorted(tuple(c) for c in split)\n"
+        "print(hashlib.sha256(repr(sig).encode()).hexdigest())\n"
+    )
+    outputs: set[str] = set()
+    for seed in ("1", "42", "31337"):
+        proc = subprocess.run(
+            [sys.executable, "-c", script],
+            capture_output=True,
+            text=True,
+            env={**os.environ, "PYTHONHASHSEED": seed},
+            check=True,
+        )
+        outputs.add(proc.stdout.strip())
+    assert len(outputs) == 1, (
+        f"community assignment changed with the hash seed ({len(outputs)} variants); "
+        "every diagram, JSON view and report churns with it"
+    )

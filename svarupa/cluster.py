@@ -168,15 +168,33 @@ def _anchor(g: nx.Graph[str], members: Sequence[str]) -> str:
 
 
 def _louvain(g: nx.Graph[str], seed: int, resolution: float) -> list[list[str]]:
-    # networkx's dispatchable decorator erases the signature under strict
-    # typing, so the call goes through an explicitly-Any handle.
+    """Louvain over integer-relabelled nodes, then mapped back.
+
+    The relabelling is the determinism fix, found on a real repository:
+    networkx's Louvain iterates *sets of node names* internally, and with a
+    fixed `seed=` and byte-identical input its output still differed across
+    `PYTHONHASHSEED` once the graph was large enough for the multi-level
+    aggregation phase to engage. The lockfile survived, because clustering is
+    presentation-only by decision, but every diagram, every JSON view and the
+    report churned. Small consecutive integers hash to themselves, so their
+    set iteration order is seed-independent, and the canonical sort here fixes
+    which module gets which integer.
+    """
     community = importlib.import_module("networkx.algorithms.community")
     louvain: Any = community.louvain_communities
+
+    names = sorted(g.nodes)
+    index = {name: i for i, name in enumerate(names)}
+    relabelled: nx.Graph[int] = nx.Graph()
+    relabelled.add_nodes_from(range(len(names)))
+    for a, b, data in g.edges(data=True):
+        relabelled.add_edge(index[a], index[b], weight=data.get("weight", 1))
+
     found = cast(
-        "list[set[str]]",
-        louvain(g, seed=seed, resolution=resolution, weight="weight"),
+        "list[set[int]]",
+        louvain(relabelled, seed=seed, resolution=resolution, weight="weight"),
     )
-    return [sorted(c) for c in found]
+    return [sorted(names[i] for i in c) for c in found]
 
 
 def _leiden(g: nx.Graph[str], seed: int, resolution: float) -> list[list[str]]:

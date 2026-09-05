@@ -948,3 +948,168 @@ def test_placement_preserves_every_field_of_a_box() -> None:
         )
         checked += 1
     assert checked >= 8, "the field walk covered almost nothing"
+
+
+# --------------------------------------------------------------------------
+# Review #11 F4: the wave's named properties get tests that can fail
+# --------------------------------------------------------------------------
+
+
+def crossings_between(rows: list[list[str]], links: list[tuple[str, str]]) -> int:
+    """Count edge crossings between adjacent rows, the quantity the sweep
+    exists to reduce."""
+    pos = {nid: (i, j) for i, row in enumerate(rows) for j, nid in enumerate(row)}
+    count = 0
+    spans = [(pos[a], pos[b]) for a, b in links if a in pos and b in pos]
+    for i, ((r1, c1), (_, d1)) in enumerate(spans):
+        for (r2, c2), (_, d2) in spans[i + 1 :]:
+            if r1 == r2 and ((c1 - c2) * (d1 - d2) < 0):
+                count += 1
+    return count
+
+
+def test_the_barycentric_sweep_actually_reduces_crossings() -> None:
+    """Deleting the entire sweep passed all 539 tests: nothing anywhere
+    asserted that the ordering does anything. This fixture is built so the
+    id-sorted seed order crosses maximally, and the assertion is on the
+    quantity the commit message named.
+    """
+    from svarupa.layout.sugiyama import layer_out
+
+    # Two rows of six; edges connect a_i to b_(5-i), so id order gives the
+    # maximum 15 crossings and the correct order gives zero.
+    ids = [f"a{i}" for i in range(6)] + [f"b{i}" for i in range(6)]
+    edges = [(f"a{i}", f"b{5 - i}") for i in range(6)]
+    layer = {**{f"a{i}": 0 for i in range(6)}, **{f"b{i}": 1 for i in range(6)}}
+
+    seed_rows = [
+        sorted(n for n in ids if layer[n] == 0),
+        sorted(n for n in ids if layer[n] == 1),
+    ]
+    seed_crossings = crossings_between(seed_rows, edges)
+    assert seed_crossings == 15, "the fixture no longer crosses under seed order"
+
+    out = layer_out(ids, edges, layer)
+    swept = [list(r) for r in out.rows]
+    after = crossings_between(swept, edges)
+    assert after == 0, f"the sweep left {after} of {seed_crossings} crossings"
+
+
+def test_the_sweep_is_deterministic_across_processes() -> None:
+    """The sweep iterates dicts built from edges, so this is the churn source
+    that in-process repetition cannot see."""
+    import json as jsonlib
+    import os
+    import subprocess
+    import sys
+
+    script = (
+        f"import sys; sys.path.insert(0, {str(Path(__file__).resolve().parents[1])!r})\n"
+        "import json\n"
+        "from svarupa.layout.sugiyama import layer_out\n"
+        "ids = [f'n{i:02d}' for i in range(30)]\n"
+        "edges = [(f'n{i:02d}', f'n{(i * 7 + 3) % 30:02d}') for i in range(30)]\n"
+        "layer = {f'n{i:02d}': i % 5 for i in range(30)}\n"
+        "out = layer_out(ids, edges, layer)\n"
+        "print(json.dumps([list(r) for r in out.rows]))\n"
+    )
+    results = set()
+    for seed in ("0", "1", "999"):
+        proc = subprocess.run(
+            [sys.executable, "-c", script],
+            capture_output=True,
+            text=True,
+            env={**os.environ, "PYTHONHASHSEED": seed},
+            check=True,
+        )
+        results.add(proc.stdout)
+    assert len(results) == 1, "row ordering changed with the hash seed"
+    assert jsonlib.loads(next(iter(results))), "the sweep produced nothing to compare"
+
+
+# --------------------------------------------------------------------------
+# The flow engine, per branch
+# --------------------------------------------------------------------------
+
+
+def flow_spec_of(*edges_: tuple[str, str], layers: dict[str, str]) -> DiagramSpec:
+    nodes = tuple(node(nid, layer=level) for nid, level in layers.items())
+    return DiagramSpec(
+        kind=DiagramKind.DEPLOY_TOPOLOGY,
+        id="/spec/root",
+        title="t",
+        nodes=nodes,
+        edges=tuple(edge(a, b) for a, b in edges_),
+    )
+
+
+def test_flow_routes_an_adjacent_hop_through_the_shared_gap() -> None:
+    s = flow_spec_of(("api", "db"), layers={"api": "0", "db": "1"})
+    c = lay_out(s, STYLE, "flow")
+    assert validate(c, STYLE) == (), [d.render() for d in validate(c, STYLE)]
+    (r,) = c.routes
+    a, b = c.box("api"), c.box("db")
+    assert a is not None and b is not None
+    assert r.points[0][0] == a.right and r.points[-1][0] == b.x
+    assert a.right < b.x, "columns do not read left to right"
+
+
+def test_flow_sends_a_skipping_edge_through_the_corridor_not_through_boxes() -> None:
+    """Routing every skip straight across passed the whole suite before this
+    existed; the corridor is the claim, so the assertion is on crossings."""
+    s = flow_spec_of(
+        ("web", "api"),
+        ("api", "db"),
+        ("web", "db"),
+        layers={"web": "0", "api": "1", "db": "2"},
+    )
+    c = lay_out(s, STYLE, "flow")
+    assert crossings(c) == [], crossings(c)
+    skip = next(r for r in c.routes if r.src == "web" and r.dst == "db")
+    mid = c.box("api")
+    assert mid is not None
+    assert any(y < mid.y for _, y in skip.points), (
+        "the skipping edge never entered the corridor above the boxes"
+    )
+
+
+def test_flow_survives_a_backward_edge_between_adjacent_columns() -> None:
+    """This exact shape raised a raw ValueError: skips were collected with
+    abs(diff) != 1 while routing branched on diff == 1, and a backward-adjacent
+    edge fell between the two definitions."""
+    s = flow_spec_of(
+        ("a", "b"),
+        ("b", "a"),
+        layers={"a": "0", "b": "1"},
+    )
+    c = lay_out(s, STYLE, "flow")  # must not raise
+    assert validate(c, STYLE) == ()
+    back = next(r for r in c.routes if r.src == "b" and r.dst == "a")
+    target = c.box("a")
+    assert target is not None
+    assert back.points[-1][0] == target.right, (
+        "a backward edge must enter its target from the right, or the "
+        "arrowhead points with the flow it actually opposes"
+    )
+
+
+def test_flow_tracks_are_distinct_within_one_gap() -> None:
+    """Track x used to be budgeted against the whole diagram's edge count, so
+    edges through one gap skewed left and could collide."""
+    layers = {"src": "0", **{f"t{i}": "1" for i in range(4)}}
+    s = flow_spec_of(*[("src", f"t{i}") for i in range(4)], layers=layers)
+    c = lay_out(s, STYLE, "flow")
+    xs = sorted(r.points[1][0] for r in c.routes)
+    assert len(set(xs)) == len(xs), f"tracks collided: {xs}"
+    # Distinctness is not enough: budgeting tracks against the whole diagram's
+    # edge count kept them distinct while cramming them into the left sixth of
+    # the gap, which collides at higher density. The tracks must use the gap.
+    a, b = c.box("src"), c.box("t0")
+    assert a is not None and b is not None
+    gap_span = b.x - a.right
+    spread = xs[-1] - xs[0]
+    assert spread >= gap_span // 2, (
+        f"four tracks span {spread}px of a {gap_span}px gap: budgeted against "
+        "the wrong denominator"
+    )
+    assert validate(c, STYLE) == ()
