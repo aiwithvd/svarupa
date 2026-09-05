@@ -98,6 +98,8 @@ CODES: dict[str, str] = {
     "SVA-X-002": "a symbol is defined more than once in one file",
     "SVA-X-003": "a syntax tree nests deeper than the cap, so it was not fully walked",
     "SVA-X-004": "an extractor raised, so one file contributed no facts",
+    "SVA-X-005": "a compose file could not be parsed or nested too deeply",
+    "SVA-X-006": "a compose service depends on one the file does not define",
     # build
     "SVA-B-001": "two different nodes claim the same id",
     "SVA-B-002": "an evidence range is not a valid source location",
@@ -118,6 +120,7 @@ CODES: dict[str, str] = {
     "SVA-R-003": "groups exceeded the top-box budget and were merged",
     "SVA-R-004": "elements were omitted for lack of any extractable source",
     "SVA-R-005": "a view was withheld or is unreachable, so navigation is broken",
+    "SVA-R-006": "less-connected components were not drawn, with the count",
     # geometry / layout
     "SVA-G-001": "boxes overlap",
     "SVA-G-002": "a box falls outside the canvas",

@@ -16,13 +16,13 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 
-from svarupa.derive.base import DiagramEdge, DiagramNode, DiagramSpec
+from svarupa.derive.base import DiagramEdge, DiagramSpec
 from svarupa.diagnostics import Diagnostic, Severity
 from svarupa.layout.geometry import Band, Box, Canvas, Route, Style
 from svarupa.layout.sugiyama import DUMMY_WIDTH, Chain, layer_out
 from svarupa.layout.text import advance, sanitize, truncate
 
-__all__ = ["ENGINES", "clustered", "grid", "lay_out", "layered"]
+__all__ = ["ENGINES", "clustered", "flow", "grid", "lay_out", "layered"]
 
 # Rows wrap rather than growing without bound. A 4000px-wide row is not a
 # diagram, it is a horizontal scroll bar.
@@ -34,7 +34,11 @@ MAX_ROW_WIDTH = 1280
 # --------------------------------------------------------------------------
 
 
-def _boxes(spec: DiagramSpec, style: Style) -> list[Box]:
+def _boxes(
+    spec: DiagramSpec,
+    style: Style,
+    sizes: Mapping[str, tuple[int, int]] | None = None,
+) -> list[Box]:
     """One unpositioned box per node, sized to its label.
 
     Sanitize first, then measure, then truncate, then size. That order is the
@@ -46,15 +50,15 @@ def _boxes(spec: DiagramSpec, style: Style) -> list[Box]:
     for n in spec.nodes:
         full = sanitize(n.label)
         label = truncate(full, style.font_size, style.text_budget)
-        caption = truncate(_caption(n), style.caption_font_size, style.text_budget)
-        width = (
-            max(
-                advance(label, style.font_size),
-                advance(caption, style.caption_font_size),
-            )
-            + 2 * style.box_pad_x
-        )
+        width = advance(label, style.font_size) + 2 * style.box_pad_x
         width = max(style.box_min_width, min(style.box_max_width, width))
+        height = style.box_height
+        if sizes and n.id in sizes:
+            # An expansion needs this box big enough to hold a whole child
+            # diagram. The override may only grow a box: shrinking one below
+            # its label is the truncated-to-nothing failure again.
+            width = max(width, sizes[n.id][0])
+            height = max(height, sizes[n.id][1])
         out.append(
             Box(
                 id=n.id,
@@ -64,31 +68,13 @@ def _boxes(spec: DiagramSpec, style: Style) -> list[Box]:
                 x=0,
                 y=0,
                 w=width,
-                h=style.box_height,
+                h=height,
                 evidence=n.evidence,
                 child_spec=n.child_spec,
                 attrs=n.attrs,
-                caption=caption,
             )
         )
     return out
-
-
-def _caption(n: DiagramNode) -> str:
-    """The quiet second line: a true fact, never decoration.
-
-    A group says how many modules it stands for, since that is what a reader
-    decides to drill into it on. A module whose label is a leaf shows its
-    path, because `routes` alone does not say which routes. Everything else
-    states its kind, which is what the colour encodes and the colour-blind
-    reader cannot otherwise get.
-    """
-    modules = n.attr("modules")
-    if modules and modules != "1":
-        return sanitize(f"{modules} modules")
-    if n.id and n.id != n.label and not n.id.startswith("/spec/"):
-        return sanitize(n.id)
-    return n.kind
 
 
 # --------------------------------------------------------------------------
@@ -328,18 +314,23 @@ def _place(rows: list[list[Box]], style: Style, demand: Sequence[int] = ()) -> P
     y = style.margin
     for i, (row, row_width) in enumerate(zip(rows, row_widths, strict=True)):
         x = style.margin + (content - row_width) // 2
+        # Rows are as tall as their tallest box. Uniform height was fine while
+        # every box was a card; an expanded container is a diagram inside a
+        # box, and squeezing it to card height would be scaling by another
+        # name. Boxes centre vertically in their row so a row of ordinary
+        # cards next to one container still reads as one row.
+        row_h = max((b.h for b in row), default=style.box_height)
         for b in row:
             # `replace`, never a field-by-field copy. The copy listed every
-            # field by hand, and when `caption` was added it silently dropped
-            # it: every box downstream of placement lost its second line and
-            # nothing failed, because an empty caption is legal. A copy that
-            # enumerates fields is wrong the day the dataclass grows.
-            placed.append(replace(b, x=x, y=y))
+            # field by hand, and when a field was added it silently dropped
+            # it, with nothing failing because the empty value was legal. A
+            # copy that enumerates fields is wrong the day the dataclass grows.
+            placed.append(replace(b, x=x, y=y + (row_h - b.h) // 2))
             x += b.w + style.gap_x
-        extents.append(range(y, y + style.box_height))
+        extents.append(range(y, y + row_h))
         tracks = demand[i] if i < len(demand) else 0
         gap = max(style.gap_y, 12 + 10 * tracks)
-        y += style.box_height + gap
+        y += row_h + gap
     # A full gap below the last row, not just the margin: same-row edges route
     # through the gap beneath their own row, and the bottom row has one too.
     height = max(y + style.margin - style.gap_y // 2, 2 * style.margin + style.box_height)
@@ -489,8 +480,14 @@ def _routes(
 
 
 def _row_of(box: Box, rows: Sequence[range]) -> int:
+    """The row whose vertical extent contains this box.
+
+    Containment, not `y == extent.start`: boxes centre vertically inside a
+    variable-height row, so only the tallest box in a row still starts at the
+    row's top edge.
+    """
     for i, extent in enumerate(rows):
-        if box.y == extent.start:
+        if extent.start <= box.y < extent.stop:
             return i
     return 0
 
@@ -531,10 +528,14 @@ def _fan(box: Box, nth: int, degree: int) -> int:
 # --------------------------------------------------------------------------
 
 
-def layered(spec: DiagramSpec, style: Style) -> Canvas:
+def layered(
+    spec: DiagramSpec,
+    style: Style,
+    sizes: Mapping[str, tuple[int, int]] | None = None,
+) -> Canvas:
     """Rows by dependency depth. Module deps, class hierarchy."""
     diags: list[Diagnostic] = []
-    rows, chains, dummies, dropped = _ordered_rows(spec, _boxes(spec, style), style)
+    rows, chains, dummies, dropped = _ordered_rows(spec, _boxes(spec, style, sizes), style)
     diags.extend(_dangling(dropped))
     place = _place(rows, style, _gap_demand(rows, chains))
     routes = _routes(chains, place, _edge_map(spec), diags)
@@ -564,7 +565,11 @@ def _gap_demand(rows: Sequence[Sequence[Box]], chains: Sequence[Chain]) -> list[
     return demand
 
 
-def clustered(spec: DiagramSpec, style: Style) -> Canvas:
+def clustered(
+    spec: DiagramSpec,
+    style: Style,
+    sizes: Mapping[str, tuple[int, int]] | None = None,
+) -> Canvas:
     """Layered, with each dependency level banded and labelled.
 
     A deliberate narrowing of design section 6.1, which described the bands as
@@ -584,7 +589,7 @@ def clustered(spec: DiagramSpec, style: Style) -> Canvas:
     given a number, since its depth is a placement decision and not a measured
     fact.
     """
-    boxes = _boxes(spec, style)
+    boxes = _boxes(spec, style, sizes)
     levels = _levels(spec, boxes)
     rows, chains, dummies, dropped = _ordered_rows(spec, boxes, style)
     diags: list[Diagnostic] = list(_dangling(dropped))
@@ -613,13 +618,17 @@ def clustered(spec: DiagramSpec, style: Style) -> Canvas:
     return _canvas(spec, "clustered", place, routes, bands, tuple(diags), waypoints=dummies)
 
 
-def grid(spec: DiagramSpec, style: Style) -> Canvas:
+def grid(
+    spec: DiagramSpec,
+    style: Style,
+    sizes: Mapping[str, tuple[int, int]] | None = None,
+) -> Canvas:
     """Uniform columns, for diagrams whose edges do not imply an order.
 
     ERD tables and any edgeless spec. Laying those out by depth would put every
     box in one row and imply a hierarchy that the data does not contain.
     """
-    boxes = _boxes(spec, style)
+    boxes = _boxes(spec, style, sizes)
     diags: list[Diagnostic] = []
     if not boxes:
         return _canvas(spec, "grid", _place([], style), [])
@@ -659,14 +668,168 @@ def _canvas(
     )
 
 
-ENGINES: dict[str, Callable[[DiagramSpec, Style], Canvas]] = {
+# --------------------------------------------------------------------------
+# Flow: left to right, for the system view
+# --------------------------------------------------------------------------
+
+
+def flow(
+    spec: DiagramSpec,
+    style: Style,
+    sizes: Mapping[str, tuple[int, int]] | None = None,
+) -> Canvas:
+    """Columns read left to right: sources on the left, sinks on the right.
+
+    An architecture story runs "requests come in here, data ends up there", and
+    top-to-bottom layering does not read that way. Small by nature, a system
+    view holds services and stores rather than every module, so the router is
+    simpler than the layered one: adjacent columns route through the gap
+    between them, and an edge that skips columns runs through a reserved
+    corridor above every box, which is box-free by construction and checked by
+    the same crossing validation as everything else.
+    """
+    boxes = _boxes(spec, style, sizes)
+    levels = _levels(spec, boxes)
+    diags: list[Diagnostic] = list(
+        _dangling(
+            sorted(
+                (e.src, e.dst)
+                for e in spec.edges
+                if e.src not in {b.id for b in boxes} or e.dst not in {b.id for b in boxes}
+            )
+        )
+    )
+
+    columns: dict[int, list[Box]] = {}
+    for b in sorted(boxes, key=lambda b: b.id):
+        columns.setdefault(levels.get(b.id, 0), []).append(b)
+
+    # The corridor above the boxes, sized by how many skipping edges need it.
+    ids = {b.id for b in boxes}
+    skips = sorted(
+        (e.src, e.dst)
+        for e in spec.edges
+        if e.src in ids
+        and e.dst in ids
+        and abs(levels.get(e.dst, 0) - levels.get(e.src, 0)) != 1
+    )
+    corridor_h = 12 + 12 * len(skips)
+    top = style.margin + corridor_h
+
+    placed: dict[str, Box] = {}
+    gaps: list[tuple[int, int]] = []  # x-extent of the gap after each column
+    x = style.margin
+    tallest = 0
+    for level in sorted(columns):
+        col = columns[level]
+        col_w = max(b.w for b in col)
+        height = sum(b.h for b in col) + style.gap_y * (len(col) - 1)
+        tallest = max(tallest, height)
+        y = top
+        for b in col:
+            placed[b.id] = replace(b, x=x + (col_w - b.w) // 2, y=y)
+            y += b.h + style.gap_y
+        gaps.append((x + col_w, x + col_w + style.gap_x * 3))
+        x += col_w + style.gap_x * 3
+
+    # Centre every column vertically against the tallest.
+    for level in sorted(columns):
+        col = columns[level]
+        height = sum(b.h for b in col) + style.gap_y * (len(col) - 1)
+        shift = (tallest - height) // 2
+        for b in col:
+            placed[b.id] = replace(placed[b.id], y=placed[b.id].y + shift)
+
+    width = x - style.gap_x * 3 + style.margin + style.lane_gutter
+    height = top + tallest + style.margin
+
+    # Routes. Adjacent columns cross their shared gap on a per-edge track;
+    # skipping edges climb into the corridor.
+    routes: list[Route] = []
+    track_use: dict[int, int] = {}
+    edge_map = _edge_map(spec)
+    exits: dict[str, list[str]] = {}
+    entries: dict[str, list[str]] = {}
+    for e in sorted(spec.edges, key=lambda e: (e.src, e.dst)):
+        if e.src in placed and e.dst in placed:
+            exits.setdefault(e.src, []).append(e.dst)
+            entries.setdefault(e.dst, []).append(e.src)
+
+    def fan_y(b: Box, nth: int, total: int) -> int:
+        slots = max(1, total)
+        step = b.h // (slots + 1)
+        return b.y + max(1, step) * (1 + (nth - 1) % slots)
+
+    for i, ((src, dst), edge) in enumerate(sorted(edge_map.items())):
+        if src not in placed or dst not in placed:
+            continue
+        a, b = placed[src], placed[dst]
+        ay = fan_y(a, exits[src].index(dst) + 1, len(exits[src]))
+        by = fan_y(b, entries[dst].index(src) + 1, len(entries[dst]))
+        la, lb = levels.get(src, 0), levels.get(dst, 0)
+        if lb - la == 1:
+            gx0, gx1 = gaps[sorted(columns).index(la)]
+            used = track_use.get(la, 0)
+            track_use[la] = used + 1
+            tx = gx0 + 8 + (used * (gx1 - gx0 - 16)) // max(1, len(edge_map))
+            points = ((a.right, ay), (tx, ay), (tx, by), (b.x, by))
+        else:
+            # Through the corridor above everything, one lane per skip.
+            lane_y = style.margin + 6 + 12 * skips.index((src, dst))
+            out_x = a.right + 10 + 4 * (exits[src].index(dst))
+            in_x = b.x - 10 - 4 * (entries[dst].index(src))
+            points = (
+                (a.right, ay),
+                (out_x, ay),
+                (out_x, lane_y),
+                (in_x, lane_y),
+                (in_x, by),
+                (b.x, by),
+            )
+        routes.append(
+            Route(
+                src=src,
+                dst=dst,
+                label=sanitize(edge.label),
+                points=points,
+                evidence=edge.evidence,
+                resolution=edge.resolution,
+                weight=edge.weight,
+            )
+        )
+        _ = i
+
+    return Canvas(
+        spec_id=spec.id,
+        kind=spec.kind,
+        engine="flow",
+        title=spec.title,
+        subtitle=spec.subtitle,
+        width=width,
+        height=height,
+        boxes=tuple(placed[b.id] for b in sorted(boxes, key=lambda b: b.id)),
+        routes=tuple(routes),
+        parent=spec.parent,
+        diagnostics=tuple(diags),
+    )
+
+
+ENGINES: dict[
+    str, Callable[[DiagramSpec, Style, Mapping[str, tuple[int, int]] | None], Canvas]
+] = {
     "layered": layered,
     "clustered": clustered,
     "grid": grid,
+    "flow": flow,
 }
 
 
-def lay_out(spec: DiagramSpec, style: Style, engine: str) -> Canvas:
+def lay_out(
+    spec: DiagramSpec,
+    style: Style,
+    engine: str,
+    sizes: Mapping[str, tuple[int, int]] | None = None,
+) -> Canvas:
     """Run a named engine.
 
     An unknown name raises rather than falling back. A silent substitution
@@ -675,4 +838,4 @@ def lay_out(spec: DiagramSpec, style: Style, engine: str) -> Canvas:
     """
     if engine not in ENGINES:
         raise KeyError(f"unknown layout engine {engine!r}; expected one of {sorted(ENGINES)}")
-    return ENGINES[engine](spec, style)
+    return ENGINES[engine](spec, style, sizes)

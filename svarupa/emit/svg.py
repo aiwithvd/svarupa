@@ -25,7 +25,7 @@ from svarupa.layout.geometry import Box, Canvas, Route, Style
 from svarupa.layout.text import advance
 from svarupa.model import Evidence, Resolution
 
-__all__ = ["EVIDENCE_ATTR", "canvas_svg", "evidence_ref"]
+__all__ = ["EVIDENCE_ATTR", "canvas_body", "canvas_svg", "evidence_ref", "svg_document"]
 
 # The viewer resolves this against a base the reader supplies. It is stored as
 # a repository-relative path plus a line, never as an absolute path: an
@@ -103,7 +103,7 @@ def _box(box: Box, style: Style) -> Markup:
                 "text",
                 esc(box.label),
                 x=box.x + box.w // 2,
-                y=box.y + box.h // 2 - (7 if box.caption else 0),
+                y=box.y + box.h // 2,
                 class_="sv-box-label",
                 font_size=style.font_size,
                 # A rendering backstop for the width model. `textLength` makes
@@ -113,20 +113,6 @@ def _box(box: Box, style: Style) -> Markup:
                 # model is an estimate; this makes its failure mode safe.
                 textLength=max(1, advance(box.label, style.font_size)),
                 lengthAdjust="spacingAndGlyphs",
-            ),
-            (
-                tag(
-                    "text",
-                    esc(box.caption),
-                    x=box.x + box.w // 2,
-                    y=box.y + box.h // 2 + 12,
-                    class_="sv-box-caption",
-                    font_size=style.caption_font_size,
-                    textLength=max(1, advance(box.caption, style.caption_font_size)),
-                    lengthAdjust="spacingAndGlyphs",
-                )
-                if box.caption
-                else raw("")
             ),
             # The kind dot. Colour also encodes kind, and a small solid mark
             # survives both a colour-blind reader (paired with the caption
@@ -250,30 +236,51 @@ def _rounded(points: tuple[tuple[int, int], ...], radius: int = 8) -> str:
     return " ".join(out)
 
 
-def canvas_svg(canvas: Canvas, style: Style) -> Markup:
-    """One positioned diagram as an inline SVG element.
+def canvas_body(canvas: Canvas, style: Style, skip: frozenset[str] = frozenset()) -> Markup:
+    """The drawable content of a canvas, without the `<svg>` wrapper.
+
+    Split from the wrapper so an expanded view can nest one canvas's body
+    inside another under a single `<svg>` element. Nesting whole documents
+    instead would duplicate the arrowhead `<defs>`, and duplicate SVG marker
+    ids silently resolve to whichever came first.
 
     Bands are drawn first so they sit behind, then routes, then boxes. Boxes
-    last means an arrow never covers the label it points at, which matters
-    because the label is what a reader is trying to read.
+    last means an arrow never covers the label it points at.
     """
+    return join(
+        (
+            join(_band(b.label, b.y, b.h, canvas.width, style) for b in canvas.bands),
+            join(_route(r, style) for r in canvas.routes),
+            join(
+                _box(b, style)
+                for b in canvas.boxes
+                if b.id not in canvas.waypoints and b.id not in skip
+            ),
+        )
+    )
+
+
+def svg_document(body: Markup, width: int, height: int, label: str) -> Markup:
     return tag(
         "svg",
-        join(
-            (
-                _arrow_defs(),
-                join(_band(b.label, b.y, b.h, canvas.width, style) for b in canvas.bands),
-                join(_route(r, style) for r in canvas.routes),
-                join(_box(b, style) for b in canvas.boxes if b.id not in canvas.waypoints),
-            )
-        ),
-        viewBox=f"0 0 {canvas.width} {canvas.height}",
-        width=canvas.width,
-        height=canvas.height,
+        join((_arrow_defs(), body)),
+        viewBox=f"0 0 {width} {height}",
+        width=width,
+        height=height,
         class_="sv-canvas",
         role="img",
-        aria_label=f"{canvas.kind.value}: {canvas.title}",
+        aria_label=label,
         xmlns="http://www.w3.org/2000/svg",
+    )
+
+
+def canvas_svg(canvas: Canvas, style: Style) -> Markup:
+    """One positioned diagram as a complete inline SVG element."""
+    return svg_document(
+        canvas_body(canvas, style),
+        canvas.width,
+        canvas.height,
+        f"{canvas.kind.value}: {canvas.title}",
     )
 
 
@@ -285,3 +292,73 @@ def _slug(text: str) -> str:
     construction rather than by assumption.
     """
     return "".join(c if c.isalnum() or c == "-" else "-" for c in text.lower()) or "none"
+
+
+def expanded_svg(exp: object, style: Style) -> Markup:
+    """A pre-rendered expansion: the parent view with one box opened in place.
+
+    The host box is drawn as a dashed container with its label as a header,
+    and the child's already-validated body is translated inside. One `<svg>`
+    and one set of `<defs>`: nesting whole documents would duplicate marker
+    ids, which silently resolve to whichever came first.
+    """
+    from svarupa.layout.compose import HEADER_H, Expanded
+
+    assert isinstance(exp, Expanded)
+    host = exp.canvas.box(exp.host)
+    assert host is not None  # expand() returned this state, so the host exists
+
+    container = tag(
+        "g",
+        join(
+            (
+                tag("title", esc(f"{host.full_label}\n{evidence_ref(host.evidence)}")),
+                tag(
+                    "rect",
+                    EMPTY,
+                    x=host.x,
+                    y=host.y,
+                    width=host.w,
+                    height=host.h,
+                    rx=10,
+                    class_="sv-container",
+                ),
+                tag(
+                    "text",
+                    esc(host.full_label),
+                    x=host.x + 14,
+                    y=host.y + HEADER_H // 2 + 2,
+                    class_="sv-container-label",
+                    font_size=style.font_size,
+                ),
+                tag(
+                    "text",
+                    esc("\u00d7"),  # multiplication sign, the visual for close
+                    x=host.right - 14,
+                    y=host.y + HEADER_H // 2 + 2,
+                    class_="sv-collapse",
+                    font_size=style.font_size,
+                ),
+            )
+        ),
+        class_=f"sv-node sv-kind-{_slug(host.kind)} sv-expanded-host",
+        data_id=host.id,
+        **{EVIDENCE_ATTR: evidence_ref(host.evidence)},
+    )
+    embedded = tag(
+        "g",
+        canvas_body(exp.child, style),
+        transform=f"translate({exp.offset[0]} {exp.offset[1]})",
+    )
+    return svg_document(
+        join(
+            (
+                canvas_body(exp.canvas, style, skip=frozenset({exp.host})),
+                container,
+                embedded,
+            )
+        ),
+        exp.canvas.width,
+        exp.canvas.height,
+        f"{exp.canvas.kind.value}: {host.full_label} expanded",
+    )

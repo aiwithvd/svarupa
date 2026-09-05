@@ -30,6 +30,7 @@ from svarupa.diagnostics import Diagnostic, Severity
 from svarupa.extract import GRAMMAR_VERSIONS
 from svarupa.identity import collision_check
 from svarupa.lock.grammar import Lockfile, Record, dep_record, module_record
+from svarupa.model import NodeKind
 
 __all__ = [
     "ROOT_MODULE",
@@ -66,10 +67,13 @@ class LockResult:
 def lock_records(graph: Graph) -> tuple[Record, ...]:
     """The architectural facts, and nothing else.
 
-    Modules and their dependencies in P1. `endpoint`, `datastore`, `service`,
-    `queue` and `surface` are published in the grammar with their arities so
-    that adding them in P2 is an additive schema bump rather than a flag day,
-    but nothing emits them yet and this function does not pretend otherwise.
+    Modules, their dependencies, and the deployment facts: services,
+    datastores and queues from compose. Their kinds and arities were published
+    in the grammar from the start, so emitting them now is the additive
+    evolution the schema policy was designed for: an older build diffs the new
+    lines as opaque adds, never as a flag day. A new service appearing in a
+    pull request is exactly the green line a reviewer wants. `endpoint` and
+    `surface` stay published-but-unemitted until routes are extracted.
 
     `module_deps` is used rather than the file-level edges: it is already the
     deduplicated module-to-module relation, which is exactly the granularity a
@@ -78,6 +82,19 @@ def lock_records(graph: Graph) -> tuple[Record, ...]:
     """
     records: list[Record] = [module_record(spell(m)) for m in sorted(code_modules(graph))]
     records.extend(dep_record(spell(src), spell(dst)) for src, dst in sorted(graph.module_deps))
+
+    kind_map = {
+        NodeKind.SERVICE: "service",
+        NodeKind.DATASTORE: "datastore",
+        NodeKind.QUEUE: "queue",
+    }
+    records.extend(
+        sorted(
+            Record(kind_map[node.kind], (node.label,))
+            for node in graph.nodes.values()
+            if node.kind in kind_map
+        )
+    )
     return tuple(records)
 
 

@@ -21,6 +21,7 @@ from svarupa.extract.base import (
     SymbolRef,
     node_id,
 )
+from svarupa.extract.compose import extract_compose
 from svarupa.extract.python import PythonExtractor
 from svarupa.extract.resolve import Resolver, resolve
 from svarupa.extract.typescript import TypeScriptExtractor
@@ -102,9 +103,17 @@ def extract(scan: Scan, declared_deps: frozenset[str] = frozenset()) -> ExtractR
     result = resolve(
         facts, declared_deps, roots, load_aliases(scan.root), workspace_packages(scan)
     )
-    if not crashes:
-        return result
-    return replace(result, diagnostics=result.diagnostics + tuple(crashes))
+
+    # Configuration is architecture too. Compose services, datastores and
+    # queues join the same graph as code, with the same evidence rule: every
+    # node cites the line in the file that declares it.
+    compose = extract_compose(scan)
+    return replace(
+        result,
+        nodes=result.nodes + compose.nodes,
+        edges=result.edges + compose.edges,
+        diagnostics=result.diagnostics + compose.diagnostics + tuple(crashes),
+    )
 
 
 def workspace_packages(scan: Scan) -> tuple[tuple[str, str], ...]:

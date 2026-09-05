@@ -24,6 +24,7 @@ from svarupa.derive.base import (
     runtime_edges,
     spec_id,
 )
+from svarupa.derive.components import FLOW_SUFFIX, code_spec, flow_spec
 from svarupa.diagnostics import Diagnostic, Severity
 from svarupa.model import Evidence
 
@@ -105,7 +106,14 @@ class ArchitectureDeriver(Deriver):
         top_labels = _labels_for([anchor for anchor, _ in groups])
         top_nodes: list[DiagramNode] = []
         for anchor, members in groups:
-            child = spec_id(anchor) if len(members) > 1 else None
+            if len(members) > 1:
+                child = spec_id(anchor)
+                specs[child] = self._group_spec(graph, anchor, members, pairs, specs, diags)
+            else:
+                # A singleton at the top level drills straight into its own
+                # components, the same way a leaf inside a group does. A leaf
+                # with nothing inside stays a leaf.
+                child = self._components(graph, anchor, ROOT, specs, diags)
             top_nodes.append(
                 DiagramNode(
                     id=anchor,
@@ -116,8 +124,6 @@ class ArchitectureDeriver(Deriver):
                     attrs=(("modules", str(len(members))),),
                 )
             )
-            if child is not None:
-                specs[child] = self._group_spec(graph, anchor, members, pairs)
 
         top_edges: dict[tuple[str, str], tuple[int, list[Evidence]]] = {}
         for a, b, weight, evidence in pairs:
@@ -259,12 +265,51 @@ class ArchitectureDeriver(Deriver):
         )
         return sorted((a, tuple(sorted(set(m)))) for a, m in merged.items())
 
+    def _components(
+        self,
+        graph: Graph,
+        module_id: str,
+        parent: str,
+        specs: dict[str, DiagramSpec],
+        diags: list[Diagnostic],
+    ) -> str | None:
+        """Attach the levels below a leaf module, when it earns them.
+
+        A module with several components drills into its **component flow**,
+        and each component drills into its **code**. A module that is really
+        one component skips the flow level and drills straight into the code,
+        because a one-box flow restates the parent, which design §5.1 names as
+        the case where no child link is emitted.
+        """
+        made = flow_spec(graph, module_id, parent, self.kind)
+        if made is not None:
+            new_specs, extra = made
+            specs.update(new_specs)
+            diags.extend(extra)
+            return spec_id(module_id) + FLOW_SUFFIX
+
+        files = sorted(
+            path
+            for path in graph.architecture_paths
+            if _file_module(path) == module_id and path in graph.nodes
+        )
+        if len(files) == 1:
+            direct = code_spec(graph, files[0], parent, self.kind)
+            if direct is not None:
+                spec, extra = direct
+                specs[spec.id] = spec
+                diags.extend(extra)
+                return spec.id
+        return None
+
     def _group_spec(
         self,
         graph: Graph,
         anchor: str,
         members: tuple[str, ...],
         pairs: tuple[ModulePair, ...],
+        specs: dict[str, DiagramSpec],
+        diags: list[Diagnostic],
     ) -> DiagramSpec:
         inside = set(members)
         labels = _labels_for(list(members))
@@ -275,6 +320,7 @@ class ArchitectureDeriver(Deriver):
                     label=labels[m],
                     kind="module",
                     evidence=module_evidence(graph, m),
+                    child_spec=self._components(graph, m, spec_id(anchor), specs, diags),
                     attrs=(("files", str(graph.modules[m].file_count)),)
                     if m in graph.modules
                     else (),
@@ -405,6 +451,10 @@ class ModuleDepsDeriver(Deriver):
             edges=edges,
         )
         return DiagramSet(self.kind, ROOT, {ROOT: spec}, tuple(diags))
+
+
+def _file_module(path: str) -> str:
+    return path.rsplit("/", 1)[0] if "/" in path else ""
 
 
 def _shared_prefix(a: str, b: str) -> int:

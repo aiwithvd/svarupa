@@ -17,6 +17,7 @@ from svarupa.derive.base import (
     UnnavigableDiagramSet,
 )
 from svarupa.derive.erd import ErdDeriver
+from svarupa.derive.system import SystemDeriver
 
 __all__ = [
     "DERIVERS",
@@ -31,11 +32,13 @@ __all__ = [
     "DiagramSpec",
     "ErdDeriver",
     "ModuleDepsDeriver",
+    "SystemDeriver",
     "UnnavigableDiagramSet",
     "derive_all",
 ]
 
 DERIVERS: tuple[Deriver, ...] = (
+    SystemDeriver(),
     ArchitectureDeriver(),
     ModuleDepsDeriver(),
     ErdDeriver(),

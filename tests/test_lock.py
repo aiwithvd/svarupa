@@ -1003,3 +1003,87 @@ def test_the_replay_harness_does_not_touch_the_source_repository(tmp_path: Path)
         if p.is_file()
     }
     assert before == after, "the replay modified the repository it was measuring"
+
+
+# --------------------------------------------------------------------------
+# Deployment records: the additive evolution the schema policy was built for
+# --------------------------------------------------------------------------
+
+
+def compose_repo(root: Path) -> None:
+    repo(root)
+    write(
+        root,
+        "docker-compose.yml",
+        "services:\n"
+        "  api:\n"
+        "    build: .\n"
+        "    depends_on: [mongo, redis]\n"
+        "  mongo:\n"
+        "    image: mongo:7\n"
+        "  redis:\n"
+        "    image: redis:7\n",
+    )
+
+
+def test_compose_services_become_lockfile_records(tmp_path: Path) -> None:
+    """A new service appearing in a pull request is exactly the green line a
+    reviewer wants."""
+    compose_repo(tmp_path)
+    text = lock_text(tmp_path)
+    assert "service\tapi" in text
+    assert "datastore\tmongo" in text
+    assert "datastore\tredis" in text
+
+
+def test_the_deployment_records_are_an_additive_bump(tmp_path: Path) -> None:
+    """A 1.0 lockfile still diffs against a 1.1 one: the new records appear as
+    plain adds, never a refusal. That is the whole point of publishing the
+    kinds and arities before anything emitted them."""
+    compose_repo(tmp_path)
+    head = Lockfile.parse(lock_text(tmp_path))
+    assert head.header.schema_minor >= 1
+
+    old = Lockfile.parse("# svarupa old\n# schema 1.0\n# grammars python@0.25.0\nmodule\tsrc\n")
+    delta = diff(old, head)  # must not raise
+    added_kinds = {r.kind for r in delta.added}
+    assert {"service", "datastore"} <= added_kinds
+
+
+def test_a_new_service_is_one_line_in_the_delta(tmp_path: Path) -> None:
+    compose_repo(tmp_path)
+    base = Lockfile.parse(lock_text(tmp_path))
+    write(
+        tmp_path,
+        "docker-compose.yml",
+        (tmp_path / "docker-compose.yml").read_text(encoding="utf8")
+        + "  worker:\n    build: ./worker\n",
+    )
+    delta = diff(base, Lockfile.parse(lock_text(tmp_path)))
+    assert delta.added == (Record("service", ("worker",)),), delta.render()
+    assert delta.removed == ()
+
+
+def test_editing_compose_environment_does_not_churn_the_lockfile(tmp_path: Path) -> None:
+    """Ports, env vars and volumes are deployment detail, not architecture."""
+    compose_repo(tmp_path)
+    before = lock_text(tmp_path)
+    write(
+        tmp_path,
+        "docker-compose.yml",
+        "services:\n"
+        "  api:\n"
+        "    build: .\n"
+        "    ports: ['8000:8000']\n"
+        "    environment:\n"
+        "      DEBUG: 'true'\n"
+        "    depends_on: [mongo, redis]\n"
+        "  mongo:\n"
+        "    image: mongo:7\n"
+        "    volumes: ['data:/data/db']\n"
+        "  redis:\n"
+        "    image: redis:7\n"
+        "volumes:\n"
+        "  data:\n",
+    )
+    assert lock_text(tmp_path) == before

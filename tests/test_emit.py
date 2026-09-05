@@ -1004,3 +1004,196 @@ def spec_with_long_edge():
         nodes=nodes,
         edges=(DiagramEdge(src="a", dst="z", label="1", evidence=ev),),
     )
+
+
+def test_exported_boxes_never_include_waypoints(tmp_path: Path) -> None:
+    """A waypoint is a bend in a line: no evidence, never drawn.
+
+    Exported as a box, it hands a JSON consumer a "box" that violates the
+    every-box-cites-a-line contract. Found on svarupa itself: a component view
+    reported 48 boxes of which 24 were bends.
+    """
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    build_repo(
+        repo,
+        {
+            "src/worker/__init__.py": "",
+            # Two hops (worker -> api -> core) plus the shortcut (worker ->
+            # core), so the shortcut spans two layers and needs a waypoint.
+            "src/worker/job.py": (
+                "from ..api.routes import Thing as T\nfrom ..core.model import Thing\n"
+            ),
+        },
+    )
+    out = tmp_path / "out"
+    artifact = run(repo, out)
+
+    total_waypoints = sum(
+        len(c.waypoints)
+        for lo in artifact.laid_out.values()  # type: ignore[attr-defined]
+        for c in lo.canvases.values()
+    )
+    assert total_waypoints > 0, "the fixture produced no waypoints, so nothing was tested"
+
+    for name in sorted((out / "diagrams").iterdir()):
+        data = json.loads(name.read_text(encoding="utf8"))
+        for view in data["views"].values():
+            for box in view["boxes"]:
+                assert box["evidence"], f"{box['id']!r} exported without evidence"
+                assert box["kind"] != "waypoint"
+
+
+# --------------------------------------------------------------------------
+# Expand in place: pre-rendered, validated, and honest about its fallback
+# --------------------------------------------------------------------------
+
+
+def test_every_embeddable_drillable_box_has_an_expanded_variant(tmp_path: Path) -> None:
+    """The interaction is expand-in-place, so each drillable box needs its
+    pre-rendered expansion, and it must not leak into the JSON, which exports
+    facts rather than presentation states."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    build_repo(repo)
+    out = tmp_path / "out"
+    artifact = run(repo, out)
+    html = (out / "index.html").read_text(encoding="utf8")
+
+    drillable = [
+        (sid, n.child_spec)
+        for lo in artifact.laid_out.values()  # type: ignore[attr-defined]
+        for sid, c in lo.canvases.items()
+        for n in c.boxes
+        if n.child_spec is not None
+    ]
+    assert drillable, "the fixture has no drill-down, so nothing was tested"
+    for _, child in drillable:
+        assert f'data-view="{esc(child)}//expanded"' in html, (
+            f"no in-place expansion for {child}"
+        )
+
+    for name in sorted((out / "diagrams").iterdir()):
+        assert "//expanded" not in name.read_text(encoding="utf8")
+
+
+def test_expansion_is_composition_not_new_geometry(tmp_path: Path) -> None:
+    """The child keeps its own validated coordinates and is drawn translated.
+
+    If composition changed the child's geometry, the validation it passed
+    would no longer be about what is drawn.
+    """
+    from svarupa.layout import ENGINE_FOR_KIND, lay_out_set
+    from svarupa.layout.compose import expand
+    from svarupa.layout.geometry import Style
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    build_repo(repo)
+    scan = detect(repo)
+    graph = build(scan, extract(scan, declared_dependencies(scan)), strict=False)
+    produced, _ = derive_all(graph, cluster(graph))
+    ds = produced[DiagramKind.ARCHITECTURE]
+    lo = lay_out_set(ds)
+
+    sid, node = next(
+        (sid, n)
+        for sid, c in lo.canvases.items()
+        for n in ds.specs[sid].nodes
+        if n.child_spec in lo.canvases
+    )
+    child = lo.canvases[node.child_spec]
+    exp = expand(ds.specs[sid], node.id, child, Style(), ENGINE_FOR_KIND[ds.kind])
+    assert exp is not None, "the fixture's child was too large to embed"
+
+    assert exp.child is child, "composition rebuilt the child instead of embedding it"
+    host = exp.canvas.box(node.id)
+    assert host is not None
+    assert host.w >= child.width, "the container does not fit its child"
+    assert host.h >= child.height, "the container does not fit its child"
+    ox, oy = exp.offset
+    assert host.x < ox and host.y < oy, "the child is not drawn inside the container"
+    assert ox + child.width <= host.right and oy + child.height <= host.bottom
+
+
+def test_an_oversized_child_gets_no_variant_rather_than_a_scaled_one(
+    tmp_path: Path,
+) -> None:
+    """Scaling a child to fit would shrink labels below legibility, which is
+    the shrink-to-fit failure again inside a box. The fallback is the child's
+    own view, a behaviour a reader can see rather than a silent scale-down."""
+    from svarupa.layout import ENGINE_FOR_KIND, lay_out_set
+    from svarupa.layout.compose import EMBED_MAX_W, expand
+    from svarupa.layout.geometry import Style
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    build_repo(repo)
+    scan = detect(repo)
+    graph = build(scan, extract(scan, declared_dependencies(scan)), strict=False)
+    produced, _ = derive_all(graph, cluster(graph))
+    ds = produced[DiagramKind.ARCHITECTURE]
+    lo = lay_out_set(ds)
+
+    sid, node = next(
+        (sid, n)
+        for sid, c in lo.canvases.items()
+        for n in ds.specs[sid].nodes
+        if n.child_spec in lo.canvases
+    )
+    import dataclasses
+
+    child = lo.canvases[node.child_spec]
+    huge = dataclasses.replace(child, width=EMBED_MAX_W + 1)
+    assert expand(ds.specs[sid], node.id, huge, Style(), ENGINE_FOR_KIND[ds.kind]) is None
+
+
+def test_component_boxes_carry_no_file_paths_as_labels(tmp_path: Path) -> None:
+    """The user's direction: components read as parts, not as filenames. The
+    path stays one click away in the citation."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    build_repo(
+        repo,
+        {
+            "src/core/extra.py": "from .model import Thing\n\n\ndef helper():\n    return Thing\n"
+        },
+    )
+    scan = detect(repo)
+    graph = build(scan, extract(scan, declared_dependencies(scan)), strict=False)
+    produced, _ = derive_all(graph, cluster(graph))
+    ds = produced[DiagramKind.ARCHITECTURE]
+
+    flows = [spec for sid, spec in ds.specs.items() if sid.endswith("//flow")]
+    assert flows, "no component-flow level was derived, so nothing was tested"
+    for spec in flows:
+        for n in spec.nodes:
+            assert "/" not in n.label, f"{n.label!r} is a path, not a component name"
+            assert not n.label.endswith(".py"), f"{n.label!r} is a filename"
+            assert n.evidence, "a component without a citation"
+
+
+def test_the_drill_chain_reaches_code_level(tmp_path: Path) -> None:
+    """architecture -> module -> component flow -> classes and functions."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    build_repo(
+        repo,
+        {
+            "src/core/extra.py": (
+                "from .model import Thing\n\n\n"
+                "class Extra(Thing):\n    pass\n\n\n"
+                "def helper():\n    return Extra\n"
+            )
+        },
+    )
+    scan = detect(repo)
+    graph = build(scan, extract(scan, declared_dependencies(scan)), strict=False)
+    produced, _ = derive_all(graph, cluster(graph))
+    ds = produced[DiagramKind.ARCHITECTURE]
+
+    code = [spec for sid, spec in ds.specs.items() if sid.endswith("//code")]
+    assert code, "no code level was derived"
+    kinds = {n.kind for spec in code for n in spec.nodes}
+    assert "class" in kinds and "function" in kinds
+    assert ds.depth() >= 3, f"the drill chain is only {ds.depth()} deep"

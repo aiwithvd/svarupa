@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from svarupa.derive.base import DiagramKind, DiagramSet
 from svarupa.emit.markup import Markup, esc, join, raw, tag
-from svarupa.emit.svg import canvas_svg, evidence_ref
+from svarupa.emit.svg import canvas_svg, evidence_ref, expanded_svg
 from svarupa.layout import LaidOutDiagram
 from svarupa.layout.geometry import Style
 from svarupa.layout.text import FONT_STACK
@@ -143,6 +143,10 @@ h2 { font-size: 20px; margin: 0 0 4px; font-weight: 700; letter-spacing: -0.02em
 .sv-kind-table { --k: #12a594; }
 .sv-kind-queue { --k: #d6336c; }
 .sv-kind-datastore { --k: #c9a227; }
+.sv-kind-class { --k: #d6336c; }
+.sv-kind-function { --k: #2f9ae3; }
+.sv-kind-interface { --k: #22a06b; }
+.sv-kind-method { --k: #7a7f2a; }
 .sv-box {
   fill: color-mix(in srgb, var(--k) 10%, var(--surface));
   stroke: color-mix(in srgb, var(--k) 65%, var(--line));
@@ -154,16 +158,22 @@ h2 { font-size: 20px; margin: 0 0 4px; font-weight: 700; letter-spacing: -0.02em
   fill: var(--ink); text-anchor: middle; dominant-baseline: middle;
   font-family: var(--mono); font-weight: 600;
 }
-.sv-box-caption {
-  fill: var(--dim); text-anchor: middle; dominant-baseline: middle;
-  font-family: var(--ui);
-}
 .sv-drill { fill: var(--k); text-anchor: end; dominant-baseline: middle; }
 .sv-node:hover .sv-box {
   stroke: var(--accent); stroke-width: 2;
   fill: color-mix(in srgb, var(--k) 16%, var(--surface));
 }
 
+.sv-container {
+  fill: color-mix(in srgb, var(--k, var(--faint)) 5%, var(--canvas));
+  stroke: color-mix(in srgb, var(--k, var(--faint)) 60%, var(--line));
+  stroke-width: 1.5; stroke-dasharray: 7 4;
+}
+.sv-container-label {
+  fill: var(--ink); font-family: var(--mono); font-weight: 650;
+}
+.sv-collapse { fill: var(--faint); text-anchor: end; cursor: pointer; }
+.sv-collapse:hover { fill: var(--accent); }
 .sv-band { fill: color-mix(in srgb, var(--ink) 3%, transparent); rx: 12; }
 .sv-band-label {
   fill: var(--faint); font-size: 10px; font-family: var(--ui);
@@ -318,6 +328,13 @@ def _js() -> Markup:
   }
 
   document.addEventListener('click', function (ev) {
+    // The container header's close mark collapses back to the parent view.
+    var collapse = ev.target.closest('.sv-collapse');
+    if (collapse) {
+      var crumb = collapse.closest('.view').querySelector('[data-up]');
+      if (crumb) { crumb.dispatchEvent(new MouseEvent('click', {bubbles: true, cancelable: true})); }
+      return;
+    }
     var node = ev.target.closest('[data-evidence]');
     if (!node) {
       if (!ev.target.closest('aside')) panel.classList.remove('is-open');
@@ -331,7 +348,10 @@ def _js() -> Markup:
 
   function openView(node, child) {
     var tab = node.closest('.tab');
-    var target = tab.querySelector('[data-view="' + CSS.escape(child) + '"]');
+    // Prefer the pre-rendered in-place expansion; a child too large to embed
+    // has no variant and opens as its own view instead.
+    var target = tab.querySelector('[data-view="' + CSS.escape(child + '//expanded') + '"]')
+      || tab.querySelector('[data-view="' + CSS.escape(child) + '"]');
     if (!target) return;
     tab.querySelectorAll('.view').forEach(function (v) {
       v.classList.remove('is-open');
@@ -476,12 +496,69 @@ def _tab(ds: DiagramSet, lo: LaidOutDiagram, style: Style) -> Markup:
         join(
             (
                 join(_view(ds, lo, sid, style) for sid in ordered if sid in lo.canvases),
+                join(_expanded_views(ds, lo, style)),
                 _withheld_note(lo),
             )
         ),
         class_="tab",
         id=f"d-{ds.kind.value}",
     )
+
+
+def _expanded_views(ds: DiagramSet, lo: LaidOutDiagram, style: Style) -> list[Markup]:
+    """One pre-rendered expansion per drillable box.
+
+    Clicking a drillable box opens it **in place**: the same view with that box
+    grown into a container holding its child diagram, siblings still around
+    it. Pre-rendered rather than laid out in the browser, so each state is a
+    real validated canvas and the artifact stays deterministic; linear in the
+    number of drillable boxes, not exponential in paths.
+
+    A child too large to embed gets no variant, and the click falls back to
+    opening the child as its own view. Different, but stated by behaviour a
+    reader can see, never a silent scale-down.
+    """
+    from svarupa.layout import ENGINE_FOR_KIND
+    from svarupa.layout.compose import expand
+
+    engine = ENGINE_FOR_KIND[ds.kind]
+    out: list[Markup] = []
+    for sid in sorted(lo.canvases):
+        for node in ds.specs[sid].nodes:
+            child_id = node.child_spec
+            if child_id is None or child_id not in lo.canvases:
+                continue
+            exp = expand(ds.specs[sid], node.id, lo.canvases[child_id], style, engine)
+            if exp is None:
+                continue
+            crumb = tag(
+                "p",
+                join(
+                    (
+                        raw("&#8592; "),
+                        tag("a", esc(ds.specs[sid].title), href="#", data_up=sid),
+                    )
+                ),
+                class_="crumbs",
+            )
+            out.append(
+                tag(
+                    "section",
+                    join(
+                        (
+                            crumb,
+                            tag("h2", esc(lo.canvases[child_id].title)),
+                            tag("p", esc(lo.canvases[child_id].subtitle), class_="meta"),
+                            tag("div", expanded_svg(exp, style), class_="scroller"),
+                            _legend(lo.canvases[child_id]),
+                        )
+                    ),
+                    class_="view",
+                    data_view=exp.id,
+                    data_plain=child_id,
+                )
+            )
+    return out
 
 
 def _unavailable(notes: tuple[str, ...]) -> Markup:

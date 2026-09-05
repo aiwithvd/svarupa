@@ -40,7 +40,11 @@ __all__ = [
 ]
 
 SCHEMA_MAJOR = 1
-SCHEMA_MINOR = 0
+# Minor 1: `service`, `datastore` and `queue` records are now emitted. Their
+# kinds and arities were published in KNOWN_KINDS from the start, so a 1.0
+# parser reads a 1.1 file and diffs the new lines as opaque adds, which is the
+# additive path the evolution policy promises.
+SCHEMA_MINOR = 1
 
 _SEP = "\t"
 _COMMENT = "#"

@@ -113,6 +113,10 @@ def canvas_json(canvas: Canvas) -> dict[str, object]:
         "parent": canvas.parent,
         "width": canvas.width,
         "height": canvas.height,
+        # Waypoints are bends in a line, not claims: they carry no evidence
+        # and are never drawn. Exporting them as boxes would hand a consumer
+        # "boxes" that violate the every-box-cites-a-line contract; the
+        # geometry they encode is already in each route's points.
         "boxes": [
             {
                 "id": b.id,
@@ -128,6 +132,7 @@ def canvas_json(canvas: Canvas) -> dict[str, object]:
                 "attrs": dict(b.attrs),
             }
             for b in canvas.boxes
+            if b.id not in canvas.waypoints
         ],
         "routes": [
             {

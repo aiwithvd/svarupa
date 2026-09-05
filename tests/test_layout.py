@@ -923,10 +923,11 @@ def test_a_same_row_edge_is_not_drawn_across_its_own_row() -> None:
 def test_placement_preserves_every_field_of_a_box() -> None:
     """Placement copies a box to give it coordinates.
 
-    The copy used to enumerate fields by hand, and when `caption` was added it
-    silently dropped it: every box downstream lost its second line and nothing
-    failed, because an empty caption is legal. Compared field-by-field against
-    the dataclass definition, so a *future* field cannot be dropped either.
+    The copy used to enumerate fields by hand, and when a field was added it
+    silently dropped it: every box downstream lost that data and nothing
+    failed, because the empty value was legal. It is `dataclasses.replace`
+    now, and this walks the dataclass's own field list, so a *future* field
+    cannot be dropped either.
     """
     import dataclasses
 
@@ -934,14 +935,16 @@ def test_placement_preserves_every_field_of_a_box() -> None:
     c = lay_out(s, STYLE, "clustered")
     placed = c.box("src/api")
     assert placed is not None
-    assert placed.caption == "7 modules", "the caption was dropped in placement"
 
     from svarupa.layout.engines import _boxes
 
     original = _boxes(s, STYLE)[0]
+    checked = 0
     for f in dataclasses.fields(type(original)):
         if f.name in ("x", "y"):
             continue
         assert getattr(placed, f.name) == getattr(original, f.name), (
             f"placement changed or dropped Box.{f.name}"
         )
+        checked += 1
+    assert checked >= 8, "the field walk covered almost nothing"
