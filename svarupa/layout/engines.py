@@ -14,9 +14,9 @@ and the artifact is promised byte-identical on Linux and macOS.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
-from svarupa.derive.base import DiagramEdge, DiagramSpec
+from svarupa.derive.base import DiagramEdge, DiagramNode, DiagramSpec
 from svarupa.diagnostics import Diagnostic, Severity
 from svarupa.layout.geometry import Band, Box, Canvas, Route, Style
 from svarupa.layout.sugiyama import DUMMY_WIDTH, Chain, layer_out
@@ -46,7 +46,14 @@ def _boxes(spec: DiagramSpec, style: Style) -> list[Box]:
     for n in spec.nodes:
         full = sanitize(n.label)
         label = truncate(full, style.font_size, style.text_budget)
-        width = advance(label, style.font_size) + 2 * style.box_pad_x
+        caption = truncate(_caption(n), style.caption_font_size, style.text_budget)
+        width = (
+            max(
+                advance(label, style.font_size),
+                advance(caption, style.caption_font_size),
+            )
+            + 2 * style.box_pad_x
+        )
         width = max(style.box_min_width, min(style.box_max_width, width))
         out.append(
             Box(
@@ -61,9 +68,27 @@ def _boxes(spec: DiagramSpec, style: Style) -> list[Box]:
                 evidence=n.evidence,
                 child_spec=n.child_spec,
                 attrs=n.attrs,
+                caption=caption,
             )
         )
     return out
+
+
+def _caption(n: DiagramNode) -> str:
+    """The quiet second line: a true fact, never decoration.
+
+    A group says how many modules it stands for, since that is what a reader
+    decides to drill into it on. A module whose label is a leaf shows its
+    path, because `routes` alone does not say which routes. Everything else
+    states its kind, which is what the colour encodes and the colour-blind
+    reader cannot otherwise get.
+    """
+    modules = n.attr("modules")
+    if modules and modules != "1":
+        return sanitize(f"{modules} modules")
+    if n.id and n.id != n.label and not n.id.startswith("/spec/"):
+        return sanitize(n.id)
+    return n.kind
 
 
 # --------------------------------------------------------------------------
@@ -304,21 +329,12 @@ def _place(rows: list[list[Box]], style: Style, demand: Sequence[int] = ()) -> P
     for i, (row, row_width) in enumerate(zip(rows, row_widths, strict=True)):
         x = style.margin + (content - row_width) // 2
         for b in row:
-            placed.append(
-                Box(
-                    id=b.id,
-                    label=b.label,
-                    full_label=b.full_label,
-                    kind=b.kind,
-                    x=x,
-                    y=y,
-                    w=b.w,
-                    h=b.h,
-                    evidence=b.evidence,
-                    child_spec=b.child_spec,
-                    attrs=b.attrs,
-                )
-            )
+            # `replace`, never a field-by-field copy. The copy listed every
+            # field by hand, and when `caption` was added it silently dropped
+            # it: every box downstream of placement lost its second line and
+            # nothing failed, because an empty caption is legal. A copy that
+            # enumerates fields is wrong the day the dataclass grows.
+            placed.append(replace(b, x=x, y=y))
             x += b.w + style.gap_x
         extents.append(range(y, y + style.box_height))
         tracks = demand[i] if i < len(demand) else 0

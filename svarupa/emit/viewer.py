@@ -28,34 +28,38 @@ __all__ = ["render_viewer"]
 
 
 def _css() -> Markup:
-    """The visual system.
+    """The visual system, studied from Archify's output rather than invented.
 
-    Written after looking at a real 36-module repository and finding the output
-    unreadable. Three things were wrong and all three were invisible to the
-    geometry validator, which checks boxes against boxes and nothing else:
-    every edge stamped its count in the same band, every long edge ran through
-    one shared rail, and everything was set in the monospace face the width
-    model needs, which makes a diagram look like a terminal.
+    What Archify gets right, adopted: a paper-white canvas with a dotted grid,
+    boxes coloured by kind (pastel fill, saturated border), a bold title with a
+    quiet caption under it, dashed containers for things that hold other
+    things, a legend, and chrome that reads as a product. What stays ours,
+    because it is the product: every box cites a source line, no box is
+    invented, and two runs produce identical bytes.
 
-    Monospace is now used where it is true (paths, code, citations) and a UI
-    face everywhere else. The width model still measures in monospace and the
-    SVG clamps text to the measured width, so the estimate cannot overflow a
-    box whatever the browser resolves.
+    One custom property, `--k`, carries a box's kind colour; fills are derived
+    from it with `color-mix` against the surface, so the dark theme recolours
+    every kind by changing one variable instead of restating the palette.
+    Light is the default because a diagram is shared into documents and lit
+    rooms; dark is a toggle, remembered per reader, never baked into the file.
     """
     return raw(
         """
 :root {
-  --bg: #0d1017; --surface: #151a23; --raised: #1c2230; --line: #2a3242;
-  --ink: #e8ecf4; --dim: #93a0b8; --faint: #5d6b85;
-  --accent: #7aa2f7; --accent-soft: #7aa2f733;
-  --group: #9d7cd8; --group-soft: #9d7cd826;
-  --warn: #e0af68; --edge: #3d4661;
+  --bg: #f4f6fa; --surface: #ffffff; --raised: #eef1f7; --line: #d9dfea;
+  --ink: #182036; --dim: #59657f; --faint: #8b95ac;
+  --accent: #2f6bdb; --group: #7c4ddb; --warn: #b0761c;
+  --edge: #9aa5ba; --grid: #dfe4ef; --canvas: #fcfdff;
   --ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, sans-serif;
   --mono: MONO_PLACEHOLDER;
-  --r: 10px;
+}
+[data-theme="dark"] {
+  --bg: #0d1017; --surface: #151a23; --raised: #1c2230; --line: #2a3242;
+  --ink: #e8ecf4; --dim: #93a0b8; --faint: #5d6b85;
+  --accent: #7aa2f7; --group: #9d7cd8; --warn: #e0af68;
+  --edge: #55607a; --grid: #1d2432; --canvas: #10141d;
 }
 * { box-sizing: border-box; }
-html { color-scheme: dark; }
 body {
   margin: 0; background: var(--bg); color: var(--ink);
   font-family: var(--ui); font-size: 14px; line-height: 1.5;
@@ -65,12 +69,12 @@ code, .mono { font-family: var(--mono); }
 
 header {
   position: sticky; top: 0; z-index: 5;
-  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
   backdrop-filter: blur(8px);
   border-bottom: 1px solid var(--line); padding: 12px 20px;
   display: flex; gap: 20px; align-items: center; flex-wrap: wrap;
 }
-h1 { font-size: 15px; margin: 0; font-weight: 650; letter-spacing: -0.01em; }
+h1 { font-size: 15px; margin: 0; font-weight: 700; letter-spacing: -0.01em; }
 h1 small {
   color: var(--dim); font-weight: 400; margin-left: 10px;
   font-family: var(--mono); font-size: 12px;
@@ -78,34 +82,36 @@ h1 small {
 nav { display: flex; gap: 6px; flex-wrap: wrap; }
 nav a {
   color: var(--dim); text-decoration: none; padding: 5px 12px;
-  border: 1px solid transparent; border-radius: 7px; font-size: 13px;
-  transition: background .12s, color .12s;
+  border-radius: 7px; font-size: 13px; transition: background .12s, color .12s;
 }
 nav a:hover { color: var(--ink); background: var(--raised); }
-.base { margin-left: auto; display: flex; gap: 8px; align-items: center; }
-.base label { color: var(--dim); font-size: 12px; }
-.base input {
+.controls { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+.controls label { color: var(--dim); font-size: 12px; }
+.controls input {
   background: var(--bg); color: var(--ink); border: 1px solid var(--line);
-  border-radius: 7px; padding: 6px 10px; font: inherit; font-size: 12px;
-  font-family: var(--mono); width: 24em;
+  border-radius: 7px; padding: 6px 10px; font-size: 12px;
+  font-family: var(--mono); width: 22em;
 }
-.base input:focus { outline: none; border-color: var(--accent); }
+.controls input:focus { outline: none; border-color: var(--accent); }
+#theme {
+  background: var(--surface); color: var(--dim); border: 1px solid var(--line);
+  border-radius: 7px; padding: 6px 12px; font: inherit; font-size: 12px;
+  cursor: pointer;
+}
+#theme:hover { color: var(--ink); border-color: var(--accent); }
 
 .tab { display: none; padding: 24px 20px 64px; }
 .tab:first-of-type { display: block; }
 body:has(.tab:target) .tab:first-of-type { display: none; }
 body:has(.tab:target) .tab:target { display: block; }
 
-h2 { font-size: 20px; margin: 0 0 4px; font-weight: 650; letter-spacing: -0.02em; }
-.meta { color: var(--dim); margin: 0 0 20px; font-size: 13px; }
+h2 { font-size: 20px; margin: 0 0 4px; font-weight: 700; letter-spacing: -0.02em; }
+.meta { color: var(--dim); margin: 0 0 16px; font-size: 13px; }
 .crumbs { margin: 0 0 12px; font-size: 13px; }
 .crumbs a { color: var(--accent); text-decoration: none; }
 .crumbs a:hover { text-decoration: underline; }
 .view { display: none; }
 .view.is-open { display: block; animation: sv-enter .18s ease; }
-/* A drill-down that appears with a small rise reads as "you went somewhere",
-   which is the mental model the navigation is built on. Honouring
-   prefers-reduced-motion is not optional polish. */
 @keyframes sv-enter {
   from { opacity: 0; transform: translateY(6px); }
   to { opacity: 1; transform: none; }
@@ -115,54 +121,88 @@ h2 { font-size: 20px; margin: 0 0 4px; font-weight: 650; letter-spacing: -0.02em
   aside { transition: none; }
 }
 
-/* Never scaled down to fit. A layered diagram is as wide as its widest
-   layer, and shrinking a 2700px canvas into a 1200px column makes every
-   label unreadable, which defeats the point of drawing it. Wide diagrams
-   scroll at their natural size; narrow ones sit centred rather than
-   huddling in the top-left corner of an empty page. */
+/* The diagram sits on grid paper inside a card, which is most of what makes
+   it read as a drawing rather than markup. Wide diagrams scroll at natural
+   size; scaling a 2700px canvas into a 1200px column defeats drawing it. */
 .scroller {
-  overflow-x: auto; overflow-y: hidden; padding-bottom: 12px;
+  overflow-x: auto; overflow-y: hidden;
+  border: 1px solid var(--line); border-radius: 12px;
+  background: var(--canvas)
+    radial-gradient(circle, var(--grid) 1px, transparent 1px);
+  background-size: 22px 22px;
   scrollbar-color: var(--line) transparent;
 }
 .sv-canvas { display: block; margin: 0 auto; }
-.sv-band { fill: #ffffff05; rx: 12; }
+
+/* Kind colours. One variable per kind; fill and dot derive from it. */
+.sv-node { --k: var(--faint); cursor: pointer; }
+.sv-kind-module { --k: #2f9ae3; }
+.sv-kind-group { --k: var(--group); }
+.sv-kind-service { --k: #22a06b; }
+.sv-kind-endpoint { --k: #e8890c; }
+.sv-kind-table { --k: #12a594; }
+.sv-kind-queue { --k: #d6336c; }
+.sv-kind-datastore { --k: #c9a227; }
+.sv-box {
+  fill: color-mix(in srgb, var(--k) 10%, var(--surface));
+  stroke: color-mix(in srgb, var(--k) 65%, var(--line));
+  stroke-width: 1.25; transition: stroke .1s, fill .1s;
+}
+.sv-drillable .sv-box { stroke-dasharray: 6 3; stroke-width: 1.5; }
+.sv-dot { fill: var(--k); }
+.sv-box-label {
+  fill: var(--ink); text-anchor: middle; dominant-baseline: middle;
+  font-family: var(--mono); font-weight: 600;
+}
+.sv-box-caption {
+  fill: var(--dim); text-anchor: middle; dominant-baseline: middle;
+  font-family: var(--ui);
+}
+.sv-drill { fill: var(--k); text-anchor: end; dominant-baseline: middle; }
+.sv-node:hover .sv-box {
+  stroke: var(--accent); stroke-width: 2;
+  fill: color-mix(in srgb, var(--k) 16%, var(--surface));
+}
+
+.sv-band { fill: color-mix(in srgb, var(--ink) 3%, transparent); rx: 12; }
 .sv-band-label {
   fill: var(--faint); font-size: 10px; font-family: var(--ui);
   letter-spacing: .08em; text-transform: uppercase;
 }
-.sv-box { fill: var(--surface); stroke: var(--line); stroke-width: 1.25; }
-.sv-drillable .sv-box { fill: var(--raised); stroke: var(--group); }
-.sv-kind-group .sv-box { fill: var(--group-soft); stroke: var(--group); }
-.sv-box-label {
-  fill: var(--ink); text-anchor: middle; dominant-baseline: middle;
-  font-family: var(--mono); font-weight: 500;
-}
-.sv-drill { fill: var(--group); text-anchor: end; dominant-baseline: middle; }
-.sv-node { cursor: pointer; }
-.sv-node .sv-box { transition: stroke .1s, fill .1s; }
-.sv-node:hover .sv-box { stroke: var(--accent); stroke-width: 2; }
-.sv-node:hover .sv-box-label { fill: #fff; }
 
 .sv-edge { fill: none; stroke: var(--edge); stroke-linecap: round; }
-.sv-w1 { stroke-width: 1.25; opacity: .55; }
-.sv-w2 { stroke-width: 2; opacity: .75; }
-.sv-w3 { stroke-width: 3; opacity: .95; }
+.sv-w1 { stroke-width: 1.25; opacity: .6; }
+.sv-w2 { stroke-width: 2; opacity: .8; }
+.sv-w3 { stroke-width: 3; opacity: 1; }
 .sv-edge-weak { stroke: var(--warn); stroke-dasharray: 5 4; }
 .sv-route { cursor: pointer; }
 .sv-route:hover .sv-edge { stroke: var(--accent); opacity: 1; }
 .sv-arrowhead { fill: var(--edge); }
 .sv-route:hover .sv-arrowhead { fill: var(--accent); }
 
+/* The legend doubles as the honesty line: kinds with real counts, and the
+   promise that a click lands on source. */
+.legend {
+  display: flex; gap: 16px; flex-wrap: wrap; align-items: center;
+  color: var(--dim); font-size: 12px; margin: 12px 2px 0;
+}
+.legend .sw {
+  display: inline-block; width: 10px; height: 10px; border-radius: 3px;
+  margin-right: 6px; vertical-align: -1px;
+  background: color-mix(in srgb, var(--k) 14%, var(--surface));
+  border: 1.5px solid color-mix(in srgb, var(--k) 65%, var(--line));
+}
+.legend .promise { margin-left: auto; color: var(--faint); }
+
 aside {
   position: fixed; right: 0; top: 0; bottom: 0; width: 28em; overflow: auto;
   background: var(--surface); border-left: 1px solid var(--line);
   padding: 20px; transform: translateX(100%); transition: transform .16s ease;
-  box-shadow: -16px 0 40px #0006;
+  box-shadow: -16px 0 40px #0003;
 }
 aside.is-open { transform: none; }
 aside h2 { font-size: 14px; margin: 0 0 2px; font-family: var(--mono); }
-aside .sub { color: var(--dim); font-size: 12px; margin: 0 0 14px; }
-aside ul { list-style: none; padding: 0; margin: 0; }
+aside ul { list-style: none; padding: 0; margin: 10px 0 0; }
 aside li { margin: 0 0 2px; }
 aside a, aside span.dead {
   color: var(--accent); font-family: var(--mono); font-size: 12px;
@@ -177,11 +217,6 @@ aside span.dead { color: var(--warn); }
   margin-top: 24px; color: var(--dim); font-size: 13px;
 }
 noscript .hint { color: var(--warn); }
-.legend {
-  display: flex; gap: 18px; flex-wrap: wrap; align-items: center;
-  color: var(--faint); font-size: 12px; margin: 18px 0 0;
-}
-.legend b { color: var(--dim); font-weight: 500; }
 """
     )
 
@@ -203,6 +238,28 @@ def _js() -> Markup:
   base.addEventListener('input', function () {
     localStorage.setItem(KEY, base.value);
     render();
+  });
+
+  // The theme is the reader's, not the artifact's: it lives in localStorage
+  // and never in the file, so the bytes stay identical between runs and the
+  // no-JS reader gets light, which is what a diagram pasted into a document
+  // needs anyway.
+  var THEME = 'svarupa.theme';
+  var themeBtn = document.getElementById('theme');
+  function applyTheme(name) {
+    if (name === 'dark') {
+      document.documentElement.setAttribute('data-theme', 'dark');
+      themeBtn.textContent = 'light';
+    } else {
+      document.documentElement.removeAttribute('data-theme');
+      themeBtn.textContent = 'dark';
+    }
+  }
+  applyTheme(localStorage.getItem(THEME) || 'light');
+  themeBtn.addEventListener('click', function () {
+    var next = document.documentElement.hasAttribute('data-theme') ? 'light' : 'dark';
+    localStorage.setItem(THEME, next);
+    applyTheme(next);
   });
 
   var panel = document.getElementById('panel');
@@ -328,11 +385,58 @@ def _view(ds: DiagramSet, lo: LaidOutDiagram, spec_id: str, style: Style) -> Mar
                 tag("h2", esc(spec.title)),
                 tag("p", esc(spec.subtitle), class_="meta"),
                 tag("div", canvas_svg(canvas, style), class_="scroller"),
+                _legend(canvas),
             )
         ),
         class_="view" + (" is-open" if spec_id == ds.root else ""),
         data_view=spec_id,
     )
+
+
+def _legend(canvas: object) -> Markup:
+    """Kind swatches with real counts, plus the product's one-line promise.
+
+    The counts are computed from the canvas being drawn, never typed in, so
+    the legend cannot claim kinds the diagram does not contain. Waypoints are
+    bends in lines and are not counted as anything.
+    """
+    from collections import Counter
+
+    from svarupa.layout.geometry import Canvas
+
+    assert isinstance(canvas, Canvas)
+    counts = Counter(b.kind for b in canvas.boxes if b.id not in canvas.waypoints)
+    if not counts:
+        return raw("")
+    swatches = join(
+        (
+            tag(
+                "span",
+                join((raw('<span class="sw"></span>'), esc(f"{kind} {n}"))),
+                class_=f"sv-kind-{_kind_slug(kind)}",
+            )
+            for kind, n in sorted(counts.items())
+        ),
+        sep=" ",
+    )
+    return tag(
+        "div",
+        join(
+            (
+                swatches,
+                tag(
+                    "span",
+                    esc("every box and arrow cites a source line; click one"),
+                    class_="promise",
+                ),
+            )
+        ),
+        class_="legend",
+    )
+
+
+def _kind_slug(kind: str) -> str:
+    return "".join(c if c.isalnum() or c == "-" else "-" for c in kind.lower()) or "none"
 
 
 def _withheld_note(lo: LaidOutDiagram) -> Markup:
@@ -441,9 +545,10 @@ def render_viewer(
                                 '<input id="base" placeholder="../ or '
                                 'https://github.com/org/repo/blob/main">'
                             ),
+                            raw('<button id="theme" type="button">dark</button>'),
                         )
                     ),
-                    class_="base",
+                    class_="controls",
                 ),
             )
         ),

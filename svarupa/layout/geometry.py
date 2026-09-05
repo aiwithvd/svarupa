@@ -44,7 +44,8 @@ class Style:
 
     font_size: int = 13
     label_font_size: int = 11
-    box_height: int = 44
+    caption_font_size: int = 10
+    box_height: int = 54
     box_min_width: int = 96
     box_max_width: int = 260
     box_pad_x: int = 12
@@ -115,6 +116,11 @@ class Box:
     evidence: tuple[Evidence, ...]
     child_spec: str | None = None
     attrs: tuple[tuple[str, str], ...] = ()
+    # The small second line under the label: "6 modules" on a group, the path
+    # on a module whose label is just the leaf. One line of text per box looks
+    # like a terminal; a title with a quiet caption reads as a diagram. Sized
+    # and truncated at layout time like the label, so geometry covers it too.
+    caption: str = ""
 
     @property
     def right(self) -> int:

@@ -585,6 +585,9 @@ def test_the_document_parses_as_the_elements_it_was_built_from(
         "rect",
         "text",
         "polyline",
+        "button",
+        "circle",
+        "span",
     }
     unexpected = sorted(set(parser.tags) - expected)
     assert not unexpected, f"elements this stage never writes: {unexpected}"
@@ -910,7 +913,8 @@ def test_every_colour_in_the_stylesheet_is_a_valid_hex_value(tmp_path: Path) -> 
     run(repo, out)
     css = stylesheet((out / "index.html").read_text(encoding="utf8"))
 
-    colours = re.findall(r"#[0-9A-Za-z_-]+", css)
+    # Only values, not selectors: `#theme { ... }` is an id, not a colour.
+    colours = re.findall(r":[^;{}]*?(#[0-9A-Za-z_-]+)", css)
     assert colours, "no colours found, so this test proved nothing"
     malformed = [c for c in colours if not re.fullmatch(r"#[0-9a-fA-F]{3,8}", c)]
     assert not malformed, f"malformed colour values: {malformed}"

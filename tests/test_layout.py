@@ -918,3 +918,30 @@ def test_a_same_row_edge_is_not_drawn_across_its_own_row() -> None:
             laid.box(r.dst).y,  # type: ignore[union-attr]
         ), "a same-row arrow entered its target from the side, across the row"
     assert crossings(laid) == []
+
+
+def test_placement_preserves_every_field_of_a_box() -> None:
+    """Placement copies a box to give it coordinates.
+
+    The copy used to enumerate fields by hand, and when `caption` was added it
+    silently dropped it: every box downstream lost its second line and nothing
+    failed, because an empty caption is legal. Compared field-by-field against
+    the dataclass definition, so a *future* field cannot be dropped either.
+    """
+    import dataclasses
+
+    s = spec(node("src/api", "api", modules="7"))
+    c = lay_out(s, STYLE, "clustered")
+    placed = c.box("src/api")
+    assert placed is not None
+    assert placed.caption == "7 modules", "the caption was dropped in placement"
+
+    from svarupa.layout.engines import _boxes
+
+    original = _boxes(s, STYLE)[0]
+    for f in dataclasses.fields(type(original)):
+        if f.name in ("x", "y"):
+            continue
+        assert getattr(placed, f.name) == getattr(original, f.name), (
+            f"placement changed or dropped Box.{f.name}"
+        )

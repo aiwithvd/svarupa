@@ -103,7 +103,7 @@ def _box(box: Box, style: Style) -> Markup:
                 "text",
                 esc(box.label),
                 x=box.x + box.w // 2,
-                y=box.y + box.h // 2,
+                y=box.y + box.h // 2 - (7 if box.caption else 0),
                 class_="sv-box-label",
                 font_size=style.font_size,
                 # A rendering backstop for the width model. `textLength` makes
@@ -113,6 +113,31 @@ def _box(box: Box, style: Style) -> Markup:
                 # model is an estimate; this makes its failure mode safe.
                 textLength=max(1, advance(box.label, style.font_size)),
                 lengthAdjust="spacingAndGlyphs",
+            ),
+            (
+                tag(
+                    "text",
+                    esc(box.caption),
+                    x=box.x + box.w // 2,
+                    y=box.y + box.h // 2 + 12,
+                    class_="sv-box-caption",
+                    font_size=style.caption_font_size,
+                    textLength=max(1, advance(box.caption, style.caption_font_size)),
+                    lengthAdjust="spacingAndGlyphs",
+                )
+                if box.caption
+                else raw("")
+            ),
+            # The kind dot. Colour also encodes kind, and a small solid mark
+            # survives both a colour-blind reader (paired with the caption
+            # text) and a low-zoom screenshot where borders thin out.
+            tag(
+                "circle",
+                EMPTY,
+                cx=box.x + 11,
+                cy=box.y + 12,
+                r=3,
+                class_="sv-dot",
             ),
             _drill_marker(box, style),
         )
@@ -140,8 +165,8 @@ def _drill_marker(box: Box, style: Style) -> Markup:
         "text",
         # U+203A single right-pointing angle quotation mark.
         esc("\u203a"),
-        x=box.right - style.box_pad_x,
-        y=box.y + box.h // 2,
+        x=box.right - 10,
+        y=box.y + 16,
         class_="sv-drill",
         font_size=style.font_size,
     )
