@@ -95,6 +95,10 @@ class DiagramNode:
     evidence: tuple[Evidence, ...]
     child_spec: str | None = None
     attrs: tuple[tuple[str, str], ...] = ()
+    # A semantic second line ("FastAPI · 23 routes", "Redis :6379"), never a
+    # path: the user rejected file paths under boxes, and Archify's sublabel
+    # is the descriptor that makes its boxes read as architecture.
+    sublabel: str = ""
 
     def __post_init__(self) -> None:
         if not self.evidence:
@@ -116,10 +120,35 @@ class DiagramEdge:
     evidence: tuple[Evidence, ...]
     resolution: Resolution = Resolution.RESOLVED
     weight: int = 1
+    # Archify's connection variants: default | emphasis | dashed | security.
+    # `dashed` marks a relationship to something outside the codebase.
+    variant: str = "default"
+    # The longer statement for the tooltip and the passport ("8 uses, first 6
+    # cited"); the drawn label is the short verb. Empty means the label is
+    # the whole statement.
+    note: str = ""
 
     def __post_init__(self) -> None:
         if not self.evidence:
             raise MissingEvidenceError("DiagramEdge", f"{self.src} -> {self.dst}")
+
+
+@dataclass(frozen=True, order=True, slots=True)
+class Region:
+    """A boundary that wraps nodes: Archify's `region`, here a compose service
+    wrapping the modules under its build context. A claim about membership,
+    cited at the line that declares the service, and checked geometrically
+    like a band: every member must lie inside the drawn rectangle."""
+
+    id: str
+    label: str
+    members: tuple[str, ...]
+    evidence: tuple[Evidence, ...]
+    kind: str = "service"
+
+    def __post_init__(self) -> None:
+        if not self.evidence:
+            raise MissingEvidenceError("Region", self.id)
 
 
 @dataclass(frozen=True, slots=True)
@@ -131,6 +160,7 @@ class DiagramSpec:
     edges: tuple[DiagramEdge, ...]
     parent: str | None = None
     subtitle: str = ""
+    regions: tuple[Region, ...] = ()
 
     def node(self, node_id: str) -> DiagramNode | None:
         return next((n for n in self.nodes if n.id == node_id), None)

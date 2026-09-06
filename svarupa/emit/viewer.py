@@ -40,29 +40,49 @@ def _css() -> Markup:
     One custom property, `--k`, carries a box's kind colour; fills are derived
     from it with `color-mix` against the surface, so the dark theme recolours
     every kind by changing one variable instead of restating the palette.
-    Light is the default because a diagram is shared into documents and lit
-    rooms; dark is a toggle, remembered per reader, never baked into the file.
+    Dark is the default, Archify's midnight console; light is a toggle,
+    remembered per reader, never baked into the file.
     """
     return raw(
         """
 :root {
-  --bg: #f4f6fa; --surface: #ffffff; --raised: #eef1f7; --line: #d9dfea;
-  --ink: #182036; --dim: #59657f; --faint: #8b95ac;
-  --accent: #2f6bdb; --group: #7c4ddb; --warn: #b0761c;
-  --edge: #9aa5ba; --grid: #dfe4ef; --canvas: #fcfdff;
+  --bg: #020617; --surface: #0f172a; --raised: #131c33; --line: #1e293b;
+  --ink: #f8fafc; --dim: #94a3b8; --faint: #475569;
+  --accent: #22d3ee; --group: #a78bfa; --warn: #fbbf24;
+  --edge: #64748b; --grid: #1e293b; --canvas: #020617; --mask: #0f172a;
   --ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, sans-serif;
   --mono: MONO_PLACEHOLDER;
+  /* Semantic fills: translucent fill + saturated stroke per kind, Archify's
+     exact dark values. Colour identifies meaning, never decoration. */
+  --frontend-fill: rgba(8,51,68,.4); --frontend-stroke: #22d3ee;
+  --backend-fill: rgba(6,78,59,.4); --backend-stroke: #34d399;
+  --database-fill: rgba(76,29,149,.4); --database-stroke: #a78bfa;
+  --cloud-fill: rgba(120,53,15,.3); --cloud-stroke: #fbbf24;
+  --security-fill: rgba(136,19,55,.4); --security-stroke: #fb7185;
+  --messagebus-fill: rgba(251,146,60,.3); --messagebus-stroke: #fb923c;
+  --external-fill: rgba(30,41,59,.5); --external-stroke: #94a3b8;
+  --module-fill: rgba(30,58,138,.35); --module-stroke: #60a5fa;
+  --group-fill: rgba(76,29,149,.18); --group-stroke: #a78bfa;
 }
-[data-theme="dark"] {
-  --bg: #0d1017; --surface: #151a23; --raised: #1c2230; --line: #2a3242;
-  --ink: #e8ecf4; --dim: #93a0b8; --faint: #5d6b85;
-  --accent: #7aa2f7; --group: #9d7cd8; --warn: #e0af68;
-  --edge: #55607a; --grid: #1d2432; --canvas: #10141d;
+[data-theme="light"] {
+  --bg: #f8fafc; --surface: #ffffff; --raised: #f1f5f9; --line: #e2e8f0;
+  --ink: #0f172a; --dim: #64748b; --faint: #94a3b8;
+  --accent: #0891b2; --group: #7c3aed; --warn: #b45309;
+  --edge: #94a3b8; --grid: #e2e8f0; --canvas: #f8fafc; --mask: #ffffff;
+  --frontend-fill: rgba(34,211,238,.15); --frontend-stroke: #0891b2;
+  --backend-fill: rgba(52,211,153,.15); --backend-stroke: #059669;
+  --database-fill: rgba(167,139,250,.15); --database-stroke: #7c3aed;
+  --cloud-fill: rgba(251,191,36,.18); --cloud-stroke: #b45309;
+  --security-fill: rgba(251,113,133,.15); --security-stroke: #be123c;
+  --messagebus-fill: rgba(251,146,60,.18); --messagebus-stroke: #c2410c;
+  --external-fill: rgba(148,163,184,.15); --external-stroke: #64748b;
+  --module-fill: rgba(96,165,250,.15); --module-stroke: #2563eb;
+  --group-fill: rgba(124,58,237,.08); --group-stroke: #7c3aed;
 }
 * { box-sizing: border-box; }
 body {
   margin: 0; background: var(--bg); color: var(--ink);
-  font-family: var(--ui); font-size: 14px; line-height: 1.5;
+  font-family: var(--mono); font-size: 13px; line-height: 1.55;
   -webkit-font-smoothing: antialiased;
 }
 code, .mono { font-family: var(--mono); }
@@ -134,38 +154,51 @@ h2 { font-size: 20px; margin: 0 0 4px; font-weight: 700; letter-spacing: -0.02em
 }
 .sv-canvas { display: block; margin: 0 auto; }
 
-/* Kind colours. One variable per kind; fill and dot derive from it. */
-.sv-node { --k: var(--faint); cursor: pointer; }
-.sv-kind-module { --k: #2f9ae3; }
-.sv-kind-api { --k: #e8890c; }
-.sv-kind-worker { --k: #8250df; }
-.sv-kind-cli { --k: #5f6b7a; }
-.sv-kind-group { --k: var(--group); }
-.sv-kind-service { --k: #22a06b; }
-.sv-kind-endpoint { --k: #e8890c; }
-.sv-kind-table { --k: #12a594; }
-.sv-kind-queue { --k: #d6336c; }
-.sv-kind-datastore { --k: #c9a227; }
-.sv-kind-class { --k: #d6336c; }
-.sv-kind-function { --k: #2f9ae3; }
-.sv-kind-interface { --k: #22a06b; }
-.sv-kind-method { --k: #7a7f2a; }
-.sv-box {
-  fill: color-mix(in srgb, var(--k) 10%, var(--surface));
-  stroke: color-mix(in srgb, var(--k) 65%, var(--line));
-  stroke-width: 1.25; transition: stroke .1s, fill .1s;
-}
-.sv-drillable .sv-box { stroke-dasharray: 6 3; stroke-width: 1.5; }
+/* Kind colours: one fill/stroke pair per semantic kind (Archify's vocabulary),
+   with `--k` kept as the stroke for anything that derives from the kind. */
+.sv-node { --k: var(--external-stroke); --f: var(--external-fill); cursor: pointer; }
+.sv-kind-module { --k: var(--module-stroke); --f: var(--module-fill); }
+.sv-kind-group { --k: var(--group-stroke); --f: var(--group-fill); }
+.sv-kind-backend, .sv-kind-service, .sv-kind-function, .sv-kind-component,
+.sv-kind-api, .sv-kind-worker, .sv-kind-cli { --k: var(--backend-stroke); --f: var(--backend-fill); }
+.sv-kind-frontend { --k: var(--frontend-stroke); --f: var(--frontend-fill); }
+.sv-kind-database, .sv-kind-datastore, .sv-kind-table { --k: var(--database-stroke); --f: var(--database-fill); }
+.sv-kind-cloud { --k: var(--cloud-stroke); --f: var(--cloud-fill); }
+.sv-kind-security, .sv-kind-auth, .sv-kind-class { --k: var(--security-stroke); --f: var(--security-fill); }
+.sv-kind-messagebus, .sv-kind-queue { --k: var(--messagebus-stroke); --f: var(--messagebus-fill); }
+.sv-kind-endpoint, .sv-kind-interface, .sv-kind-method { --k: var(--cloud-stroke); --f: var(--cloud-fill); }
+.sv-mask { fill: var(--mask); stroke: none; }
+.sv-box { fill: var(--f); stroke: var(--k); stroke-width: 1.5; transition: stroke .14s, fill .14s; }
+.sv-drillable .sv-box { stroke-dasharray: 6 3; }
 .sv-dot { fill: var(--k); }
+.sv-sigil { fill: none; stroke: var(--k); stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; }
 .sv-box-label {
   fill: var(--ink); text-anchor: middle; dominant-baseline: middle;
   font-family: var(--mono); font-weight: 600;
 }
-.sv-drill { fill: var(--k); text-anchor: end; dominant-baseline: middle; }
-.sv-node:hover .sv-box {
-  stroke: var(--accent); stroke-width: 2;
-  fill: color-mix(in srgb, var(--k) 16%, var(--surface));
+.sv-box-sublabel {
+  fill: var(--dim); text-anchor: middle; dominant-baseline: middle;
+  font-family: var(--mono); font-weight: 400;
 }
+.sv-src { fill: var(--mask); stroke: var(--k); stroke-width: .8; opacity: .9; }
+.sv-src-text { fill: var(--k); text-anchor: middle; dominant-baseline: middle; font-family: var(--mono); font-weight: 700; letter-spacing: .08em; }
+.sv-drill { fill: var(--k); text-anchor: end; dominant-baseline: middle; }
+.sv-node:hover .sv-box { stroke: var(--accent); stroke-width: 2; }
+.sv-region { fill: color-mix(in srgb, var(--k) 5%, transparent); stroke: var(--k); stroke-width: 1; stroke-dasharray: 8 4; }
+.sv-boundary { --k: var(--cloud-stroke); }
+.sv-region-label { fill: var(--k); font-family: var(--mono); font-weight: 600; letter-spacing: .02em; }
+.sv-edge-label { fill: var(--dim); text-anchor: middle; dominant-baseline: middle; font-family: var(--mono); font-weight: 500; }
+.sv-variant-emphasis { stroke: var(--backend-stroke); }
+.sv-variant-emphasis.sv-edge-label { fill: var(--backend-stroke); }
+.sv-variant-dashed.sv-edge { stroke-dasharray: 6 4; }
+.sv-variant-security { stroke: var(--security-stroke); }
+.sv-variant-security.sv-edge-label { fill: var(--security-stroke); }
+
+/* Hover lights the path through the hovered element and recedes the rest. */
+.sv-canvas.is-hovering .sv-node:not(.is-path), .sv-canvas.is-hovering .sv-route:not(.is-path) { opacity: .28; transition: opacity .14s; }
+.sv-canvas.is-hovering .sv-route.is-path .sv-edge { stroke: var(--accent); opacity: 1; }
+.sv-canvas.is-hovering .sv-route.is-path .sv-arrowhead { fill: var(--accent); }
+.sv-canvas.is-hovering .sv-node.is-path .sv-box { stroke-width: 2; }
 
 .sv-container {
   fill: color-mix(in srgb, var(--k, var(--faint)) 5%, var(--canvas));
@@ -215,6 +248,11 @@ aside {
 }
 aside.is-open { transform: none; }
 aside h2 { font-size: 14px; margin: 0 0 2px; font-family: var(--mono); }
+aside .kind { margin: 0; font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); font-weight: 700; }
+aside .sub { margin: 0 0 10px; color: var(--dim); font-size: 12px; }
+aside .section { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--faint); margin: 16px 0 4px; font-weight: 700; }
+aside .conn { color: var(--ink); font-size: 12px; padding: 4px 8px; }
+aside .conn .verb { color: var(--dim); }
 aside ul { list-style: none; padding: 0; margin: 10px 0 0; }
 aside li { margin: 0 0 2px; }
 aside a, aside span.dead {
@@ -255,22 +293,23 @@ def _js() -> Markup:
 
   // The theme is the reader's, not the artifact's: it lives in localStorage
   // and never in the file, so the bytes stay identical between runs and the
-  // no-JS reader gets light, which is what a diagram pasted into a document
-  // needs anyway.
+  // no-JS reader gets the root palette.
   var THEME = 'svarupa.theme';
   var themeBtn = document.getElementById('theme');
+  // Dark is the root palette (Archify's midnight console); light is the
+  // attribute. The button names the theme you would switch TO.
   function applyTheme(name) {
-    if (name === 'dark') {
-      document.documentElement.setAttribute('data-theme', 'dark');
-      themeBtn.textContent = 'light';
+    if (name === 'light') {
+      document.documentElement.setAttribute('data-theme', 'light');
+      themeBtn.textContent = 'dark';
     } else {
       document.documentElement.removeAttribute('data-theme');
-      themeBtn.textContent = 'dark';
+      themeBtn.textContent = 'light';
     }
   }
-  applyTheme(localStorage.getItem(THEME) || 'light');
+  applyTheme(localStorage.getItem(THEME) || 'dark');
   themeBtn.addEventListener('click', function () {
-    var next = document.documentElement.hasAttribute('data-theme') ? 'light' : 'dark';
+    var next = document.documentElement.hasAttribute('data-theme') ? 'dark' : 'light';
     localStorage.setItem(THEME, next);
     applyTheme(next);
   });
@@ -323,12 +362,90 @@ def _js() -> Markup:
     });
   }
 
-  function show(name, refs) {
+  var kindEl = document.getElementById('panel-kind');
+  var subEl = document.getElementById('panel-sub');
+  var connEl = document.getElementById('panel-conn');
+  var connH = document.getElementById('panel-conn-h');
+
+  // The passport: what the element is, its semantic line, and the
+  // connections it takes part in, read from the same SVG the reader sees.
+  // Everything set via textContent; nothing here builds markup from data.
+  function passport(node) {
+    var kind = '';
+    node.classList.forEach(function (c) { if (c.indexOf('sv-kind-') === 0) kind = c.slice(8); });
+    var roles = node.getAttribute('data-roles');
+    kindEl.textContent = kind + (roles ? ' \u00b7 ' + roles : '');
+    subEl.textContent = node.getAttribute('data-sublabel') || '';
+    connEl.textContent = '';
+    var id = node.getAttribute('data-id');
+    var svg = node.closest('svg');
+    var n = 0;
+    if (svg && id) {
+      svg.querySelectorAll('.sv-route').forEach(function (r) {
+        var s = r.getAttribute('data-src'), d = r.getAttribute('data-dst');
+        if (s !== id && d !== id) return;
+        var li = document.createElement('li');
+        li.className = 'conn';
+        var verb = document.createElement('span');
+        verb.className = 'verb';
+        verb.textContent = (s === id ? '\u2192 ' : '\u2190 ') + (r.getAttribute('data-label') || '') + ' ';
+        li.appendChild(verb);
+        li.appendChild(document.createTextNode(s === id ? d : s));
+        connEl.appendChild(li);
+        n += 1;
+      });
+    }
+    connH.textContent = n ? 'Connections (' + n + ')' : 'Connections';
+  }
+
+  function show(name, refs, node) {
     title.textContent = name;
+    if (node && node.classList.contains('sv-node')) {
+      passport(node);
+    } else {
+      kindEl.textContent = node ? 'connection' : '';
+      subEl.textContent = node ? (node.getAttribute('data-label') || '') : '';
+      connEl.textContent = '';
+      connH.textContent = 'Connections';
+    }
     current = refs;
     render();
     panel.classList.add('is-open');
   }
+
+  // Hover: light the path through the element and recede the rest.
+  document.addEventListener('mouseover', function (ev) {
+    var el = ev.target.closest('.sv-node, .sv-route');
+    var svg = el && el.closest('svg');
+    if (!svg) return;
+    svg.querySelectorAll('.is-path').forEach(function (x) { x.classList.remove('is-path'); });
+    var ids = {};
+    if (el.classList.contains('sv-node')) {
+      var id = el.getAttribute('data-id');
+      ids[id] = 1;
+      svg.querySelectorAll('.sv-route').forEach(function (r) {
+        var s = r.getAttribute('data-src'), d = r.getAttribute('data-dst');
+        if (s === id || d === id) { r.classList.add('is-path'); ids[s] = 1; ids[d] = 1; }
+      });
+    } else {
+      el.classList.add('is-path');
+      ids[el.getAttribute('data-src')] = 1;
+      ids[el.getAttribute('data-dst')] = 1;
+    }
+    svg.querySelectorAll('.sv-node').forEach(function (nd) {
+      if (ids[nd.getAttribute('data-id')]) nd.classList.add('is-path');
+    });
+    svg.classList.add('is-hovering');
+  });
+  document.addEventListener('mouseout', function (ev) {
+    var el = ev.target.closest('.sv-node, .sv-route');
+    var svg = el && el.closest('svg');
+    if (!svg) return;
+    var to = ev.relatedTarget && ev.relatedTarget.closest && ev.relatedTarget.closest('.sv-node, .sv-route');
+    if (to) return;
+    svg.classList.remove('is-hovering');
+    svg.querySelectorAll('.is-path').forEach(function (x) { x.classList.remove('is-path'); });
+  });
 
   document.addEventListener('click', function (ev) {
     // The container header's close mark collapses back to the parent view.
@@ -346,7 +463,7 @@ def _js() -> Markup:
     var refs = node.getAttribute('data-evidence').split('\\n').filter(Boolean);
     var child = node.getAttribute('data-child');
     if (child && ev.detail === 2) { openView(node, child); return; }
-    show(node.getAttribute('data-id') || node.getAttribute('data-src') || '', refs);
+    show(node.getAttribute('data-id') || node.getAttribute('data-src') || '', refs, node);
   });
 
   function openView(node, child) {
@@ -642,7 +759,12 @@ def render_viewer(
                 "aside",
                 join(
                     (
+                        tag("p", raw(""), id="panel-kind", class_="kind"),
                         tag("h2", raw(""), id="panel-title"),
+                        tag("p", raw(""), id="panel-sub", class_="sub"),
+                        tag("h3", esc("Connections"), id="panel-conn-h", class_="section"),
+                        tag("ul", raw(""), id="panel-conn"),
+                        tag("h3", esc("Sources"), class_="section"),
                         tag("ul", raw(""), id="panel-list"),
                     )
                 ),

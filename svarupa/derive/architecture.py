@@ -19,6 +19,7 @@ from svarupa.derive.base import (
     DiagramSet,
     DiagramSpec,
     ModulePair,
+    Region,
     group_evidence,
     module_evidence,
     runtime_edges,
@@ -26,17 +27,187 @@ from svarupa.derive.base import (
 )
 from svarupa.derive.components import FLOW_SUFFIX, code_spec, flow_spec
 from svarupa.diagnostics import Diagnostic, Severity
-from svarupa.model import Evidence
+from svarupa.model import Evidence, NodeKind
 
-# Box-kind priority when a module holds several roles: serving HTTP says more
-# about a box than also having a task in it, and a CLI door is the weakest
-# claim of the three. The full set stays readable in the `roles` attr.
-_ROLE_PRIORITY = ("api", "worker", "cli")
+# Role priority when a module holds several: a UI module is a frontend
+# whatever else it does; serving HTTP says more than also having a task; a
+# CLI door is the weakest claim. The full set stays readable in `roles`.
+_ROLE_PRIORITY = ("frontend", "api", "worker", "auth", "cli")
+
+# Archify's component vocabulary, which is what makes a box read as a kind of
+# thing rather than a folder. `module` stays for code with no evidenced role.
+_ARCHETYPE = {
+    "frontend": "frontend",
+    "api": "backend",
+    "worker": "backend",
+    "cli": "backend",
+    "auth": "security",
+}
+
+# The verb an arrow to an external carries, per category.
+_EXTERNAL_VERB = {"database": "reads/writes", "messagebus": "publishes", "cloud": "calls"}
 
 
 def _role_kind(roles: dict[str, tuple[str, ...]], module: str) -> str:
     held = roles.get(module, ())
-    return next((r for r in _ROLE_PRIORITY if r in held), "module")
+    role = next((r for r in _ROLE_PRIORITY if r in held), None)
+    return _ARCHETYPE[role] if role else "module"
+
+
+def module_sublabel(graph: Graph, module: str) -> str:
+    """The semantic second line: what a module is, never where it lives.
+
+    Built from evidenced facts only: the framework and route count, the task
+    count, the entrypoint name, the UI framework, the auth library; failing
+    all of those, how many files it holds.
+    """
+    parts: list[str] = []
+    routes = [
+        r
+        for r in graph.routes
+        if r.file in graph.architecture_paths and module_of(r.file) == module
+    ]
+    if routes:
+        frameworks = sorted({r.framework for r in routes})
+        names = {
+            "fastapi": "FastAPI",
+            "flask": "Flask",
+            "express": "Express",
+            "nestjs": "NestJS",
+        }
+        fw = "/".join(names.get(f, f) for f in frameworks)
+        parts.append(f"{fw} · {len(routes)} route{'s' if len(routes) != 1 else ''}")
+    tasks = [
+        t
+        for t in graph.tasks
+        if t.file in graph.architecture_paths and module_of(t.file) == module
+    ]
+    if tasks:
+        parts.append(f"Celery · {len(tasks)} task{'s' if len(tasks) != 1 else ''}")
+    entries = sorted(
+        e.name
+        for e in graph.entrypoints
+        if entrypoint_module(graph, e.target, e.lang, e.file) == module
+    )
+    if entries:
+        parts.append("cli · " + ", ".join(entries[:2]))
+    labels = sorted(
+        {
+            x.label
+            for x in graph.externals
+            if x.file in graph.architecture_paths
+            and module_of(x.file) == module
+            and x.category in ("frontend", "security")
+        }
+    )
+    parts.extend(labels[:2])
+    if not parts:
+        mod = graph.modules.get(module)
+        if mod is not None:
+            parts.append(f"{mod.file_count} file{'s' if mod.file_count != 1 else ''}")
+    return " · ".join(parts[:3])
+
+
+def _externals_of(
+    graph: Graph, modules: set[str]
+) -> dict[tuple[str, str], list[tuple[str, Evidence]]]:
+    """(category, label) -> [(module, import line)] for stores, buses and
+    cloud APIs the given modules talk to. Security and frontend imports are
+    roles, not boxes, and are left out."""
+    out: dict[tuple[str, str], list[tuple[str, Evidence]]] = {}
+    for x in sorted(graph.externals):
+        if x.file not in graph.architecture_paths or x.category not in _EXTERNAL_VERB:
+            continue
+        m = module_of(x.file)
+        if m in modules:
+            out.setdefault((x.category, x.label), []).append((m, x.evidence))
+    return out
+
+
+def external_nodes_and_edges(
+    graph: Graph, modules: set[str], source_of: dict[str, str] | None = None
+) -> tuple[list[DiagramNode], list[DiagramEdge]]:
+    """External boxes for what these modules import, plus dashed verb edges.
+
+    `source_of` maps a module to the box that stands for it in this spec (its
+    group at the top level), so edges attach to what is drawn. One external
+    box per (category, label): three modules talking to MongoDB share one
+    box and three arrows, which is the picture, not three MongoDBs.
+    """
+    nodes: list[DiagramNode] = []
+    edges: list[DiagramEdge] = []
+    for (category, label), holders in sorted(_externals_of(graph, modules).items()):
+        nid = f"ext:{category}:{label}"
+        packages = sorted({x.package for x in graph.externals if x.label == label})
+        nodes.append(
+            DiagramNode(
+                id=nid,
+                label=label,
+                kind=category,
+                evidence=tuple(sorted({ev for _, ev in holders}))[:MAX_EVIDENCE_PER_BOX],
+                sublabel="via " + ", ".join(packages[:2]),
+                attrs=(("external", category),),
+            )
+        )
+        by_src: dict[str, list[Evidence]] = {}
+        for m, ev in holders:
+            src = (source_of or {}).get(m, m)
+            by_src.setdefault(src, []).append(ev)
+        for src, evs in sorted(by_src.items()):
+            edges.append(
+                DiagramEdge(
+                    src=src,
+                    dst=nid,
+                    label=_EXTERNAL_VERB[category],
+                    evidence=tuple(sorted(set(evs)))[:MAX_EVIDENCE_PER_BOX],
+                    weight=len(evs),
+                    variant="dashed",
+                )
+            )
+    return nodes, edges
+
+
+def service_regions(
+    graph: Graph, member_ids: set[str], stand_in: dict[str, str] | None = None
+) -> tuple[Region, ...]:
+    """Compose services wrapping the modules under their build context.
+
+    `stand_in` maps a module to the box that represents it in this spec; a
+    region lists the boxes actually drawn. A service with no member here is
+    not a region here.
+    """
+    out: list[Region] = []
+    for nid, node in sorted(graph.nodes.items()):
+        if node.kind is not NodeKind.SERVICE:
+            continue
+        ctx = node.attr("build_context")
+        if not ctx:
+            continue
+        ctx = ctx.replace("\\", "/").lstrip("./").rstrip("/") if ctx not in (".", "./") else ""
+        members: set[str] = set()
+        for m in member_ids:
+            target = m
+            if stand_in and m in stand_in:
+                target = stand_in[m]
+            inside = m == ctx or (ctx == "" or m.startswith(ctx + "/"))
+            if inside and (m in graph.modules):
+                members.add(target)
+        if ctx == "":
+            # A root build context wraps every module in the repository, and
+            # a boundary around the whole diagram says nothing a reader can
+            # use. Two services built from the root (one compose file, two
+            # Dockerfiles) also both wrap everything and overlap each other.
+            continue
+        if members:
+            out.append(
+                Region(
+                    id=f"svc:{nid}",
+                    label=node.label,
+                    members=tuple(sorted(members)),
+                    evidence=node.evidence,
+                )
+            )
+    return tuple(out)
 
 
 def _evidence_with_roles(
@@ -198,8 +369,17 @@ class ArchitectureDeriver(Deriver):
                         if len(members) == 1 and members[0] in roles
                         else ()
                     ),
+                    sublabel=(
+                        module_sublabel(graph, members[0])
+                        if len(members) == 1
+                        else f"{len(members)} modules"
+                    ),
                 )
             )
+        # What the whole system talks to, attached to the group that does.
+        ext_nodes, ext_edges = external_nodes_and_edges(graph, set(member_group), member_group)
+        top_nodes.extend(ext_nodes)
+        top_regions = service_regions(graph, set(member_group), member_group)
 
         top_edges: dict[tuple[str, str], tuple[int, list[Evidence]]] = {}
         for a, b, weight, evidence in pairs:
@@ -217,16 +397,24 @@ class ArchitectureDeriver(Deriver):
             nodes=tuple(sorted(top_nodes)),
             edges=tuple(
                 sorted(
-                    DiagramEdge(
-                        src=a,
-                        dst=b,
-                        label=f"{w} import{'s' if w != 1 else ''}",
-                        evidence=tuple(sorted(set(ev)))[:MAX_EVIDENCE_PER_BOX],
-                        weight=w,
-                    )
-                    for (a, b), (w, ev) in top_edges.items()
+                    [
+                        DiagramEdge(
+                            src=a,
+                            dst=b,
+                            # The verb, not the count: the count is the stroke
+                            # width and the tooltip. Arrow text returns only as
+                            # a short semantic label with a collision gate.
+                            label="imports",
+                            note=f"{w} import{'s' if w != 1 else ''}",
+                            evidence=tuple(sorted(set(ev)))[:MAX_EVIDENCE_PER_BOX],
+                            weight=w,
+                        )
+                        for (a, b), (w, ev) in top_edges.items()
+                    ]
+                    + ext_edges
                 )
             ),
+            regions=top_regions,
         )
         return DiagramSet(self.kind, ROOT, specs, tuple(diags))
 
@@ -390,40 +578,45 @@ class ArchitectureDeriver(Deriver):
         inside = set(members)
         labels = _labels_for(list(members))
         roles = module_roles(graph)
-        nodes = tuple(
-            sorted(
-                DiagramNode(
-                    id=m,
-                    label=labels[m],
-                    # A module with an evidence-backed role is drawn as that
-                    # role. The supporting decorator/manifest line joins the
-                    # box's evidence, so the colour is a claim a reader can
-                    # click, not a style.
-                    kind=_role_kind(roles, m),
-                    evidence=_evidence_with_roles(graph, m, module_evidence(graph, m)),
-                    child_spec=self._components(graph, m, spec_id(anchor), specs, diags),
-                    attrs=(
-                        (("files", str(graph.modules[m].file_count)),)
-                        if m in graph.modules
-                        else ()
-                    )
-                    + ((("roles", ",".join(roles[m])),) if m in roles else ()),
+        module_nodes = [
+            DiagramNode(
+                id=m,
+                label=labels[m],
+                # A module with an evidence-backed role is drawn as that
+                # role. The supporting decorator/manifest line joins the
+                # box's evidence, so the colour is a claim a reader can
+                # click, not a style.
+                kind=_role_kind(roles, m),
+                evidence=_evidence_with_roles(graph, m, module_evidence(graph, m)),
+                child_spec=self._components(graph, m, spec_id(anchor), specs, diags),
+                attrs=(
+                    (("files", str(graph.modules[m].file_count)),) if m in graph.modules else ()
                 )
-                for m in members
-                if module_evidence(graph, m)
+                + ((("roles", ",".join(roles[m])),) if m in roles else ()),
+                sublabel=module_sublabel(graph, m),
             )
-        )
+            for m in members
+            if module_evidence(graph, m)
+        ]
+        drawn = {n.id for n in module_nodes}
+        ext_nodes, ext_edges = external_nodes_and_edges(graph, drawn)
+        nodes = tuple(sorted(module_nodes + ext_nodes))
+        regions = service_regions(graph, drawn)
         edges = tuple(
             sorted(
-                DiagramEdge(
-                    src=a,
-                    dst=b,
-                    label=f"{w} import{'s' if w != 1 else ''}",
-                    evidence=ev,
-                    weight=w,
-                )
-                for a, b, w, ev in pairs
-                if a in inside and b in inside
+                [
+                    DiagramEdge(
+                        src=a,
+                        dst=b,
+                        label="imports",
+                        note=f"{w} import{'s' if w != 1 else ''}",
+                        evidence=ev,
+                        weight=w,
+                    )
+                    for a, b, w, ev in pairs
+                    if a in inside and b in inside
+                ]
+                + ext_edges
             )
         )
         return DiagramSpec(
@@ -433,6 +626,7 @@ class ArchitectureDeriver(Deriver):
             subtitle=f"{len(nodes)} modules",
             nodes=nodes,
             edges=edges,
+            regions=regions,
             parent=ROOT,
         )
 
@@ -491,7 +685,8 @@ class ModuleDepsDeriver(Deriver):
                 DiagramEdge(
                     src=a,
                     dst=b,
-                    label=f"{w}",
+                    label="imports",
+                    note=f"{w} import{'s' if w != 1 else ''}",
                     evidence=ev,
                     weight=w,
                 )

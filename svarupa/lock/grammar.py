@@ -56,7 +56,9 @@ SCHEMA_MAJOR = 1
 # are emitted and existing facts are SPELLED differently (a mounted `/things`
 # becomes `/api/things`), which reads as one removal and one addition; the
 # minor is what lets SVA-L-013 say that pair is the upgrade, not the PR.
-SCHEMA_MINOR = 4
+# Minor 5: `role` gains `auth` and `frontend` (from imports the vocabulary
+# knows); same kind, new values this build emits.
+SCHEMA_MINOR = 5
 
 _SEP = "\t"
 _COMMENT = "#"
@@ -77,7 +79,7 @@ KNOWN_KINDS: dict[str, int] = {
     "queue": 1,  # queue <name>                                   (P2)
     "surface": 2,  # surface <module> <exported-symbol>            (P2)
     "entrypoint": 2,  # entrypoint <name> <module>                 (1.2)
-    "role": 2,  # role <module> <api|worker|cli>                   (1.2)
+    "role": 2,  # role <module> <api|worker|cli|auth|frontend>     (1.2, 1.5)
 }
 
 # The grammar publishes `kind := [a-z_]+`. Enforcing it is what stops an

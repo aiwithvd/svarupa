@@ -32,6 +32,7 @@ __all__ = [
     "CallSite",
     "DecoratorRef",
     "EntrypointFact",
+    "ExternalFact",
     "Extractor",
     "FieldType",
     "FileFacts",
@@ -379,6 +380,25 @@ class EntrypointFact:
     evidence: Evidence
 
 
+@dataclass(frozen=True, order=True, slots=True)
+class ExternalFact:
+    """A file talks to something outside the codebase that an architecture
+    diagram names: a database, a message bus, a cloud API; or it takes a role
+    an import gives away (security, frontend).
+
+    The claim is the import, and the import line is the evidence. `category`
+    is Archify's component vocabulary (`database`, `messagebus`, `cloud`,
+    `security`, `frontend`); `label` is the display name from the vocabulary
+    table (`MongoDB`, `Stripe`), `package` the specifier root that matched.
+    """
+
+    file: str
+    category: str
+    label: str
+    package: str
+    evidence: Evidence
+
+
 @dataclass(frozen=True, slots=True)
 class ExtractResult:
     nodes: tuple[Node, ...]
@@ -388,6 +408,7 @@ class ExtractResult:
     routes: tuple[RouteFact, ...] = ()
     tasks: tuple[TaskFact, ...] = ()
     entrypoints: tuple[EntrypointFact, ...] = ()
+    externals: tuple[ExternalFact, ...] = ()
 
 
 # A syntax tree deeper than this is walked no further. Minified bundles nest

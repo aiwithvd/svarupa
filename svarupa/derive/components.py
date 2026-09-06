@@ -148,7 +148,10 @@ def flow_spec(
                 DiagramEdge(
                     src=a,
                     dst=b,
-                    label=(
+                    # The drawn label is the verb; the count and the cap
+                    # statement live in the note (tooltip and passport).
+                    label="uses",
+                    note=(
                         f"{len(ev)} uses, first 6 cited"
                         if len(ev) > 6
                         else f"{len(ev)} use{'s' if len(ev) != 1 else ''}"

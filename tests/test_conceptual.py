@@ -1,0 +1,264 @@
+"""Wave A of the conceptual redesign: Archify's model on our evidence.
+
+What a box IS (frontend/backend/database/cloud/security/messagebus) comes from
+evidence the vocabulary knows; what it SAYS under its name is a semantic
+sublabel, never a path; what WRAPS it is a compose service with a build
+context; what an arrow SAYS is a short verb with the count in the note.
+Everything here cites, and everything that cannot be drawn honestly is
+reported rather than drawn.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from svarupa.build import Graph, build, module_roles
+from svarupa.cluster import cluster
+from svarupa.derive import derive_all
+from svarupa.derive.base import DiagramKind, DiagramNode
+from svarupa.detect import detect
+from svarupa.extract import declared_dependencies, extract
+from svarupa.extract.vocabulary import classify_import
+from svarupa.layout import lay_out_set
+from svarupa.layout.geometry import Style
+
+
+def write(root: Path, rel: str, text: str) -> None:
+    p = root / rel
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(text, encoding="utf8")
+
+
+def graph_of(root: Path) -> Graph:
+    scan = detect(root)
+    return build(scan, extract(scan, declared_dependencies(scan)), strict=False)
+
+
+def boxes_of(root: Path, kind: DiagramKind = DiagramKind.ARCHITECTURE) -> list[DiagramNode]:
+    g = graph_of(root)
+    produced, _ = derive_all(g, cluster(g))
+    return [n for spec in produced[kind].specs.values() for n in spec.nodes]
+
+
+API = (
+    "from fastapi import APIRouter\n"
+    "from motor.motor_asyncio import AsyncIOMotorClient\n"
+    "import openai\n"
+    "router = APIRouter()\n"
+    "\n"
+    '@router.get("/items")\n'
+    "def items():\n"
+    "    return []\n"
+)
+
+
+def _service_repo(root: Path) -> None:
+    write(root, "api/__init__.py", "")
+    write(root, "api/routes.py", API)
+    write(root, "web/__init__.py", "")
+    write(root, "web/App.tsx", "import React from 'react';\nexport const App = () => 1;\n")
+    write(root, "web/uses.py", "from api import routes\n")
+    write(root, "guard/__init__.py", "")
+    write(root, "guard/jwt_check.py", "import jwt\n")
+    write(root, "guard/uses.py", "from api import routes\n")
+    write(
+        root,
+        "docker-compose.yml",
+        "services:\n"
+        "  backend:\n"
+        "    build:\n"
+        "      context: ./api\n"
+        "  redis:\n"
+        "    image: redis:7\n",
+    )
+
+
+# --- vocabulary -------------------------------------------------------------
+
+
+def test_the_vocabulary_classifies_by_package_root_and_dotted_prefix() -> None:
+    assert classify_import("motor.motor_asyncio", "python") == ("database", "MongoDB")
+    assert classify_import("fastapi.security", "python") == ("security", "FastAPI security")
+    assert classify_import("fastapi", "python") is None, "the root alone is not security"
+    assert classify_import("google.cloud.storage", "python") == ("cloud", "Google Cloud")
+    assert classify_import("google.generativeai", "python") == ("cloud", "Gemini API")
+    assert classify_import("google", "python") is None
+    assert classify_import("@google-cloud/storage", "typescript") == ("cloud", "Google Cloud")
+    assert classify_import("@prisma/client", "typescript") == ("database", "Prisma database")
+    assert classify_import("requests", "python") is None, "a library is not a component"
+
+
+# --- externals and roles --------------------------------------------------------
+
+
+def test_externals_cite_the_import_line_and_relative_imports_are_never_external(
+    tmp_path: Path,
+) -> None:
+    write(tmp_path, "svc/__init__.py", "")
+    write(tmp_path, "svc/db.py", "import redis\nfrom . import redis as local\nimport redis\n")
+    g = graph_of(tmp_path)
+    assert [(x.category, x.label, x.evidence.start_line) for x in g.externals] == [
+        ("database", "Redis", 1)
+    ], "one fact per package, at its first import; the relative import is ours"
+
+
+def test_roles_from_imports_and_their_archetypes(tmp_path: Path) -> None:
+    _service_repo(tmp_path)
+    g = graph_of(tmp_path)
+    roles = module_roles(g)
+    assert roles["api"] == ("api",)
+    assert roles["web"] == ("frontend",)
+    assert roles["guard"] == ("auth",)
+    kinds = {n.id: n.kind for n in boxes_of(tmp_path) if n.kind != "group"}
+    assert kinds["api"] == "backend"
+    assert kinds["web"] == "frontend"
+    assert kinds["guard"] == "security"
+
+
+# --- sublabels ------------------------------------------------------------------
+
+
+def test_sublabels_are_semantic_and_never_paths(tmp_path: Path) -> None:
+    _service_repo(tmp_path)
+    nodes = [n for n in boxes_of(tmp_path) if n.kind != "group"]
+    by_id = {n.id: n for n in nodes}
+    assert by_id["api"].sublabel == "FastAPI · 1 route"
+    assert by_id["web"].sublabel == "React"
+    assert by_id["guard"].sublabel == "JWT"
+    for n in nodes:
+        assert "/" not in n.sublabel or n.sublabel.startswith("via "), (
+            f"a path leaked into a sublabel: {n.sublabel!r}"
+        )
+        assert ".py" not in n.sublabel and ".ts" not in n.sublabel
+
+
+# --- external boxes and verbs ---------------------------------------------------
+
+
+def test_external_stores_and_apis_are_boxes_with_dashed_verb_edges(tmp_path: Path) -> None:
+    _service_repo(tmp_path)
+    g = graph_of(tmp_path)
+    produced, _ = derive_all(g, cluster(g))
+    specs = produced[DiagramKind.ARCHITECTURE].specs
+    ext = {n.id: n for spec in specs.values() for n in spec.nodes if n.id.startswith("ext:")}
+    assert "ext:database:MongoDB" in ext and ext["ext:database:MongoDB"].kind == "database"
+    assert "ext:cloud:OpenAI API" in ext and ext["ext:cloud:OpenAI API"].kind == "cloud"
+    assert ext["ext:database:MongoDB"].sublabel == "via motor"
+    assert ext["ext:database:MongoDB"].evidence[0].file == "api/routes.py"
+    edges = [e for spec in specs.values() for e in spec.edges if e.dst.startswith("ext:")]
+    assert edges
+    assert {e.label for e in edges} <= {"reads/writes", "publishes", "calls"}
+    assert all(e.variant == "dashed" for e in edges)
+    # Redis is a compose datastore here, not an import: it belongs to the
+    # system view, and nothing invents an import-derived Redis box.
+    assert not any("Redis" in nid for nid in ext)
+
+
+def test_edge_labels_are_verbs_and_counts_live_in_notes(tmp_path: Path) -> None:
+    _service_repo(tmp_path)
+    g = graph_of(tmp_path)
+    produced, _ = derive_all(g, cluster(g))
+    for kind in (DiagramKind.ARCHITECTURE, DiagramKind.MODULE_DEPS):
+        for spec in produced[kind].specs.values():
+            for e in spec.edges:
+                assert not any(ch.isdigit() for ch in e.label), (e.label, spec.id)
+                if e.label in ("imports", "uses"):
+                    assert e.note, "the count moved to the note, it did not vanish"
+
+
+# --- boundaries -------------------------------------------------------------------
+
+
+def test_a_compose_service_with_a_build_context_wraps_its_modules(tmp_path: Path) -> None:
+    _service_repo(tmp_path)
+    g = graph_of(tmp_path)
+    produced, _ = derive_all(g, cluster(g))
+    regions = [
+        r for spec in produced[DiagramKind.ARCHITECTURE].specs.values() for r in spec.regions
+    ]
+    assert regions, "the backend service builds ./api, so it wraps api"
+    backend = next(r for r in regions if r.label == "backend")
+    assert "api" in backend.members
+    assert backend.evidence[0].file == "docker-compose.yml"
+
+
+def test_a_root_build_context_wraps_nothing(tmp_path: Path) -> None:
+    """Two services built from `.` would both wrap every module and overlap;
+    a boundary around the whole diagram says nothing anyway."""
+    _service_repo(tmp_path)
+    write(
+        tmp_path,
+        "docker-compose.yml",
+        "services:\n  a:\n    build: .\n  b:\n    build:\n      context: .\n",
+    )
+    g = graph_of(tmp_path)
+    produced, _ = derive_all(g, cluster(g))
+    assert not any(spec.regions for spec in produced[DiagramKind.ARCHITECTURE].specs.values())
+
+
+def test_drawn_boundaries_contain_their_members_and_no_outsiders(tmp_path: Path) -> None:
+    _service_repo(tmp_path)
+    g = graph_of(tmp_path)
+    produced, _ = derive_all(g, cluster(g))
+    lo = lay_out_set(produced[DiagramKind.ARCHITECTURE], Style())
+    assert not lo.withheld
+    drawn = [(c, r) for c in lo.canvases.values() for r in c.regions]
+    assert drawn, "at least one boundary must be drawable on this fixture"
+    for canvas, region in drawn:
+        members = set(region.members)
+        for b in canvas.boxes:
+            if b.id in canvas.waypoints:
+                continue
+            inside = (
+                b.x >= region.x
+                and b.right <= region.right
+                and b.y >= region.y
+                and b.bottom <= region.bottom
+            )
+            intersects = (
+                b.x < region.right
+                and b.right > region.x
+                and b.y < region.bottom
+                and b.bottom > region.y
+            )
+            if b.id in members:
+                assert inside, f"member {b.id} outside its boundary"
+            else:
+                assert not intersects, f"outsider {b.id} inside boundary {region.label}"
+
+
+# --- labels settle, never smear ---------------------------------------------------
+
+
+def test_route_labels_never_collide_and_a_cycle_still_lays_out(tmp_path: Path) -> None:
+    write(tmp_path, "a/__init__.py", "")
+    write(tmp_path, "a/x.py", "from b import y\n")
+    write(tmp_path, "b/__init__.py", "")
+    write(tmp_path, "b/y.py", "from a import x\n")
+    g = graph_of(tmp_path)
+    produced, _ = derive_all(g, cluster(g))
+    lo = lay_out_set(produced[DiagramKind.MODULE_DEPS], Style())
+    assert not lo.withheld
+    from svarupa.layout.validate import validate
+
+    for c in lo.canvases.values():
+        # Whatever the engine kept, no two label masks may overlap and none
+        # may cover a box: the gate is the validator, and the engine's job is
+        # to place or drop labels so it stays silent.
+        assert not [d for d in validate(c, Style()) if d.code == "SVA-G-013"]
+        assert len([r for r in c.routes if r.label_at is not None]) <= len(c.routes)
+
+
+# --- system view --------------------------------------------------------------------
+
+
+def test_the_system_view_types_services_and_attaches_externals(tmp_path: Path) -> None:
+    _service_repo(tmp_path)
+    nodes = {n.id: n for n in boxes_of(tmp_path, DiagramKind.DEPLOY_TOPOLOGY)}
+    backend = next(n for n in nodes.values() if n.label == "backend")
+    assert backend.kind == "backend"
+    assert backend.sublabel.startswith("built from api/")
+    assert "1 route" in backend.sublabel
+    redis = next(n for n in nodes.values() if n.label == "redis")
+    assert redis.kind == "database"
+    assert any(n.kind == "cloud" and n.label == "OpenAI API" for n in nodes.values())

@@ -53,6 +53,8 @@ def validate(canvas: Canvas, style: Style) -> tuple[Diagnostic, ...]:
     out.extend(_check_routes(canvas))
     out.extend(_check_crossings(canvas, canvas.waypoints))
     out.extend(_check_bands(canvas))
+    out.extend(_check_regions(canvas))
+    out.extend(_check_labels(canvas, style))
     return tuple(out)
 
 
@@ -337,5 +339,86 @@ def _check_bands(canvas: Canvas) -> list[Diagnostic]:
                         f"spans y {band.y}..{band.y + band.h} but member {member!r} "
                         f"spans {box.y}..{box.bottom}",
                     )
+                )
+    return out
+
+
+def _check_regions(canvas: Canvas) -> list[Diagnostic]:
+    """A boundary is a membership claim; every member must be inside it, and
+    the rectangle must be on the canvas."""
+    out: list[Diagnostic] = []
+    ids = {b.id for b in canvas.boxes}
+    for region in canvas.regions:
+        if (
+            region.x < 0
+            or region.y < 0
+            or region.right > canvas.width
+            or region.bottom > canvas.height
+        ):
+            out.append(_err("SVA-G-012", region.label, "boundary falls outside the canvas"))
+        missing = sorted(m for m in region.members if m not in ids)
+        if missing:
+            out.append(
+                _err(
+                    "SVA-G-012",
+                    region.label,
+                    f"boundary claims boxes not on this canvas: {missing}",
+                )
+            )
+        for member in region.members:
+            box = canvas.box(member)
+            if box is None:
+                continue
+            if (
+                box.x < region.x
+                or box.right > region.right
+                or box.y < region.y
+                or box.bottom > region.bottom
+            ):
+                out.append(
+                    _err(
+                        "SVA-G-012",
+                        region.label,
+                        f"boundary does not contain its member {member!r}",
+                    )
+                )
+    return out
+
+
+def _check_labels(canvas: Canvas, style: Style) -> list[Diagnostic]:
+    """A route label sits on a mask; the mask must not cover a box or another
+    label, or the reader gets `7122.26.62.5nimports` again.
+
+    The mask is Archify's label rule: the measured text width plus padding,
+    a fixed height, and a clear gap around it.
+    """
+    out: list[Diagnostic] = []
+    height = style.label_font_size + 6
+    masks: list[tuple[str, int, int, int, int]] = []
+    for r in canvas.routes:
+        if r.label_at is None or not r.label:
+            continue
+        cx, cy = r.label_at
+        masks.append(
+            (f"{r.src} -> {r.dst}", cx - r.label_w // 2, cy - height // 2, r.label_w, height)
+        )
+    for who, x, y, w, h in masks:
+        for b in canvas.boxes:
+            if b.id in canvas.waypoints:
+                continue
+            if x < b.right and x + w > b.x and y < b.bottom and y + h > b.y:
+                out.append(_err("SVA-G-013", who, f"route label overlaps box {b.id!r}"))
+                break
+    for i, (who, x, y, w, h) in enumerate(masks):
+        for who2, x2, y2, w2, h2 in masks[i + 1 :]:
+            gap = 8
+            if (
+                x < x2 + w2 + gap
+                and x + w + gap > x2
+                and y < y2 + h2 + gap
+                and y + h + gap > y2
+            ):
+                out.append(
+                    _err("SVA-G-013", who, f"route label collides with the label of {who2}")
                 )
     return out

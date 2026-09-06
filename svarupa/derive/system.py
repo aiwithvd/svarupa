@@ -14,8 +14,9 @@ builds, so the story view and the evidence view are one navigation.
 
 from __future__ import annotations
 
-from svarupa.build import Graph
+from svarupa.build import Graph, module_of, module_roles
 from svarupa.cluster import Clustering
+from svarupa.derive.architecture import external_nodes_and_edges
 from svarupa.derive.base import (
     ROOT,
     Deriver,
@@ -67,18 +68,55 @@ class SystemDeriver(Deriver):
         for node in members.values():
             by_label[node.label] = by_label.get(node.label, 0) + 1
 
+        roles = module_roles(graph)
+        # Archify's vocabulary for the deployed things: a service is a
+        # frontend if the code it builds has a frontend role, else a backend;
+        # a datastore is a database; a queue is a message bus.
+        archetype = {"datastore": "database", "queue": "messagebus", "service": "backend"}
         nodes: list[DiagramNode] = []
+        modules_of_service: dict[str, set[str]] = {}
         for nid, node in sorted(members.items()):
             build_context = node.attr("build_context")
             label = node.label
             if by_label[label] > 1:
                 where = nid.split("#", 1)[0].rsplit("/", 1)[0] or "."
                 label = f"{label} ({where})"
+            kind = archetype.get(node.kind.value, node.kind.value)
+            sublabel = node.attr("image") or ""
+            if build_context:
+                ctx = (
+                    ""
+                    if build_context in (".", "./")
+                    else build_context.lstrip("./").rstrip("/")
+                )
+                mods = {
+                    m for m in graph.modules if ctx == "" or m == ctx or m.startswith(ctx + "/")
+                }
+                modules_of_service[nid] = mods
+                held = {r for m in mods for r in roles.get(m, ())}
+                if "frontend" in held:
+                    kind = "frontend"
+                elif "auth" in held and not ({"api", "worker"} & held):
+                    kind = "security"
+                what: list[str] = []
+                if "api" in held:
+                    n_routes = sum(
+                        1
+                        for r in graph.routes
+                        if r.file in graph.architecture_paths and module_of(r.file) in mods
+                    )
+                    what.append(f"{n_routes} route{'s' if n_routes != 1 else ''}")
+                if "worker" in held:
+                    what.append("workers")
+                sublabel = ("built from " + (ctx or ".") + ("/" if ctx else "")) + (
+                    " · " + ", ".join(what) if what else ""
+                )
             nodes.append(
                 DiagramNode(
                     id=nid,
                     label=label,
-                    kind=node.kind.value,
+                    kind=kind,
+                    sublabel=sublabel,
                     evidence=node.evidence,
                     # No drill link yet: this diagram set holds only its own
                     # root, and a child_spec into another set would rightly
@@ -96,19 +134,36 @@ class SystemDeriver(Deriver):
                 )
             )
 
+        # What each built service talks to outside the codebase, from the
+        # imports of the code it builds: cloud APIs and stores compose does
+        # not declare. Attached to the service that does the talking.
+        stand_in: dict[str, str] = {}
+        for svc, mods in modules_of_service.items():
+            for m in mods:
+                stand_in.setdefault(m, svc)
+        ext_nodes, ext_edges = external_nodes_and_edges(graph, set(stand_in), stand_in)
+        compose_labels = {n.label for n in nodes}
+        ext_nodes = [n for n in ext_nodes if n.label not in compose_labels]
+        keep = {n.id for n in ext_nodes}
+        ext_edges = [e for e in ext_edges if e.dst in keep]
+        nodes.extend(ext_nodes)
         edges = tuple(
             sorted(
-                DiagramEdge(
-                    src=e.src,
-                    dst=e.dst,
-                    label="depends on",
-                    evidence=e.evidence,
-                )
-                for e in graph.edges
-                if e.kind is EdgeKind.DEPENDS_ON and e.src in members and e.dst in members
+                [
+                    DiagramEdge(
+                        src=e.src,
+                        dst=e.dst,
+                        label="depends on",
+                        evidence=e.evidence,
+                        variant="emphasis",
+                    )
+                    for e in graph.edges
+                    if e.kind is EdgeKind.DEPENDS_ON and e.src in members and e.dst in members
+                ]
+                + ext_edges
             )
         )
-        tally = {"service": 0, "datastore": 0, "queue": 0}
+        tally: dict[str, int] = {}
         for n in nodes:
             tally[n.kind] = tally.get(n.kind, 0) + 1
         subtitle = ", ".join(

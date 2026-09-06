@@ -18,7 +18,7 @@ from dataclasses import dataclass, replace
 
 from svarupa.derive.base import DiagramEdge, DiagramSpec
 from svarupa.diagnostics import Diagnostic, Severity
-from svarupa.layout.geometry import Band, Box, Canvas, Route, Style
+from svarupa.layout.geometry import Band, Box, Canvas, RegionBox, Route, Style
 from svarupa.layout.sugiyama import DUMMY_WIDTH, Chain, layer_out
 from svarupa.layout.text import advance, sanitize, truncate
 
@@ -50,9 +50,13 @@ def _boxes(
     for n in spec.nodes:
         full = sanitize(n.label)
         label = truncate(full, style.font_size, style.text_budget)
+        sub = truncate(sanitize(n.sublabel), style.sublabel_font_size, style.text_budget)
         width = advance(label, style.font_size) + 2 * style.box_pad_x
+        if sub:
+            width = max(width, advance(sub, style.sublabel_font_size) + 2 * style.box_pad_x)
         width = max(style.box_min_width, min(style.box_max_width, width))
-        height = style.box_height
+        # Two lines when there is a sublabel, one when there is not.
+        height = style.box_height_tall if sub else style.box_height
         if sizes and n.id in sizes:
             # An expansion needs this box big enough to hold a whole child
             # diagram. The override may only grow a box: shrinking one below
@@ -72,9 +76,201 @@ def _boxes(
                 evidence=n.evidence,
                 child_spec=n.child_spec,
                 attrs=n.attrs,
+                sublabel=sub,
             )
         )
     return out
+
+
+def _region_rank(spec: DiagramSpec) -> dict[str, int]:
+    """Region index per member, so rows can keep a region's members adjacent."""
+    rank: dict[str, int] = {}
+    for i, region in enumerate(spec.regions):
+        for m in region.members:
+            rank.setdefault(m, i)
+    return rank
+
+
+def _group_rows_by_region(rows: list[list[Box]], spec: DiagramSpec) -> list[list[Box]]:
+    """Stable-sort each row so a region's members sit together.
+
+    Presentation only: the barycentric order is kept within a region and
+    among the unwrapped boxes, so crossings may rise a little where a
+    boundary demands it. A boundary that cannot be drawn without enclosing a
+    non-member is skipped and reported, so adjacency here is what makes
+    boundaries drawable at all.
+    """
+    if not spec.regions:
+        return rows
+    rank = _region_rank(spec)
+    last = len(spec.regions)
+    return [sorted(row, key=lambda b: rank.get(b.id, last)) for row in rows]
+
+
+def _regions(
+    spec: DiagramSpec,
+    boxes: Sequence[Box],
+    style: Style,
+    diags: list[Diagnostic],
+) -> tuple[RegionBox, ...]:
+    """Boundary rectangles around their members, drawn only when honest.
+
+    The rectangle is the members' bounding box padded by Archify's 30/30/30
+    plus 20 at the bottom, with room for the label above the top row. If it
+    would also enclose a non-member, or intersect another boundary, it is
+    not drawn and a diagnostic says so: a boundary that visually claims a
+    module it does not own is a false statement about deployment.
+    """
+    by_id = {b.id: b for b in boxes}
+    out: list[RegionBox] = []
+    for region in spec.regions:
+        members = [by_id[m] for m in region.members if m in by_id]
+        if not members:
+            continue
+        top_pad = style.region_pad + style.region_label_height
+        x = min(b.x for b in members) - style.region_pad
+        y = min(b.y for b in members) - top_pad
+        right = max(b.right for b in members) + style.region_pad
+        bottom = max(b.bottom for b in members) + style.region_pad + style.region_extra_bottom
+        member_ids = set(region.members)
+        intruders = sorted(
+            b.id
+            for b in boxes
+            if b.id not in member_ids
+            and b.x < right
+            and b.right > x
+            and b.y < bottom
+            and b.bottom > y
+        )
+        overlapping = [
+            r.label
+            for r in out
+            if r.x < right and r.right > x and r.y < bottom and r.bottom > y
+        ]
+        if intruders or overlapping:
+            what = (
+                f"would enclose non-member(s) {intruders[:3]}"
+                if intruders
+                else f"would overlap boundary {overlapping[0]!r}"
+            )
+            diags.append(
+                Diagnostic(
+                    code="SVA-G-014",
+                    severity=Severity.INFO,
+                    message=(
+                        f"a boundary was not drawn in this layout because it {what}; "
+                        "its members are still shown, the wrapping is not"
+                    ),
+                    subject=region.label,
+                    location=spec.id,
+                )
+            )
+            continue
+        out.append(
+            RegionBox(
+                id=region.id,
+                label=sanitize(region.label),
+                kind=region.kind,
+                x=x,
+                y=y,
+                w=right - x,
+                h=bottom - y,
+                members=tuple(m for m in region.members if m in by_id),
+                evidence=region.evidence,
+            )
+        )
+    return tuple(out)
+
+
+def _region_pad(spec: DiagramSpec, style: Style) -> int:
+    """Extra margin a canvas needs so boundaries fit inside it."""
+    if not spec.regions:
+        return 0
+    return style.region_pad + style.region_label_height + style.region_extra_bottom
+
+
+def _settle_labels(
+    routes: list[Route], boxes: Sequence[Box], style: Style, waypoints: frozenset[str]
+) -> list[Route]:
+    """Place each route label where it collides with nothing, or drop it.
+
+    First choice is the midpoint of the longest segment; if that mask would
+    cover a box or another label, the other segments are tried longest-first;
+    if none is clear the label is dropped (the verb stays in the tooltip and
+    the panel). Two opposite edges between the same pair share a segment and
+    would otherwise stamp their verbs on top of each other, which is the
+    `7122.26.62.5nimports` failure with words. Deterministic: routes are
+    settled in (src, dst) order.
+    """
+    h = style.label_font_size + 6
+    gap = 8
+    solid = [b for b in boxes if b.id not in waypoints]
+    placed: list[tuple[int, int, int, int]] = []
+
+    def clear(cx: int, cy: int, w: int) -> bool:
+        x, y = cx - w // 2, cy - h // 2
+        for b in solid:
+            if x < b.right and x + w > b.x and y < b.bottom and y + h > b.y:
+                return False
+        for px, py, pw, ph in placed:
+            if (
+                x < px + pw + gap
+                and x + w + gap > px
+                and y < py + ph + gap
+                and y + h + gap > py
+            ):
+                return False
+        return True
+
+    out: list[Route] = []
+    for r in sorted(routes, key=lambda r: (r.src, r.dst)):
+        if r.label_at is None or not r.label:
+            out.append(r)
+            continue
+        segments = sorted(
+            range(len(r.points) - 1),
+            key=lambda i: (
+                -(
+                    abs(r.points[i + 1][0] - r.points[i][0])
+                    + abs(r.points[i + 1][1] - r.points[i][1])
+                )
+            ),
+        )
+        chosen: tuple[int, int] | None = None
+        for i in segments:
+            (x0, y0), (x1, y1) = r.points[i], r.points[i + 1]
+            cx, cy = (x0 + x1) // 2, (y0 + y1) // 2
+            if clear(cx, cy, r.label_w):
+                chosen = (cx, cy)
+                break
+        if chosen is None:
+            out.append(replace(r, label_at=None, label_w=0))
+            continue
+        placed.append((chosen[0] - r.label_w // 2, chosen[1] - h // 2, r.label_w, h))
+        out.append(replace(r, label_at=chosen))
+    return out
+
+
+def _label_anchor(
+    points: Sequence[tuple[int, int]], label: str, style: Style
+) -> tuple[tuple[int, int] | None, int]:
+    """Where a route's label mask sits: the midpoint of its longest segment.
+
+    Archify's rule; the mask is `label width + padding` wide and the validator
+    checks it against boxes and other labels, so a label that would collide is
+    a diagnostic rather than a smear.
+    """
+    if not label or len(points) < 2:
+        return None, 0
+    best = max(
+        range(len(points) - 1),
+        key=lambda i: (
+            abs(points[i + 1][0] - points[i][0]) + abs(points[i + 1][1] - points[i][1])
+        ),
+    )
+    (x0, y0), (x1, y1) = points[best], points[best + 1]
+    width = advance(label, style.label_font_size) + 10
+    return ((x0 + x1) // 2, (y0 + y1) // 2), width
 
 
 # --------------------------------------------------------------------------
@@ -294,7 +490,13 @@ class Placement:
         return index[box_id]
 
 
-def _place(rows: list[list[Box]], style: Style, demand: Sequence[int] = ()) -> Placement:
+def _place(
+    rows: list[list[Box]],
+    style: Style,
+    demand: Sequence[int] = (),
+    pad: int = 0,
+    align_left: bool = False,
+) -> Placement:
     """Assign coordinates row by row, each row centred.
 
     The row *order* is decided before this runs. Placing is arithmetic; which
@@ -308,12 +510,20 @@ def _place(rows: list[list[Box]], style: Style, demand: Sequence[int] = ()) -> P
     """
     row_widths = [sum(b.w for b in row) + style.gap_x * max(0, len(row) - 1) for row in rows]
     content = max(row_widths, default=0)
-    width = content + 2 * style.margin
+    # `pad` is room for boundaries drawn around members: a region rectangle
+    # extends past its members on every side, and the canvas must hold it.
+    margin = style.margin + pad
+    width = content + 2 * margin
     placed: list[Box] = []
     extents: list[range] = []
-    y = style.margin
+    y = margin
     for i, (row, row_width) in enumerate(zip(rows, row_widths, strict=True)):
-        x = style.margin + (content - row_width) // 2
+        # Rows centre by default. With boundaries, rows align left: a region's
+        # members lead every row, so left alignment stacks them into one
+        # column a rectangle can wrap, while centring shifts a narrow row's
+        # members under a wide row's outsiders and the boundary would have to
+        # enclose them.
+        x = margin if align_left else margin + (content - row_width) // 2
         # Rows are as tall as their tallest box. Uniform height was fine while
         # every box was a card; an expanded container is a diagram inside a
         # box, and squeezing it to card height would be scaling by another
@@ -333,7 +543,7 @@ def _place(rows: list[list[Box]], style: Style, demand: Sequence[int] = ()) -> P
         y += row_h + gap
     # A full gap below the last row, not just the margin: same-row edges route
     # through the gap beneath their own row, and the bottom row has one too.
-    height = max(y + style.margin - style.gap_y // 2, 2 * style.margin + style.box_height)
+    height = max(y + margin - style.gap_y // 2, 2 * margin + style.box_height)
 
     gaps: list[range] = []
     for i, extent in enumerate(extents):
@@ -352,6 +562,7 @@ def _routes(
     place: Placement,
     edges: Mapping[tuple[str, str], DiagramEdge],
     diags: list[Diagnostic],
+    style: Style,
 ) -> list[Route]:
     """One polyline per edge, following the slots its chain passes through.
 
@@ -465,15 +676,21 @@ def _routes(
         if c.reversed_:
             points.reverse()
 
+        label = sanitize(edge.label)
+        anchor, label_w = _label_anchor(points, label, style)
         out.append(
             Route(
                 src=c.src,
                 dst=c.dst,
-                label=sanitize(edge.label),
+                label=label,
                 points=tuple(points),
                 evidence=edge.evidence,
                 resolution=edge.resolution,
                 weight=edge.weight,
+                variant=edge.variant,
+                note=edge.note,
+                label_at=anchor,
+                label_w=label_w,
             )
         )
     return out
@@ -536,10 +753,24 @@ def layered(
     """Rows by dependency depth. Module deps, class hierarchy."""
     diags: list[Diagnostic] = []
     rows, chains, dummies, dropped = _ordered_rows(spec, _boxes(spec, style, sizes), style)
+    rows = _group_rows_by_region(rows, spec)
     diags.extend(_dangling(dropped))
-    place = _place(rows, style, _gap_demand(rows, chains))
-    routes = _routes(chains, place, _edge_map(spec), diags)
-    return _canvas(spec, "layered", place, routes, diagnostics=tuple(diags), waypoints=dummies)
+    place = _place(
+        rows, style, _gap_demand(rows, chains), _region_pad(spec, style), bool(spec.regions)
+    )
+    routes = _settle_labels(
+        _routes(chains, place, _edge_map(spec), diags, style), place.boxes, style, dummies
+    )
+    regions = _regions(spec, place.boxes, style, diags)
+    return _canvas(
+        spec,
+        "layered",
+        place,
+        routes,
+        diagnostics=tuple(diags),
+        waypoints=dummies,
+        regions=regions,
+    )
 
 
 def _edge_map(spec: DiagramSpec) -> dict[tuple[str, str], DiagramEdge]:
@@ -592,9 +823,15 @@ def clustered(
     boxes = _boxes(spec, style, sizes)
     levels = _levels(spec, boxes)
     rows, chains, dummies, dropped = _ordered_rows(spec, boxes, style)
+    rows = _group_rows_by_region(rows, spec)
     diags: list[Diagnostic] = list(_dangling(dropped))
-    place = _place(rows, style, _gap_demand(rows, chains))
-    routes = _routes(chains, place, _edge_map(spec), diags)
+    place = _place(
+        rows, style, _gap_demand(rows, chains), _region_pad(spec, style), bool(spec.regions)
+    )
+    routes = _settle_labels(
+        _routes(chains, place, _edge_map(spec), diags, style), place.boxes, style, dummies
+    )
+    regions = _regions(spec, place.boxes, style, diags)
 
     cyclic = _cyclic_ids(spec)
     by_level: dict[int, list[Box]] = {}
@@ -615,7 +852,16 @@ def clustered(
         )
         for level, members in sorted(by_level.items())
     )
-    return _canvas(spec, "clustered", place, routes, bands, tuple(diags), waypoints=dummies)
+    return _canvas(
+        spec,
+        "clustered",
+        place,
+        routes,
+        bands,
+        tuple(diags),
+        waypoints=dummies,
+        regions=regions,
+    )
 
 
 def grid(
@@ -638,7 +884,9 @@ def grid(
     rows = _wrap([ordered[i : i + per_row] for i in range(0, len(ordered), per_row)], style)
     place = _place(rows, style)
     chains = [Chain(e.src, e.dst, (e.src, e.dst)) for e in spec.edges]
-    routes = _routes(chains, place, _edge_map(spec), diags)
+    routes = _settle_labels(
+        _routes(chains, place, _edge_map(spec), diags, style), place.boxes, style, frozenset()
+    )
     return _canvas(spec, "grid", place, routes, diagnostics=tuple(diags))
 
 
@@ -650,6 +898,7 @@ def _canvas(
     bands: tuple[Band, ...] = (),
     diagnostics: tuple[Diagnostic, ...] = (),
     waypoints: frozenset[str] = frozenset(),
+    regions: tuple[RegionBox, ...] = (),
 ) -> Canvas:
     return Canvas(
         spec_id=spec.id,
@@ -662,6 +911,7 @@ def _canvas(
         boxes=tuple(place.boxes),
         routes=tuple(routes),
         bands=bands,
+        regions=regions,
         parent=spec.parent,
         diagnostics=diagnostics,
         waypoints=waypoints,
@@ -811,19 +1061,26 @@ def flow(
                 (in_x, by),
                 (in_edge, by),
             )
+        flabel = sanitize(edge.label)
+        anchor, label_w = _label_anchor(points, flabel, style)
         routes.append(
             Route(
                 src=src,
                 dst=dst,
-                label=sanitize(edge.label),
+                label=flabel,
                 points=points,
                 evidence=edge.evidence,
                 resolution=edge.resolution,
                 weight=edge.weight,
+                variant=edge.variant,
+                note=edge.note,
+                label_at=anchor,
+                label_w=label_w,
             )
         )
         _ = i
 
+    routes = _settle_labels(routes, list(placed.values()), style, frozenset())
     return Canvas(
         spec_id=spec.id,
         kind=spec.kind,

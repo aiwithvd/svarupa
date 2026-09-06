@@ -28,6 +28,7 @@ __all__ = [
     "Band",
     "Box",
     "Canvas",
+    "RegionBox",
     "Route",
     "Style",
 ]
@@ -44,7 +45,16 @@ class Style:
 
     font_size: int = 13
     label_font_size: int = 11
+    sublabel_font_size: int = 9
     box_height: int = 44
+    # A box with a sublabel is two lines tall (Archify's default node is
+    # 120x60); a one-line box stays compact.
+    box_height_tall: int = 60
+    # Boundary padding: Archify's 30px on three sides plus 20px extra at the
+    # bottom, so the region label has room above the top row of members.
+    region_pad: int = 30
+    region_extra_bottom: int = 20
+    region_label_height: int = 16
     box_min_width: int = 96
     box_max_width: int = 260
     box_pad_x: int = 12
@@ -115,6 +125,7 @@ class Box:
     evidence: tuple[Evidence, ...]
     child_spec: str | None = None
     attrs: tuple[tuple[str, str], ...] = ()
+    sublabel: str = ""
 
     @property
     def right(self) -> int:
@@ -160,6 +171,13 @@ class Route:
     evidence: tuple[Evidence, ...]
     resolution: Resolution = Resolution.RESOLVED
     weight: int = 1
+    variant: str = "default"
+    note: str = ""
+    # Where the label's mask sits (centre) and how wide it is, computed at
+    # layout time so the validator can check it against boxes and other
+    # labels. None means the route draws no text.
+    label_at: tuple[int, int] | None = None
+    label_w: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -178,6 +196,34 @@ class Band:
 
 
 @dataclass(frozen=True, slots=True)
+class RegionBox:
+    """A boundary rectangle drawn behind its member boxes.
+
+    Only drawn when it can be honest: a rectangle that would also enclose a
+    non-member says something false about membership, so the engine skips it
+    and reports why rather than drawing it.
+    """
+
+    id: str
+    label: str
+    kind: str
+    x: int
+    y: int
+    w: int
+    h: int
+    members: tuple[str, ...]
+    evidence: tuple[Evidence, ...]
+
+    @property
+    def right(self) -> int:
+        return self.x + self.w
+
+    @property
+    def bottom(self) -> int:
+        return self.y + self.h
+
+
+@dataclass(frozen=True, slots=True)
 class Canvas:
     """One positioned diagram, ready to draw."""
 
@@ -191,6 +237,7 @@ class Canvas:
     boxes: tuple[Box, ...]
     routes: tuple[Route, ...]
     bands: tuple[Band, ...] = ()
+    regions: tuple[RegionBox, ...] = ()
     parent: str | None = None
     diagnostics: tuple[Diagnostic, ...] = field(default=())
     # Boxes that are bends in a line rather than claims about the codebase.

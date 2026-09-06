@@ -21,7 +21,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 from svarupa.emit.markup import EMPTY, Markup, esc, join, raw, tag
-from svarupa.layout.geometry import Box, Canvas, Route, Style
+from svarupa.layout.geometry import Box, Canvas, RegionBox, Route, Style
 from svarupa.layout.text import advance
 from svarupa.model import Evidence, Resolution
 
@@ -83,11 +83,26 @@ def _box(box: Box, style: Style) -> Markup:
     layout time and is what the geometry check measured, so what is drawn here
     is exactly what was validated.
     """
+    # Two text lines when there is a sublabel: label above centre, sublabel
+    # 14px below it (Archify's spacing); one centred line otherwise.
+    label_y = box.y + box.h // 2 - (7 if box.sublabel else 0)
     body = join(
         (
             tag(
                 "title",
                 esc(f"{box.full_label}\n{evidence_ref(box.evidence)}"),
+            ),
+            # An opaque mask under the translucent fill, so a route passing
+            # behind a box never shows through it (Archify's `.c-mask`).
+            tag(
+                "rect",
+                EMPTY,
+                x=box.x,
+                y=box.y,
+                width=box.w,
+                height=box.h,
+                rx=6,
+                class_="sv-mask",
             ),
             tag(
                 "rect",
@@ -103,7 +118,7 @@ def _box(box: Box, style: Style) -> Markup:
                 "text",
                 esc(box.label),
                 x=box.x + box.w // 2,
-                y=box.y + box.h // 2,
+                y=label_y,
                 class_="sv-box-label",
                 font_size=style.font_size,
                 # A rendering backstop for the width model. `textLength` makes
@@ -114,27 +129,159 @@ def _box(box: Box, style: Style) -> Markup:
                 textLength=max(1, advance(box.label, style.font_size)),
                 lengthAdjust="spacingAndGlyphs",
             ),
-            # The kind dot. Colour also encodes kind, and a small solid mark
-            # survives both a colour-blind reader (paired with the caption
-            # text) and a low-zoom screenshot where borders thin out.
-            tag(
-                "circle",
-                EMPTY,
-                cx=box.x + 11,
-                cy=box.y + 12,
-                r=3,
-                class_="sv-dot",
+            (
+                tag(
+                    "text",
+                    esc(box.sublabel),
+                    x=box.x + box.w // 2,
+                    y=label_y + 15,
+                    class_="sv-box-sublabel",
+                    font_size=style.sublabel_font_size,
+                    textLength=max(1, advance(box.sublabel, style.sublabel_font_size)),
+                    lengthAdjust="spacingAndGlyphs",
+                )
+                if box.sublabel
+                else raw("")
             ),
+            # The kind sigil, top-left: a small glyph per semantic type, so a
+            # colour-blind reader and a low-zoom screenshot both keep the
+            # type. Drawn as paths, not a font glyph the stack might lack.
+            _sigil(box),
+            _src_capsule(box),
             _drill_marker(box, style),
         )
     )
+    roles = next((v for k, v in box.attrs if k == "roles"), None)
     return tag(
         "g",
         body,
         class_="sv-node" + (" sv-drillable" if box.is_drillable else ""),
         data_id=box.id,
         data_child=box.child_spec,
+        # The passport reads these back; both are repository-derived text
+        # and go through the same escaping as every other attribute.
+        data_sublabel=box.sublabel or None,
+        data_roles=roles,
         **{EVIDENCE_ATTR: evidence_ref(box.evidence)},
+    )
+
+
+# 10x10 sigils per semantic kind, in path form so no font is involved. Each
+# is drawn at the box's top-left corner in the kind colour.
+_SIGILS: dict[str, str] = {
+    # angle brackets: code that serves
+    "backend": "M3 1 L0 5 L3 9 M7 1 L10 5 L7 9",
+    "module": "M1 2 H9 V9 H1 Z M1 4 H9",
+    "group": "M1 1 H9 V9 H1 Z M1 4 H9 M4 4 V9",
+    "service": "M1 1 H9 V9 H1 Z M1 4 H9 M4 4 V9",
+    # a window: a top bar over a pane
+    "frontend": "M1 1 H9 V9 H1 Z M1 3.5 H9",
+    # a cylinder
+    "database": "M1 2.5 A4 1.5 0 0 0 9 2.5 A4 1.5 0 0 0 1 2.5 V7.5 A4 1.5 0 0 0 9 7.5 V2.5",
+    "datastore": "M1 2.5 A4 1.5 0 0 0 9 2.5 A4 1.5 0 0 0 1 2.5 V7.5 A4 1.5 0 0 0 9 7.5 V2.5",
+    "table": "M1 1 H9 V9 H1 Z M1 4 H9 M5 4 V9",
+    # two arrows: a bus
+    "messagebus": "M1 3 H8 M6 1 L8 3 L6 5 M9 7 H2 M4 5 L2 7 L4 9",
+    "queue": "M1 3 H8 M6 1 L8 3 L6 5 M9 7 H2 M4 5 L2 7 L4 9",
+    # a cloud
+    "cloud": "M3 8 H8 A2 2 0 0 0 8 4 A3 3 0 0 0 2.5 4.5 A1.8 1.8 0 0 0 3 8 Z",
+    # a shield
+    "security": "M5 1 L9 2.5 V5 C9 7.5 7 9 5 9.5 C3 9 1 7.5 1 5 V2.5 Z",
+    "endpoint": "M1 5 H7 M5 3 L7 5 L5 7",
+}
+
+
+def _sigil(box: Box) -> Markup:
+    d = _SIGILS.get(box.kind)
+    if d is None:
+        return tag("circle", EMPTY, cx=box.x + 11, cy=box.y + 12, r=3, class_="sv-dot")
+    return tag(
+        "path",
+        EMPTY,
+        d=d,
+        transform=f"translate({box.x + 7} {box.y + 7})",
+        class_="sv-sigil",
+    )
+
+
+def _src_capsule(box: Box) -> Markup:
+    """Archify's "Verified Source Beacon", made unconditional: every box of
+    ours has sources, so every box says how many. Sits left of the drill
+    chevron when there is one."""
+    n = len(box.evidence)
+    text = f"SRC {n}"
+    width = advance(text, 8) + 8
+    right = box.right - (22 if box.is_drillable else 8)
+    return tag(
+        "g",
+        join(
+            (
+                tag(
+                    "rect",
+                    EMPTY,
+                    x=right - width,
+                    y=box.y + 5,
+                    width=width,
+                    height=12,
+                    rx=6,
+                    class_="sv-src",
+                ),
+                tag(
+                    "text",
+                    esc(text),
+                    x=right - width // 2,
+                    y=box.y + 11,
+                    class_="sv-src-text",
+                    font_size=8,
+                ),
+            )
+        ),
+        class_="sv-beacon",
+    )
+
+
+def _region(region: RegionBox, style: Style) -> Markup:
+    """A boundary: dashed rectangle in its kind colour, label on a mask at
+    the top-left inside, drawn behind everything it wraps."""
+    label_w = advance(region.label, style.label_font_size) + 10
+    return tag(
+        "g",
+        join(
+            (
+                tag("title", esc(f"{region.label}\n{evidence_ref(region.evidence)}")),
+                tag(
+                    "rect",
+                    EMPTY,
+                    x=region.x,
+                    y=region.y,
+                    width=region.w,
+                    height=region.h,
+                    rx=10,
+                    class_=f"sv-region sv-kind-{_slug(region.kind)}",
+                ),
+                tag(
+                    "rect",
+                    EMPTY,
+                    x=region.x + 8,
+                    y=region.y + 6,
+                    width=label_w,
+                    height=style.region_label_height,
+                    rx=3,
+                    class_="sv-mask",
+                ),
+                tag(
+                    "text",
+                    esc(region.label),
+                    x=region.x + 13,
+                    y=region.y + 6 + style.region_label_height // 2 + 1,
+                    class_="sv-region-label",
+                    font_size=style.label_font_size,
+                ),
+            )
+        ),
+        class_="sv-boundary",
+        data_id=region.id,
+        **{EVIDENCE_ATTR: evidence_ref(region.evidence)},
     )
 
 
@@ -184,26 +331,59 @@ def _route(route: Route, style: Style) -> Markup:
     circuit board. Weight is a stroke width, which shows the same information
     the labels were carrying, at a glance and without collision.
     """
-    _ = style
     classes = " ".join(
         (
             "sv-edge",
             _weight_class(route.weight),
+            f"sv-variant-{_slug(route.variant)}",
             *(("sv-edge-weak",) if route.resolution is not Resolution.RESOLVED else ()),
         )
     )
+    label: Markup = raw("")
+    if route.label_at is not None and route.label:
+        # The verb on a mask at the midpoint of the longest segment, the
+        # placement the validator checked against boxes and other labels.
+        cx, cy = route.label_at
+        h = style.label_font_size + 6
+        label = join(
+            (
+                tag(
+                    "rect",
+                    EMPTY,
+                    x=cx - route.label_w // 2,
+                    y=cy - h // 2,
+                    width=route.label_w,
+                    height=h,
+                    rx=3,
+                    class_="sv-mask",
+                ),
+                tag(
+                    "text",
+                    esc(route.label),
+                    x=cx,
+                    y=cy + 1,
+                    class_=f"sv-edge-label sv-variant-{_slug(route.variant)}",
+                    font_size=style.label_font_size,
+                ),
+            )
+        )
     return tag(
         "g",
         join(
             (
-                tag("title", esc(f"{route.label}\n{evidence_ref(route.evidence)}")),
+                tag(
+                    "title",
+                    esc(f"{route.note or route.label}\n{evidence_ref(route.evidence)}"),
+                ),
                 tag("path", EMPTY, d=_rounded(route.points), class_=classes),
+                label,
             )
         ),
         class_="sv-route",
         data_src=route.src,
         data_dst=route.dst,
         data_label=route.label,
+        data_note=route.note or None,
         **{EVIDENCE_ATTR: evidence_ref(route.evidence)},
     )
 
@@ -249,6 +429,7 @@ def canvas_body(canvas: Canvas, style: Style, skip: frozenset[str] = frozenset()
     """
     return join(
         (
+            join(_region(r, style) for r in canvas.regions),
             join(_band(b.label, b.y, b.h, canvas.width, style) for b in canvas.bands),
             join(_route(r, style) for r in canvas.routes),
             join(

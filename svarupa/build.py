@@ -35,6 +35,7 @@ from svarupa.detect import Scan, load_toml
 from svarupa.diagnostics import Diagnostic, DiagnosticError, Severity
 from svarupa.extract.base import (
     EntrypointFact,
+    ExternalFact,
     ExtractResult,
     RouteFact,
     Scorecard,
@@ -94,6 +95,7 @@ class Graph:
     routes: tuple[RouteFact, ...] = ()
     tasks: tuple[TaskFact, ...] = ()
     entrypoints: tuple[EntrypointFact, ...] = ()
+    externals: tuple[ExternalFact, ...] = ()
 
     def nx(self, directed: bool = True) -> nx.DiGraph[str] | nx.Graph[str]:
         """A NetworkX view for the algorithms later stages need.
@@ -513,7 +515,8 @@ def module_roles(graph: Graph) -> dict[str, tuple[str, ...]]:
     """Evidence-backed roles per structural module, sorted both ways.
 
     `api` from routes, `worker` from tasks, `cli` from a declared entrypoint
-    whose target resolves into the module. Gated on architecture eligibility,
+    whose target resolves into the module, `auth` and `frontend` from imports
+    the vocabulary knows. Gated on architecture eligibility,
     so a route declared in a test file assigns nothing. One definition, used
     by both the lockfile and the diagrams, because two implementations of
     "what is this module's role" would eventually disagree.
@@ -529,6 +532,16 @@ def module_roles(graph: Graph) -> dict[str, tuple[str, ...]]:
         target = entrypoint_module(graph, e.target, e.lang, e.file)
         if target is not None:
             roles.setdefault(target, set()).add("cli")
+    # Roles an import gives away: a module importing an auth library takes
+    # `auth`, one importing a UI framework takes `frontend`. Stores, buses and
+    # cloud APIs are not roles of the module; they become external boxes.
+    for x in graph.externals:
+        if x.file not in graph.architecture_paths:
+            continue
+        if x.category == "security":
+            roles.setdefault(_module_of(x.file), set()).add("auth")
+        elif x.category == "frontend":
+            roles.setdefault(_module_of(x.file), set()).add("frontend")
     return {m: tuple(sorted(rs)) for m, rs in sorted(roles.items())}
 
 
@@ -673,6 +686,7 @@ def build(scan: Scan, extracted: ExtractResult, strict: bool = True) -> Graph:
     routes = tuple(r for r in extracted.routes if fact_ok(r.evidence, r.handler))
     tasks = tuple(t for t in extracted.tasks if fact_ok(t.evidence, t.handler))
     entrypoints = tuple(e for e in extracted.entrypoints if fact_ok(e.evidence, e.name))
+    externals = tuple(x for x in extracted.externals if fact_ok(x.evidence, x.label))
 
     return Graph(
         nodes=dict(sorted(acc.nodes.items())),
@@ -686,6 +700,7 @@ def build(scan: Scan, extracted: ExtractResult, strict: bool = True) -> Graph:
         routes=routes,
         tasks=tasks,
         entrypoints=entrypoints,
+        externals=externals,
     )
 
 

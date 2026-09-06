@@ -571,6 +571,7 @@ def test_the_document_parses_as_the_elements_it_was_built_from(
         "input",
         "section",
         "h2",
+        "h3",
         "p",
         "ul",
         "li",
@@ -947,30 +948,29 @@ def test_the_stylesheet_is_ascii(tmp_path: Path) -> None:
     assert not odd, f"non-ASCII in the stylesheet: {odd}"
 
 
-def test_edges_carry_no_text_labels(tmp_path: Path) -> None:
-    """Every edge used to stamp its count at its polyline midpoint. On a real
-    diagram they landed in the same band and collapsed into strings like
-    `7122.26.62.5nimports`.
-
-    The count is still reachable: it is in the tooltip and the evidence panel.
+def test_edge_labels_are_short_verbs_on_masks_never_counts(tmp_path: Path) -> None:
+    """Every edge used to stamp its count at its polyline midpoint; on a real
+    diagram they collapsed into `7122.26.62.5nimports`, and edge text was
+    removed. It returns under two conditions Archify's diagrams meet: the
+    text is a short semantic verb, never a number, and it sits on an opaque
+    mask at a position the layout checked for collisions (labels that would
+    collide are dropped, not smeared). The count stays in the tooltip.
     """
     repo = tmp_path / "repo"
     repo.mkdir()
     build_repo(repo)
     out = tmp_path / "out"
-    artifact = run(repo, out)
+    run(repo, out)
     html = (out / "index.html").read_text(encoding="utf8")
+    import re
 
-    routes = [
-        r for lo in artifact.laid_out.values() for c in lo.canvases.values() for r in c.routes
-    ]  # type: ignore[attr-defined]
-    assert routes, "the fixture drew no edges, so this test proved nothing"
-    assert "sv-edge-label" not in html
-    labels = {r.label for r in routes if r.label}
-    assert labels, "the fixture's edges have no labels to have been suppressed"
-    for label in labels:
-        assert f">{esc(label)}<" not in html, f"edge label {label!r} is drawn as text"
-        assert esc(label) in html, f"edge label {label!r} is not reachable at all"
+    labels = re.findall(r'class="sv-edge-label[^"]*"[^>]*>([^<]*)<', html)
+    assert labels, "no edge labels drawn at all; the verb channel is broken"
+    for text in labels:
+        assert not re.search(r"\d", text), f"an edge label carries a number: {text!r}"
+        assert len(text) <= 16, f"an edge label is prose, not a verb: {text!r}"
+    # Each label is preceded by its mask rect in the same route group.
+    assert html.count('class="sv-edge-label') <= html.count('class="sv-mask"')
 
 
 def test_waypoints_are_not_drawn(tmp_path: Path) -> None:

@@ -79,8 +79,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     (
         "the schema minor is not bumped for the new kinds",
         "svarupa/lock/grammar.py",
+        "SCHEMA_MINOR = 5",
         "SCHEMA_MINOR = 4",
-        "SCHEMA_MINOR = 3",
     ),
     (
         "boxes stop wearing their role",
@@ -157,8 +157,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     (
         "role priority is inverted",
         "svarupa/derive/architecture.py",
-        '_ROLE_PRIORITY = ("api", "worker", "cli")',
-        '_ROLE_PRIORITY = ("cli", "worker", "api")',
+        '_ROLE_PRIORITY = ("frontend", "api", "worker", "auth", "cli")',
+        '_ROLE_PRIORITY = ("cli", "auth", "worker", "api", "frontend")',
     ),
     (
         "module_roles stops gating routes on architecture eligibility",

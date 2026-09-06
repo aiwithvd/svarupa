@@ -31,10 +31,12 @@ from svarupa.extract.base import (
     CallSite,
     DecoratorRef,
     EntrypointFact,
+    ExternalFact,
     FileFacts,
     RouteFact,
     TaskFact,
 )
+from svarupa.extract.vocabulary import classify_import, package_root
 from svarupa.model import Evidence
 
 __all__ = ["SEMANTIC_FRAMEWORKS", "SEMANTIC_LANGS", "Semantics", "semantics"]
@@ -85,6 +87,33 @@ class Semantics:
     tasks: tuple[TaskFact, ...]
     entrypoints: tuple[EntrypointFact, ...]
     diagnostics: tuple[Diagnostic, ...]
+    externals: tuple[ExternalFact, ...] = ()
+
+
+def _externals_for(f: FileFacts) -> list[ExternalFact]:
+    """One fact per (file, package) the vocabulary knows, citing the import.
+
+    Relative imports are the codebase's own modules and never external; a
+    file importing `redis` three times yields one fact, at the first line.
+    """
+    out: dict[str, ExternalFact] = {}
+    for imp in sorted(f.imports, key=lambda i: (i.evidence.start_line, i.specifier)):
+        if imp.is_relative or imp.specifier.startswith("."):
+            continue
+        hit = classify_import(imp.specifier, f.lang)
+        if hit is None:
+            continue
+        category, label = hit
+        root = package_root(imp.specifier, f.lang)
+        if root not in out:
+            out[root] = ExternalFact(
+                file=f.path,
+                category=category,
+                label=label,
+                package=root,
+                evidence=imp.evidence,
+            )
+    return list(out.values())
 
 
 def _imports_top(f: FileFacts, top: str) -> bool:
@@ -585,9 +614,11 @@ def semantics(scan: Scan, facts: Sequence[FileFacts]) -> Semantics:
     routes: list[RouteFact] = []
     tasks: list[TaskFact] = []
     entrypoints: list[EntrypointFact] = []
+    externals: list[ExternalFact] = []
     diags: list[Diagnostic] = []
 
     for f in facts:
+        externals.extend(_externals_for(f))
         if f.lang == "python":
             routes.extend(_routes_for(f))
             tasks.extend(_tasks_for(f))
@@ -633,4 +664,5 @@ def semantics(scan: Scan, facts: Sequence[FileFacts]) -> Semantics:
         tasks=tuple(sorted(set(tasks))),
         entrypoints=tuple(sorted(set(entrypoints))),
         diagnostics=tuple(diags),
+        externals=tuple(sorted(set(externals))),
     )

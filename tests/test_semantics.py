@@ -245,7 +245,7 @@ def test_lockfile_carries_endpoint_entrypoint_and_role_records(tmp_path: Path) -
     assert "role\tapi\tapi" in text
     assert "role\tjobs\tworker" in text
     assert "role\tpkg\tcli" in text
-    assert "# schema 1.4" in text
+    assert "# schema 1.5" in text
 
 
 def test_renaming_a_handler_churns_zero_lines(tmp_path: Path) -> None:
@@ -330,12 +330,17 @@ def test_architecture_boxes_wear_their_role_and_cite_it(tmp_path: Path) -> None:
     # every box and pick the module-level one by kind.
     all_boxes = [n for spec in arch.specs.values() for n in spec.nodes]
     api = next(n for n in all_boxes if n.id == "api" and n.kind != "group")
-    assert api.kind == "api"
+    # Archify's vocabulary: an api module is drawn as a backend component;
+    # the role itself stays readable in the attrs and the passport.
+    assert api.kind == "backend"
     assert api.attr("roles") == "api"
+    assert "FastAPI" in api.sublabel and "2 routes" in api.sublabel
     assert any(ev.file == "api/routes.py" and ev.start_line == 6 for ev in api.evidence), (
         "the role colour must be clickable through to the decorator line"
     )
-    assert any(n.kind == "worker" for n in all_boxes if n.id == "jobs")
+    jobs = next(n for n in all_boxes if n.id == "jobs" and n.kind != "group")
+    assert jobs.kind == "backend" and jobs.attr("roles") == "worker"
+    assert "Celery" in jobs.sublabel
 
 
 # --- build re-verifies fact evidence ----------------------------------------
@@ -581,26 +586,24 @@ def test_dual_role_module_wears_api_by_priority_and_records_both(tmp_path: Path)
     from svarupa.derive import derive_all
     from svarupa.derive.base import DiagramKind
 
+    # A module that serves HTTP and also guards it: api outranks auth in the
+    # colour (backend, not security), and the lockfile records both roles.
     write(tmp_path, "svc/__init__.py", "")
     write(tmp_path, "svc/routes.py", FASTAPI_FILE)
-    write(
-        tmp_path,
-        "svc/jobs.py",
-        "from celery import shared_task\n\n\n@shared_task\ndef crunch():\n    pass\n",
-    )
+    write(tmp_path, "svc/guard.py", "from fastapi.security import OAuth2PasswordBearer\n")
     write(tmp_path, "other/__init__.py", "")
     write(tmp_path, "other/uses.py", "x = 1\n")
     text = _lock_text(tmp_path)
     assert "role\tsvc\tapi" in text
-    assert "role\tsvc\tworker" in text
+    assert "role\tsvc\tauth" in text
     g = graph_of(tmp_path)
     produced, _ = derive_all(g, cluster(g))
     boxes = [
         n for spec in produced[DiagramKind.ARCHITECTURE].specs.values() for n in spec.nodes
     ]
     svc = next(n for n in boxes if n.id == "svc" and n.kind != "group")
-    assert svc.kind == "api", "api outranks worker in the box colour"
-    assert svc.attr("roles") == "api,worker"
+    assert svc.kind == "backend", "api outranks auth in the box colour"
+    assert svc.attr("roles") == "api,auth"
 
 
 def test_module_roles_itself_gates_on_architecture_eligibility(tmp_path: Path) -> None:
@@ -665,7 +668,7 @@ def test_role_evidence_respects_the_evidence_cap(tmp_path: Path) -> None:
     boxes = [
         n for spec in produced[DiagramKind.ARCHITECTURE].specs.values() for n in spec.nodes
     ]
-    api = next(n for n in boxes if n.id == "api" and n.kind == "api")
+    api = next(n for n in boxes if n.id == "api" and n.kind == "backend")
     assert len(api.evidence) <= MAX_EVIDENCE_PER_BOX
     assert any(ev.file == "api/routes.py" and ev.start_line == 6 for ev in api.evidence), (
         "the cap must not evict the role citation"

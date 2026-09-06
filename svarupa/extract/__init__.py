@@ -121,6 +121,7 @@ def extract(scan: Scan, declared_deps: frozenset[str] = frozenset()) -> ExtractR
         routes=sem.routes,
         tasks=sem.tasks,
         entrypoints=sem.entrypoints,
+        externals=sem.externals,
     )
 
 

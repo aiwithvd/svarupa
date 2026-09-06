@@ -136,6 +136,9 @@ CODES: dict[str, str] = {
     "SVA-G-009": "a box or route carries no evidence",
     "SVA-G-010": "a coordinate is not an int",
     "SVA-G-011": "a route passes through the interior of a box",
+    "SVA-G-012": "a boundary does not contain the boxes it claims or leaves the canvas",
+    "SVA-G-013": "a route label overlaps a box or another label",
+    "SVA-G-014": "a boundary was not drawn because it would enclose non-members",
     # emit
     "SVA-E-001": "the output directory holds files this tool does not own",
     # lock
