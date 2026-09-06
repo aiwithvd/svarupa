@@ -56,8 +56,14 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     (
         "data-flow import edges run in both directions",
         "svarupa/derive/dataflow.py",
-        "                if b in drawn and a in drawn and hops.get(b, 0) > hops.get(a, 0):",
-        "                if b in drawn and a in drawn and hops.get(b, 0) != hops.get(a, 0):",
+        "                if hops.get(b, 0) <= hops.get(a, 0):\n                    against += 1",
+        "                if hops.get(b, 0) == hops.get(a, 0):\n                    against += 1",
+    ),
+    (
+        "imports against the flow vanish without a count",
+        "svarupa/derive/dataflow.py",
+        '    if not count:\n        return ""\n    return f"; {count} import',
+        '    if True:\n        return ""\n    return f"; {count} import',
     ),
     (
         "the domain hop is not recorded",

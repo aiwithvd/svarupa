@@ -87,6 +87,7 @@ def test_data_flow_stages_are_evidenced_and_ordered(tmp_path: Path) -> None:
     ]
     assert module_edges, "handler -> domain -> store import edges are drawn"
     assert all(hop[e.dst] > hop[e.src] for e in module_edges), "data flows downstream only"
+    assert root.subtitle.endswith("; 1 import against the flow not drawn"), root.subtitle
 
 
 def test_modules_reachable_from_no_handler_are_not_drawn_and_counted(tmp_path: Path) -> None:
@@ -134,6 +135,10 @@ def test_request_flow_has_one_story_per_endpoint_group(tmp_path: Path) -> None:
     assert any(n.id == "ext:database:PostgreSQL" for n in story.nodes)
     assert {r.label for r in story.regions} == {"handler", "hop 1", "hop 2"}
     assert "not call order" in story.subtitle and "not call order" in root.subtitle
+    assert story.subtitle.endswith("; 1 import against the flow not drawn"), story.subtitle
+    assert {(e.src, e.dst) for e in story.edges if e.src == "store"} == {
+        ("store", "ext:database:PostgreSQL")
+    }, "store -> domain runs against the hops and is counted, not drawn"
 
 
 def test_request_flow_lays_out_and_drills(tmp_path: Path) -> None:

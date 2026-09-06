@@ -139,6 +139,12 @@ def _module_node(
     )
 
 
+def _against_note(count: int) -> str:
+    if not count:
+        return ""
+    return f"; {count} import{'s' if count != 1 else ''} against the flow not drawn"
+
+
 def _stage_regions(nodes: list[DiagramNode], stage_ev: Evidence) -> tuple[Region, ...]:
     """One frame per stage that has members, labelled `01 / Ingress` like
     Archify's stage headers. Evidence is the first member's first line: the
@@ -257,9 +263,17 @@ class DataFlowDeriver(Deriver):
                         variant="emphasis",
                     )
                 )
+        # An import between drawn modules that does not go downstream (same
+        # hop, or back toward the handlers) is not an arrow here, and its
+        # count is stated so the picture is not read as "no such import".
+        against = 0
         for a in sorted(set(handlers) | set(domain)):
             for b, ev in imports.get(a, []):
-                if b in drawn and a in drawn and hops.get(b, 0) > hops.get(a, 0):
+                if b not in drawn or a not in drawn:
+                    continue
+                if hops.get(b, 0) <= hops.get(a, 0):
+                    against += 1
+                else:
                     edges.append(
                         DiagramEdge(
                             src=a,
@@ -294,7 +308,7 @@ class DataFlowDeriver(Deriver):
             subtitle=(
                 f"{len(handlers)} ingress module{'s' if len(handlers) != 1 else ''}, "
                 f"{len(domain)} domain module{'s' if len(domain) != 1 else ''}, "
-                f"{len(ext_nodes)} external"
+                f"{len(ext_nodes)} external" + _against_note(against)
             ),
             nodes=tuple(sorted(nodes)),
             edges=tuple(sorted(edges)),
@@ -406,9 +420,14 @@ class RequestFlowDeriver(Deriver):
                 )
             )
         edges: list[DiagramEdge] = []
+        against = 0
         for a in sorted(drawn):
             for b, ev in imports.get(a, []):
-                if b in drawn and hops.get(b, 0) == hops.get(a, 0) + 1:
+                if b not in drawn:
+                    continue
+                if hops.get(b, 0) != hops.get(a, 0) + 1:
+                    against += 1
+                else:
                     edges.append(
                         DiagramEdge(
                             src=a,
@@ -440,7 +459,7 @@ class RequestFlowDeriver(Deriver):
             title=f"{handler or '(repo root)'} request flow",
             subtitle=(
                 f"{len(hops)} module{'s' if len(hops) != 1 else ''} within {DOMAIN_DEPTH} import "
-                f"hops; reachability, not call order"
+                f"hops; reachability, not call order" + _against_note(against)
             ),
             nodes=tuple(sorted(nodes)),
             edges=tuple(sorted(edges)),
