@@ -99,14 +99,18 @@ class SystemDeriver(Deriver):
                 elif "auth" in held and not ({"api", "worker"} & held):
                     kind = "security"
                 what: list[str] = []
-                if "api" in held:
+                # A root build context means "everything": two services built
+                # from `.` would each claim the whole repository's routes,
+                # which is a wrong per-service number. Counts are claimed only
+                # for a context that names a subtree.
+                if "api" in held and ctx:
                     n_routes = sum(
                         1
                         for r in graph.routes
                         if r.file in graph.architecture_paths and module_of(r.file) in mods
                     )
                     what.append(f"{n_routes} route{'s' if n_routes != 1 else ''}")
-                if "worker" in held:
+                if "worker" in held and ctx:
                     what.append("workers")
                 sublabel = ("built from " + (ctx or ".") + ("/" if ctx else "")) + (
                     " · " + ", ".join(what) if what else ""

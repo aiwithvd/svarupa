@@ -93,13 +93,13 @@ class Semantics:
 def _externals_for(f: FileFacts) -> list[ExternalFact]:
     """One fact per (file, package) the vocabulary knows, citing the import.
 
-    Relative imports are the codebase's own modules and never external; a
-    file importing `redis` three times yields one fact, at the first line.
+    A file importing `redis` three times yields one fact, at the first line.
+    Relative imports never match: their specifier starts with `.`, and the
+    vocabulary has no such key, so no explicit guard is needed (one was, and
+    a mutation run showed it unreachable).
     """
     out: dict[str, ExternalFact] = {}
     for imp in sorted(f.imports, key=lambda i: (i.evidence.start_line, i.specifier)):
-        if imp.is_relative or imp.specifier.startswith("."):
-            continue
         hit = classify_import(imp.specifier, f.lang)
         if hit is None:
             continue

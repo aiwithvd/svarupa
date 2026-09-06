@@ -263,3 +263,120 @@ def test_the_system_view_types_services_and_attaches_externals(tmp_path: Path) -
     redis = next(n for n in nodes.values() if n.label == "redis")
     assert redis.kind == "database"
     assert any(n.kind == "cloud" and n.label == "OpenAI API" for n in nodes.values())
+
+
+def test_services_built_from_the_root_claim_no_per_service_counts(tmp_path: Path) -> None:
+    """Two services from `.` would each claim every route in the repository."""
+    _service_repo(tmp_path)
+    write(
+        tmp_path,
+        "docker-compose.yml",
+        "services:\n  a:\n    build: .\n  b:\n    build:\n      context: .\n",
+    )
+    nodes = {n.label: n for n in boxes_of(tmp_path, DiagramKind.DEPLOY_TOPOLOGY)}
+    assert nodes["a"].sublabel == "built from ."
+    assert "route" not in nodes["b"].sublabel
+
+
+# --- unit pins the integration fixtures cannot reach -------------------------------
+
+
+def test_a_plain_module_says_how_many_files_it_holds(tmp_path: Path) -> None:
+    _service_repo(tmp_path)
+    write(tmp_path, "util/__init__.py", "")
+    write(tmp_path, "util/helpers.py", "x = 1\n")
+    write(tmp_path, "util/uses.py", "from api import routes\n")
+    nodes = {n.id: n for n in boxes_of(tmp_path) if n.kind != "group"}
+    assert nodes["util"].sublabel == "3 files"
+    assert all(n.sublabel != n.id for n in nodes.values()), "a sublabel is never the module id"
+
+
+def test_a_boundary_that_would_enclose_an_outsider_is_not_drawn() -> None:
+    """Hand-built geometry: two members on two rows with an outsider sitting in
+    the rectangle between them. The boundary is skipped and reported, never
+    drawn around the outsider."""
+    from svarupa.derive.base import DiagramSpec, Region
+    from svarupa.layout.engines import _regions
+    from svarupa.layout.geometry import Box
+    from svarupa.model import Evidence
+
+    ev = (Evidence("docker-compose.yml", 2, 2),)
+
+    def b(i: str, x: int, y: int, w: int) -> Box:
+        return Box(id=i, label=i, full_label=i, kind="module", x=x, y=y, w=w, h=44, evidence=ev)
+
+    boxes = [b("m1", 100, 100, 100), b("m2", 100, 300, 400), b("out", 300, 100, 100)]
+    spec = DiagramSpec(
+        kind=DiagramKind.ARCHITECTURE,
+        id="/spec/x",
+        title="x",
+        nodes=(),
+        edges=(),
+        regions=(Region(id="svc:a", label="a", members=("m1", "m2"), evidence=ev),),
+    )
+    diags: list = []
+    assert _regions(spec, boxes, Style(), diags) == ()
+    assert [d.code for d in diags] == ["SVA-G-014"]
+    # Without the outsider the same boundary is drawn and contains both.
+    diags.clear()
+    (region,) = _regions(spec, boxes[:2], Style(), diags)
+    assert region.members == ("m1", "m2") and not diags
+
+
+def test_rows_keep_a_boundarys_members_adjacent() -> None:
+    from svarupa.derive.base import DiagramSpec, Region
+    from svarupa.layout.engines import _group_rows_by_region
+    from svarupa.layout.geometry import Box
+    from svarupa.model import Evidence
+
+    ev = (Evidence("docker-compose.yml", 2, 2),)
+
+    def b(i: str) -> Box:
+        return Box(
+            id=i, label=i, full_label=i, kind="module", x=0, y=0, w=10, h=10, evidence=ev
+        )
+
+    spec = DiagramSpec(
+        kind=DiagramKind.ARCHITECTURE,
+        id="/spec/x",
+        title="x",
+        nodes=(),
+        edges=(),
+        regions=(Region(id="svc:a", label="a", members=("m1", "m2"), evidence=ev),),
+    )
+    rows = [[b("out"), b("m1"), b("other"), b("m2")]]
+    assert [x.id for x in _group_rows_by_region(rows, spec)[0]] == ["m1", "m2", "out", "other"]
+
+
+def test_external_verbs_are_drawn_once_per_target(tmp_path: Path) -> None:
+    _service_repo(tmp_path)
+    write(tmp_path, "web/db.py", "import openai\n")
+    write(tmp_path, "guard/db.py", "import openai\n")
+    g = graph_of(tmp_path)
+    produced, _ = derive_all(g, cluster(g))
+    for spec in produced[DiagramKind.ARCHITECTURE].specs.values():
+        to_openai = [e for e in spec.edges if e.dst == "ext:cloud:OpenAI API"]
+        if len(to_openai) > 1:
+            assert sum(1 for e in to_openai if e.label) == 1
+            assert all(e.note == "calls" for e in to_openai)
+            break
+    else:
+        raise AssertionError("fixture produced no shared external target")
+
+
+def test_external_boxes_sit_below_every_module(tmp_path: Path) -> None:
+    """What a system talks to is drawn below what talks; left to inference a
+    store used from inside a dependency cycle sat in the cycle's own row."""
+    _service_repo(tmp_path)
+    write(tmp_path, "api/back.py", "from web import uses\n")  # a cycle: api <-> web
+    g = graph_of(tmp_path)
+    produced, _ = derive_all(g, cluster(g))
+    lo = lay_out_set(produced[DiagramKind.ARCHITECTURE], Style())
+    checked = 0
+    for c in lo.canvases.values():
+        ext = [b for b in c.boxes if b.id.startswith("ext:")]
+        mods = [b for b in c.boxes if not b.id.startswith("ext:") and b.id not in c.waypoints]
+        if ext and mods:
+            assert min(b.y for b in ext) > max(b.bottom for b in mods), c.spec_id
+            checked += 1
+    assert checked, "no canvas held both modules and externals"

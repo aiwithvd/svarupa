@@ -48,6 +48,19 @@ _ARCHETYPE = {
 _EXTERNAL_VERB = {"database": "reads/writes", "messagebus": "publishes", "cloud": "calls"}
 
 
+def _import_edge(a: str, b: str, w: int, ev: tuple[Evidence, ...]) -> DiagramEdge:
+    """A structural import arrow: no drawn text (the word is noise when every
+    arrow in a view is an import), the count in the note for the tooltip."""
+    return DiagramEdge(
+        src=a,
+        dst=b,
+        label="",
+        note=f"{w} import{'s' if w != 1 else ''}",
+        evidence=ev,
+        weight=w,
+    )
+
+
 def _role_kind(roles: dict[str, tuple[str, ...]], module: str) -> str:
     held = roles.get(module, ())
     role = next((r for r in _ROLE_PRIORITY if r in held), None)
@@ -153,12 +166,17 @@ def external_nodes_and_edges(
         for m, ev in holders:
             src = (source_of or {}).get(m, m)
             by_src.setdefault(src, []).append(ev)
-        for src, evs in sorted(by_src.items()):
+        for k, (src, evs) in enumerate(sorted(by_src.items())):
+            # The verb is drawn once per external box (on the first arrow in
+            # canonical order); twelve `reads/writes` fanning into one store
+            # said one thing twelve times. Every arrow keeps the verb in its
+            # note, so the tooltip and the passport still say it.
             edges.append(
                 DiagramEdge(
                     src=src,
                     dst=nid,
-                    label=_EXTERNAL_VERB[category],
+                    label=_EXTERNAL_VERB[category] if k == 0 else "",
+                    note=_EXTERNAL_VERB[category],
                     evidence=tuple(sorted(set(evs)))[:MAX_EVIDENCE_PER_BOX],
                     weight=len(evs),
                     variant="dashed",
@@ -398,17 +416,7 @@ class ArchitectureDeriver(Deriver):
             edges=tuple(
                 sorted(
                     [
-                        DiagramEdge(
-                            src=a,
-                            dst=b,
-                            # The verb, not the count: the count is the stroke
-                            # width and the tooltip. Arrow text returns only as
-                            # a short semantic label with a collision gate.
-                            label="",
-                            note=f"{w} import{'s' if w != 1 else ''}",
-                            evidence=tuple(sorted(set(ev)))[:MAX_EVIDENCE_PER_BOX],
-                            weight=w,
-                        )
+                        _import_edge(a, b, w, tuple(sorted(set(ev)))[:MAX_EVIDENCE_PER_BOX])
                         for (a, b), (w, ev) in top_edges.items()
                     ]
                     + ext_edges
@@ -605,14 +613,7 @@ class ArchitectureDeriver(Deriver):
         edges = tuple(
             sorted(
                 [
-                    DiagramEdge(
-                        src=a,
-                        dst=b,
-                        label="",
-                        note=f"{w} import{'s' if w != 1 else ''}",
-                        evidence=ev,
-                        weight=w,
-                    )
+                    _import_edge(a, b, w, ev)
                     for a, b, w, ev in pairs
                     if a in inside and b in inside
                 ]
@@ -682,16 +683,7 @@ class ModuleDepsDeriver(Deriver):
         known = {n.id for n in nodes}
         edges = tuple(
             sorted(
-                DiagramEdge(
-                    src=a,
-                    dst=b,
-                    label="",
-                    note=f"{w} import{'s' if w != 1 else ''}",
-                    evidence=ev,
-                    weight=w,
-                )
-                for a, b, w, ev in pairs
-                if a in known and b in known
+                _import_edge(a, b, w, ev) for a, b, w, ev in pairs if a in known and b in known
             )
         )
         diags: list[Diagnostic] = []

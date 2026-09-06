@@ -360,9 +360,22 @@ def _inferred_layers_cyclic(spec: DiagramSpec) -> frozenset[str]:
 
 
 def _levels(spec: DiagramSpec, boxes: Sequence[Box]) -> dict[str, int]:
-    """The dependency level of each box: declared if available, else inferred."""
+    """The dependency level of each box: declared if available, else inferred.
+
+    External boxes (stores, buses, cloud APIs a module talks to) sink to the
+    bottom layer whatever the inference said: they only ever receive arrows,
+    and Archify puts what a system talks to below what talks. Left to the
+    inference, a store used from inside a dependency cycle landed in the
+    cycle's own row among the modules.
+    """
     _ = boxes
-    return _declared_layers(spec) or _inferred_layers(spec)
+    levels = dict(_declared_layers(spec) or _inferred_layers(spec))
+    external = {n.id for n in spec.nodes if any(k == "external" for k, _ in n.attrs)}
+    if external and len(external) < len(levels):
+        bottom = max(v for k, v in levels.items() if k not in external) + 1
+        for nid in external:
+            levels[nid] = bottom
+    return levels
 
 
 def _cyclic_ids(spec: DiagramSpec) -> frozenset[str]:
