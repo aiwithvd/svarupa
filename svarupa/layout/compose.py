@@ -86,8 +86,12 @@ def expand(
     host = canvas.box(host_id)
     if host is None:
         return None
+    # The id names the HOST view and the box, not the child: two request
+    # stories that share a module each pre-render an expansion of the same
+    # child, and an id built from the child alone made the viewer open the
+    # first story's copy from inside the second (review #17 F1).
     return Expanded(
-        id=f"{child.spec_id}{EXPANDED_SUFFIX}",
+        id=f"{parent.id}//{host_id}{EXPANDED_SUFFIX}",
         canvas=canvas,
         host=host_id,
         child=child,

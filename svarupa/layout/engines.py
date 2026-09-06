@@ -1049,19 +1049,15 @@ def flow(
     width = x - col_gap + style.margin + pad + style.lane_gutter
     height = top + tallest + style.margin + pad
 
-    # Routes. Adjacent columns cross their shared gap on a per-edge track;
-    # skipping edges climb into the corridor.
-    routes: list[Route] = []
-    # Tracks are budgeted per gap, not per diagram. Dividing by the whole
-    # spec's edge count skewed every track toward the gap's left edge and let
-    # two edges through one gap land on the same x, which is the smear failure
-    # the layered rewrite was named for, at smaller scale.
-    gap_budget: dict[int, int] = {}
+    # Routes. Adjacent columns cross their shared gap on a per-edge track.
+    # A forward edge that skips columns first tries a straight run at its
+    # own height through the columns it skips, and takes it when no box
+    # there is in the way: a request story fans one handler out to twenty
+    # hop-1 modules whose store edges all skip a two-box hop-2 column, and
+    # sending every one of them up the corridor rebuilt the rail the layered
+    # rewrite removed. Only a run that would cross a box, and every
+    # same-column or backward edge, climbs into the corridor.
     edge_map = _edge_map(spec)
-    for (src, dst), _e in sorted(edge_map.items()):
-        if src in placed and dst in placed and not takes_corridor(src, dst):
-            gap_budget[levels.get(src, 0)] = gap_budget.get(levels.get(src, 0), 0) + 1
-    track_use: dict[int, int] = {}
     exits: dict[str, list[str]] = {}
     entries: dict[str, list[str]] = {}
     for e in sorted(spec.edges, key=lambda e: (e.src, e.dst)):
@@ -1074,6 +1070,40 @@ def flow(
         step = b.h // (slots + 1)
         return b.y + max(1, step) * (1 + (nth - 1) % slots)
 
+    # Ports are per SIDE of a box, not per direction. Every exit leaves on
+    # the right, and a backward edge also ENTERS on the right, so an exit and
+    # a back-entry fanned over separate lists landed on one height and two
+    # arrows shared the last 10px into the box (SVA-G-015 on a two-node
+    # cycle). Forward entries alone use the left side.
+    right_ports: dict[str, list[tuple[str, str]]] = {}
+    left_ports: dict[str, list[str]] = {}
+    for bid in placed:
+        right_ports[bid] = [("out", d) for d in exits.get(bid, [])] + [
+            ("in", s) for s in entries.get(bid, []) if levels.get(s, 0) >= levels.get(bid, 0)
+        ]
+        left_ports[bid] = [
+            s for s in entries.get(bid, []) if levels.get(s, 0) < levels.get(bid, 0)
+        ]
+
+    def exit_y(src: str, dst: str) -> int:
+        ports = right_ports[src]
+        return fan_y(placed[src], ports.index(("out", dst)) + 1, len(ports))
+
+    def entry_fan_y(b: Box, nth: int, total: int) -> int:
+        """Entry heights on a box's left side sit between the exit heights
+        of the box before it: boxes in adjacent columns share row bands, so
+        a single exit at mid-height met a single entry at mid-height and
+        two different edges shared the gap's horizontal (SVA-G-015)."""
+        return b.y + max(1, (b.h * (2 * nth - 1)) // (2 * total + 1))
+
+    def entry_y(src: str, dst: str) -> int:
+        if levels.get(src, 0) >= levels.get(dst, 0):
+            ports = right_ports[dst]
+            return fan_y(placed[dst], ports.index(("in", src)) + 1, len(ports))
+        left = left_ports[dst]
+        return entry_fan_y(placed[dst], left.index(src) + 1, len(left))
+
+    order = sorted(columns)
     # A column's horizontal extent: a corridor edge climbs and drops BESIDE
     # the whole column, never at its own box's edge. Dropping at `b.x - 10`
     # ran through every wider box stacked above the target in that column,
@@ -1085,33 +1115,107 @@ def flow(
         level: max(placed[b.id].right for b in col) for level, col in columns.items() if col
     }
 
+    def clear_run(la: int, lb: int, y: int) -> bool:
+        """No box in the skipped columns sits on the line y (with clearance)."""
+        for level in order:
+            if la < level < lb:
+                for b in columns[level]:
+                    pb = placed[b.id]
+                    if pb.y - 6 <= y <= pb.y + pb.h + 6:
+                        return False
+        return True
+
+    # Every non-adjacent edge drops into its target through the gap beside
+    # that column (left of it going forward, right of it going back). The
+    # drop x belongs to the TARGET, not the edge: twenty modules reaching one
+    # store share one trunk and split off at their own heights, which is a
+    # bundle, where twenty parallel drops 4px apart were the rail again. The
+    # adjacent tracks through the same gap leave room for the trunks.
+    drop_k: dict[tuple[str, str], int] = {}
+    fwd_drops: dict[int, int] = {}
+    bwd_drops: dict[int, int] = {}
+    trunk: dict[tuple[int, str], int] = {}
+    straight: set[tuple[str, str]] = set()
+    for src, dst in skips:
+        la, lb = levels.get(src, 0), levels.get(dst, 0)
+        if lb > la:
+            g = order.index(lb) - 1
+            if (g, dst) not in trunk:
+                trunk[(g, dst)] = fwd_drops.get(g, 0)
+                fwd_drops[g] = fwd_drops.get(g, 0) + 1
+            drop_k[(src, dst)] = trunk[(g, dst)]
+            ay = exit_y(src, dst)
+            if clear_run(la, lb, ay):
+                straight.add((src, dst))
+        else:
+            g = order.index(lb)
+            if (g, dst) not in trunk:
+                trunk[(g, dst)] = bwd_drops.get(g, 0)
+                bwd_drops[g] = bwd_drops.get(g, 0) + 1
+            drop_k[(src, dst)] = trunk[(g, dst)]
+    corridor_edges = [s for s in skips if s not in straight]
+    # Each corridor climb from a column gets its own x. Indexed per SOURCE
+    # (exit rank), two sources with the same rank climbed on one line, and
+    # 65 distinct edges were drawn on top of each other on one canvas with
+    # no finding (review #17 F2); the validator now has SVA-G-015 for it.
+    climb_k: dict[tuple[str, str], int] = {}
+    climbs: dict[int, int] = {}
+    for s in corridor_edges:
+        col = levels.get(s[0], 0)
+        climb_k[s] = climbs.get(col, 0)
+        climbs[col] = climbs.get(col, 0) + 1
+    # Lanes reserved for edges that then ran straight are given back: the
+    # shift is uniform, so no crossing decision above changes.
+    if straight:
+        delta = 12 * len(straight)
+        for bid, pb in placed.items():
+            placed[bid] = replace(pb, y=pb.y - delta)
+        height -= delta
+
+    routes: list[Route] = []
+    # Tracks are budgeted per gap, not per diagram. Dividing by the whole
+    # spec's edge count skewed every track toward the gap's left edge and let
+    # two edges through one gap land on the same x, which is the smear failure
+    # the layered rewrite was named for, at smaller scale.
+    gap_budget: dict[int, int] = {}
+    for (src, dst), _e in sorted(edge_map.items()):
+        if src in placed and dst in placed and not takes_corridor(src, dst):
+            gap_budget[levels.get(src, 0)] = gap_budget.get(levels.get(src, 0), 0) + 1
+    track_use: dict[int, int] = {}
+
     for i, ((src, dst), edge) in enumerate(sorted(edge_map.items())):
         if src not in placed or dst not in placed:
             continue
         a, b = placed[src], placed[dst]
-        ay = fan_y(a, exits[src].index(dst) + 1, len(exits[src]))
-        by = fan_y(b, entries[dst].index(src) + 1, len(entries[dst]))
+        ay = exit_y(src, dst)
+        by = entry_y(src, dst)
         la, lb = levels.get(src, 0), levels.get(dst, 0)
         if not takes_corridor(src, dst):
-            gx0, gx1 = gaps[sorted(columns).index(la)]
+            g = order.index(la)
+            gx0, gx1 = gaps[g]
             used = track_use.get(la, 0)
             track_use[la] = used + 1
-            span = max(1, gx1 - gx0 - 16)
-            tx = gx0 + 8 + (used * span) // max(1, gap_budget.get(la, 1))
+            left = 8 + (4 * bwd_drops[g] + 8 if bwd_drops.get(g) else 0)
+            right = 8 + (4 * fwd_drops[g] + 8 if fwd_drops.get(g) else 0)
+            span = max(1, gx1 - gx0 - left - right)
+            tx = gx0 + left + (used * span) // max(1, gap_budget.get(la, 1))
             points = ((a.right, ay), (tx, ay), (tx, by), (b.x, by))
+        elif (src, dst) in straight:
+            in_x = col_left[lb] - 10 - 4 * drop_k[(src, dst)]
+            points = ((a.right, ay), (in_x, ay), (in_x, by), (b.x, by))
         else:
             # Through the corridor above everything, one lane per edge.
-            lane_y = style.margin + 6 + 12 * skips.index((src, dst))
-            out_x = col_right[la] + 10 + 4 * (exits[src].index(dst))
+            lane_y = style.margin + 6 + 12 * corridor_edges.index((src, dst))
+            out_x = col_right[la] + 10 + 4 * climb_k[(src, dst)]
             backward = lb <= la
             # A backward edge enters its target from the right, so the
             # arrowhead points against the flow, which is what a backward
             # dependency is.
             in_edge = b.right if backward else b.x
             in_x = (
-                (col_right[lb] + 10 + 4 * entries[dst].index(src))
+                (col_right[lb] + 10 + 4 * drop_k[(src, dst)])
                 if backward
-                else (col_left[lb] - 10 - 4 * entries[dst].index(src))
+                else (col_left[lb] - 10 - 4 * drop_k[(src, dst)])
             )
             points = (
                 (a.right, ay),

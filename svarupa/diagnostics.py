@@ -140,6 +140,7 @@ CODES: dict[str, str] = {
     "SVA-G-012": "a boundary does not contain the boxes it claims or leaves the canvas",
     "SVA-G-013": "a route label overlaps a box or another label",
     "SVA-G-014": "a boundary was not drawn because it would enclose non-members",
+    "SVA-G-015": "two different edges are drawn on top of each other",
     # emit
     "SVA-E-001": "the output directory holds files this tool does not own",
     # lock

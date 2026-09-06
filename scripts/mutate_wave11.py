@@ -52,8 +52,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     (
         "flow tracks budget against the whole diagram again",
         "svarupa/layout/engines.py",
-        "            tx = gx0 + 8 + (used * span) // max(1, gap_budget.get(la, 1))",
-        "            tx = gx0 + 8 + (used * span) // max(1, len(edge_map) * 4)",
+        "            tx = gx0 + left + (used * span) // max(1, gap_budget.get(la, 1))",
+        "            tx = gx0 + left + (used * span) // max(1, len(edge_map) * 4)",
     ),
     (
         "a backward flow edge enters from the left",

@@ -1113,3 +1113,120 @@ def test_flow_tracks_are_distinct_within_one_gap() -> None:
         "the wrong denominator"
     )
     assert validate(c, STYLE) == ()
+
+
+def test_flow_runs_a_clear_skip_straight_and_shares_one_trunk_per_target() -> None:
+    """Three sources skip a one-box middle column into one sink. The middle
+    box sits at the column's centre, so the middle source's run is blocked
+    and takes the corridor; the top and bottom runs are clear, go straight at
+    their own height, and drop on ONE shared x (a bundle, not a rail). The
+    lanes reserved for the two straight edges are given back above."""
+    s = flow_spec_of(
+        ("a1", "x"),
+        ("a2", "x"),
+        ("a3", "x"),
+        ("a2", "m"),
+        ("m", "x"),
+        layers={"a1": "0", "a2": "0", "a3": "0", "m": "1", "x": "2"},
+    )
+    c = lay_out(s, STYLE, "flow")
+    assert validate(c, STYLE) == (), [d.render() for d in validate(c, STYLE)]
+    assert crossings(c) == [], crossings(c)
+    by = {(r.src, r.dst): r for r in c.routes}
+    top_of_boxes = min(b.y for b in c.boxes)
+    m, x = c.box("m"), c.box("x")
+    assert m is not None and x is not None
+    for src in ("a1", "a3"):
+        r = by[(src, "x")]
+        assert len(r.points) == 4, (src, r.points)
+        assert all(y >= top_of_boxes for _, y in r.points), "a clear run never climbs"
+        assert m.right < r.points[1][0] < x.x, (
+            "the drop is in the gap left of the sink's column"
+        )
+    assert by[("a1", "x")].points[1][0] == by[("a3", "x")].points[1][0], "one trunk per target"
+    blocked = by[("a2", "x")]
+    assert len(blocked.points) == 6 and any(y < top_of_boxes for _, y in blocked.points), (
+        "the run through the middle box takes the corridor"
+    )
+    assert top_of_boxes == STYLE.margin + 12 + 12 * 1, (
+        "the corridor holds one lane: the two straight edges gave theirs back"
+    )
+
+
+def test_two_different_edges_on_one_line_are_a_finding() -> None:
+    """Review #17 F2: 65 collinear distinct edges on one canvas, zero
+    findings. Shared endpoints (a bundle into one box) and a mutual pair are
+    allowed; anything else is reported."""
+    a, b, c, d = box("a", 0, 0), box("b", 300, 0), box("c", 0, 200), box("d", 300, 200)
+    shared = Route(
+        src="a",
+        dst="b",
+        label="",
+        points=((96, 22), (150, 22), (150, 222), (300, 222)),
+        evidence=EV,
+    )
+    other = Route(
+        src="c",
+        dst="d",
+        label="",
+        points=((96, 222), (150, 222), (150, 100), (300, 100)),
+        evidence=EV,
+    )
+    cv = canvas(a, b, c, d, routes=(shared, other))
+    codes = [x.code for x in validate(cv, STYLE)]
+    assert "SVA-G-015" in codes
+    found = next(x for x in validate(cv, STYLE) if x.code == "SVA-G-015")
+    assert found.severity.value == "WARNING" and "for 122px" in found.message
+    bundle = Route(
+        src="c",
+        dst="b",
+        label="",
+        points=((96, 222), (150, 222), (150, 22), (300, 22)),
+        evidence=EV,
+    )
+    assert "SVA-G-015" not in [
+        x.code for x in validate(canvas(a, b, c, d, routes=(shared, bundle)), STYLE)
+    ]
+
+
+def test_flow_corridor_climbs_from_one_column_take_different_x() -> None:
+    """Indexed per source, two sources with the same exit rank climbed on one
+    line (review #17 F2)."""
+    # Two boxes per column: rows align, so every straight run from a1 or a2
+    # meets m1 or m2 and the skips take the corridor. The upper source is
+    # wider than the lower one, so a climb at the lower box's own right
+    # edge would cut through the upper box.
+    s = flow_spec_of(
+        ("a1_with_a_long_name", "m1"),
+        ("a1_with_a_long_name", "m2"),
+        ("a2", "m1"),
+        ("a2", "m2"),
+        ("a1_with_a_long_name", "x"),
+        ("a2", "y"),
+        ("m2", "x"),
+        ("m2", "y"),
+        layers={
+            "a1_with_a_long_name": "0",
+            "a2": "0",
+            "m1": "1",
+            "m2": "1",
+            "x": "2",
+            "y": "2",
+        },
+    )
+    c = lay_out(s, STYLE, "flow")
+    assert not [x for x in validate(c, STYLE) if x.severity.value == "ERROR"]
+    corridor = [r for r in c.routes if len(r.points) == 6]
+    assert len(corridor) >= 2, "the fixture must send at least two edges up the corridor"
+    climbs = [r.points[1][0] for r in corridor]
+    assert len(set(climbs)) == len(climbs), climbs
+    assert "SVA-G-015" not in [x.code for x in validate(c, STYLE)]
+
+
+def test_flow_entry_heights_do_not_meet_exit_heights_across_a_gap() -> None:
+    """Boxes in adjacent columns share row bands, so a single exit at mid
+    height met a single entry at mid height and two edges shared the gap's
+    horizontal. Entries sit between exits."""
+    s = flow_spec_of(("a", "d"), ("b", "c"), layers={"a": "0", "b": "0", "c": "1", "d": "1"})
+    c = lay_out(s, STYLE, "flow")
+    assert validate(c, STYLE) == (), [x.render() for x in validate(c, STYLE)]

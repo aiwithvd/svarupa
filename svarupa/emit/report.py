@@ -45,19 +45,27 @@ def _grouped(diags: list[Diagnostic]) -> list[str]:
     One code can fire once per view (a capped component list in each of a
     hundred request stories), and a hundred near-identical lines hide the
     one finding a reader needs. Each code shows its first instances and a
-    count of the rest.
+    count of the rest. The trailing count is of FINDINGS, never of lines:
+    `_listing`'s own "and N more" counted the "more of this code" lines as
+    findings (review #17 F12).
     """
     by_code: dict[str, list[Diagnostic]] = {}
     for d in diags:
         by_code.setdefault(d.code, []).append(d)
-    out: list[str] = []
+    lines: list[tuple[str, int]] = []  # (text, findings the line stands for)
     for code in sorted(by_code):
         group = by_code[code]
         for d in group[:3]:
-            out.append(f"`{code}` {d.subject or ''} {d.message}".strip())
+            lines.append((f"`{code}` {d.subject or ''} {d.message}".strip(), 1))
         if len(group) > 3:
-            out.append(f"`{code}` *... and {len(group) - 3} more of this code*")
-    return out
+            lines.append(
+                (f"`{code}` *... and {len(group) - 3} more of this code*", len(group) - 3)
+            )
+    if len(lines) <= MAX_LISTED:
+        return [text for text, _ in lines]
+    kept = lines[: MAX_LISTED - 1]
+    rest = len(diags) - sum(n for _, n in kept)
+    return [text for text, _ in kept] + [f"*... and {rest} more finding(s), see `--json`*"]
 
 
 def _semantics_scope(graph: Graph) -> list[str]:

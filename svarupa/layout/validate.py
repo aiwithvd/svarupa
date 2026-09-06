@@ -57,7 +57,64 @@ def validate(canvas: Canvas, style: Style) -> tuple[Diagnostic, ...]:
     out.extend(_check_bands(canvas))
     out.extend(_check_regions(canvas))
     out.extend(_check_labels(canvas, style))
+    out.extend(_check_route_overlap(canvas))
     return tuple(out)
+
+
+def _check_route_overlap(canvas: Canvas) -> list[Diagnostic]:
+    """Two edges that connect different things never share a line.
+
+    Review #17 found 65 pairs of distinct edges drawn collinear on one canvas
+    (every corridor climb from a column at the same x) with zero findings:
+    the crossing check sees boxes, the label check sees labels, and nothing
+    saw a route on a route. Two arrows drawn as one line is one arrow to a
+    reader, which is a wrong picture, not an ugly one.
+
+    A shared trunk is allowed when the two edges share an endpoint: several
+    modules reaching one store through one vertical is a bundle, and the
+    arrows still end on the same box. Two edges between the same two boxes
+    (a mutual dependency) are also allowed to share a line.
+
+    WARNING, not ERROR, for now: the layered and clustered routers also
+    share lines between distinct edges in row gaps (measured when this gate
+    was added), and fixing their track allocation is Wave D work. The
+    finding reaches the report either way; the flow engine produces none.
+    """
+    out: list[Diagnostic] = []
+    routes = canvas.routes
+    for i, r in enumerate(routes):
+        for s in routes[i + 1 :]:
+            if r.src == s.src or r.dst == s.dst or {r.src, r.dst} == {s.src, s.dst}:
+                continue
+            for (ax1, ay1), (ax2, ay2) in pairwise(r.points):
+                for (bx1, by1), (bx2, by2) in pairwise(s.points):
+                    vertical = ax1 == ax2 == bx1 == bx2
+                    horizontal = ay1 == ay2 == by1 == by2
+                    if vertical:
+                        lo = max(min(ay1, ay2), min(by1, by2))
+                        hi = min(max(ay1, ay2), max(by1, by2))
+                    elif horizontal:
+                        lo = max(min(ax1, ax2), min(bx1, bx2))
+                        hi = min(max(ax1, ax2), max(bx1, bx2))
+                    else:
+                        continue
+                    if hi > lo:
+                        out.append(
+                            Diagnostic(
+                                code="SVA-G-015",
+                                severity=Severity.WARNING,
+                                message=(
+                                    f"is drawn on top of the different edge {s.src} -> {s.dst} "
+                                    f"for {hi - lo}px at ({ax1},{ay1})-({ax2},{ay2})"
+                                ),
+                                subject=f"{r.src} -> {r.dst}",
+                            )
+                        )
+                        break
+                else:
+                    continue
+                break
+    return out
 
 
 def _check_integers(canvas: Canvas) -> list[Diagnostic]:

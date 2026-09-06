@@ -1066,16 +1066,18 @@ def test_every_embeddable_drillable_box_has_an_expanded_variant(tmp_path: Path) 
     html = (out / "index.html").read_text(encoding="utf8")
 
     drillable = [
-        (sid, n.child_spec)
+        (sid, n.id, n.child_spec)
         for lo in artifact.laid_out.values()  # type: ignore[attr-defined]
         for sid, c in lo.canvases.items()
         for n in c.boxes
         if n.child_spec is not None
     ]
     assert drillable, "the fixture has no drill-down, so nothing was tested"
-    for _, child in drillable:
-        assert f'data-view="{esc(child)}//expanded"' in html, (
-            f"no in-place expansion for {child}"
+    # The expansion is named for the HOST view and the box, so a child
+    # shared by two views has one expansion per view (review #17 F1).
+    for sid, box_id, child in drillable:
+        assert f'data-view="{esc(sid)}//{esc(box_id)}//expanded"' in html, (
+            f"no in-place expansion for {box_id} in {sid} ({child})"
         )
 
     for name in sorted((out / "diagrams").iterdir()):

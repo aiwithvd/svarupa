@@ -263,8 +263,13 @@ def test_emit_carries_the_kind_scopes_and_boundary_data(tmp_path: Path) -> None:
     assert main([str(tmp_path), "--out", str(out)]) == 0
     html = (out / "index.html").read_text(encoding="utf8")
     assert 'class="sv-node sv-kind-' in html, "the kind class is on the group"
-    assert 'data-scope="parent"' in html and 'data-scope="child"' in html
-    assert 'data-kind="boundary"' in html
+    # The element form, not the bare attribute: the viewer's own script now
+    # contains the selector text `[data-scope="child"]`, which satisfied the
+    # old assertion with the scopes deleted.
+    assert '<g data-scope="parent">' in html and '<g data-scope="child">' in html
+    # A boundary's kind is its own (service, stage), not the generic word:
+    # the passport called a stage frame a boundary (review #17 F10).
+    assert 'data-kind="service"' in html
     assert "sv-boundary sv-kind-service" in html
 
 

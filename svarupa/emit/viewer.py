@@ -483,11 +483,25 @@ def _js() -> Markup:
 
   function openView(node, child) {
     var tab = node.closest('.tab');
+    var view = node.closest('.view');
+    // The expansion to open belongs to the view the box is IN: the plain
+    // view's own id, the host of an expanded view for a sibling box, or the
+    // embedded child for a box inside the container. Keyed on the child
+    // alone, two stories sharing a module opened each other's copy.
+    var host = view.dataset.view;
+    if (view.dataset.host) {
+      host = node.closest('[data-scope="child"]') ? view.dataset.plain : view.dataset.host;
+    }
+    var nodeId = node.getAttribute('data-id') || '';
     // Prefer the pre-rendered in-place expansion; a child too large to embed
     // has no variant and opens as its own view instead.
-    var target = tab.querySelector('[data-view="' + CSS.escape(child + '//expanded') + '"]')
+    var target = tab.querySelector('[data-view="' + CSS.escape(host + '//' + nodeId + '//expanded') + '"]')
       || tab.querySelector('[data-view="' + CSS.escape(child) + '"]');
     if (!target) return;
+    // A plain child view records one parent, but a shared child is reached
+    // from several: its crumb goes back to where the reader came from.
+    var crumb = target.querySelector('[data-up]');
+    if (crumb && !target.dataset.host) { crumb.dataset.up = view.dataset.view; }
     tab.querySelectorAll('.view').forEach(function (v) {
       v.classList.remove('is-open');
     });
@@ -691,6 +705,7 @@ def _expanded_views(ds: DiagramSet, lo: LaidOutDiagram, style: Style) -> list[Ma
                     class_="view",
                     data_view=exp.id,
                     data_plain=child_id,
+                    data_host=sid,
                 )
             )
     return out

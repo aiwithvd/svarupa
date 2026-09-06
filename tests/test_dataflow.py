@@ -87,7 +87,7 @@ def test_data_flow_stages_are_evidenced_and_ordered(tmp_path: Path) -> None:
     ]
     assert module_edges, "handler -> domain -> store import edges are drawn"
     assert all(hop[e.dst] > hop[e.src] for e in module_edges), "data flows downstream only"
-    assert root.subtitle.endswith("; 1 import against the flow not drawn"), root.subtitle
+    assert root.subtitle.endswith("; 1 upstream import not drawn"), root.subtitle
 
 
 def test_modules_reachable_from_no_handler_are_not_drawn_and_counted(tmp_path: Path) -> None:
@@ -135,7 +135,7 @@ def test_request_flow_has_one_story_per_endpoint_group(tmp_path: Path) -> None:
     assert any(n.id == "ext:database:PostgreSQL" for n in story.nodes)
     assert {r.label for r in story.regions} == {"handler", "hop 1", "hop 2"}
     assert "not call order" in story.subtitle and "not call order" in root.subtitle
-    assert story.subtitle.endswith("; 1 import against the flow not drawn"), story.subtitle
+    assert story.subtitle.endswith("; 1 upstream import not drawn"), story.subtitle
     assert {(e.src, e.dst) for e in story.edges if e.src == "store"} == {
         ("store", "ext:database:PostgreSQL")
     }, "store -> domain runs against the hops and is counted, not drawn"
@@ -209,3 +209,238 @@ def test_a_corridor_edge_into_a_lower_stacked_box_crosses_nothing(tmp_path: Path
     for prefix, ids in (("ext:", ("ext:cloud", "ext:database")), ("", ("aaa", "b"))):
         col = sorted((b for b in root.boxes if b.id.startswith(ids)), key=lambda b: b.y)
         assert len(col) == 2 and col[0].w > col[1].w, (prefix, [(b.id, b.w) for b in col])
+
+
+# --- review #17: the properties the wave named, pinned ------------------------------
+#
+# Thirteen of the reviewer's mutations survived the suite, including deleting
+# every drill door in both views. Each test below is one of those claims.
+
+
+def _by_id(spec):  # type: ignore[no-untyped-def]
+    return {n.id: n for n in spec.nodes}
+
+
+def test_every_module_box_in_both_flow_views_has_a_drill_door(tmp_path: Path) -> None:
+    _service(tmp_path)
+    _, (produced, _notes) = _produced(tmp_path)
+    root = produced[DiagramKind.DATA_FLOW].root_spec
+    for mid in ("api", "domain", "store"):
+        assert _by_id(root)[mid].child_spec, f"{mid} in data flow drills nowhere"
+    ds = produced[DiagramKind.REQUEST_FLOW]
+    story = ds.specs[ds.root_spec.nodes[0].child_spec or ""]
+    for mid in ("api", "domain", "store"):
+        assert _by_id(story)[mid].child_spec, f"{mid} in the request story drills nowhere"
+    assert _by_id(story)["api"].attr("roles") == "api", "roles travel into the story"
+    assert _by_id(story)["domain"].attr("stage") == "Domain"
+    assert _by_id(story)["domain"].sublabel.startswith("hop 1 · ")
+    assert _by_id(story)["api"].sublabel.startswith("handler · ")
+
+
+def test_kinds_edges_and_counts_are_the_named_ones(tmp_path: Path) -> None:
+    _service(tmp_path)
+    _, (produced, _notes) = _produced(tmp_path)
+    root = produced[DiagramKind.DATA_FLOW].root_spec
+    by = _by_id(root)
+    assert by["api"].kind == "backend" and by["in:api"].kind == "endpoint"
+    assert by["ext:database:PostgreSQL"].attr("layer") == "4", "one column after hop 2"
+    handles = next(e for e in root.edges if e.label == "handles")
+    assert handles.evidence == by["in:api"].evidence, "cites the route lines"
+    assert handles.variant == "emphasis"
+    api_domain = next(e for e in root.edges if (e.src, e.dst) == ("api", "domain"))
+    assert api_domain.note == "1 import" and api_domain.weight == 1
+    assert {(e.file, e.start_line) for e in api_domain.evidence} == {("api/routes.py", 2)}
+    assert root.subtitle.startswith("1 ingress module, 2 domain modules, 1 external")
+    assert all(r.kind == "stage" for r in root.regions)
+    ds = produced[DiagramKind.REQUEST_FLOW]
+    assert ds.root_spec.nodes[0].kind == "endpoint"
+    story = ds.specs[ds.root_spec.nodes[0].child_spec or ""]
+    assert story.subtitle.startswith("3 modules within 2 import hops")
+    assert {n.attr("layer") for n in story.nodes if n.attr("hop")} == {"0", "1", "2"}
+    sev = next(d for d in produced[DiagramKind.DATA_FLOW].diagnostics if d.code == "SVA-R-007")
+    assert sev.severity.value == "INFO"
+
+
+def test_stage_and_hop_frames_cite_the_lines_that_put_members_in_them(tmp_path: Path) -> None:
+    """Not "the first member's first line": the route lines for ingress and
+    handlers, the import that reached a domain module, the classified import
+    for a store."""
+    _service(tmp_path)
+    _, (produced, _notes) = _produced(tmp_path)
+    root = produced[DiagramKind.DATA_FLOW].root_spec
+    frames = {r.label: {(e.file, e.start_line) for e in r.evidence} for r in root.regions}
+    # One citation per member: the first route line places the ingress box
+    # and its handler in their stages.
+    assert frames["01 / Ingress"] == {("api/routes.py", 5)}
+    assert frames["02 / Handlers"] == {("api/routes.py", 5)}
+    assert frames["03 / Domain"] == {("api/routes.py", 2), ("domain/orders.py", 1)}
+    assert frames["04 / Storage / External"] == {("store/db.py", 1)}
+    ds = produced[DiagramKind.REQUEST_FLOW]
+    story = ds.specs[ds.root_spec.nodes[0].child_spec or ""]
+    hop_frames = {r.label: {(e.file, e.start_line) for e in r.evidence} for r in story.regions}
+    assert hop_frames["handler"] == {("api/routes.py", 5)}
+    assert hop_frames["hop 1"] == {("api/routes.py", 2)}
+    assert hop_frames["hop 2"] == {("domain/orders.py", 1)}
+
+
+def test_routes_in_test_files_are_not_ingress(tmp_path: Path) -> None:
+    _service(tmp_path)
+    # Inside the api package, so the module is the same and only the
+    # architecture gate keeps the test file's route out of the count.
+    write(
+        tmp_path,
+        "api/test_routes.py",
+        "from fastapi import APIRouter\nrouter = APIRouter()\n\n@router.get('/only-in-a-test')\n"
+        "def t():\n    pass\n",
+    )
+    _, (produced, _notes) = _produced(tmp_path)
+    by = _by_id(produced[DiagramKind.DATA_FLOW].root_spec)
+    assert by["in:api"].sublabel == "2 routes" and not any(k.startswith("in:tests") for k in by)
+
+
+def test_a_lateral_import_is_counted_as_lateral_and_not_drawn(tmp_path: Path) -> None:
+    """A handler importing another handler (the include_router shape) is
+    sideways, not backwards; one number called "against the flow" hid the
+    difference (review #17 F5)."""
+    for mod in ("api", "admin"):
+        write(tmp_path, f"{mod}/__init__.py", "")
+    write(
+        tmp_path,
+        "api/routes.py",
+        "from fastapi import APIRouter\nfrom admin import routes\nrouter = APIRouter()\n\n"
+        "@router.get('/a')\ndef a():\n    pass\n",
+    )
+    write(
+        tmp_path,
+        "admin/routes.py",
+        "from fastapi import APIRouter\nrouter = APIRouter()\n\n@router.get('/b')\ndef b():\n    pass\n",
+    )
+    _, (produced, _notes) = _produced(tmp_path)
+    root = produced[DiagramKind.DATA_FLOW].root_spec
+    assert root.subtitle.endswith("; 1 lateral import not drawn"), root.subtitle
+    assert not any((e.src, e.dst) == ("api", "admin") for e in root.edges)
+    # In api's own story admin is a hop-1 module, so the same import is
+    # downstream there and drawn: lateral is a property of the stage view.
+    ds = produced[DiagramKind.REQUEST_FLOW]
+    api_story = ds.specs[_by_id(ds.root_spec)["req:api"].child_spec or ""]
+    assert any((e.src, e.dst) == ("api", "admin") for e in api_story.edges)
+    assert "not drawn" not in api_story.subtitle
+
+
+def test_identical_ingress_labels_name_their_handler(tmp_path: Path) -> None:
+    for mod in ("api", "admin"):
+        write(tmp_path, f"{mod}/__init__.py", "")
+        write(
+            tmp_path,
+            f"{mod}/routes.py",
+            "from fastapi import APIRouter\nrouter = APIRouter()\n\n@router.get('/health')\n"
+            "def h():\n    pass\n",
+        )
+    _, (produced, _notes) = _produced(tmp_path)
+    by = _by_id(produced[DiagramKind.DATA_FLOW].root_spec)
+    assert (
+        by["in:api"].sublabel == "1 route · api"
+        and by["in:admin"].sublabel == "1 route · admin"
+    )
+
+
+def test_ingress_labels_cut_at_a_path_boundary() -> None:
+    from svarupa.derive.dataflow import _cut
+
+    assert _cut(["/api/v1/organisations/{org_id}/billing/invoices"]) == (
+        "/api/v1/organisations/{org_id}/billing…"
+    )
+    assert _cut(["/a", "/b", "/c", "/d"]) == "/a, /b, /c …"
+    assert _cut(["/short"]) == "/short"
+
+
+def test_reachability_passes_through_generated_code(tmp_path: Path) -> None:
+    """A handler -> generated schema -> store chain reaches the store. Following
+    module-to-module pairs only cut the request there and then reported the
+    store as reachable from no handler (review #17 F6)."""
+    write(tmp_path, "api/__init__.py", "")
+    write(
+        tmp_path,
+        "api/routes.py",
+        "from fastapi import APIRouter\nfrom gen import schema_pb2\nrouter = APIRouter()\n\n"
+        "@router.get('/x')\ndef x():\n    pass\n",
+    )
+    write(tmp_path, "gen/__init__.py", "")
+    write(tmp_path, "gen/schema_pb2.py", "from store import db\n")
+    write(tmp_path, "store/__init__.py", "")
+    write(tmp_path, "store/db.py", "import psycopg2\n")
+    _, (produced, _notes) = _produced(tmp_path)
+    ds = produced[DiagramKind.DATA_FLOW]
+    by = _by_id(ds.root_spec)
+    assert by["store"].attr("hop") == "1", "the generated module is not a hop"
+    assert "ext:database:PostgreSQL" in by
+    edge = next(e for e in ds.root_spec.edges if (e.src, e.dst) == ("api", "store"))
+    assert edge.note == "2 imports via gen"
+    assert {(e.file, e.start_line) for e in edge.evidence} == {
+        ("api/routes.py", 2),
+        ("gen/schema_pb2.py", 1),
+    }
+    assert not any(
+        "store" in (d.subject or "") for d in ds.diagnostics if d.code == "SVA-R-007"
+    )
+
+
+def test_two_stories_sharing_a_module_expand_their_own_copies(tmp_path: Path) -> None:
+    """Expansion ids name the host view and the box. Named for the child
+    alone, drilling a shared module from one story opened the other story's
+    copy, crumb and siblings included (review #17 F1)."""
+    import re
+
+    _service(tmp_path)
+    write(tmp_path, "admin/__init__.py", "")
+    write(
+        tmp_path,
+        "admin/routes.py",
+        "from fastapi import APIRouter\nfrom domain import orders\nrouter = APIRouter()\n\n"
+        "@router.get('/admin')\ndef a():\n    pass\n",
+    )
+    out = tmp_path / "out"
+    assert main([str(tmp_path), "--out", str(out)]) == 0
+    html = (out / "index.html").read_text(encoding="utf8")
+    assert 'data-view="/spec/req:api//domain//expanded"' in html
+    assert 'data-view="/spec/req:admin//domain//expanded"' in html
+    for tab in html.split('class="tab"')[1:]:
+        views = re.findall(r'data-view="([^"]+)"', tab)
+        dupes = {v for v in views if views.count(v) > 1}
+        assert not dupes, f"duplicate view ids in one tab: {sorted(dupes)}"
+    assert "view.dataset.host" in html, "the viewer resolves the expansion from the host view"
+
+
+def test_diagram_json_carries_frames_notes_and_sublabels(tmp_path: Path) -> None:
+    import json
+
+    _service(tmp_path)
+    out = tmp_path / "out"
+    assert main([str(tmp_path), "--out", str(out)]) == 0
+    root = json.loads((out / "diagrams" / "data-flow.json").read_text())["views"]["/spec/root"]
+    labels = [g["label"] for g in root["regions"]]
+    assert labels == ["01 / Ingress", "02 / Handlers", "03 / Domain", "04 / Storage / External"]
+    assert all(g["kind"] == "stage" and g["evidence"] and g["members"] for g in root["regions"])
+    assert any(r["note"] == "1 import" for r in root["routes"])
+    assert any(b["sublabel"] == "2 routes" for b in root["boxes"])
+    html = (out / "index.html").read_text(encoding="utf8")
+    assert 'data-kind="stage"' in html and ".sv-boundary.sv-kind-stage" in html
+
+
+def test_report_groups_informational_findings_and_counts_findings_not_lines() -> None:
+    from svarupa.diagnostics import Diagnostic, Severity
+    from svarupa.emit.report import MAX_LISTED, _grouped
+
+    def d(code: str, i: int) -> Diagnostic:
+        return Diagnostic(code=code, severity=Severity.INFO, message=f"m{i}", subject=f"s{i}")
+
+    five = [d("SVA-R-006", i) for i in range(5)]
+    lines = _grouped(five)
+    assert len(lines) == 4 and lines[-1].endswith("*... and 2 more of this code*")
+    # Eight codes of five findings: each code is four lines standing for
+    # five findings, so a count of lines and a count of findings differ.
+    many = [d(f"SVA-X-{c:03d}", i) for c in range(8) for i in range(5)]
+    lines = _grouped(many)
+    assert len(lines) == MAX_LISTED
+    shown = 3 * 5 + 2  # three full codes (5 findings each) and two lines of the fourth
+    assert lines[-1] == f"*... and {40 - shown} more finding(s), see `--json`*"

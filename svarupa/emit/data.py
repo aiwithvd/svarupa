@@ -128,6 +128,7 @@ def canvas_json(canvas: Canvas) -> dict[str, object]:
                 "w": b.w,
                 "h": b.h,
                 "child": b.child_spec,
+                "sublabel": b.sublabel,
                 "evidence": _evidence(b.evidence),
                 "attrs": dict(b.attrs),
             }
@@ -139,6 +140,8 @@ def canvas_json(canvas: Canvas) -> dict[str, object]:
                 "src": r.src,
                 "dst": r.dst,
                 "label": r.label,
+                "note": r.note,
+                "variant": r.variant,
                 "weight": r.weight,
                 "resolution": r.resolution.value,
                 "points": [[x, y] for x, y in r.points],
@@ -149,6 +152,24 @@ def canvas_json(canvas: Canvas) -> dict[str, object]:
         "bands": [
             {"label": b.label, "y": b.y, "h": b.h, "members": list(b.members)}
             for b in canvas.bands
+        ],
+        # Boundaries and stage frames are claims with evidence, so they ship
+        # like boxes do. Without them the JSON of a data-flow view was a
+        # dependency graph with a `layer` attr: the stages existed only in
+        # the SVG (review #17 F4).
+        "regions": [
+            {
+                "id": g.id,
+                "label": g.label,
+                "kind": g.kind,
+                "x": g.x,
+                "y": g.y,
+                "w": g.w,
+                "h": g.h,
+                "members": list(g.members),
+                "evidence": _evidence(g.evidence),
+            }
+            for g in canvas.regions
         ],
     }
 

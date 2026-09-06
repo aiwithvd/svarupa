@@ -44,11 +44,10 @@ from svarupa.derive.base import (
     DiagramSpec,
     Region,
     module_evidence,
-    runtime_edges,
     spec_id,
 )
 from svarupa.diagnostics import Diagnostic, Severity
-from svarupa.model import Evidence
+from svarupa.model import EdgeKind, Evidence
 
 __all__ = ["DataFlowDeriver", "RequestFlowDeriver"]
 
@@ -60,31 +59,101 @@ DOMAIN_DEPTH = 2
 
 _STAGES = ("Ingress", "Handlers", "Domain", "Storage / External")
 
+# module -> [(imported module, citations, pass-through modules on the way)]
+Imports = dict[str, list[tuple[str, tuple[Evidence, ...], tuple[str, ...]]]]
 
-def _imports_of(graph: Graph) -> dict[str, list[tuple[str, tuple[Evidence, ...]]]]:
-    """module -> [(imported module, evidence)] from the runtime import pairs."""
-    out: dict[str, list[tuple[str, tuple[Evidence, ...]]]] = {}
-    pairs, _ = runtime_edges(graph)
-    for a, b, _w, ev in pairs:
-        out.setdefault(a, []).append((b, tuple(ev)))
+
+def _imports_of(graph: Graph) -> Imports:
+    """Runtime import pairs between architecture modules, passing THROUGH
+    code that is not one.
+
+    Generated, vendored and test code is in the graph but is not a module
+    (design section 3 exclusions). A handler that imports a generated schema
+    that imports the store still reaches the store, and following only
+    module-to-module pairs cut the request short there and then reported the
+    store as reachable from no handler (review #17 F6). A pass-through module
+    is not drawn and not a hop; the edge cites both import lines and names
+    the module it went through.
+    """
+    modules = set(graph.modules)
+    raw: dict[str, dict[str, set[Evidence]]] = {}
+    for e in graph.edges:
+        if e.kind is not EdgeKind.IMPORTS or e.attr("type_only") == "true":
+            continue
+        a, b = module_of(e.src), module_of(e.dst)
+        if a != b:
+            raw.setdefault(a, {}).setdefault(b, set()).update(e.evidence)
+
+    out: Imports = {}
+    for a in sorted(raw):
+        if a not in modules:
+            continue
+        found: dict[str, tuple[set[Evidence], tuple[str, ...]]] = {}
+        _walk(raw, modules, a, a, set(), (), frozenset({a}), found)
+        out[a] = [
+            (c, tuple(sorted(ev))[:MAX_EVIDENCE_PER_BOX], via)
+            for c, (ev, via) in sorted(found.items())
+        ]
     return out
 
 
+def _walk(
+    raw: dict[str, dict[str, set[Evidence]]],
+    modules: set[str],
+    origin: str,
+    node: str,
+    carried: set[Evidence],
+    via: tuple[str, ...],
+    seen: frozenset[str],
+    found: dict[str, tuple[set[Evidence], tuple[str, ...]]],
+) -> None:
+    """Follow `node`'s imports; a target that is a module is recorded, one
+    that is not is walked through (once) with its import lines carried."""
+    for c in sorted(raw.get(node, {})):
+        ev = carried | raw[node][c]
+        if c in modules:
+            if c == origin:
+                continue
+            prev = found.get(c)
+            # A direct import outranks any pass-through path, and the
+            # shortest pass-through outranks a longer one.
+            if prev is None or len(via) < len(prev[1]):
+                found[c] = (set(ev), via)
+            elif len(via) == len(prev[1]):
+                prev[0].update(ev)
+        elif c not in seen:
+            _walk(raw, modules, origin, c, ev, (*via, c), seen | {c}, found)
+
+
 def _reach(
-    start: set[str], imports: dict[str, list[tuple[str, tuple[Evidence, ...]]]], depth: int
-) -> dict[str, int]:
-    """Modules reachable by import from `start`, with their hop count."""
+    start: set[str], imports: Imports, depth: int
+) -> tuple[dict[str, int], dict[str, tuple[Evidence, ...]]]:
+    """Modules reachable by import from `start`: their hop count and the
+    import that first brought each one in (what a stage frame cites)."""
     hops = dict.fromkeys(start, 0)
+    entry: dict[str, tuple[Evidence, ...]] = {}
     frontier = set(start)
     for hop in range(1, depth + 1):
         nxt: set[str] = set()
         for m in sorted(frontier):
-            for target, _ev in imports.get(m, []):
+            for target, ev, _via in imports.get(m, []):
                 if target not in hops:
                     hops[target] = hop
+                    entry[target] = ev
                     nxt.add(target)
         frontier = nxt
-    return hops
+    return hops, entry
+
+
+def _cut(paths: list[str], limit: int = 40) -> str:
+    """Route paths joined, cut at a path boundary rather than mid-segment:
+    `/api/v1/organisations/{org_id}/billin…` says nothing a reader can use."""
+    shown = ", ".join(paths[:3]) + (" …" if len(paths) > 3 else "")
+    if len(shown) <= limit:
+        return shown
+    keep = shown[: limit - 1]
+    cut = max(keep.rfind(", "), keep.rfind("/", 1))
+    return (keep[:cut] if cut > 0 else keep) + "…"
 
 
 def _ingress_node(graph: Graph, module: str) -> DiagramNode | None:
@@ -96,10 +165,9 @@ def _ingress_node(graph: Graph, module: str) -> DiagramNode | None:
     if not routes:
         return None
     paths = sorted({r.path for r in routes})
-    shown = ", ".join(paths[:3]) + (" …" if len(paths) > 3 else "")
     return DiagramNode(
         id=f"in:{module}",
-        label=shown if len(shown) <= 40 else shown[:37] + "…",
+        label=_cut(paths),
         kind="endpoint",
         evidence=tuple(sorted({r.evidence for r in routes}))[:MAX_EVIDENCE_PER_BOX],
         attrs=(("layer", "0"), ("stage", "Ingress")),
@@ -139,27 +207,54 @@ def _module_node(
     )
 
 
-def _against_note(count: int) -> str:
-    if not count:
-        return ""
-    return f"; {count} import{'s' if count != 1 else ''} against the flow not drawn"
+def _not_drawn_note(lateral: int, upstream: int) -> str:
+    """Imports between drawn modules that are not arrows, by kind. One
+    number called "against the flow" counted a handler importing another
+    handler, which is sideways, not backwards (review #17 F5)."""
+    parts: list[str] = []
+    if lateral:
+        parts.append(f"{lateral} lateral import{'s' if lateral != 1 else ''}")
+    if upstream:
+        parts.append(f"{upstream} upstream import{'s' if upstream != 1 else ''}")
+    return f"; {' and '.join(parts)} not drawn" if parts else ""
 
 
-def _stage_regions(nodes: list[DiagramNode], stage_ev: Evidence) -> tuple[Region, ...]:
+def _import_edge(a: str, b: str, ev: tuple[Evidence, ...], via: tuple[str, ...]) -> DiagramEdge:
+    note = f"{len(ev)} import{'s' if len(ev) != 1 else ''}"
+    if via:
+        note += " via " + ", ".join(via)
+    return DiagramEdge(
+        src=a,
+        dst=b,
+        label="",
+        note=note,
+        evidence=ev[:MAX_EVIDENCE_PER_BOX],
+        weight=len(ev),
+    )
+
+
+def _stage_regions(
+    nodes: list[DiagramNode], cite: dict[str, tuple[Evidence, ...]]
+) -> tuple[Region, ...]:
     """One frame per stage that has members, labelled `01 / Ingress` like
-    Archify's stage headers. Evidence is the first member's first line: the
-    frame claims only that these boxes are in this stage."""
+    Archify's stage headers. The frame's citations are the lines that put
+    each member in the stage: route lines for ingress and handlers, the
+    import that reached a domain module, the classified import for a store.
+    "The first member's first line" cited a file's line 1 for a stage claim
+    (review #17 F8)."""
     out: list[Region] = []
     for i, stage in enumerate(_STAGES):
         members = tuple(sorted(n.id for n in nodes if n.attr("stage") == stage))
         if members:
-            first = next(n for n in nodes if n.id == members[0])
+            cited: list[Evidence] = []
+            for m in members:
+                cited.extend(cite.get(m, ())[:1])
             out.append(
                 Region(
                     id=f"stage:{i}",
                     label=f"0{i + 1} / {stage}",
                     members=members,
-                    evidence=first.evidence[:1] or (stage_ev,),
+                    evidence=tuple(sorted(set(cited)))[:MAX_EVIDENCE_PER_BOX],
                     kind="stage",
                 )
             )
@@ -189,10 +284,11 @@ class DataFlowDeriver(Deriver):
                 ),
             )
         imports = _imports_of(graph)
-        hops = _reach(set(handlers), imports, DOMAIN_DEPTH)
+        hops, entry = _reach(set(handlers), imports, DOMAIN_DEPTH)
         domain = sorted(m for m, h in hops.items() if h > 0 and m in graph.modules)
         names = labels_for([*handlers, *domain])
         nodes: list[DiagramNode] = []
+        cite: dict[str, tuple[Evidence, ...]] = {}
         diags: list[Diagnostic] = []
         specs: dict[str, DiagramSpec] = {}
         arch = ArchitectureDeriver()
@@ -202,6 +298,8 @@ class DataFlowDeriver(Deriver):
             if ingress is None or handler is None:
                 continue
             nodes.append(ingress)
+            cite[ingress.id] = ingress.evidence
+            cite[m] = ingress.evidence
             nodes.append(
                 DiagramNode(
                     id=handler.id,
@@ -213,11 +311,28 @@ class DataFlowDeriver(Deriver):
                     child_spec=arch.components_for(graph, m, ROOT, specs, diags),
                 )
             )
+        # Two ingress boxes with the same paths (every service has `/health`)
+        # say which handler they belong to.
+        seen_labels: dict[str, int] = {}
+        for n in nodes:
+            if n.kind == "endpoint":
+                seen_labels[n.label] = seen_labels.get(n.label, 0) + 1
+        for i, n in enumerate(nodes):
+            if n.kind == "endpoint" and seen_labels[n.label] > 1:
+                nodes[i] = DiagramNode(
+                    id=n.id,
+                    label=n.label,
+                    kind=n.kind,
+                    evidence=n.evidence,
+                    attrs=n.attrs,
+                    sublabel=n.sublabel + " · " + names[n.id[len("in:") :]],
+                )
         # One column per hop, so a store two imports away sits right of the
         # module that reaches it instead of stacked in the same column.
         for m in domain:
             node = _module_node(graph, m, names[m], 1 + hops[m], "Domain", roles)
             if node is not None:
+                cite[m] = entry.get(m, ())
                 nodes.append(
                     DiagramNode(
                         id=node.id,
@@ -232,10 +347,11 @@ class DataFlowDeriver(Deriver):
         drawn = {n.id for n in nodes}
         # The column after the deepest hop actually drawn; a fixed column
         # left an empty one before it and forced every external edge
-        # through the corridor.
+        # through the corridor. Externals belong to DRAWN modules only.
         ext_layer = 2 + max((hops[m] for m in domain if m in drawn), default=0)
-        ext_nodes, ext_edges = external_nodes_and_edges(graph, set(handlers) | set(domain))
+        ext_nodes, ext_edges = external_nodes_and_edges(graph, drawn & set(graph.modules))
         for n in ext_nodes:
+            cite[n.id] = n.evidence
             nodes.append(
                 DiagramNode(
                     id=n.id,
@@ -263,27 +379,21 @@ class DataFlowDeriver(Deriver):
                         variant="emphasis",
                     )
                 )
-        # An import between drawn modules that does not go downstream (same
-        # hop, or back toward the handlers) is not an arrow here, and its
-        # count is stated so the picture is not read as "no such import".
-        against = 0
-        for a in sorted(set(handlers) | set(domain)):
-            for b, ev in imports.get(a, []):
-                if b not in drawn or a not in drawn:
+        # An import between drawn modules that does not go downstream is not
+        # an arrow here, and its count is stated so the picture is not read
+        # as "no such import": lateral (same hop) and upstream (back toward
+        # the handlers) separately, because they mean different things.
+        lateral = upstream = 0
+        for a in sorted(drawn & set(graph.modules)):
+            for b, ev, via in imports.get(a, []):
+                if b not in drawn:
                     continue
-                if hops.get(b, 0) <= hops.get(a, 0):
-                    against += 1
+                if hops.get(b, 0) == hops.get(a, 0):
+                    lateral += 1
+                elif hops.get(b, 0) < hops.get(a, 0):
+                    upstream += 1
                 else:
-                    edges.append(
-                        DiagramEdge(
-                            src=a,
-                            dst=b,
-                            label="",
-                            note=f"{len(ev)} import{'s' if len(ev) != 1 else ''}",
-                            evidence=ev[:MAX_EVIDENCE_PER_BOX],
-                            weight=len(ev),
-                        )
-                    )
+                    edges.append(_import_edge(a, b, ev, via))
         edges.extend(e for e in ext_edges if e.src in drawn)
 
         unstaged = sorted(set(graph.modules) - set(handlers) - set(domain))
@@ -300,7 +410,6 @@ class DataFlowDeriver(Deriver):
                     subject=", ".join(m or "(repo root)" for m in unstaged[:5]),
                 )
             )
-        anchor_ev = nodes[0].evidence[0]
         specs[ROOT] = DiagramSpec(
             kind=self.kind,
             id=ROOT,
@@ -308,11 +417,11 @@ class DataFlowDeriver(Deriver):
             subtitle=(
                 f"{len(handlers)} ingress module{'s' if len(handlers) != 1 else ''}, "
                 f"{len(domain)} domain module{'s' if len(domain) != 1 else ''}, "
-                f"{len(ext_nodes)} external" + _against_note(against)
+                f"{len(ext_nodes)} external" + _not_drawn_note(lateral, upstream)
             ),
             nodes=tuple(sorted(nodes)),
             edges=tuple(sorted(edges)),
-            regions=_stage_regions(nodes, anchor_ev),
+            regions=_stage_regions(nodes, cite),
         )
         return DiagramSet(self.kind, ROOT, specs, tuple(diags))
 
@@ -377,16 +486,18 @@ class RequestFlowDeriver(Deriver):
         self,
         graph: Graph,
         handler: str,
-        imports: dict[str, list[tuple[str, tuple[Evidence, ...]]]],
+        imports: Imports,
         roles: dict[str, tuple[str, ...]],
         specs: dict[str, DiagramSpec],
         diags: list[Diagnostic],
         arch: ArchitectureDeriver,
     ) -> str:
         sid = spec_id(f"req:{handler}")
-        hops = _reach({handler}, imports, DOMAIN_DEPTH)
+        hops, entry = _reach({handler}, imports, DOMAIN_DEPTH)
         names = labels_for(sorted(m for m in hops if m in graph.modules))
         nodes: list[DiagramNode] = []
+        cite: dict[str, tuple[Evidence, ...]] = {}
+        ingress = _ingress_node(graph, handler)
         for m, hop in sorted(hops.items(), key=lambda kv: (kv[1], kv[0])):
             if m not in graph.modules:
                 continue
@@ -394,13 +505,17 @@ class RequestFlowDeriver(Deriver):
             node = _module_node(graph, m, names[m], hop, stage, roles)
             if node is None:
                 continue
+            cite[m] = ingress.evidence if (hop == 0 and ingress) else entry.get(m, ())
             nodes.append(
                 DiagramNode(
                     id=node.id,
                     label=node.label,
                     kind=node.kind,
                     evidence=node.evidence,
-                    attrs=(("layer", str(hop)), ("hop", str(hop))),
+                    # The module's roles and stage stay with it: the passport
+                    # of a box in a story showed no role while the same box in
+                    # data flow showed `api,auth` (review #17 F9).
+                    attrs=(*node.attrs, ("hop", str(hop))),
                     sublabel=(f"hop {hop} · " if hop else "handler · ") + node.sublabel,
                     child_spec=arch.components_for(graph, m, sid, specs, diags),
                 )
@@ -420,36 +535,31 @@ class RequestFlowDeriver(Deriver):
                 )
             )
         edges: list[DiagramEdge] = []
-        against = 0
+        lateral = upstream = 0
         for a in sorted(drawn):
-            for b, ev in imports.get(a, []):
+            for b, ev, via in imports.get(a, []):
                 if b not in drawn:
                     continue
-                if hops.get(b, 0) != hops.get(a, 0) + 1:
-                    against += 1
+                if hops.get(b, 0) == hops.get(a, 0):
+                    lateral += 1
+                elif hops.get(b, 0) < hops.get(a, 0):
+                    upstream += 1
                 else:
-                    edges.append(
-                        DiagramEdge(
-                            src=a,
-                            dst=b,
-                            label="",
-                            note=f"{len(ev)} import{'s' if len(ev) != 1 else ''}",
-                            evidence=ev[:MAX_EVIDENCE_PER_BOX],
-                            weight=len(ev),
-                        )
-                    )
+                    edges.append(_import_edge(a, b, ev, via))
         edges.extend(ext_edges)
         regions: list[Region] = []
         for hop in range(0, last):
             members = tuple(sorted(n.id for n in nodes if n.attr("hop") == str(hop)))
             if members:
-                first = next(n for n in nodes if n.id == members[0])
+                cited: list[Evidence] = []
+                for m in members:
+                    cited.extend(cite.get(m, ())[:1])
                 regions.append(
                     Region(
                         id=f"hop:{hop}",
                         label="handler" if hop == 0 else f"hop {hop}",
                         members=members,
-                        evidence=first.evidence[:1],
+                        evidence=tuple(sorted(set(cited)))[:MAX_EVIDENCE_PER_BOX],
                         kind="stage",
                     )
                 )
@@ -459,7 +569,7 @@ class RequestFlowDeriver(Deriver):
             title=f"{handler or '(repo root)'} request flow",
             subtitle=(
                 f"{len(hops)} module{'s' if len(hops) != 1 else ''} within {DOMAIN_DEPTH} import "
-                f"hops; reachability, not call order" + _against_note(against)
+                f"hops; reachability, not call order" + _not_drawn_note(lateral, upstream)
             ),
             nodes=tuple(sorted(nodes)),
             edges=tuple(sorted(edges)),
