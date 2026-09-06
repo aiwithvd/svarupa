@@ -342,11 +342,15 @@ class RouteFact:
     """
 
     method: str  # GET/POST/.../WS, as declared
-    path: str  # the decorator's literal path argument
+    path: str  # the declared path, or the same-file composition of it
     file: str
     handler: str  # qualified name of the decorated definition
-    framework: str  # fastapi | flask
-    evidence: Evidence  # the decorator's own line
+    framework: str  # fastapi | flask | express | nestjs
+    evidence: Evidence  # the handler's own declaring line
+    # The other lines a composed path rests on: mount statements
+    # (`app.use('/api', r)`) or a controller decorator. Empty for a path that
+    # is exactly as declared. "Every part cited" is only true if these exist.
+    via: tuple[Evidence, ...] = ()
 
 
 @dataclass(frozen=True, order=True, slots=True)

@@ -245,7 +245,7 @@ def test_lockfile_carries_endpoint_entrypoint_and_role_records(tmp_path: Path) -
     assert "role\tapi\tapi" in text
     assert "role\tjobs\tworker" in text
     assert "role\tpkg\tcli" in text
-    assert "# schema 1.3" in text
+    assert "# schema 1.4" in text
 
 
 def test_renaming_a_handler_churns_zero_lines(tmp_path: Path) -> None:
@@ -970,7 +970,7 @@ const r = Router();
 const child = Router();
 const twice = Router();
 const dyn = Router();
-app.route('/items').get(list).post(create);
+app.route('/items').get(list).post(create).put(update);
 app.route(DYN).get(h);
 app.locals('/notroute').get(h);
 app.use('/api', r);
@@ -1011,6 +1011,7 @@ def test_a_dynamic_chain_root_claims_nothing(tmp_path: Path) -> None:
         "/declared",
         "/plain",
     }
+    assert ("PUT", "/items") in _express_paths(tmp_path), "the third hop of the chain"
 
 
 def test_same_file_mounts_compose_including_nested_and_multiple(tmp_path: Path) -> None:
@@ -1071,3 +1072,170 @@ def test_mount_composed_routes_reach_the_lockfile(tmp_path: Path) -> None:
     text = _lock_text(tmp_path)
     assert "endpoint\tGET /api/nested/deep\tsrc" in text
     assert "endpoint\tPOST /items\tsrc" in text
+
+
+# --- review #15 fixes ---------------------------------------------------------
+
+
+def test_a_router_name_bound_twice_composes_nothing(tmp_path: Path) -> None:
+    """The ordinary factory idiom: top-level `router` mounted at /users, and a
+    helper's inner `const router = Router()` serving /healthz. Name-keyed
+    composition committed `GET /users/healthz` for a route served at
+    `/healthz`. A name bound twice is not one object: both fall to declared."""
+    write(
+        tmp_path,
+        "src/app.ts",
+        "import express, { Router } from 'express';\n"
+        "const app = express();\n"
+        "const router = Router();\n"
+        "router.get('/:id', h);\n"
+        "app.use('/users', router);\n"
+        "function healthRouter() {\n"
+        "  const router = Router();\n"
+        "  router.get('/healthz', ok);\n"
+        "  return router;\n"
+        "}\n",
+    )
+    got = {r.path for r in graph_of(tmp_path).routes}
+    assert got == {"/:id", "/healthz"}
+    assert "/users/healthz" not in got
+
+
+def test_mount_cycles_and_self_mounts_diagnose_and_fall_to_declared(tmp_path: Path) -> None:
+    write(
+        tmp_path,
+        "src/app.ts",
+        "import express, { Router } from 'express';\n"
+        "const app = express();\n"
+        "const a = Router();\n"
+        "const b = Router();\n"
+        "const me = Router();\n"
+        "a.use('/a', b);\n"
+        "b.use('/b', a);\n"
+        "me.use('/me', me);\n"
+        "a.get('/x', h);\n"
+        "me.get('/y', h);\n",
+    )
+    g = graph_of(tmp_path)
+    assert {r.path for r in g.routes} == {"/x", "/y"}
+    assert any(d.code == "SVA-X-009" for d in g.diagnostics)
+
+
+def _deep_nine(order: str) -> str:
+    routers = [f"r{i}" for i in range(1, 10)]
+    decl = "\n".join(f"const {r} = Router();" for r in routers)
+    mounts = ["app.use('/r1', r1);"] + [
+        f"r{i}.use('/r{i + 1}', r{i + 1});" for i in range(1, 9)
+    ]
+    if order == "leaf-first":
+        mounts = list(reversed(mounts))
+    return (
+        "import express, { Router } from 'express';\nconst app = express();\n"
+        + decl
+        + "\n"
+        + "\n".join(mounts)
+        + "\nr1.get('/x', h);\nr9.get('/leaf', h);\n"
+    )
+
+
+def test_composition_does_not_depend_on_mount_statement_order(tmp_path: Path) -> None:
+    """Nine nested routers, mounted root-first or leaf-first, compose the
+    same. A memoized depth cap poisoned routers depending on which mount
+    statement was met first: a reorder with no semantic content churned
+    committed lines."""
+    results: list[set[str]] = []
+    for order in ("root-first", "leaf-first"):
+        root = tmp_path / order
+        write(root, "src/app.ts", _deep_nine(order))
+        results.append({r.path for r in graph_of(root).routes})
+    assert results[0] == results[1]
+    assert "/r1/r2/r3/r4/r5/r6/r7/r8/r9/leaf" in results[0]
+    assert "/r1/x" in results[0]
+
+
+def test_only_use_mounts_and_only_route_roots_a_chain(tmp_path: Path) -> None:
+    write(
+        tmp_path,
+        "src/app.ts",
+        "import express, { Router } from 'express';\n"
+        "const app = express();\n"
+        "const r = Router();\n"
+        "app.get('/direct', r);\n"
+        "r.get('/things', h);\n"
+        "app.use('/api2', r).get('/x', h);\n",
+    )
+    got = {(r.method, r.path) for r in graph_of(tmp_path).routes}
+    assert ("GET", "/direct") in got, "app.get(path, r) registers a handler, it is not a mount"
+    assert ("GET", "/direct/things") not in got
+    assert ("GET", "/api2") not in got, "a chain rooted at use() is not a route"
+    assert ("GET", "/api2/things") in got, "but the use() itself still mounts"
+
+
+def test_a_slashless_mount_prefix_poisons(tmp_path: Path) -> None:
+    write(
+        tmp_path,
+        "src/app.ts",
+        "import express, { Router } from 'express';\nconst app = express();\n"
+        "const r = Router();\napp.use('api', r);\nr.get('/x', h);\n",
+    )
+    assert {r.path for r in graph_of(tmp_path).routes} == {"/x"}
+
+
+def test_mounted_routes_keep_their_trailing_slash_spelling(tmp_path: Path) -> None:
+    write(
+        tmp_path,
+        "src/app.ts",
+        "import express, { Router } from 'express';\nconst app = express();\n"
+        "const r = Router();\napp.use('/api/', r);\n"
+        "r.get('/things/', h);\nr.get('/things', h);\napp.get('/plain/', h);\n",
+    )
+    assert {r.path for r in graph_of(tmp_path).routes} == {
+        "/api/things/",
+        "/api/things",
+        "/plain/",
+    }
+
+
+def test_composed_routes_carry_the_mount_lines_and_chains_cite_each_verb(
+    tmp_path: Path,
+) -> None:
+    write(
+        tmp_path,
+        "src/app.ts",
+        "import express, { Router } from 'express';\n"
+        "const app = express();\n"
+        "const r = Router();\n"
+        "app.use('/api', r);\n"
+        "r.get('/things', h);\n"
+        "app.route('/items')\n"
+        "  .get(list)\n"
+        "  .delete(remove);\n",
+    )
+    routes = {(r.method, r.path): r for r in graph_of(tmp_path).routes}
+    composed = routes[("GET", "/api/things")]
+    assert composed.evidence.start_line == 5, "the handler line"
+    assert [v.start_line for v in composed.via] == [4], "and the mount line it rests on"
+    assert routes[("GET", "/items")].evidence.start_line == 7
+    assert routes[("DELETE", "/items")].evidence.start_line == 8
+    assert routes[("GET", "/items")].via == ()
+
+
+def test_the_respelling_upgrade_is_attributed_with_the_right_words(tmp_path: Path) -> None:
+    """A 1.3-era base holds the mount-relative `GET /things`; this build emits
+    `GET /api/things`. The pair is one removal and one addition of an OLD
+    kind, so the attribution sentence must cover re-spelling, not only new
+    kinds."""
+    write(
+        tmp_path,
+        "src/app.ts",
+        "import express, { Router } from 'express';\nconst app = express();\n"
+        "const r = Router();\napp.use('/api', r);\nr.get('/things', h);\n",
+    )
+    head = build_lock(graph_of(tmp_path), __version__).lockfile
+    old_base = Lockfile.parse(
+        "# svarupa 0.1.0\n# schema 1.3\n# grammars typescript@0.23.2\n"
+        "endpoint\tGET /things\tsrc\nmodule\tsrc\nrole\tsrc\tapi\n"
+    )
+    delta = diff(old_base, head)
+    note = next(d for d in delta.diagnostics if d.code == "SVA-L-013")
+    assert "spells differently" in note.message

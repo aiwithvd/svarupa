@@ -103,12 +103,13 @@ three per pull request.
   CommonJS); declared entrypoints cover pyproject scripts and package.json
   `bin`. A service on another framework showing no api/worker role means
   not-yet-extracted, not "no API"; REPORT.md states this boundary per run.
-- Endpoint paths compose only within one file, where every part is cited:
-  NestJS controller prefixes, and Express `app.use('/api', router)` mounts
-  (including router-on-router and `app.route('/x').get()` chains). A router
-  mounted from another file, a dynamic mount prefix, and FastAPI
-  `include_router(prefix=...)` are not composed, so those paths are
-  handler-relative rather than the full URL.
+- Endpoint paths compose only within one file: NestJS controller prefixes,
+  and Express `app.use('/api', router)` mounts (router-on-router, and
+  `app.route('/x').get()` chains). A composed route cites its handler line
+  and carries the mount lines it rests on. Not composed, so handler-relative:
+  a router mounted from another file, a dynamic or middleware-first mount
+  (`app.use(PFX, r)`, `api.use(auth, users)`), a router name bound more than
+  once in the file, and FastAPI `include_router(prefix=...)`.
 """
 
 

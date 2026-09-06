@@ -52,7 +52,11 @@ SCHEMA_MAJOR = 1
 # the delta's upgrade attribution (SVA-L-013) keys on it. Without this bump,
 # every adopter with a TS service had six new endpoint lines blamed on
 # whatever PR happened to bump svarupa.
-SCHEMA_MINOR = 3
+# Minor 4: Express route() chains and same-file mount composition. New facts
+# are emitted and existing facts are SPELLED differently (a mounted `/things`
+# becomes `/api/things`), which reads as one removal and one addition; the
+# minor is what lets SVA-L-013 say that pair is the upgrade, not the PR.
+SCHEMA_MINOR = 4
 
 _SEP = "\t"
 _COMMENT = "#"

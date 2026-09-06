@@ -729,6 +729,11 @@ class TypeScriptExtractor(Extractor):
                 return None
             name = _text(src, prop)
             otext = _text(src, obj)
+            # A member call cites the line of the method name, not the line
+            # the whole expression starts on: in a multi-line chain
+            # `app.route('/x')\n  .get(h)\n  .delete(h)` every verb cited the
+            # chain's first line, so a reader clicking DELETE landed on GET.
+            ev = self.evidence(path, prop.start_point[0], prop.start_point[0])
 
             if obj.type == "this":
                 return CallSite(name, CallShape.SELF, "this", ev, fn, cls, first_arg)

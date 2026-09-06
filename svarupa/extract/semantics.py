@@ -148,6 +148,16 @@ def _routes_for(f: FileFacts) -> list[RouteFact]:
     return out
 
 
+def _express_ctor_names(f: FileFacts) -> frozenset[str]:
+    """Callees that construct an Express app or router in this file: any name
+    imported from `express` when called, plus `.Router` on any of them."""
+    names: set[str] = set()
+    for imp in f.imports:
+        if imp.specifier == "express":
+            names.update(imp.names)
+    return frozenset(names | {f"{n}.Router" for n in names})
+
+
 def _express_receivers(f: FileFacts) -> frozenset[str]:
     """Locals that hold an Express app or router, receiver-scoped.
 
@@ -157,21 +167,16 @@ def _express_receivers(f: FileFacts) -> frozenset[str]:
     `express()` default, `express.Router()`, or an imported `Router` (alias
     respected), so the import gate is on the OBJECT, not merely the file.
     """
-    express_names: set[str] = set()
-    for imp in f.imports:
-        # Exact-specifier match: a relative `./express` spells its specifier
-        # with the leading `./`, so equality alone excludes it. (A separate
-        # is_relative clause here was dead code a mutation run exposed.)
-        if imp.specifier != "express":
-            continue
-        express_names.update(imp.names)
-    if not express_names:
+    # Exact-specifier match inside `_express_ctor_names`: a relative
+    # `./express` spells its specifier with the leading `./`, so equality
+    # alone excludes it. Any express-imported name is a route-holder
+    # constructor when called (`express()`, `Router()`, an alias of either),
+    # and so is `.Router` on any of them: one rule, because a Router/default
+    # split whose branches then union is a distinction the data structure
+    # cannot express.
+    ctors = _express_ctor_names(f)
+    if not ctors:
         return frozenset()
-    # Any express-imported name is a route-holder constructor when called
-    # (`express()`, `Router()`, an alias of either), and so is `.Router` on
-    # any of them. One rule, because a Router/default split whose branches
-    # then union is a distinction the data structure cannot express.
-    ctors = express_names | {f"{n}.Router" for n in express_names}
     held = {name for name, callee in f.ctor_assigns if callee in ctors}
     # The gate is on the object, and a name is not an object: a same-file
     # `const app = makeCache()` inside a helper shares the top-level `app`'s
@@ -183,12 +188,25 @@ def _express_receivers(f: FileFacts) -> frozenset[str]:
 
 
 def _join_paths(prefix: str, sub: str) -> str:
-    segments = [s.strip("/") for s in (prefix, sub) if s and s.strip("/")]
-    return "/" + "/".join(segments) if segments else "/"
+    """`/api` + `/things/` -> `/api/things/`: the sub-path keeps its own
+    spelling, trailing slash included, so a mounted route is spelled the same
+    way an unmounted one is. Stripping both ends made `/things/` and `/things`
+    collapse onto one lock key only when mounted (#15 C1)."""
+    head = prefix.rstrip("/")
+    if not sub or sub == "/":
+        return head or "/"
+    tail = sub if sub.startswith("/") else "/" + sub
+    return (head + tail) or "/"
 
 
-def _mount_prefixes(f: FileFacts, receivers: frozenset[str]) -> dict[str, list[str] | None]:
-    """Same-file `host.use('/prefix', router)` mounts, resolved to full prefixes.
+def _mount_prefixes(
+    f: FileFacts,
+    receivers: frozenset[str],
+    shadowed: frozenset[str],
+    diags: list[Diagnostic],
+) -> dict[str, list[tuple[str, tuple[Evidence, ...]]] | None]:
+    """Same-file `host.use('/prefix', router)` mounts, resolved to full prefixes
+    with the mount lines that produced each one.
 
     Only mounts where both host and router are receivers in THIS file are
     composed: a router imported from elsewhere, or a middleware argument that
@@ -196,10 +214,17 @@ def _mount_prefixes(f: FileFacts, receivers: frozenset[str]) -> dict[str, list[s
     both prefixes and yields both. Any dynamic mount path anywhere in a
     router's chain poisons that router (value None): its routes stay
     handler-relative, the documented boundary, rather than composed wrong.
-    Nested routers (`parent.use('/a', child)` then `app.use('/v1', parent)`)
-    compose through, depth-capped against cycles.
+
+    A name bound by an express constructor more than once in the file
+    (`shadowed`) is not one object, so it neither mounts nor is mounted: a
+    factory's inner `const router = Router()` sharing the top-level name
+    minted `GET /users/healthz` for a route served at `/healthz` (#15 F2).
+
+    Cycles are detected on the resolution path and poison every router on it,
+    with a diagnostic; there is no depth cap, because a cap poisoned routers
+    depending on which mount statement was met first (#15 S1).
     """
-    mounts: dict[str, list[tuple[str, str | None]]] = {}
+    mounts: dict[str, list[tuple[str, str | None, Evidence]]] = {}
     for call in f.calls:
         if call.name != "use" or call.receiver not in receivers:
             continue
@@ -208,50 +233,79 @@ def _mount_prefixes(f: FileFacts, receivers: frozenset[str]) -> dict[str, list[s
             continue
         # Three first-argument shapes: a static string is the prefix; the
         # router itself (`app.use(router)`) mounts at the host's own prefix;
-        # anything else (`app.use(PFX, router)`) is a dynamic prefix, which
-        # must poison rather than read as "". It read as "" once, and only
-        # looked right because "" composes to the declared path.
+        # anything else (`app.use(PFX, router)`, `api.use(auth, users)`) is
+        # a dynamic prefix, which must poison rather than read as "".
         if call.first_str_arg is not None:
             prefix: str | None = call.first_str_arg
         elif call.first_arg_ident is not None and call.first_arg_ident in receivers:
             prefix = ""
         else:
             prefix = None
+        if call.receiver in shadowed:
+            prefix = None
         for router in routers:
-            mounts.setdefault(router, []).append((call.receiver, prefix))
+            if router in shadowed:
+                continue
+            mounts.setdefault(router, []).append((call.receiver, prefix, call.evidence))
 
-    resolved: dict[str, list[str] | None] = {}
+    resolved: dict[str, list[tuple[str, tuple[Evidence, ...]]] | None] = {}
+    reported: set[str] = set()
 
-    def prefixes(router: str, depth: int) -> list[str] | None:
+    def prefixes(
+        router: str, path: tuple[str, ...]
+    ) -> list[tuple[str, tuple[Evidence, ...]]] | None:
         if router in resolved:
             return resolved[router]
-        if depth > 8:
+        if router in path:
+            cycle = " -> ".join((*path[path.index(router) :], router))
+            if cycle not in reported:
+                reported.add(cycle)
+                diags.append(
+                    Diagnostic(
+                        code="SVA-X-009",
+                        severity=Severity.INFO,
+                        message=(
+                            "an express router mount forms a cycle or mounts itself, so "
+                            "its routes keep their declared paths"
+                        ),
+                        subject=cycle,
+                        location=f.path,
+                    )
+                )
             return None
         hosts = mounts.get(router)
         if not hosts:
-            return [""]
-        out: list[str] = []
-        for host, pfx in hosts:
+            return [("", ())]
+        out: list[tuple[str, tuple[Evidence, ...]]] = []
+        for host, pfx, ev in sorted(hosts, key=lambda h: (h[0], h[1] or "", h[2])):
             if pfx is None or (pfx and not pfx.startswith("/")):
                 resolved[router] = None
                 return None
-            above = prefixes(host, depth + 1) if host != router else None
+            above = prefixes(host, (*path, router))
             if above is None:
                 resolved[router] = None
                 return None
-            out.extend(_join_paths(a, pfx) if (a or pfx) else "" for a in above)
+            for a, via in above:
+                out.append((_join_paths(a, pfx) if (a or pfx) else "", (*via, ev)))
         resolved[router] = sorted(set(out))
         return resolved[router]
 
-    for router in mounts:
-        prefixes(router, 0)
+    for router in sorted(mounts):
+        prefixes(router, ())
     return resolved
 
 
-def _express_routes(f: FileFacts) -> list[RouteFact]:
+def _express_routes(f: FileFacts, diags: list[Diagnostic]) -> list[RouteFact]:
     receivers = _express_receivers(f)
     if not receivers:
         return []
+    express_ctors = _express_ctor_names(f)
+    binds: dict[str, int] = {}
+    for name, callee in f.ctor_assigns:
+        if callee in express_ctors:
+            binds[name] = binds.get(name, 0) + 1
+    shadowed = frozenset(n for n, k in binds.items() if k > 1)
+
     declared: list[tuple[str, str, str, CallSite]] = []  # receiver, method, path, site
     for call in f.calls:
         if call.receiver not in receivers or call.name not in _EXPRESS_METHODS:
@@ -266,15 +320,20 @@ def _express_routes(f: FileFacts) -> list[RouteFact]:
         if call.first_str_arg is not None and call.first_str_arg.startswith("/"):
             declared.append((call.receiver, method, call.first_str_arg, call))
 
-    mounted = _mount_prefixes(f, receivers)
+    mounted = _mount_prefixes(f, receivers, shadowed, diags)
     out: list[RouteFact] = []
     for receiver, method, path, call in declared:
-        prefixes = mounted.get(receiver)
+        prefixes = None if receiver in shadowed else mounted.get(receiver)
         # Not mounted here (an app, or a router mounted elsewhere): the
-        # declared path. Poisoned by a dynamic mount: the declared path, the
-        # documented boundary. Mounted statically: one fact per full prefix.
-        full_paths = [path] if not prefixes else [_join_paths(p, path) for p in prefixes]
-        for full in full_paths:
+        # declared path. Poisoned or shadowed: the declared path, the
+        # documented boundary. Mounted statically: one fact per full prefix,
+        # carrying the mount lines as `via` so every part is cited.
+        composed = (
+            [(path, ())]
+            if not prefixes
+            else [(_join_paths(p, path), via) for p, via in prefixes]
+        )
+        for full, via in composed:
             out.append(
                 RouteFact(
                     method=method,
@@ -283,6 +342,7 @@ def _express_routes(f: FileFacts) -> list[RouteFact]:
                     handler=call.enclosing or f.path,
                     framework="express",
                     evidence=call.evidence,
+                    via=via,
                 )
             )
     return out
@@ -532,7 +592,7 @@ def semantics(scan: Scan, facts: Sequence[FileFacts]) -> Semantics:
             routes.extend(_routes_for(f))
             tasks.extend(_tasks_for(f))
         elif f.lang in ("typescript", "javascript"):
-            routes.extend(_express_routes(f))
+            routes.extend(_express_routes(f, diags))
             routes.extend(_nest_routes(f))
 
     for rec in scan.files:

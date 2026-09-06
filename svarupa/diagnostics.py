@@ -102,6 +102,7 @@ CODES: dict[str, str] = {
     "SVA-X-006": "a compose service depends on one the file does not define",
     "SVA-X-007": "an entrypoint's declaration line could not be located",
     "SVA-X-008": "a manifest could not be read for semantic facts",
+    "SVA-X-009": "an express router mount forms a cycle or mounts itself",
     # build
     "SVA-B-001": "two different nodes claim the same id",
     "SVA-B-002": "an evidence range is not a valid source location",

@@ -139,9 +139,9 @@ def diff(base: Lockfile, head: Lockfile) -> ArchitectureDelta:
                 code="SVA-L-013",
                 severity=Severity.INFO,
                 message=(
-                    "the two lockfiles carry different schema minors, so added or "
-                    "removed lines of the newer kinds come from the tool upgrade, "
-                    "not from a code change"
+                    "the two lockfiles carry different schema minors, so lines this "
+                    "build newly emits, no longer emits, or spells differently come "
+                    "from the tool upgrade, not from a code change"
                 ),
                 subject=(
                     f"{base.header.schema_major}.{base.header.schema_minor} -> "

@@ -79,8 +79,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     (
         "the schema minor is not bumped for the new kinds",
         "svarupa/lock/grammar.py",
+        "SCHEMA_MINOR = 4",
         "SCHEMA_MINOR = 3",
-        "SCHEMA_MINOR = 2",
     ),
     (
         "boxes stop wearing their role",
@@ -295,8 +295,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     (
         "mounts stop composing",
         "svarupa/extract/semantics.py",
-        "        full_paths = [path] if not prefixes else [_join_paths(p, path) for p in prefixes]",
-        "        full_paths = [path]",
+        "            else [(_join_paths(p, path), via) for p, via in prefixes]",
+        "            else [(path, via) for p, via in prefixes]",
     ),
     (
         "a dynamic mount prefix reads as empty again",
@@ -307,14 +307,74 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     (
         "nested router mounts stop composing through",
         "svarupa/extract/semantics.py",
-        "            above = prefixes(host, depth + 1) if host != router else None",
-        '            above = [""] if host != router else None',
+        "            above = prefixes(host, (*path, router))",
+        '            above = [("", ())]',
     ),
     (
         "the chain unwinder loses the root path",
         "svarupa/extract/typescript.py",
         "        return (_text(src, cur), _text(src, prop), self._first_str_arg(src, innermost))",
         "        return (_text(src, cur), _text(src, prop), None)",
+    ),
+    (
+        "app.get(path, router) becomes a mount",
+        "svarupa/extract/semantics.py",
+        '        if call.name != "use" or call.receiver not in receivers:',
+        '        if call.name not in ("use", "get") or call.receiver not in receivers:',
+    ),
+    (
+        "a chain rooted at use() claims a route",
+        "svarupa/extract/semantics.py",
+        '            if root_method == "route" and root_path is not None and root_path.startswith("/"):',
+        '            if root_method in ("route", "use") and root_path is not None and root_path.startswith("/"):',
+    ),
+    (
+        "a slash-less mount prefix composes",
+        "svarupa/extract/semantics.py",
+        '            if pfx is None or (pfx and not pfx.startswith("/")):',
+        "            if pfx is None:",
+    ),
+    (
+        "the chain unwinder is capped below a real chain",
+        "svarupa/extract/typescript.py",
+        "        for _ in range(16):",
+        "        for _ in range(2):",
+    ),
+    (
+        "a router name bound twice composes as one object",
+        "svarupa/extract/semantics.py",
+        "    shadowed = frozenset(n for n, k in binds.items() if k > 1)",
+        "    shadowed = frozenset()",
+    ),
+    (
+        "mount cycles stop being detected",
+        "svarupa/extract/semantics.py",
+        "        if router in path:",
+        "        if False:",
+    ),
+    (
+        "composed routes lose their mount lines",
+        "svarupa/extract/semantics.py",
+        '                out.append((_join_paths(a, pfx) if (a or pfx) else "", (*via, ev)))',
+        '                out.append((_join_paths(a, pfx) if (a or pfx) else "", ()))',
+    ),
+    (
+        "member calls cite the chain start again",
+        "svarupa/extract/typescript.py",
+        "            ev = self.evidence(path, prop.start_point[0], prop.start_point[0])",
+        "            pass",
+    ),
+    (
+        "mounted routes lose their trailing-slash spelling",
+        "svarupa/extract/semantics.py",
+        '    tail = sub if sub.startswith("/") else "/" + sub',
+        '    tail = ("/" + sub.strip("/")) if sub.strip("/") else ""',
+    ),
+    (
+        "the upgrade attribution stops mentioning re-spelling",
+        "svarupa/lock/diff.py",
+        '                    "build newly emits, no longer emits, or spells differently come "',
+        '                    "build newly emits or no longer emits come "',
     ),
 ]
 
