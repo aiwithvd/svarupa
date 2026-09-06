@@ -83,6 +83,7 @@ class DiagramKind(str, Enum):
     ERD = "erd"
     API_SURFACE = "api-surface"
     DEPLOY_TOPOLOGY = "deploy-topology"
+    DATA_FLOW = "data-flow"
     REQUEST_FLOW = "request-flow"
     CLASS_HIERARCHY = "class-hierarchy"
 

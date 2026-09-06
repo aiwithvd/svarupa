@@ -39,6 +39,27 @@ def _listing(items: list[str], empty: str) -> str:
     return out
 
 
+def _grouped(diags: list[Diagnostic]) -> list[str]:
+    """Informational findings, grouped by code.
+
+    One code can fire once per view (a capped component list in each of a
+    hundred request stories), and a hundred near-identical lines hide the
+    one finding a reader needs. Each code shows its first instances and a
+    count of the rest.
+    """
+    by_code: dict[str, list[Diagnostic]] = {}
+    for d in diags:
+        by_code.setdefault(d.code, []).append(d)
+    out: list[str] = []
+    for code in sorted(by_code):
+        group = by_code[code]
+        for d in group[:3]:
+            out.append(f"`{code}` {d.subject or ''} {d.message}".strip())
+        if len(group) > 3:
+            out.append(f"`{code}` *... and {len(group) - 3} more of this code*")
+    return out
+
+
 def _semantics_scope(graph: Graph) -> list[str]:
     """Say which languages semantic extraction covers, when it matters.
 
@@ -181,16 +202,24 @@ def render_report(
 
     errors = [d for d in diagnostics if d.severity is Severity.ERROR]
     warnings = [d for d in diagnostics if d.severity is Severity.WARNING]
+    infos = [d for d in diagnostics if d.severity is Severity.INFO]
     parts += [
         "## Diagnostics",
         "",
         f"**{len(errors)}** error(s), **{len(warnings)}** warning(s), "
-        f"**{len(diagnostics) - len(errors) - len(warnings)}** informational.",
+        f"**{len(infos)}** informational.",
         "",
         _listing(
             [f"`{d.code}` {d.subject or ''} {d.message}".strip() for d in errors + warnings],
             "No errors or warnings.",
         ),
+        "",
+        "### Informational",
+        "",
+        "What was left undrawn on purpose, and why: a finding here is a fact about "
+        "the repository or a stated limit of this tool, not a failure.",
+        "",
+        _listing(_grouped(infos), "Nothing was left undrawn for an informational reason."),
         "",
         "Codes are stable and machine-readable; run with `--json` to consume "
         "them along with their suggested fixes.",

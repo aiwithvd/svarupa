@@ -186,6 +186,8 @@ h2 { font-size: 20px; margin: 0 0 4px; font-weight: 700; letter-spacing: -0.02em
 .sv-node:hover .sv-box { stroke: var(--accent); stroke-width: 2; }
 .sv-region { fill: color-mix(in srgb, var(--k) 5%, transparent); stroke: var(--k); stroke-width: 1; stroke-dasharray: 8 4; }
 .sv-boundary { --k: var(--cloud-stroke); }
+.sv-boundary.sv-kind-stage { --k: var(--faint); }
+.sv-boundary.sv-kind-stage .sv-region { stroke-dasharray: 4 4; fill: color-mix(in srgb, var(--k) 3%, transparent); }
 .sv-region-label { fill: var(--k); font-family: var(--mono); font-weight: 600; letter-spacing: .02em; }
 .sv-edge-label { fill: var(--dim); text-anchor: middle; dominant-baseline: middle; font-family: var(--mono); font-weight: 500; }
 .sv-variant-emphasis { stroke: var(--backend-stroke); }

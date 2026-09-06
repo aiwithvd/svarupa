@@ -102,6 +102,10 @@ def emit(
     laid_out: dict[DiagramKind, LaidOutDiagram] = {}
     problems: list[Diagnostic] = []
     for kind, ds in produced.items():
+        # What a deriver could not draw (a capped component list, modules in
+        # no data-flow stage) is as much a finding as a failed geometry check;
+        # only layout findings reached the report before this.
+        problems.extend(ds.diagnostics)
         lo = lay_out_set(ds, style)
         laid_out[kind] = lo
         problems.extend(lo.problems)

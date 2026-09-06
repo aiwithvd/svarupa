@@ -124,6 +124,7 @@ CODES: dict[str, str] = {
     "SVA-R-004": "elements were omitted for lack of any extractable source",
     "SVA-R-005": "a view was withheld or is unreachable, so navigation is broken",
     "SVA-R-006": "less-connected components were not drawn, with the count",
+    "SVA-R-007": "modules reachable from no route handler fall in no data-flow stage",
     # geometry / layout
     "SVA-G-001": "boxes overlap",
     "SVA-G-002": "a box falls outside the canvas",

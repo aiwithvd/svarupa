@@ -368,7 +368,7 @@ class ArchitectureDeriver(Deriver):
 
         # Top level: one box per group, edges aggregated between groups.
         member_group = {m: anchor for anchor, members in groups for m in members}
-        top_labels = _labels_for([anchor for anchor, _ in groups])
+        top_labels = labels_for([anchor for anchor, _ in groups])
         top_nodes: list[DiagramNode] = []
         roles = module_roles(graph)
         for anchor, members in groups:
@@ -553,6 +553,19 @@ class ArchitectureDeriver(Deriver):
         )
         return sorted((a, tuple(sorted(set(m)))) for a, m in merged.items())
 
+    def components_for(
+        self,
+        graph: Graph,
+        module_id: str,
+        parent: str,
+        specs: dict[str, DiagramSpec],
+        diags: list[Diagnostic],
+    ) -> str | None:
+        """Public door to the drill below a module, for other derivers whose
+        boxes are modules (data flow, request flow): one definition of the
+        component-flow and code levels, not one per diagram type."""
+        return self._components(graph, module_id, parent, specs, diags)
+
     def _components(
         self,
         graph: Graph,
@@ -600,7 +613,7 @@ class ArchitectureDeriver(Deriver):
         diags: list[Diagnostic],
     ) -> DiagramSpec:
         inside = set(members)
-        labels = _labels_for(list(members))
+        labels = labels_for(list(members))
         roles = module_roles(graph)
         module_nodes = [
             DiagramNode(
@@ -680,7 +693,7 @@ class ModuleDepsDeriver(Deriver):
 
         depth = _layer(pairs, sorted(graph.modules))
         involved = {m for a, b, _w, _e in pairs for m in (a, b)}
-        dep_labels = _labels_for(sorted(involved))
+        dep_labels = labels_for(sorted(involved))
         roles = module_roles(graph)
         nodes = tuple(
             sorted(
@@ -773,7 +786,7 @@ def _label(module_id: str) -> str:
     return module_id.rsplit("/", 1)[-1] or module_id
 
 
-def _labels_for(module_ids: list[str]) -> dict[str, str]:
+def labels_for(module_ids: list[str]) -> dict[str, str]:
     """Labels that are unique within one diagram.
 
     Two modules can share a leaf name -- `src/api/routes` and

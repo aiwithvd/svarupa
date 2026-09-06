@@ -36,6 +36,7 @@ __all__ = [
 ENGINE_FOR_KIND: dict[DiagramKind, str] = {
     DiagramKind.ARCHITECTURE: "clustered",
     DiagramKind.DEPLOY_TOPOLOGY: "flow",
+    DiagramKind.DATA_FLOW: "flow",
     DiagramKind.MODULE_DEPS: "layered",
     DiagramKind.CLASS_HIERARCHY: "layered",
     DiagramKind.REQUEST_FLOW: "flow",

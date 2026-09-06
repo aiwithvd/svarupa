@@ -1012,11 +1012,19 @@ def flow(
         if e.src in ids and e.dst in ids and takes_corridor(e.src, e.dst)
     )
     corridor_h = 12 + 12 * len(skips)
-    top = style.margin + corridor_h
+    # Stage frames (regions) need room on every side and between columns:
+    # two adjacent frames each pad 30px, so the column gap grows to hold both.
+    pad = _region_pad(spec, style)
+    col_gap = (
+        max(style.gap_x * 3, 2 * style.region_pad + style.gap_x)
+        if spec.regions
+        else style.gap_x * 3
+    )
+    top = style.margin + pad + corridor_h
 
     placed: dict[str, Box] = {}
     gaps: list[tuple[int, int]] = []  # x-extent of the gap after each column
-    x = style.margin
+    x = style.margin + pad
     tallest = 0
     for level in sorted(columns):
         col = columns[level]
@@ -1027,8 +1035,8 @@ def flow(
         for b in col:
             placed[b.id] = replace(b, x=x + (col_w - b.w) // 2, y=y)
             y += b.h + style.gap_y
-        gaps.append((x + col_w, x + col_w + style.gap_x * 3))
-        x += col_w + style.gap_x * 3
+        gaps.append((x + col_w, x + col_w + col_gap))
+        x += col_w + col_gap
 
     # Centre every column vertically against the tallest.
     for level in sorted(columns):
@@ -1038,8 +1046,8 @@ def flow(
         for b in col:
             placed[b.id] = replace(placed[b.id], y=placed[b.id].y + shift)
 
-    width = x - style.gap_x * 3 + style.margin + style.lane_gutter
-    height = top + tallest + style.margin
+    width = x - col_gap + style.margin + pad + style.lane_gutter
+    height = top + tallest + style.margin + pad
 
     # Routes. Adjacent columns cross their shared gap on a per-edge track;
     # skipping edges climb into the corridor.
@@ -1066,6 +1074,17 @@ def flow(
         step = b.h // (slots + 1)
         return b.y + max(1, step) * (1 + (nth - 1) % slots)
 
+    # A column's horizontal extent: a corridor edge climbs and drops BESIDE
+    # the whole column, never at its own box's edge. Dropping at `b.x - 10`
+    # ran through every wider box stacked above the target in that column,
+    # which withheld the request-flow views on the acceptance repo.
+    col_left = {
+        level: min(placed[b.id].x for b in col) for level, col in columns.items() if col
+    }
+    col_right = {
+        level: max(placed[b.id].right for b in col) for level, col in columns.items() if col
+    }
+
     for i, ((src, dst), edge) in enumerate(sorted(edge_map.items())):
         if src not in placed or dst not in placed:
             continue
@@ -1083,16 +1102,16 @@ def flow(
         else:
             # Through the corridor above everything, one lane per edge.
             lane_y = style.margin + 6 + 12 * skips.index((src, dst))
-            out_x = a.right + 10 + 4 * (exits[src].index(dst))
+            out_x = col_right[la] + 10 + 4 * (exits[src].index(dst))
             backward = lb <= la
             # A backward edge enters its target from the right, so the
             # arrowhead points against the flow, which is what a backward
             # dependency is.
             in_edge = b.right if backward else b.x
             in_x = (
-                (b.right + 10 + 4 * entries[dst].index(src))
+                (col_right[lb] + 10 + 4 * entries[dst].index(src))
                 if backward
-                else (b.x - 10 - 4 * entries[dst].index(src))
+                else (col_left[lb] - 10 - 4 * entries[dst].index(src))
             )
             points = (
                 (a.right, ay),
@@ -1122,6 +1141,7 @@ def flow(
         _ = i
 
     routes = _settle_labels(routes, list(placed.values()), style, frozenset())
+    regions = _regions(spec, list(placed.values()), style, diags)
     return Canvas(
         spec_id=spec.id,
         kind=spec.kind,
@@ -1132,6 +1152,7 @@ def flow(
         height=height,
         boxes=tuple(placed[b.id] for b in sorted(boxes, key=lambda b: b.id)),
         routes=tuple(routes),
+        regions=regions,
         parent=spec.parent,
         diagnostics=tuple(diags),
     )

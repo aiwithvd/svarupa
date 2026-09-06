@@ -16,6 +16,7 @@ from svarupa.derive.base import (
     DiagramSpec,
     UnnavigableDiagramSet,
 )
+from svarupa.derive.dataflow import DataFlowDeriver, RequestFlowDeriver
 from svarupa.derive.erd import ErdDeriver
 from svarupa.derive.system import SystemDeriver
 
@@ -39,9 +40,21 @@ __all__ = [
 
 DERIVERS: tuple[Deriver, ...] = (
     SystemDeriver(),
+    DataFlowDeriver(),
+    RequestFlowDeriver(),
     ArchitectureDeriver(),
     ModuleDepsDeriver(),
     ErdDeriver(),
+)
+
+# Diagram types Archify authors from a conversation and no evidence in code
+# describes. Named in the "not drawn" tab with the reason, so their absence
+# reads as a fact about the method rather than a gap in the run.
+NOT_DERIVABLE: tuple[str, ...] = (
+    "lifecycle: not generated; no evidence in code describes state transitions, "
+    "so a lifecycle diagram would be authored rather than extracted",
+    "workflow: not generated; lanes and phases are process knowledge, not code facts, "
+    "so a workflow diagram would be authored rather than extracted",
 )
 
 
@@ -55,7 +68,7 @@ def derive_all(
     it does not disable.
     """
     produced: dict[DiagramKind, DiagramSet] = {}
-    notes: list[str] = []
+    notes: list[str] = list(NOT_DERIVABLE)
     for deriver in DERIVERS:
         try:
             result = deriver.derive(graph, clustering)
