@@ -624,14 +624,18 @@ def test_semantic_facts_are_in_canonical_order(tmp_path: Path) -> None:
     assert g.routes == tuple(sorted(g.routes))
 
 
-def test_the_report_states_the_semantics_language_boundary(tmp_path: Path) -> None:
+def test_the_report_states_the_semantics_framework_boundary(tmp_path: Path) -> None:
+    """Framework-level, not language-level: a Django or Koa repo is inside
+    the covered languages and still invisible to route extraction, so the
+    boundary sentence names the frameworks."""
     from svarupa.emit.report import _semantics_scope
 
     write(tmp_path, "api/routes.py", FASTAPI_FILE)
     write(tmp_path, "web/app.ts", "export const x = 1;\n")
     lines = "\n".join(_semantics_scope(graph_of(tmp_path)))
-    assert "python only" in lines
-    assert "not semantically analyzed" in lines
+    assert "framework detection" in lines
+    assert "express" in lines and "nestjs" in lines and "fastapi" in lines
+    assert "not as a missing API" in lines
 
 
 def test_the_cli_door_writes_semantic_records(tmp_path: Path) -> None:
@@ -666,3 +670,114 @@ def test_role_evidence_respects_the_evidence_cap(tmp_path: Path) -> None:
     assert any(ev.file == "api/routes.py" and ev.start_line == 6 for ev in api.evidence), (
         "the cap must not evict the role citation"
     )
+
+
+# --- TypeScript/JavaScript routes: Express and NestJS -------------------------
+
+EXPRESS_FILE = """\
+import express, { Router as R } from 'express';
+import axios from 'axios';
+
+const app = express();
+const r = R();
+const sub = express.Router();
+
+app.get('/items', (req, res) => res.send('ok'));
+r.post(`/tpl`, h);
+sub.all('/any', h);
+axios.get('/decoy');
+r.put(`/dyn/${x}`, h);
+app.get('not-a-path', h);
+"""
+
+
+def test_express_routes_are_receiver_scoped(tmp_path: Path) -> None:
+    """`axios.get('/decoy')` sits in a file that imports express; only calls
+    on objects assigned from express()/Router() are routes. Review #13 S6's
+    lesson applied to the language where it bites hardest."""
+    write(tmp_path, "src/app.ts", EXPRESS_FILE)
+    g = graph_of(tmp_path)
+    got = {(r.method, r.path, r.framework) for r in g.routes}
+    assert got == {
+        ("GET", "/items", "express"),
+        ("POST", "/tpl", "express"),
+        ("ALL", "/any", "express"),
+    }
+    items = next(r for r in g.routes if r.path == "/items")
+    assert items.evidence.file == "src/app.ts"
+    assert items.evidence.start_line == 8
+
+
+def test_express_works_in_plain_javascript(tmp_path: Path) -> None:
+    write(
+        tmp_path,
+        "server.js",
+        "const express = require('express');\n"
+        "import express2 from 'express';\n"
+        "const app = express2();\n"
+        "app.get('/js', h);\n",
+    )
+    g = graph_of(tmp_path)
+    assert {(r.method, r.path) for r in g.routes} == {("GET", "/js")}
+
+
+def test_nest_controller_prefix_composes_with_method_paths(tmp_path: Path) -> None:
+    write(
+        tmp_path,
+        "src/users.controller.ts",
+        "import { Controller, Get, Post } from '@nestjs/common';\n"
+        "\n"
+        "@Controller('users')\n"
+        "export class UsersController {\n"
+        "  @Get(':id')\n"
+        "  findOne(id: string) { return id; }\n"
+        "  @Get()\n"
+        "  list() { return []; }\n"
+        "  @Post('bulk')\n"
+        "  bulk() { return []; }\n"
+        "  helper() { return 1; }\n"
+        "}\n",
+    )
+    g = graph_of(tmp_path)
+    got = {(r.method, r.path) for r in g.routes}
+    assert got == {("GET", "/users/:id"), ("GET", "/users"), ("POST", "/users/bulk")}
+    find_one = next(r for r in g.routes if r.path == "/users/:id")
+    assert find_one.evidence.start_line == 5, "the claim cites the @Get line"
+    assert find_one.handler.endswith("UsersController.findOne")
+
+
+def test_nest_decorators_without_the_import_claim_nothing(tmp_path: Path) -> None:
+    write(
+        tmp_path,
+        "src/fake.ts",
+        # An unrelated import, so an import gate reduced to "imports anything"
+        # cannot pass vacuously on an empty import list.
+        "import axios from 'axios';\n"
+        "@Controller('users')\n"
+        "export class Fake {\n"
+        "  @Get(':id')\n"
+        "  findOne(id: string) { return id; }\n"
+        "}\n",
+    )
+    assert graph_of(tmp_path).routes == ()
+
+
+def test_nest_route_methods_outside_a_controller_claim_nothing(tmp_path: Path) -> None:
+    write(
+        tmp_path,
+        "src/plain.ts",
+        "import { Get } from '@nestjs/common';\n"
+        "export class Plain {\n"
+        "  @Get(':id')\n"
+        "  findOne(id: string) { return id; }\n"
+        "}\n",
+    )
+    assert graph_of(tmp_path).routes == ()
+
+
+def test_ts_routes_reach_the_lockfile_and_roles(tmp_path: Path) -> None:
+    write(tmp_path, "src/app.ts", EXPRESS_FILE)
+    write(tmp_path, "other/util.ts", "export const x = 1;\n")
+    text = _lock_text(tmp_path)
+    assert "endpoint\tGET /items\tsrc" in text
+    assert "role\tsrc\tapi" in text

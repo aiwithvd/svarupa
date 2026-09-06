@@ -30,17 +30,37 @@ from svarupa.diagnostics import Diagnostic, Severity
 from svarupa.extract.base import DecoratorRef, EntrypointFact, FileFacts, RouteFact, TaskFact
 from svarupa.model import Evidence
 
-__all__ = ["SEMANTIC_LANGS", "Semantics", "semantics"]
+__all__ = ["SEMANTIC_FRAMEWORKS", "SEMANTIC_LANGS", "Semantics", "semantics"]
 
-# The languages route/task extraction actually covers. Published so the report
-# can state the boundary; entrypoints additionally cover package.json `bin`.
-SEMANTIC_LANGS: tuple[str, ...] = ("python",)
+# What route/task extraction actually covers, published so the report can
+# state the boundary. Framework-level because the language alone overclaims:
+# a Django or Koa service is "python"/"javascript" and still invisible here.
+SEMANTIC_LANGS: tuple[str, ...] = ("python", "typescript", "javascript")
+SEMANTIC_FRAMEWORKS: tuple[str, ...] = ("fastapi", "flask", "celery", "express", "nestjs")
 
 # FastAPI/Starlette route-declaring method names. `websocket` is a route in
 # every sense a reader cares about; it renders as method WS.
 _HTTP_METHODS = frozenset({"get", "post", "put", "delete", "patch", "head", "options"})
 
 _TABLE_RE = re.compile(r"^\s*\[([^\]]+)\]\s*(?:#.*)?$")
+
+# Express route-declaring method names on an app/router object. `all` is a
+# real Express method covering every verb; recorded as ALL, never expanded.
+_EXPRESS_METHODS = frozenset(
+    {"get", "post", "put", "delete", "patch", "head", "options", "all"}
+)
+
+# NestJS route decorators to HTTP methods.
+_NEST_DECORATORS = {
+    "Get": "GET",
+    "Post": "POST",
+    "Put": "PUT",
+    "Delete": "DELETE",
+    "Patch": "PATCH",
+    "Options": "OPTIONS",
+    "Head": "HEAD",
+    "All": "ALL",
+}
 
 
 def _dig_dict(data: object, *keys: str) -> dict[str, object] | None:
@@ -118,6 +138,104 @@ def _routes_for(f: FileFacts) -> list[RouteFact]:
                             evidence=dec.evidence,
                         )
                     )
+    return out
+
+
+def _express_receivers(f: FileFacts) -> frozenset[str]:
+    """Locals that hold an Express app or router, receiver-scoped.
+
+    `import fastapi` plus a homemade `.get()` was review #13 S6; the same
+    trap for Express is `axios.get('/users')` in a file that also imports
+    express. A receiver counts only if it was assigned from the imported
+    `express()` default, `express.Router()`, or an imported `Router` (alias
+    respected), so the import gate is on the OBJECT, not merely the file.
+    """
+    defaults: set[str] = set()
+    router_ctors: set[str] = set()
+    for imp in f.imports:
+        if imp.is_relative or imp.specifier != "express":
+            continue
+        for n in imp.names:
+            real = imp.alias_of.get(n, n)
+            if real == "Router":
+                router_ctors.add(n)
+            else:
+                defaults.add(n)
+    if not (defaults or router_ctors):
+        return frozenset()
+    ctors = router_ctors | defaults | {f"{d}.Router" for d in defaults}
+    return frozenset(name for name, callee in f.ctor_assigns if callee in ctors)
+
+
+def _express_routes(f: FileFacts) -> list[RouteFact]:
+    receivers = _express_receivers(f)
+    if not receivers:
+        return []
+    out: list[RouteFact] = []
+    for call in f.calls:
+        if (
+            call.receiver in receivers
+            and call.name in _EXPRESS_METHODS
+            and call.first_str_arg is not None
+            and call.first_str_arg.startswith("/")
+        ):
+            out.append(
+                RouteFact(
+                    method="ALL" if call.name == "all" else call.name.upper(),
+                    path=call.first_str_arg,
+                    file=f.path,
+                    handler=call.enclosing or f.path,
+                    framework="express",
+                    evidence=call.evidence,
+                )
+            )
+    return out
+
+
+def _nest_path(prefix: str | None, sub: str | None) -> str:
+    segments = [s.strip("/") for s in (prefix, sub) if s and s.strip("/")]
+    return "/" + "/".join(segments) if segments else "/"
+
+
+def _nest_routes(f: FileFacts) -> list[RouteFact]:
+    """NestJS: `@Controller('users')` on the class, `@Get(':id')` on the
+    method, composed into `GET /users/:id`.
+
+    Same-file composition only, which is why it is safe: both decorators are
+    in front of the reader at the cited lines. The claim cites the method
+    decorator, where the route is declared.
+    """
+    if not any(
+        not imp.is_relative and imp.specifier.startswith("@nestjs/") for imp in f.imports
+    ):
+        return []
+    controllers = {
+        s.name: next(
+            (d.arg for d in s.decorators if d.name.rsplit(".", 1)[-1] == "Controller"),
+            None,
+        )
+        for s in f.symbols
+        if s.kind == "class"
+        and any(d.name.rsplit(".", 1)[-1] == "Controller" for d in s.decorators)
+    }
+    out: list[RouteFact] = []
+    for s in f.symbols:
+        if s.kind != "method" or s.enclosing_class not in controllers:
+            continue
+        for dec in s.decorators:
+            method = _NEST_DECORATORS.get(dec.name.rsplit(".", 1)[-1])
+            if method is None:
+                continue
+            out.append(
+                RouteFact(
+                    method=method,
+                    path=_nest_path(controllers[s.enclosing_class], dec.arg),
+                    file=f.path,
+                    handler=s.qualified_name,
+                    framework="nestjs",
+                    evidence=dec.evidence,
+                )
+            )
     return out
 
 
@@ -303,8 +421,12 @@ def semantics(scan: Scan, facts: Sequence[FileFacts]) -> Semantics:
     diags: list[Diagnostic] = []
 
     for f in facts:
-        routes.extend(_routes_for(f))
-        tasks.extend(_tasks_for(f))
+        if f.lang == "python":
+            routes.extend(_routes_for(f))
+            tasks.extend(_tasks_for(f))
+        elif f.lang in ("typescript", "javascript"):
+            routes.extend(_express_routes(f))
+            routes.extend(_nest_routes(f))
 
     for rec in scan.files:
         name = rec.path.rsplit("/", 1)[-1]

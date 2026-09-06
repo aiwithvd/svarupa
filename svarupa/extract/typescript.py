@@ -25,6 +25,7 @@ from svarupa.extract.base import (
     MAX_AST_DEPTH,
     CallShape,
     CallSite,
+    DecoratorRef,
     Extractor,
     FieldType,
     FileFacts,
@@ -109,6 +110,18 @@ def _text(src: bytes, node: TSNode) -> str:
     return src[node.start_byte : node.end_byte].decode("utf8", "replace")
 
 
+def _ts_string(src: bytes, node: TSNode) -> str | None:
+    """A static string value from a `string` or substitution-free
+    `template_string` node; None for anything dynamic."""
+    if node.type == "string":
+        return "".join(_text(src, c) for c in node.children if c.type == "string_fragment")
+    if node.type == "template_string":
+        if any(c.type == "template_substitution" for c in node.children):
+            return None
+        return "".join(_text(src, c) for c in node.children if c.type == "string_fragment")
+    return None
+
+
 def _bare_type(annotation: str) -> str:
     """`Promise<UserService | null>` -> `UserService`.
 
@@ -134,6 +147,7 @@ class TypeScriptExtractor(Extractor):
         imports: list[ImportRef] = []
         calls: list[CallSite] = []
         fields: list[FieldType] = []
+        ctor_assigns: list[tuple[str, str]] = []
         reexports: list[str] = []
         diags: list[Diagnostic] = []
 
@@ -164,6 +178,7 @@ class TypeScriptExtractor(Extractor):
             fn: str | None,
             exported: bool = False,
             depth: int = 0,
+            decorators: tuple[DecoratorRef, ...] = (),
         ) -> None:
             nonlocal too_deep
             if depth > MAX_AST_DEPTH:
@@ -208,8 +223,30 @@ class TypeScriptExtractor(Extractor):
                     reexports.extend(names)
                     return
                 # A bare `export` wrapper: everything inside it is exported.
+                # Decorators are siblings preceding the declaration they
+                # decorate (`@Controller('users')` before `export class ...`
+                # parses that way), so they are paired here rather than lost
+                # to the generic recursion.
+                pending: list[DecoratorRef] = []
                 for child in node.children:
-                    visit(child, stack, cls, fn, exported=True, depth=depth + 1)
+                    if child.type == "decorator":
+                        if (d := self._decorator(path, data, child)) is not None:
+                            pending.append(d)
+                        continue
+                    if child.type in ("export", "default", ";"):
+                        # Keyword tokens sit between the decorators and the
+                        # declaration; they must not consume the pending list.
+                        continue
+                    visit(
+                        child,
+                        stack,
+                        cls,
+                        fn,
+                        exported=True,
+                        depth=depth + 1,
+                        decorators=tuple(pending),
+                    )
+                    pending = []
                 return
 
             if t in ("class_declaration", "abstract_class_declaration"):
@@ -239,12 +276,27 @@ class TypeScriptExtractor(Extractor):
                         enclosing_class=cls,
                         bases=tuple(b for b in bases if b),
                         exported=exported,
+                        decorators=decorators,
                     )
                 )
                 body = node.child_by_field_name("body")
                 if body is not None:
+                    # Member decorators are siblings preceding the member.
+                    member_decs: list[DecoratorRef] = []
                     for child in body.children:
-                        visit(child, [*stack, name], name, fn, depth=depth + 1)
+                        if child.type == "decorator":
+                            if (d := self._decorator(path, data, child)) is not None:
+                                member_decs.append(d)
+                            continue
+                        visit(
+                            child,
+                            [*stack, name],
+                            name,
+                            fn,
+                            depth=depth + 1,
+                            decorators=tuple(member_decs),
+                        )
+                        member_decs = []
                 return
 
             if t == "interface_declaration":
@@ -278,6 +330,7 @@ class TypeScriptExtractor(Extractor):
                         evidence=self.evidence(path, node.start_point[0], node.end_point[0]),
                         enclosing_class=cls,
                         exported=not name.startswith("_"),
+                        decorators=decorators,
                     )
                 )
                 if name == "constructor" and cls:
@@ -318,6 +371,15 @@ class TypeScriptExtractor(Extractor):
             if t == "variable_declarator":
                 name_node = node.child_by_field_name("name")
                 value = node.child_by_field_name("value")
+                if (
+                    name_node is not None
+                    and name_node.type == "identifier"
+                    and value is not None
+                    and value.type == "call_expression"
+                ):
+                    callee = value.child_by_field_name("function")
+                    if callee is not None:
+                        ctor_assigns.append((_text(data, name_node), _text(data, callee)))
                 if (
                     name_node is not None
                     and value is not None
@@ -362,6 +424,7 @@ class TypeScriptExtractor(Extractor):
             fields=tuple(fields),
             reexports=tuple(sorted(set(reexports))),
             diagnostics=tuple(diags),
+            ctor_assigns=tuple(ctor_assigns),
         )
 
     # ------------------------------------------------------------------
@@ -480,6 +543,42 @@ class TypeScriptExtractor(Extractor):
                 ty = _bare_type(_text(src, child))
         return [FieldType(cls, name, ty)] if name and ty else []
 
+    def _decorator(self, path: str, src: bytes, node: TSNode) -> DecoratorRef | None:
+        """`@Get(':id')` or `@Controller('users')`, with its own line."""
+        expr = next((c for c in node.children if c.type not in ("@", "comment")), None)
+        if expr is None:
+            return None
+        ev = self.evidence(path, node.start_point[0], node.end_point[0])
+        if expr.type != "call_expression":
+            name = _text(src, expr)
+            return DecoratorRef(name=name, arg=None, evidence=ev) if name else None
+        callee = expr.child_by_field_name("function")
+        if callee is None:
+            return None
+        arg: str | None = None
+        args = expr.child_by_field_name("arguments")
+        if args is not None:
+            for child in args.children:
+                if child.type in ("string", "template_string"):
+                    arg = _ts_string(src, child)
+                    break
+        return DecoratorRef(name=_text(src, callee), arg=arg, evidence=ev)
+
+    @staticmethod
+    def _first_str_arg(src: bytes, node: TSNode) -> str | None:
+        args = node.child_by_field_name("arguments")
+        if args is None:
+            return None
+        for child in args.children:
+            if child.type in ("(", ")", ","):
+                continue
+            # Only when the string is literally the FIRST argument: a string
+            # later in the list (a log message, a header value) is not a path.
+            if child.type in ("string", "template_string"):
+                return _ts_string(src, child)
+            return None
+        return None
+
     def _call(
         self, path: str, src: bytes, node: TSNode, fn: str | None, cls: str | None
     ) -> CallSite | None:
@@ -487,13 +586,14 @@ class TypeScriptExtractor(Extractor):
         if func is None:
             return None
         ev = self.evidence(path, node.start_point[0], node.start_point[0])
+        first_arg = self._first_str_arg(src, node)
 
         if func.type == "identifier":
             name = _text(src, func)
             return (
                 None
                 if name in _GLOBAL_CALLS
-                else CallSite(name, CallShape.BARE, None, ev, fn, cls)
+                else CallSite(name, CallShape.BARE, None, ev, fn, cls, first_arg)
             )
 
         if func.type == "member_expression":
@@ -505,9 +605,9 @@ class TypeScriptExtractor(Extractor):
             otext = _text(src, obj)
 
             if obj.type == "this":
-                return CallSite(name, CallShape.SELF, "this", ev, fn, cls)
+                return CallSite(name, CallShape.SELF, "this", ev, fn, cls, first_arg)
             if obj.type == "super":
-                return CallSite(name, CallShape.SUPER, "super", ev, fn, cls)
+                return CallSite(name, CallShape.SUPER, "super", ev, fn, cls, first_arg)
             if obj.type == "member_expression" and otext.startswith("this."):
                 # `this.svc.method()` -- the field name is the receiver, and
                 # the constructor's type annotation gives us its class.
@@ -519,11 +619,12 @@ class TypeScriptExtractor(Extractor):
                     ev,
                     fn,
                     cls,
+                    first_arg,
                 )
             if obj.type == "identifier":
                 if otext in _GLOBAL_OBJECTS:
                     return None
-                return CallSite(name, CallShape.QUALIFIED, otext, ev, fn, cls)
-            return CallSite(name, CallShape.MEMBER, otext, ev, fn, cls)
+                return CallSite(name, CallShape.QUALIFIED, otext, ev, fn, cls, first_arg)
+            return CallSite(name, CallShape.MEMBER, otext, ev, fn, cls, first_arg)
 
         return None

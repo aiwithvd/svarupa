@@ -171,6 +171,10 @@ class CallSite:
     evidence: Evidence
     enclosing: str | None
     enclosing_class: str | None
+    # The call's first argument when it is a static string literal, else None.
+    # A generic pass-1 fact (no framework semantics here); it is what lets
+    # semantics read `app.get('/items', h)` as a route without re-parsing.
+    first_str_arg: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -185,6 +189,9 @@ class FileFacts:
     fields: tuple[FieldType, ...] = ()
     reexports: tuple[str, ...] = ()
     diagnostics: tuple[Diagnostic, ...] = ()
+    # `local = callee(...)` bindings, as (local name, callee text). Generic:
+    # the consumer decides that `app = express()` makes `app` a route holder.
+    ctor_assigns: tuple[tuple[str, str], ...] = ()
 
 
 def _d_counts() -> dict[tuple[str, str, Resolution], int]:

@@ -78,7 +78,8 @@ three per pull request.
   modules come from directories, packages, and workspace members only.
 - Partial failure degrades: one hostile or broken file becomes a diagnostic,
   and the rest of the repository is still analyzed.
-- Routes, tasks and roles are extracted for Python (FastAPI, Flask, Celery)
-  in this build; declared entrypoints also cover package.json `bin`. A
-  JavaScript or TypeScript service showing no api/worker role means
-  not-yet-extracted, not "no API"; REPORT.md states this boundary per run.
+- Routes, tasks and roles come from framework detection: FastAPI, Flask and
+  Celery (Python), Express and NestJS (TypeScript/JavaScript); declared
+  entrypoints cover pyproject scripts and package.json `bin`. A service on
+  another framework showing no api/worker role means not-yet-extracted, not
+  "no API"; REPORT.md states this boundary per run.

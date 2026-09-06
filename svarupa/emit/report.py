@@ -46,18 +46,17 @@ def _semantics_scope(graph: Graph) -> list[str]:
     never as "no API": absence and blindness are different facts, and only
     one of them is about the user's codebase.
     """
-    from svarupa.extract.semantics import SEMANTIC_LANGS
+    from svarupa.extract.semantics import SEMANTIC_FRAMEWORKS, SEMANTIC_LANGS
 
     uncovered = sorted(
-        lang
-        for lang, n in graph.file_languages
-        if n and lang not in SEMANTIC_LANGS and lang in ("typescript", "javascript")
+        lang for lang, n in graph.file_languages if n and lang not in SEMANTIC_LANGS
     )
     lines = [
-        f"- routes, tasks and roles: extracted for {', '.join(SEMANTIC_LANGS)} only "
-        f"in this build "
+        f"- routes, tasks and roles come from framework detection "
+        f"({', '.join(SEMANTIC_FRAMEWORKS)}) in this build "
         f"({len(graph.routes)} routes, {len(graph.tasks)} tasks, "
-        f"{len(graph.entrypoints)} declared entrypoints)",
+        f"{len(graph.entrypoints)} declared entrypoints). A service on another "
+        f"framework shows as modules, not as a missing API",
     ]
     if uncovered:
         lines.append(

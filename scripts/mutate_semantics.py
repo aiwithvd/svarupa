@@ -179,10 +179,52 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
         "    return (base + roles)[:MAX_EVIDENCE_PER_BOX]",
     ),
     (
-        "the report stops naming the language boundary",
+        "the report stops naming the framework boundary",
         "svarupa/emit/report.py",
-        "    if uncovered:",
-        "    if False:",
+        '        f"- routes, tasks and roles come from framework detection "',
+        '        f"- routes, tasks and roles: "',
+    ),
+    (
+        "express routes stop being receiver-scoped",
+        "svarupa/extract/semantics.py",
+        "            call.receiver in receivers",
+        "            call.receiver is not None",
+    ),
+    (
+        "an express path stops needing to be a path",
+        "svarupa/extract/semantics.py",
+        '            and call.first_str_arg.startswith("/")',
+        "            and True",
+    ),
+    (
+        "a substituted template literal is guessed from its static parts",
+        "svarupa/extract/typescript.py",
+        '        if any(c.type == "template_substitution" for c in node.children):',
+        "        if False:",
+    ),
+    (
+        "nest decorators claim routes without the nestjs import",
+        "svarupa/extract/semantics.py",
+        '        not imp.is_relative and imp.specifier.startswith("@nestjs/") for imp in f.imports',
+        "        True for imp in f.imports",
+    ),
+    (
+        "nest route methods outside a controller claim routes",
+        "svarupa/extract/semantics.py",
+        '        if s.kind != "method" or s.enclosing_class not in controllers:',
+        '        if s.kind != "method":',
+    ),
+    (
+        "the controller prefix stops composing",
+        "svarupa/extract/semantics.py",
+        "                    path=_nest_path(controllers[s.enclosing_class], dec.arg),",
+        "                    path=_nest_path(None, dec.arg),",
+    ),
+    (
+        "the export keyword consumes pending class decorators",
+        "svarupa/extract/typescript.py",
+        '                    if child.type in ("export", "default", ";"):',
+        "                    if False:",
     ),
 ]
 
