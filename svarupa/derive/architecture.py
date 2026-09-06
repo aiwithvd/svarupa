@@ -404,7 +404,7 @@ class ArchitectureDeriver(Deriver):
                             # The verb, not the count: the count is the stroke
                             # width and the tooltip. Arrow text returns only as
                             # a short semantic label with a collision gate.
-                            label="imports",
+                            label="",
                             note=f"{w} import{'s' if w != 1 else ''}",
                             evidence=tuple(sorted(set(ev)))[:MAX_EVIDENCE_PER_BOX],
                             weight=w,
@@ -608,7 +608,7 @@ class ArchitectureDeriver(Deriver):
                     DiagramEdge(
                         src=a,
                         dst=b,
-                        label="imports",
+                        label="",
                         note=f"{w} import{'s' if w != 1 else ''}",
                         evidence=ev,
                         weight=w,
@@ -685,7 +685,7 @@ class ModuleDepsDeriver(Deriver):
                 DiagramEdge(
                     src=a,
                     dst=b,
-                    label="imports",
+                    label="",
                     note=f"{w} import{'s' if w != 1 else ''}",
                     evidence=ev,
                     weight=w,

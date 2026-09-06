@@ -959,6 +959,10 @@ def test_edge_labels_are_short_verbs_on_masks_never_counts(tmp_path: Path) -> No
     repo = tmp_path / "repo"
     repo.mkdir()
     build_repo(repo)
+    # An external store, so at least one arrow carries a verb: structural
+    # import arrows draw no text at all (the word is noise when every arrow
+    # is an import), and their count lives in the tooltip note.
+    (repo / "src" / "store.py").write_text("import redis\n", encoding="utf8")
     out = tmp_path / "out"
     run(repo, out)
     html = (out / "index.html").read_text(encoding="utf8")
@@ -966,6 +970,7 @@ def test_edge_labels_are_short_verbs_on_masks_never_counts(tmp_path: Path) -> No
 
     labels = re.findall(r'class="sv-edge-label[^"]*"[^>]*>([^<]*)<', html)
     assert labels, "no edge labels drawn at all; the verb channel is broken"
+    assert "imports" not in labels, "a structural import arrow drew its verb"
     for text in labels:
         assert not re.search(r"\d", text), f"an edge label carries a number: {text!r}"
         assert len(text) <= 16, f"an edge label is prose, not a verb: {text!r}"

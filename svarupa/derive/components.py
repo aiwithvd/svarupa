@@ -148,9 +148,10 @@ def flow_spec(
                 DiagramEdge(
                     src=a,
                     dst=b,
-                    # The drawn label is the verb; the count and the cap
-                    # statement live in the note (tooltip and passport).
-                    label="uses",
+                    # No drawn text: when every arrow in a view is a use, the
+                    # word is noise. The count and the cap statement live in
+                    # the note (tooltip and passport).
+                    label="",
                     note=(
                         f"{len(ev)} uses, first 6 cited"
                         if len(ev) > 6

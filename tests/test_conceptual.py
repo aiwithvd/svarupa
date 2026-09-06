@@ -162,7 +162,8 @@ def test_edge_labels_are_verbs_and_counts_live_in_notes(tmp_path: Path) -> None:
         for spec in produced[kind].specs.values():
             for e in spec.edges:
                 assert not any(ch.isdigit() for ch in e.label), (e.label, spec.id)
-                if e.label in ("imports", "uses"):
+                if e.variant == "default" and not e.dst.startswith("ext:"):
+                    assert e.label == "", "structural arrows draw no text"
                     assert e.note, "the count moved to the note, it did not vanish"
 
 
