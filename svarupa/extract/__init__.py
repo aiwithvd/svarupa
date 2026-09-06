@@ -101,9 +101,10 @@ def extract(scan: Scan, declared_deps: frozenset[str] = frozenset()) -> ExtractR
     # through is the integration that was missing: the resolver otherwise
     # guesses at layout from the tree alone.
     roots = [w.root for w in scan.workspaces if w.root]
-    result = resolve(
+    resolver = Resolver(
         facts, declared_deps, roots, load_aliases(scan.root), workspace_packages(scan)
     )
+    result = resolver.run()
 
     # Configuration is architecture too. Compose services, datastores and
     # queues join the same graph as code, with the same evidence rule: every
@@ -112,7 +113,7 @@ def extract(scan: Scan, declared_deps: frozenset[str] = frozenset()) -> ExtractR
 
     # Semantic facts: routes, tasks, declared entrypoints. Import-gated and
     # line-cited, the same rule as everything above.
-    sem = semantics(scan, facts)
+    sem = semantics(scan, facts, resolver.resolve_module)
     return replace(
         result,
         nodes=result.nodes + compose.nodes,

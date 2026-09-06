@@ -16,6 +16,8 @@ the artifact records that the diagram was withheld, with the reason.
 
 from __future__ import annotations
 
+from itertools import pairwise
+
 from svarupa.diagnostics import Diagnostic, Severity
 from svarupa.layout.geometry import Canvas, Style
 from svarupa.layout.text import advance, sanitize
@@ -136,7 +138,7 @@ def _check_crossings(canvas: Canvas, waypoints: frozenset[str]) -> list[Diagnost
     out: list[Diagnostic] = []
     for r in canvas.routes:
         endpoints = {r.src, r.dst}
-        for (x1, y1), (x2, y2) in zip(r.points, r.points[1:], strict=False):
+        for (x1, y1), (x2, y2) in pairwise(r.points):
             lo_x, hi_x = min(x1, x2), max(x1, x2)
             lo_y, hi_y = min(y1, y2), max(y1, y2)
             for b in canvas.boxes:
@@ -393,7 +395,8 @@ def _check_labels(canvas: Canvas, style: Style) -> list[Diagnostic]:
     a fixed height, and a clear gap around it.
     """
     out: list[Diagnostic] = []
-    height = style.label_font_size + 6
+    height = style.label_font_size + style.label_pad
+    gap = style.label_gap
     masks: list[tuple[str, int, int, int, int]] = []
     for r in canvas.routes:
         if r.label_at is None or not r.label:
@@ -409,9 +412,25 @@ def _check_labels(canvas: Canvas, style: Style) -> list[Diagnostic]:
             if x < b.right and x + w > b.x and y < b.bottom and y + h > b.y:
                 out.append(_err("SVA-G-013", who, f"route label overlaps box {b.id!r}"))
                 break
+        # Not over another route: the design names this gate, and a mask on a
+        # bundle of lines hides which line the verb belongs to.
+        for r in canvas.routes:
+            if f"{r.src} -> {r.dst}" == who:
+                continue
+            hit = any(
+                min(x0, x1) < x + w
+                and max(x0, x1) > x
+                and min(y0, y1) < y + h
+                and max(y0, y1) > y
+                for (x0, y0), (x1, y1) in pairwise(r.points)
+            )
+            if hit:
+                out.append(
+                    _err("SVA-G-013", who, f"route label covers the route {r.src} -> {r.dst}")
+                )
+                break
     for i, (who, x, y, w, h) in enumerate(masks):
         for who2, x2, y2, w2, h2 in masks[i + 1 :]:
-            gap = 8
             if (
                 x < x2 + w2 + gap
                 and x + w + gap > x2

@@ -77,15 +77,25 @@ def _service_repo(root: Path) -> None:
 
 
 def test_the_vocabulary_classifies_by_package_root_and_dotted_prefix() -> None:
-    assert classify_import("motor.motor_asyncio", "python") == ("database", "MongoDB")
-    assert classify_import("fastapi.security", "python") == ("security", "FastAPI security")
-    assert classify_import("fastapi", "python") is None, "the root alone is not security"
-    assert classify_import("google.cloud.storage", "python") == ("cloud", "Google Cloud")
-    assert classify_import("google.generativeai", "python") == ("cloud", "Gemini API")
-    assert classify_import("google", "python") is None
-    assert classify_import("@google-cloud/storage", "typescript") == ("cloud", "Google Cloud")
-    assert classify_import("@prisma/client", "typescript") == ("database", "Prisma database")
-    assert classify_import("requests", "python") is None, "a library is not a component"
+    def c(spec: str, lang: str = "python") -> tuple[str, str] | None:
+        hit = classify_import(spec, lang)
+        return None if hit is None else (hit[0], hit[1])
+
+    assert c("motor.motor_asyncio") == ("database", "MongoDB")
+    assert c("fastapi.security") == ("security", "FastAPI security")
+    assert c("fastapi") is None, "the root alone is not security"
+    assert c("google.cloud.storage") == ("cloud", "Google Cloud")
+    assert c("google.generativeai") == ("cloud", "Gemini API")
+    assert c("google") is None
+    assert c("@google-cloud/storage", "typescript") == ("cloud", "Google Cloud")
+    assert c("@google-cloud/pubsub", "typescript") == ("messagebus", "Pub/Sub"), (
+        "the longest matching key wins, so Pub/Sub is not just Google Cloud"
+    )
+    assert c("@prisma/client", "typescript") == ("database", "Prisma database")
+    assert c("requests") is None, "a library is not a component"
+    assert classify_import("google.cloud.storage", "python")[2] == "google.cloud", (  # type: ignore[index]
+        "the matched key identifies the fact, not the bare root"
+    )
 
 
 # --- externals and roles --------------------------------------------------------

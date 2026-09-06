@@ -247,8 +247,13 @@ def extract_compose(scan: Scan) -> ComposeFacts:
             if build_context:
                 # A service built from this repository is the bridge between
                 # the deployment picture and the code: its context names the
-                # subtree that becomes the container.
+                # subtree that becomes the container. The `build:` key's own
+                # line is recorded too, so a boundary drawn from it can cite
+                # the line that declares the build rather than the service.
                 attrs.append(("build_context", build_context))
+                build_line = _key_lines(body_node).get("build")
+                if build_line is not None:
+                    attrs.append(("build_line", str(build_line)))
             node_id = f"{path}#service.{name}"
             nodes[node_id] = Node(
                 id=node_id,

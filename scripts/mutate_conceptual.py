@@ -13,14 +13,19 @@ import tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 PY = ROOT / ".venv" / "bin" / "python"
-SUITE = ["tests/test_conceptual.py", "tests/test_emit.py", "tests/test_layout.py"]
+SUITE = [
+    "tests/test_conceptual.py",
+    "tests/test_conceptual_review16.py",
+    "tests/test_emit.py",
+    "tests/test_layout.py",
+]
 
 MUTATIONS: list[tuple[str, str, str, str]] = [
     (
         "the dotted-prefix vocabulary match is dropped (fastapi.security reads as nothing)",
         "svarupa/extract/vocabulary.py",
-        "    if candidates:\n        key, category, label = max(candidates, key=lambda c: len(c[0]))\n        return (category, label)",
-        "    if False:\n        key, category, label = max(candidates, key=lambda c: len(c[0]))\n        return (category, label)",
+        "    if candidates:\n        key, category, label = max(candidates, key=lambda c: len(c[0]))\n        return (category, label, key)",
+        "    if False:\n        key, category, label = max(candidates, key=lambda c: len(c[0]))\n        return (category, label, key)",
     ),
     (
         "auth imports stop giving the auth role",
@@ -37,7 +42,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     (
         "a plain module's sublabel becomes its path",
         "svarupa/derive/architecture.py",
-                    parts.append(f"{mod.file_count} file{'s' if mod.file_count != 1 else ''}"),
+        "            parts.append(f\"{mod.file_count} file{'s' if mod.file_count != 1 else ''}\")",
         "            parts.append(module)",
     ),
     (
@@ -55,8 +60,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     (
         "root-context services wrap everything",
         "svarupa/derive/architecture.py",
-        '        if ctx == "":\n            # A root build context wraps every module in the repository, and',
-        '        if False:\n            # A root build context wraps every module in the repository, and',
+        "        if not ctx:\n            continue\n        inside = modules_under(graph, ctx)",
+        "        if ctx is None:\n            continue\n        inside = modules_under(graph, ctx)",
     ),
     (
         "a boundary is drawn around outsiders",
@@ -67,7 +72,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     (
         "route labels stop settling and stamp over each other",
         "svarupa/layout/engines.py",
-        "            if clear(cx, cy, r.label_w):\n                chosen = (cx, cy)\n                break",
+        "            if clear(cx, cy, r.label_w, r):\n                chosen = (cx, cy)\n                break",
         "            chosen = (cx, cy)\n            break",
     ),
     (
@@ -79,7 +84,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     (
         "external boxes stop sinking to the bottom layer",
         "svarupa/layout/engines.py",
-        "    if external and len(external) < len(levels):",
+        "    if sink_externals and external and len(external) < len(levels):",
         "    if False:",
     ),
     (
@@ -99,6 +104,90 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
         "svarupa/layout/engines.py",
         "    return [sorted(row, key=lambda b: rank.get(b.id, last)) for row in rows]",
         "    return rows",
+    ),
+    (
+        "externals sink in the flow engine again",
+        "svarupa/layout/engines.py",
+        "    levels = _levels(spec, boxes, sink_externals=False)",
+        "    levels = _levels(spec, boxes)",
+    ),
+    (
+        "an INFO diagnostic withholds the canvas again",
+        "svarupa/layout/__init__.py",
+        "        if any(d.severity is Severity.ERROR for d in found):",
+        "        if found:",
+    ),
+    (
+        "waypoints count as boundary intruders again",
+        "svarupa/layout/engines.py",
+        "            and b.id not in waypoints\n            and b.x < right",
+        "            and b.x < right",
+    ),
+    (
+        "a vocabulary hit stops asking the resolver",
+        "svarupa/extract/semantics.py",
+        "        if resolves is not None and resolves(imp.specifier, f.path, imp.level, f.lang):",
+        "        if False:",
+    ),
+    (
+        "type-only imports talk to stores again",
+        "svarupa/extract/semantics.py",
+        "        if imp.type_only:\n            continue",
+        "        if False:\n            continue",
+    ),
+    (
+        "externals dedupe by bare root again (google.* collapses)",
+        "svarupa/extract/semantics.py",
+        "        if key not in out:\n            out[key] = ExternalFact(",
+        '        if imp.specifier.split(".")[0] not in out:\n            out[imp.specifier.split(".")[0]] = ExternalFact(',
+    ),
+    (
+        "build contexts are stripped instead of anchored",
+        "svarupa/build.py",
+        '    joined = posixpath.normpath(posixpath.join(folder, raw.replace("\\\\", "/")))',
+        '    joined = raw.lstrip("./").rstrip("/") or "."',
+    ),
+    (
+        "an escaping build context wraps the in-repo decoy",
+        "svarupa/build.py",
+        '    if joined.startswith("..") or posixpath.isabs(joined):',
+        "    if False:",
+    ),
+    (
+        "a group with outsiders sits inside a boundary",
+        "svarupa/derive/architecture.py",
+        "        members = sorted(box for box, mods in represented.items() if mods and mods <= inside)",
+        "        members = sorted(box for box, mods in represented.items() if mods & inside)",
+    ),
+    (
+        "compose stores and import stores stop merging",
+        "svarupa/derive/system.py",
+        "            target = canonical.get(n.label)",
+        "            target = None",
+    ),
+    (
+        "image-only services become backends again",
+        "svarupa/derive/system.py",
+        '        archetype = {"datastore": "database", "queue": "messagebus", "service": "service"}',
+        '        archetype = {"datastore": "database", "queue": "messagebus", "service": "backend"}',
+    ),
+    (
+        "the kind class leaves the node group",
+        "svarupa/emit/svg.py",
+        '        + f" sv-kind-{_slug(box.kind)}"\n',
+        '        + ""\n',
+    ),
+    (
+        "expanded views lose their scopes",
+        "svarupa/emit/svg.py",
+        '                tag("g", embedded, data_scope="child"),',
+        "                embedded,",
+    ),
+    (
+        "a boundary cites the service key instead of build:",
+        "svarupa/derive/architecture.py",
+        "            if build_line and build_line.isdigit():",
+        "            if False:",
     ),
 ]
 

@@ -6,7 +6,14 @@ the graph. The clustering decides *grouping*; it never becomes an identity.
 
 from __future__ import annotations
 
-from svarupa.build import Graph, entrypoint_module, module_of, module_roles
+from svarupa.build import (
+    Graph,
+    build_context_of,
+    entrypoint_module,
+    module_of,
+    module_roles,
+    modules_under,
+)
 from svarupa.cluster import Clustering
 from svarupa.derive.base import (
     MAX_EVIDENCE_PER_BOX,
@@ -151,7 +158,13 @@ def external_nodes_and_edges(
     edges: list[DiagramEdge] = []
     for (category, label), holders in sorted(_externals_of(graph, modules).items()):
         nid = f"ext:{category}:{label}"
-        packages = sorted({x.package for x in graph.externals if x.label == label})
+        packages = sorted(
+            {
+                x.package
+                for x in graph.externals
+                if x.label == label and x.file in graph.architecture_paths
+            }
+        )
         nodes.append(
             DiagramNode(
                 id=nid,
@@ -190,39 +203,42 @@ def service_regions(
 ) -> tuple[Region, ...]:
     """Compose services wrapping the modules under their build context.
 
-    `stand_in` maps a module to the box that represents it in this spec; a
-    region lists the boxes actually drawn. A service with no member here is
-    not a region here.
+    `stand_in` maps a module to the box that represents it in this spec (its
+    group at the top level). A box stands inside a boundary only if EVERY
+    module it represents is under the context: a group holding three `web/*`
+    modules next to three `api/*` ones is not inside the `api` service, and
+    drawing the boundary around it claimed deployment for code outside the
+    build. The root context wraps nothing (a boundary around the whole
+    diagram says nothing, and two root-built services would overlap), and a
+    context escaping the repository builds nothing in the tree.
     """
     out: list[Region] = []
     for nid, node in sorted(graph.nodes.items()):
         if node.kind is not NodeKind.SERVICE:
             continue
-        ctx = node.attr("build_context")
+        ctx = build_context_of(graph, nid)
         if not ctx:
             continue
-        ctx = ctx.replace("\\", "/").lstrip("./").rstrip("/") if ctx not in (".", "./") else ""
-        members: set[str] = set()
+        inside = modules_under(graph, ctx)
+        represented: dict[str, set[str]] = {}
         for m in member_ids:
-            target = m
-            if stand_in and m in stand_in:
-                target = stand_in[m]
-            inside = m == ctx or (ctx == "" or m.startswith(ctx + "/"))
-            if inside and (m in graph.modules):
-                members.add(target)
-        if ctx == "":
-            # A root build context wraps every module in the repository, and
-            # a boundary around the whole diagram says nothing a reader can
-            # use. Two services built from the root (one compose file, two
-            # Dockerfiles) also both wrap everything and overlap each other.
-            continue
+            if m in graph.modules:
+                represented.setdefault((stand_in or {}).get(m, m), set()).add(m)
+        members = sorted(box for box, mods in represented.items() if mods and mods <= inside)
         if members:
+            # The boundary is a claim about the build, so it cites the `build:`
+            # line when the extractor recorded one, else the service line.
+            build_line = node.attr("build_line")
+            evidence = node.evidence
+            if build_line and build_line.isdigit():
+                ev0 = node.evidence[0]
+                evidence = (Evidence(ev0.file, int(build_line), int(build_line)),)
             out.append(
                 Region(
                     id=f"svc:{nid}",
                     label=node.label,
-                    members=tuple(sorted(members)),
-                    evidence=node.evidence,
+                    members=tuple(members),
+                    evidence=evidence,
                 )
             )
     return tuple(out)

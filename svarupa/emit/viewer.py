@@ -370,25 +370,37 @@ def _js() -> Markup:
   // The passport: what the element is, its semantic line, and the
   // connections it takes part in, read from the same SVG the reader sees.
   // Everything set via textContent; nothing here builds markup from data.
+  // A node's canvas: in an expanded view the parent and the embedded child
+  // are two canvases in one SVG and can share ids, so connections are read
+  // from the nearest scope, never from the whole document.
+  function scopeOf(el) {
+    return el.closest('[data-scope]') || el.closest('svg');
+  }
+
   function passport(node) {
-    var kind = '';
-    node.classList.forEach(function (c) { if (c.indexOf('sv-kind-') === 0) kind = c.slice(8); });
+    var kind = node.getAttribute('data-kind') || '';
+    if (!kind) {
+      node.classList.forEach(function (c) { if (c.indexOf('sv-kind-') === 0) kind = c.slice(8); });
+    }
     var roles = node.getAttribute('data-roles');
     kindEl.textContent = kind + (roles ? ' \u00b7 ' + roles : '');
     subEl.textContent = node.getAttribute('data-sublabel') || '';
     connEl.textContent = '';
     var id = node.getAttribute('data-id');
-    var svg = node.closest('svg');
+    var root = scopeOf(node);
     var n = 0;
-    if (svg && id) {
-      svg.querySelectorAll('.sv-route').forEach(function (r) {
+    if (root && id) {
+      root.querySelectorAll('.sv-route').forEach(function (r) {
         var s = r.getAttribute('data-src'), d = r.getAttribute('data-dst');
         if (s !== id && d !== id) return;
         var li = document.createElement('li');
         li.className = 'conn';
         var verb = document.createElement('span');
         verb.className = 'verb';
-        verb.textContent = (s === id ? '\u2192 ' : '\u2190 ') + (r.getAttribute('data-label') || '') + ' ';
+        // The note carries the count ("12 imports"); the label is the verb
+        // or empty for a structural arrow.
+        var said = r.getAttribute('data-note') || r.getAttribute('data-label') || 'imports';
+        verb.textContent = (s === id ? '\u2192 ' : '\u2190 ') + said + ' ';
         li.appendChild(verb);
         li.appendChild(document.createTextNode(s === id ? d : s));
         connEl.appendChild(li);
@@ -400,11 +412,11 @@ def _js() -> Markup:
 
   function show(name, refs, node) {
     title.textContent = name;
-    if (node && node.classList.contains('sv-node')) {
+    if (node && (node.classList.contains('sv-node') || node.classList.contains('sv-boundary'))) {
       passport(node);
     } else {
       kindEl.textContent = node ? 'connection' : '';
-      subEl.textContent = node ? (node.getAttribute('data-label') || '') : '';
+      subEl.textContent = node ? (node.getAttribute('data-note') || node.getAttribute('data-label') || '') : '';
       connEl.textContent = '';
       connH.textContent = 'Connections';
     }
@@ -418,12 +430,13 @@ def _js() -> Markup:
     var el = ev.target.closest('.sv-node, .sv-route');
     var svg = el && el.closest('svg');
     if (!svg) return;
+    var root = scopeOf(el);
     svg.querySelectorAll('.is-path').forEach(function (x) { x.classList.remove('is-path'); });
     var ids = {};
     if (el.classList.contains('sv-node')) {
       var id = el.getAttribute('data-id');
       ids[id] = 1;
-      svg.querySelectorAll('.sv-route').forEach(function (r) {
+      root.querySelectorAll('.sv-route').forEach(function (r) {
         var s = r.getAttribute('data-src'), d = r.getAttribute('data-dst');
         if (s === id || d === id) { r.classList.add('is-path'); ids[s] = 1; ids[d] = 1; }
       });
@@ -432,7 +445,7 @@ def _js() -> Markup:
       ids[el.getAttribute('data-src')] = 1;
       ids[el.getAttribute('data-dst')] = 1;
     }
-    svg.querySelectorAll('.sv-node').forEach(function (nd) {
+    root.querySelectorAll('.sv-node').forEach(function (nd) {
       if (ids[nd.getAttribute('data-id')]) nd.classList.add('is-path');
     });
     svg.classList.add('is-hovering');

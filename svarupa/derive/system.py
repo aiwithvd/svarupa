@@ -14,7 +14,7 @@ builds, so the story view and the evidence view are one navigation.
 
 from __future__ import annotations
 
-from svarupa.build import Graph, module_of, module_roles
+from svarupa.build import Graph, build_context_of, module_of, module_roles, modules_under
 from svarupa.cluster import Clustering
 from svarupa.derive.architecture import external_nodes_and_edges
 from svarupa.derive.base import (
@@ -27,6 +27,7 @@ from svarupa.derive.base import (
     DiagramSpec,
 )
 from svarupa.diagnostics import Diagnostic
+from svarupa.extract.vocabulary import GENERIC_FAMILIES, image_label
 from svarupa.model import EdgeKind, NodeKind
 
 __all__ = ["SystemDeriver"]
@@ -69,31 +70,36 @@ class SystemDeriver(Deriver):
             by_label[node.label] = by_label.get(node.label, 0) + 1
 
         roles = module_roles(graph)
-        # Archify's vocabulary for the deployed things: a service is a
-        # frontend if the code it builds has a frontend role, else a backend;
-        # a datastore is a database; a queue is a message bus.
-        archetype = {"datastore": "database", "queue": "messagebus", "service": "backend"}
+        # Archify's vocabulary for the deployed things: a datastore is a
+        # database, a queue is a message bus. A service is typed by the code
+        # it BUILDS (frontend if that code has a frontend role, security if
+        # auth is all it has, backend otherwise); an image-only service
+        # (grafana, opensearch-dashboards) builds no code here and stays a
+        # plain `service`: giving it the code sigil claimed code with zero
+        # evidence of any.
+        archetype = {"datastore": "database", "queue": "messagebus", "service": "service"}
         nodes: list[DiagramNode] = []
         modules_of_service: dict[str, set[str]] = {}
+        canonical: dict[str, str] = {}  # vocabulary label -> compose node id
         for nid, node in sorted(members.items()):
-            build_context = node.attr("build_context")
             label = node.label
             if by_label[label] > 1:
                 where = nid.split("#", 1)[0].rsplit("/", 1)[0] or "."
                 label = f"{label} ({where})"
             kind = archetype.get(node.kind.value, node.kind.value)
-            sublabel = node.attr("image") or ""
-            if build_context:
-                ctx = (
-                    ""
-                    if build_context in (".", "./")
-                    else build_context.lstrip("./").rstrip("/")
-                )
-                mods = {
-                    m for m in graph.modules if ctx == "" or m == ctx or m.startswith(ctx + "/")
-                }
+            image = node.attr("image") or ""
+            sublabel = image
+            if node.kind in (NodeKind.DATASTORE, NodeKind.QUEUE) and image:
+                store = image_label(image)
+                if store:
+                    canonical.setdefault(store, nid)
+                    sublabel = f"{store} · {image}"
+            ctx = build_context_of(graph, nid)
+            if ctx is not None:
+                mods = modules_under(graph, ctx)
                 modules_of_service[nid] = mods
                 held = {r for m in mods for r in roles.get(m, ())}
+                kind = "backend"
                 if "frontend" in held:
                     kind = "frontend"
                 elif "auth" in held and not ({"api", "worker"} & held):
@@ -115,6 +121,10 @@ class SystemDeriver(Deriver):
                 sublabel = ("built from " + (ctx or ".") + ("/" if ctx else "")) + (
                     " · " + ", ".join(what) if what else ""
                 )
+            elif node.attr("build_context"):
+                # A build context that escapes the repository builds nothing
+                # in the tree; say so rather than claim a subtree.
+                sublabel = "built outside this repository"
             nodes.append(
                 DiagramNode(
                     id=nid,
@@ -130,8 +140,8 @@ class SystemDeriver(Deriver):
                     attrs=tuple(
                         (k, v)
                         for k, v in (
-                            ("image", node.attr("image") or ""),
-                            ("build_context", build_context or ""),
+                            ("image", image),
+                            ("build_context", ctx if ctx is not None else ""),
                         )
                         if v
                     ),
@@ -139,18 +149,41 @@ class SystemDeriver(Deriver):
             )
 
         # What each built service talks to outside the codebase, from the
-        # imports of the code it builds: cloud APIs and stores compose does
-        # not declare. Attached to the service that does the talking.
+        # imports of the code it builds. An import-derived store that compose
+        # also declares is ONE thing: `psycopg` talks to the `postgres`
+        # service, so the arrow goes to the compose box and no second
+        # PostgreSQL is drawn ("6 databases" for three was this). A generic
+        # family label (`sqlalchemy` says SQL, not which) attaches to a compose
+        # store of that family when there is exactly one, else stays its own
+        # honest box.
         stand_in: dict[str, str] = {}
         for svc, mods in modules_of_service.items():
             for m in mods:
                 stand_in.setdefault(m, svc)
         ext_nodes, ext_edges = external_nodes_and_edges(graph, set(stand_in), stand_in)
-        compose_labels = {n.label for n in nodes}
-        ext_nodes = [n for n in ext_nodes if n.label not in compose_labels]
-        keep = {n.id for n in ext_nodes}
-        ext_edges = [e for e in ext_edges if e.dst in keep]
-        nodes.extend(ext_nodes)
+        redirect: dict[str, str] = {}
+        for n in ext_nodes:
+            target = canonical.get(n.label)
+            if target is None and n.label in GENERIC_FAMILIES:
+                family = [canonical[f] for f in GENERIC_FAMILIES[n.label] if f in canonical]
+                if len(family) == 1:
+                    target = family[0]
+            if target is not None:
+                redirect[n.id] = target
+        nodes.extend(n for n in ext_nodes if n.id not in redirect)
+        ext_edges = [
+            DiagramEdge(
+                src=e.src,
+                dst=redirect.get(e.dst, e.dst),
+                label=e.label,
+                note=e.note,
+                evidence=e.evidence,
+                weight=e.weight,
+                variant=e.variant,
+            )
+            for e in ext_edges
+        ]
+        ext_edges = [e for e in ext_edges if e.src != e.dst]
         edges = tuple(
             sorted(
                 [

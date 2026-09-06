@@ -431,6 +431,13 @@ class Resolver:
         repo_wide = [cid for cid in self.idx.class_by_id if cid[1].endswith(f".{name}")]
         return repo_wide[0] if len(repo_wide) == 1 else None
 
+    def resolve_module(self, spec: str, from_file: str, level: int, lang: str) -> str | None:
+        """Public: the repository file a specifier names from `from_file`, or
+        None. The semantics stage asks this before calling an import external,
+        because a vocabulary hit on a name is not a fact about the system when
+        the name resolves to the codebase's own module."""
+        return self._resolve_module(spec, from_file, level, lang)
+
     def _resolve_module(
         self, spec: str, from_file: str, level: int, lang: str = "python"
     ) -> str | None:

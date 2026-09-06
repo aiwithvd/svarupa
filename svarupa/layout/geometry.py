@@ -55,6 +55,13 @@ class Style:
     region_pad: int = 30
     region_extra_bottom: int = 20
     region_label_height: int = 16
+    # Route label masks: height is the font plus this padding, and two masks
+    # (or a mask and a box) must be this far apart. One definition, read by
+    # the engine that places labels, the validator that checks them and the
+    # renderer that draws them: three copies of "6" and "8" disagreed only
+    # by luck, and a mutation of any one of them survived.
+    label_pad: int = 6
+    label_gap: int = 8
     box_min_width: int = 96
     box_max_width: int = 260
     box_pad_x: int = 12

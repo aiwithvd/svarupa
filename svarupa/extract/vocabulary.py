@@ -15,7 +15,14 @@ dependency, not a component.
 
 from __future__ import annotations
 
-__all__ = ["CATEGORIES", "classify_import", "package_root"]
+__all__ = [
+    "CATEGORIES",
+    "GENERIC_FAMILIES",
+    "IMAGE_LABELS",
+    "classify_import",
+    "image_label",
+    "package_root",
+]
 
 # package root -> (category, display label)
 _STORES: dict[str, str] = {
@@ -69,7 +76,6 @@ _BUSES: dict[str, str] = {
     "amqplib": "RabbitMQ",
     "amqp": "RabbitMQ",
     "kombu": "message broker",
-    "celery": "Celery broker",
     "bullmq": "Redis queue",
     "bull": "Redis queue",
     "nats": "NATS",
@@ -179,12 +185,15 @@ def package_root(specifier: str, lang: str) -> str:
     return specifier.split(".")[0]
 
 
-def classify_import(specifier: str, lang: str) -> tuple[str, str] | None:
-    """(category, label) for a specifier the vocabulary knows, else None.
+def classify_import(specifier: str, lang: str) -> tuple[str, str, str] | None:
+    """(category, label, matched key) for a specifier the vocabulary knows.
 
     Dotted and scoped table keys are tried as prefixes first (longest match),
     then the bare root, so `google.cloud.storage` is Google Cloud while
-    `google.generativeai` is the Gemini API and plain `google` is nothing.
+    `google.generativeai` is the Gemini API and plain `google` is nothing. The
+    matched key comes back because it, not the bare root, identifies the fact:
+    keyed on the root, one file importing both `google.cloud` and
+    `google.generativeai` collapsed to one fact and lost Google Cloud.
     """
     candidates: list[tuple[str, str, str]] = []  # (key, category, label)
     for category, table in CATEGORIES.items():
@@ -197,9 +206,52 @@ def classify_import(specifier: str, lang: str) -> tuple[str, str] | None:
                 candidates.append((key, category, label))
     if candidates:
         key, category, label = max(candidates, key=lambda c: len(c[0]))
-        return (category, label)
+        return (category, label, key)
     root = package_root(specifier, lang)
     for category, table in CATEGORIES.items():
         if root in table:
-            return (category, table[root])
+            return (category, table[root], root)
     return None
+
+
+# Compose image names to the same display labels the import vocabulary uses,
+# so a `postgres` service and a `psycopg` import are one PostgreSQL, not two
+# boxes, and the System view counts databases it actually has.
+IMAGE_LABELS: dict[str, str] = {
+    "postgres": "PostgreSQL",
+    "postgresql": "PostgreSQL",
+    "timescaledb": "PostgreSQL",
+    "pgvector": "PostgreSQL",
+    "mysql": "MySQL",
+    "mariadb": "MySQL",
+    "mongo": "MongoDB",
+    "mongodb": "MongoDB",
+    "redis": "Redis",
+    "valkey": "Redis",
+    "elasticsearch": "Elasticsearch",
+    "opensearch": "OpenSearch",
+    "cassandra": "Cassandra",
+    "neo4j": "Neo4j",
+    "milvus": "Milvus",
+    "qdrant": "Qdrant",
+    "weaviate": "Weaviate",
+    "chroma": "Chroma",
+    "rabbitmq": "RabbitMQ",
+    "kafka": "Kafka",
+    "nats": "NATS",
+    "pulsar": "Pulsar",
+}
+
+# Generic import labels that mean "some store of this family": they attach to
+# a compose store of that family when there is exactly one, and stay their
+# own box otherwise. `sqlalchemy` says SQL, not which SQL.
+GENERIC_FAMILIES: dict[str, tuple[str, ...]] = {
+    "SQL database": ("PostgreSQL", "MySQL", "SQLite"),
+    "message broker": ("RabbitMQ", "Kafka", "NATS", "Pulsar"),
+}
+
+
+def image_label(image: str) -> str | None:
+    """The vocabulary label for a compose image, by its final path segment."""
+    name = image.rsplit("/", 1)[-1].split(":", 1)[0].split("@", 1)[0].lower()
+    return IMAGE_LABELS.get(name)

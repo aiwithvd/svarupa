@@ -155,7 +155,12 @@ def _box(box: Box, style: Style) -> Markup:
     return tag(
         "g",
         body,
-        class_="sv-node" + (" sv-drillable" if box.is_drillable else ""),
+        # The kind class sits on the group as well as the rect: the sigil, the
+        # SRC capsule and the passport all read `--k` / `sv-kind-*` from the
+        # group, and with it only on the rect every sigil rendered grey.
+        class_="sv-node"
+        + f" sv-kind-{_slug(box.kind)}"
+        + (" sv-drillable" if box.is_drillable else ""),
         data_id=box.id,
         data_child=box.child_spec,
         # The passport reads these back; both are repository-derived text
@@ -279,8 +284,9 @@ def _region(region: RegionBox, style: Style) -> Markup:
                 ),
             )
         ),
-        class_="sv-boundary",
+        class_=f"sv-boundary sv-kind-{_slug(region.kind)}",
         data_id=region.id,
+        data_kind="boundary",
         **{EVIDENCE_ATTR: evidence_ref(region.evidence)},
     )
 
@@ -344,7 +350,7 @@ def _route(route: Route, style: Style) -> Markup:
         # The verb on a mask at the midpoint of the longest segment, the
         # placement the validator checked against boxes and other labels.
         cx, cy = route.label_at
-        h = style.label_font_size + 6
+        h = style.label_font_size + style.label_pad
         label = join(
             (
                 tag(
@@ -534,9 +540,19 @@ def expanded_svg(exp: object, style: Style) -> Markup:
     return svg_document(
         join(
             (
-                canvas_body(exp.canvas, style, skip=frozenset({exp.host})),
-                container,
-                embedded,
+                # Parent and child are two canvases in one document, and a
+                # child box can share an id with a parent box (the module
+                # `api` inside the group `api`). Each is scoped so the
+                # passport and the hover read connections from their own
+                # canvas, never from the other.
+                tag(
+                    "g",
+                    join(
+                        (canvas_body(exp.canvas, style, skip=frozenset({exp.host})), container)
+                    ),
+                    data_scope="parent",
+                ),
+                tag("g", embedded, data_scope="child"),
             )
         ),
         exp.canvas.width,

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
+from itertools import pairwise
 
 from svarupa.derive.base import DiagramEdge, DiagramSpec
 from svarupa.diagnostics import Diagnostic, Severity
@@ -112,6 +113,7 @@ def _regions(
     boxes: Sequence[Box],
     style: Style,
     diags: list[Diagnostic],
+    waypoints: frozenset[str] = frozenset(),
 ) -> tuple[RegionBox, ...]:
     """Boundary rectangles around their members, drawn only when honest.
 
@@ -133,10 +135,14 @@ def _regions(
         right = max(b.right for b in members) + style.region_pad
         bottom = max(b.bottom for b in members) + style.region_pad + style.region_extra_bottom
         member_ids = set(region.members)
+        # A waypoint is a bend in a line, not a box, and cannot intrude: a
+        # skipping import inside a service once dropped the service's
+        # boundary and printed the dummy's NUL-delimited id to the user.
         intruders = sorted(
             b.id
             for b in boxes
             if b.id not in member_ids
+            and b.id not in waypoints
             and b.x < right
             and b.right > x
             and b.y < bottom
@@ -202,13 +208,18 @@ def _settle_labels(
     `7122.26.62.5nimports` failure with words. Deterministic: routes are
     settled in (src, dst) order.
     """
-    h = style.label_font_size + 6
-    gap = 8
+    h = style.label_font_size + style.label_pad
+    gap = style.label_gap
     solid = [b for b in boxes if b.id not in waypoints]
     placed: list[tuple[int, int, int, int]] = []
 
-    def clear(cx: int, cy: int, w: int) -> bool:
+    def clear(cx: int, cy: int, w: int, own: Route) -> bool:
         x, y = cx - w // 2, cy - h // 2
+        # Not over another route either: a mask on a bundle of lines hides
+        # which line the verb belongs to.
+        for other in routes:
+            if other is not own and _segments_cross_rect(other.points, x, y, w, h):
+                return False
         for b in solid:
             if x < b.right and x + w > b.x and y < b.bottom and y + h > b.y:
                 return False
@@ -240,7 +251,7 @@ def _settle_labels(
         for i in segments:
             (x0, y0), (x1, y1) = r.points[i], r.points[i + 1]
             cx, cy = (x0 + x1) // 2, (y0 + y1) // 2
-            if clear(cx, cy, r.label_w):
+            if clear(cx, cy, r.label_w, r):
                 chosen = (cx, cy)
                 break
         if chosen is None:
@@ -249,6 +260,18 @@ def _settle_labels(
         placed.append((chosen[0] - r.label_w // 2, chosen[1] - h // 2, r.label_w, h))
         out.append(replace(r, label_at=chosen))
     return out
+
+
+def _segments_cross_rect(
+    points: Sequence[tuple[int, int]], x: int, y: int, w: int, h: int
+) -> bool:
+    """Whether any orthogonal segment of a polyline passes through a rectangle."""
+    for (x0, y0), (x1, y1) in pairwise(points):
+        lo_x, hi_x = min(x0, x1), max(x0, x1)
+        lo_y, hi_y = min(y0, y1), max(y0, y1)
+        if lo_x < x + w and hi_x > x and lo_y < y + h and hi_y > y:
+            return True
+    return False
 
 
 def _label_anchor(
@@ -359,7 +382,9 @@ def _inferred_layers_cyclic(spec: DiagramSpec) -> frozenset[str]:
     return frozenset(set(ids) - drained)
 
 
-def _levels(spec: DiagramSpec, boxes: Sequence[Box]) -> dict[str, int]:
+def _levels(
+    spec: DiagramSpec, boxes: Sequence[Box], sink_externals: bool = True
+) -> dict[str, int]:
     """The dependency level of each box: declared if available, else inferred.
 
     External boxes (stores, buses, cloud APIs a module talks to) sink to the
@@ -371,7 +396,7 @@ def _levels(spec: DiagramSpec, boxes: Sequence[Box]) -> dict[str, int]:
     _ = boxes
     levels = dict(_declared_layers(spec) or _inferred_layers(spec))
     external = {n.id for n in spec.nodes if any(k == "external" for k, _ in n.attrs)}
-    if external and len(external) < len(levels):
+    if sink_externals and external and len(external) < len(levels):
         bottom = max(v for k, v in levels.items() if k not in external) + 1
         for nid in external:
             levels[nid] = bottom
@@ -774,7 +799,7 @@ def layered(
     routes = _settle_labels(
         _routes(chains, place, _edge_map(spec), diags, style), place.boxes, style, dummies
     )
-    regions = _regions(spec, place.boxes, style, diags)
+    regions = _regions(spec, place.boxes, style, diags, dummies)
     return _canvas(
         spec,
         "layered",
@@ -844,7 +869,7 @@ def clustered(
     routes = _settle_labels(
         _routes(chains, place, _edge_map(spec), diags, style), place.boxes, style, dummies
     )
-    regions = _regions(spec, place.boxes, style, diags)
+    regions = _regions(spec, place.boxes, style, diags, dummies)
 
     cyclic = _cyclic_ids(spec)
     by_level: dict[int, list[Box]] = {}
@@ -952,7 +977,10 @@ def flow(
     the same crossing validation as everything else.
     """
     boxes = _boxes(spec, style, sizes)
-    levels = _levels(spec, boxes)
+    # No external sinking here: in columns, one trailing column stacks the
+    # externals and a corridor drop into a lower one crosses the ones above
+    # it, which withheld the System view on the acceptance repo.
+    levels = _levels(spec, boxes, sink_externals=False)
     diags: list[Diagnostic] = list(
         _dangling(
             sorted(

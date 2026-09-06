@@ -89,9 +89,13 @@ def lay_out_set(ds: DiagramSet, style: Style | None = None) -> LaidOutDiagram:
     for spec_id in sorted(ds.specs):
         canvas = lay_out(ds.specs[spec_id], style, engine)
         found = validate(canvas, style) + canvas.diagnostics
-        if found:
+        problems.extend(found)
+        # Only an ERROR withholds. An INFO from the engine ("a boundary was
+        # not drawn, its members still are") once withheld a whole view and
+        # left the report with a circular reason: the drill target vanished
+        # because the drill target vanished.
+        if any(d.severity is Severity.ERROR for d in found):
             bad[spec_id] = canvas
-            problems.extend(found)
         else:
             good[spec_id] = canvas
     problems.extend(_navigability_after_withholding(ds, good, bad))

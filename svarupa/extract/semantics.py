@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import cast
 
@@ -36,7 +36,7 @@ from svarupa.extract.base import (
     RouteFact,
     TaskFact,
 )
-from svarupa.extract.vocabulary import classify_import, package_root
+from svarupa.extract.vocabulary import classify_import
 from svarupa.model import Evidence
 
 __all__ = ["SEMANTIC_FRAMEWORKS", "SEMANTIC_LANGS", "Semantics", "semantics"]
@@ -90,27 +90,36 @@ class Semantics:
     externals: tuple[ExternalFact, ...] = ()
 
 
-def _externals_for(f: FileFacts) -> list[ExternalFact]:
-    """One fact per (file, package) the vocabulary knows, citing the import.
+Resolves = Callable[[str, str, int, str], str | None]
 
-    A file importing `redis` three times yields one fact, at the first line.
-    Relative imports never match: their specifier starts with `.`, and the
-    vocabulary has no such key, so no explicit guard is needed (one was, and
-    a mutation run showed it unreachable).
+
+def _externals_for(f: FileFacts, resolves: Resolves | None) -> list[ExternalFact]:
+    """One fact per (file, vocabulary key) an import matches, citing the import.
+
+    A name is not an object, at the vocabulary too: `import jwt` in a
+    repository that owns a `jwt/` package, or `import { pay } from 'stripe'`
+    behind a tsconfig alias, RESOLVES to the codebase's own file and claims
+    nothing here. A type-only import binds a compiler, not a running system,
+    and claims nothing either. A file importing `redis` three times yields one
+    fact, at the first line. Keyed on the matched vocabulary key, not the bare
+    root, so `google.cloud` and `google.generativeai` stay two facts.
     """
     out: dict[str, ExternalFact] = {}
     for imp in sorted(f.imports, key=lambda i: (i.evidence.start_line, i.specifier)):
+        if imp.type_only:
+            continue
         hit = classify_import(imp.specifier, f.lang)
         if hit is None:
             continue
-        category, label = hit
-        root = package_root(imp.specifier, f.lang)
-        if root not in out:
-            out[root] = ExternalFact(
+        if resolves is not None and resolves(imp.specifier, f.path, imp.level, f.lang):
+            continue
+        category, label, key = hit
+        if key not in out:
+            out[key] = ExternalFact(
                 file=f.path,
                 category=category,
                 label=label,
-                package=root,
+                package=key,
                 evidence=imp.evidence,
             )
     return list(out.values())
@@ -610,7 +619,9 @@ def _unlocatable(path: str, subject: str) -> Diagnostic:
     )
 
 
-def semantics(scan: Scan, facts: Sequence[FileFacts]) -> Semantics:
+def semantics(
+    scan: Scan, facts: Sequence[FileFacts], resolves: Resolves | None = None
+) -> Semantics:
     routes: list[RouteFact] = []
     tasks: list[TaskFact] = []
     entrypoints: list[EntrypointFact] = []
@@ -618,7 +629,7 @@ def semantics(scan: Scan, facts: Sequence[FileFacts]) -> Semantics:
     diags: list[Diagnostic] = []
 
     for f in facts:
-        externals.extend(_externals_for(f))
+        externals.extend(_externals_for(f, resolves))
         if f.lang == "python":
             routes.extend(_routes_for(f))
             tasks.extend(_tasks_for(f))

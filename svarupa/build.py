@@ -47,9 +47,11 @@ __all__ = [
     "Graph",
     "Module",
     "build",
+    "build_context_of",
     "entrypoint_module",
     "module_of",
     "module_roles",
+    "modules_under",
     "workspace_members",
 ]
 
@@ -509,6 +511,37 @@ def entrypoint_module(graph: Graph, target: str, lang: str, manifest: str) -> st
         if cand in graph.nodes:
             return _module_of(cand)
     return None
+
+
+def build_context_of(graph: Graph, service_id: str) -> str | None:
+    """The repository-relative directory a compose service builds, or None.
+
+    Anchored at the compose file's own directory and normalised with path
+    operations, never string-stripped: `lstrip("./")` turned `./.web` into
+    `web` and `../api` into `api`, and a compose file in `deploy/` with
+    `context: ./api` means `deploy/api`, not the root's `api`. A context that
+    escapes the repository (`../api`) is None: nothing in the tree is what it
+    builds. The root context is "".
+    """
+    node = graph.nodes.get(service_id)
+    if node is None:
+        return None
+    raw = node.attr("build_context")
+    if not raw:
+        return None
+    compose_file = service_id.split("#", 1)[0]
+    folder = posixpath.dirname(compose_file)
+    joined = posixpath.normpath(posixpath.join(folder, raw.replace("\\", "/")))
+    if joined.startswith("..") or posixpath.isabs(joined):
+        return None
+    return "" if joined == "." else joined
+
+
+def modules_under(graph: Graph, context: str) -> set[str]:
+    """Structural modules inside a build context ("" is every module)."""
+    return {
+        m for m in graph.modules if context == "" or m == context or m.startswith(context + "/")
+    }
 
 
 def module_roles(graph: Graph) -> dict[str, tuple[str, ...]]:
