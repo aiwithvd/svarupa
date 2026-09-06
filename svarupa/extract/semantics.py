@@ -30,7 +30,11 @@ from svarupa.diagnostics import Diagnostic, Severity
 from svarupa.extract.base import DecoratorRef, EntrypointFact, FileFacts, RouteFact, TaskFact
 from svarupa.model import Evidence
 
-__all__ = ["Semantics", "semantics"]
+__all__ = ["SEMANTIC_LANGS", "Semantics", "semantics"]
+
+# The languages route/task extraction actually covers. Published so the report
+# can state the boundary; entrypoints additionally cover package.json `bin`.
+SEMANTIC_LANGS: tuple[str, ...] = ("python",)
 
 # FastAPI/Starlette route-declaring method names. `websocket` is a route in
 # every sense a reader cares about; it renders as method WS.
@@ -69,6 +73,12 @@ def _routes_for(f: FileFacts) -> list[RouteFact]:
     for s in f.symbols:
         for dec in s.decorators:
             tail = dec.name.rsplit(".", 1)[-1]
+            # A route path starts with `/` (or is empty, FastAPI's idiom for
+            # "the router's own prefix"). `@cache.get("user:profile")` in a
+            # file that happens to import fastapi is somebody's cache, and
+            # both frameworks reject such a string as a path anyway.
+            if dec.arg is not None and dec.arg != "" and not dec.arg.startswith("/"):
+                continue
             if fastapi and tail in _HTTP_METHODS and dec.arg is not None:
                 out.append(
                     RouteFact(
@@ -92,8 +102,12 @@ def _routes_for(f: FileFacts) -> list[RouteFact]:
                     )
                 )
             elif flask and tail == "route" and dec.arg is not None:
-                # Flask's documented default when `methods` is absent is GET.
-                for method in dec.methods or ("GET",):
+                # None: no `methods` kwarg, so Flask's documented default is
+                # GET, a fact. (): the kwarg is present but dynamic, so the
+                # methods are unknown, the loop runs zero times, and no fact
+                # is minted; `dec.methods or ("GET",)` here recorded GET for
+                # `methods=("POST",)`, an invented method in a committed file.
+                for method in dec.methods if dec.methods is not None else ("GET",):
                     out.append(
                         RouteFact(
                             method=method.upper(),
@@ -128,13 +142,15 @@ def _tasks_for(f: FileFacts) -> list[TaskFact]:
     ]
 
 
-def _key_line(lines: Sequence[str], table: str, key: str) -> int | None:
-    """The 1-based line declaring `key` inside TOML `[table]`.
+def _key_line(lines: Sequence[str], table: str, key: str, value: str) -> int | None:
+    """The 1-based line declaring `key = value` inside TOML `[table]`.
 
     A scanner, not a parser: tomllib already established the semantics, this
-    only locates them. It tracks the current table header and matches a
-    `key =` line (bare or quoted) inside the right one, so a same-named key in
-    another table cannot be cited.
+    only locates them. It tracks the current table header, matches a `key =`
+    line (bare or quoted) inside the right one, and requires the parsed value
+    on the same line. The value check is what stops a line *inside a
+    multiline string* that happens to read `key = ...` from being cited: the
+    scanner has no string state, so agreement with the parser is the guard.
     """
     current = ""
     pattern = re.compile(rf'^\s*(?:{re.escape(key)}|"{re.escape(key)}")\s*=')
@@ -143,7 +159,11 @@ def _key_line(lines: Sequence[str], table: str, key: str) -> int | None:
         if m:
             current = m.group(1).strip()
             continue
-        if current == table and pattern.match(line):
+        if (
+            current == table
+            and pattern.match(line)
+            and (f'"{value}"' in line or f"'{value}'" in line)
+        ):
             return i
     return None
 
@@ -166,7 +186,7 @@ def _pyproject_entrypoints(
         for name, target in mapping.items():
             if not isinstance(target, str):
                 continue
-            line = _key_line(lines, table, name)
+            line = _key_line(lines, table, name, target)
             if line is None:
                 diags.append(_unlocatable(path, f"{table}.{name}"))
                 continue
@@ -196,12 +216,34 @@ def _package_json_entrypoints(
     lines = text.split("\n")
     out: list[EntrypointFact] = []
 
+    def bin_range() -> tuple[int, int]:
+        """1-based inclusive line range of the `bin` object, brace-tracked.
+
+        Scanning the whole document cited `"config": {"serve": "./x.js"}`
+        for the identically-spelled `bin` entry below it; mirrored keys
+        across config/scripts/bin are ordinary in real manifests.
+        """
+        start = next((i for i, ln in enumerate(lines, start=1) if '"bin"' in ln), None)
+        if start is None:
+            return (0, -1)
+        depth = 0
+        for i in range(start, len(lines) + 1):
+            seg = lines[i - 1]
+            if i == start:
+                seg = seg[seg.index('"bin"') :]
+            depth += seg.count("{") - seg.count("}")
+            if depth <= 0:
+                return (start, i)
+        return (start, len(lines))
+
+    lo, hi = bin_range()
+
     def locate(key: str, value: str) -> int | None:
-        # The line must contain both the quoted key and the quoted value, so a
-        # same-named key elsewhere in the document cannot be cited.
+        # Both the quoted key and the parsed value, inside the bin object's
+        # own line range, so a same-named key elsewhere cannot be cited.
         needle_key, needle_val = f'"{key}"', json.dumps(value)
-        for i, line in enumerate(lines, start=1):
-            if needle_key in line and needle_val in line:
+        for i in range(lo, hi + 1):
+            if needle_key in lines[i - 1] and needle_val in lines[i - 1]:
                 return i
         return None
 
@@ -268,9 +310,29 @@ def semantics(scan: Scan, facts: Sequence[FileFacts]) -> Semantics:
         name = rec.path.rsplit("/", 1)[-1]
         if name not in ("pyproject.toml", "package.json"):
             continue
+        # The same gate routes and tasks already have: a manifest in a test
+        # fixture, vendored tree or generated directory declares nothing
+        # about the production architecture. Without this, a
+        # tests/fixtures/pyproject.toml minted a committed entrypoint record
+        # and coloured a real module `cli`.
+        if not rec.role.in_architecture:
+            continue
         try:
             text = (scan.root / rec.path).read_text(encoding="utf8")
-        except (OSError, UnicodeDecodeError):
+        except (OSError, UnicodeDecodeError) as exc:
+            # A new loading channel is part of the parser's boundary: degrade
+            # AND say so, never skip silently.
+            diags.append(
+                Diagnostic(
+                    code="SVA-X-008",
+                    severity=Severity.WARNING,
+                    message=(
+                        f"a manifest could not be read for semantic facts "
+                        f"({type(exc).__name__}), so its entrypoints are missing"
+                    ),
+                    subject=rec.path,
+                )
+            )
             continue
         if name == "pyproject.toml":
             entrypoints.extend(_pyproject_entrypoints(rec.path, text, diags))

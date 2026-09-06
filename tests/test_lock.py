@@ -287,7 +287,11 @@ def test_an_unknown_record_kind_diffs_opaquely_and_says_so() -> None:
     delta = diff(base, head)
     assert delta.added == (Record("quantum_flux", ("zz",)),)
     assert delta.unknown_kinds == frozenset({"quantum_flux"})
-    assert [d.code for d in delta.diagnostics] == ["SVA-L-005"]
+    codes = [d.code for d in delta.diagnostics]
+    assert "SVA-L-005" in codes
+    # 1.0 against 1.3 is also a schema-minor step, and saying so is the point:
+    # the new-kind lines come from the tool upgrade, not this change.
+    assert "SVA-L-013" in codes
     assert "quantum_flux" in delta.render()
 
 

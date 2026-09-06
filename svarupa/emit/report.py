@@ -39,6 +39,36 @@ def _listing(items: list[str], empty: str) -> str:
     return out
 
 
+def _semantics_scope(graph: Graph) -> list[str]:
+    """Say which languages semantic extraction covers, when it matters.
+
+    A JavaScript service showing no `api` role must read as "not extracted",
+    never as "no API": absence and blindness are different facts, and only
+    one of them is about the user's codebase.
+    """
+    from svarupa.extract.semantics import SEMANTIC_LANGS
+
+    uncovered = sorted(
+        lang
+        for lang, n in graph.file_languages
+        if n and lang not in SEMANTIC_LANGS and lang in ("typescript", "javascript")
+    )
+    lines = [
+        f"- routes, tasks and roles: extracted for {', '.join(SEMANTIC_LANGS)} only "
+        f"in this build "
+        f"({len(graph.routes)} routes, {len(graph.tasks)} tasks, "
+        f"{len(graph.entrypoints)} declared entrypoints)",
+    ]
+    if uncovered:
+        lines.append(
+            f"- **{', '.join(uncovered)} files were scanned but not semantically "
+            "analyzed**: a missing api/worker role there means not-yet-extracted, "
+            "not absent"
+        )
+    lines.append("")
+    return lines
+
+
 def render_report(
     root: str,
     graph: Graph,
@@ -68,6 +98,7 @@ def render_report(
         f"- **{len(graph.nodes)}** nodes, **{len(graph.edges)}** edges",
         f"- **{len(graph.modules)}** modules, **{len(graph.module_deps)}** module dependencies",
         "",
+        *_semantics_scope(graph),
         "## Resolution",
         "",
         "This table measures **pinning, not correctness.** A confidently wrong "

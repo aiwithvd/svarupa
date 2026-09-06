@@ -129,6 +129,30 @@ def diff(base: Lockfile, head: Lockfile) -> ArchitectureDelta:
             )
         )
 
+    # A schema-minor step means the newer build emits record kinds the older
+    # one could not. Without saying so, the first diff after a tool upgrade
+    # attributes every new-kind line to whichever change happens to be first,
+    # which is false in exactly the way recording versions exists to prevent.
+    if base.header.schema_minor != head.header.schema_minor:
+        diagnostics.append(
+            Diagnostic(
+                code="SVA-L-013",
+                severity=Severity.INFO,
+                message=(
+                    "the two lockfiles carry different schema minors, so added or "
+                    "removed lines of the newer kinds come from the tool upgrade, "
+                    "not from a code change"
+                ),
+                subject=(
+                    f"{base.header.schema_major}.{base.header.schema_minor} -> "
+                    f"{head.header.schema_major}.{head.header.schema_minor}"
+                ),
+                suggested_fixes=(
+                    "Regenerate and commit the base lockfile with the new build.",
+                ),
+            )
+        )
+
     if unknown:
         diagnostics.append(
             Diagnostic(
@@ -179,6 +203,16 @@ def drift_check(committed_base: Lockfile, regenerated_base: Lockfile) -> tuple[D
                 f"the committed base lockfile is out of date with the code at the same "
                 f"commit: {len(delta.added)} fact(s) missing from it and "
                 f"{len(delta.removed)} fact(s) it still claims"
+            )
+            + (
+                f". The committed base is schema "
+                f"{committed_base.header.schema_major}.{committed_base.header.schema_minor} "
+                f"and this build writes "
+                f"{regenerated_base.header.schema_major}.{regenerated_base.header.schema_minor}, "
+                "so some of these are record kinds the old build could not emit, "
+                "not code drift"
+                if committed_base.header.schema_minor != regenerated_base.header.schema_minor
+                else ""
             ),
             subject="architecture.lock",
             suggested_fixes=("Regenerate the lockfile on the base branch and commit it.",),

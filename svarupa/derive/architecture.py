@@ -39,6 +39,22 @@ def _role_kind(roles: dict[str, tuple[str, ...]], module: str) -> str:
     return next((r for r in _ROLE_PRIORITY if r in held), "module")
 
 
+def _evidence_with_roles(
+    graph: Graph, module: str, base: tuple[Evidence, ...]
+) -> tuple[Evidence, ...]:
+    """Module evidence plus role citations, capped as one list.
+
+    Appending after the cap quietly exceeded `MAX_EVIDENCE_PER_BOX` (an
+    11-file api module rendered 7 entries against a cap of 6). Role evidence
+    is reserved first, since the role colour is the claim a reader will
+    question; module evidence fills the rest.
+    """
+    roles = _role_evidence(graph, module)
+    keep = MAX_EVIDENCE_PER_BOX - len(roles)
+    trimmed = tuple(ev for ev in base if ev not in roles)[: max(0, keep)]
+    return trimmed + roles
+
+
 def _role_evidence(graph: Graph, module: str) -> tuple[Evidence, ...]:
     """One citation per role a module holds: the first route, task, and
     resolved entrypoint declaration inside it, in that order."""
@@ -168,8 +184,13 @@ class ArchitectureDeriver(Deriver):
                     id=anchor,
                     label=top_labels[anchor],
                     kind="group" if len(members) > 1 else singleton_kind,
-                    evidence=group_evidence(graph, members, anchor)
-                    + (_role_evidence(graph, members[0]) if len(members) == 1 else ()),
+                    evidence=(
+                        _evidence_with_roles(
+                            graph, members[0], group_evidence(graph, members, anchor)
+                        )
+                        if len(members) == 1
+                        else group_evidence(graph, members, anchor)
+                    ),
                     child_spec=child,
                     attrs=(("modules", str(len(members))),)
                     + (
@@ -379,7 +400,7 @@ class ArchitectureDeriver(Deriver):
                     # box's evidence, so the colour is a claim a reader can
                     # click, not a style.
                     kind=_role_kind(roles, m),
-                    evidence=module_evidence(graph, m) + _role_evidence(graph, m),
+                    evidence=_evidence_with_roles(graph, m, module_evidence(graph, m)),
                     child_spec=self._components(graph, m, spec_id(anchor), specs, diags),
                     attrs=(
                         (("files", str(graph.modules[m].file_count)),)
@@ -456,7 +477,7 @@ class ModuleDepsDeriver(Deriver):
                     id=m,
                     label=dep_labels[m],
                     kind=_role_kind(roles, m),
-                    evidence=module_evidence(graph, m) + _role_evidence(graph, m),
+                    evidence=_evidence_with_roles(graph, m, module_evidence(graph, m)),
                     attrs=(("layer", str(depth.get(m, 0))),)
                     + ((("roles", ",".join(roles[m])),) if m in roles else ()),
                 )

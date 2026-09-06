@@ -31,8 +31,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     (
         "flask loses its documented GET default",
         "svarupa/extract/semantics.py",
-        '                for method in dec.methods or ("GET",):',
-        '                for method in dec.methods or ("POST",):',
+        '                for method in dec.methods if dec.methods is not None else ("GET",):',
+        '                for method in dec.methods if dec.methods is not None else ("POST",):',
     ),
     (
         "the route claim cites the line below the decorator",
@@ -49,8 +49,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     (
         "the manifest line scan ignores table scope",
         "svarupa/extract/semantics.py",
-        "        if current == table and pattern.match(line):",
-        "        if pattern.match(line):",
+        "            current == table\n            and pattern.match(line)",
+        "            pattern.match(line)",
     ),
     (
         "endpoint records key on the handler name, not the module",
@@ -99,6 +99,90 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
         "svarupa/build.py",
         '            roles.setdefault(_module_of(t.file), set()).add("worker")',
         "            pass",
+    ),
+    (
+        "a present-but-dynamic flask methods falls back to GET again",
+        "svarupa/extract/semantics.py",
+        '                for method in dec.methods if dec.methods is not None else ("GET",):',
+        '                for method in dec.methods or ("GET",):',
+    ),
+    (
+        "a non-path decorator argument claims a route again",
+        "svarupa/extract/semantics.py",
+        '            if dec.arg is not None and dec.arg != "" and not dec.arg.startswith("/"):',
+        "            if False:",
+    ),
+    (
+        "fixture manifests mint committed records again",
+        "svarupa/extract/semantics.py",
+        "        if not rec.role.in_architecture:\n            continue",
+        "        if False:\n            continue",
+    ),
+    (
+        "python entrypoints resolve from the repo root again",
+        "svarupa/build.py",
+        "            posixpath.normpath(posixpath.join(folder, rel))",
+        "            posixpath.normpath(rel)",
+    ),
+    (
+        "the js bin target is unanchored from its manifest",
+        "svarupa/build.py",
+        "        candidates = [posixpath.normpath(posixpath.join(folder, target))]",
+        "        candidates = [posixpath.normpath(target)]",
+    ),
+    (
+        "the toml scan stops cross-checking the value",
+        "svarupa/extract/semantics.py",
+        "            and (f'\"{value}\"' in line or f\"'{value}'\" in line)",
+        "            and True",
+    ),
+    (
+        "the toml scan accepts only bare keys",
+        "svarupa/extract/semantics.py",
+        "    pattern = re.compile(rf'^\\s*(?:{re.escape(key)}|\"{re.escape(key)}\")\\s*=')",
+        "    pattern = re.compile(rf'^\\s*{re.escape(key)}\\s*=')",
+    ),
+    (
+        "the bin scan reads the whole document again",
+        "svarupa/extract/semantics.py",
+        "        for i in range(lo, hi + 1):",
+        "        for i in range(1, len(lines) + 1):",
+    ),
+    (
+        "a schema-minor step stops being attributed",
+        "svarupa/lock/diff.py",
+        "    if base.header.schema_minor != head.header.schema_minor:",
+        "    if False:",
+    ),
+    (
+        "role priority is inverted",
+        "svarupa/derive/architecture.py",
+        '_ROLE_PRIORITY = ("api", "worker", "cli")',
+        '_ROLE_PRIORITY = ("cli", "worker", "api")',
+    ),
+    (
+        "module_roles stops gating routes on architecture eligibility",
+        "svarupa/build.py",
+        '        if r.file in graph.architecture_paths:\n            roles.setdefault(_module_of(r.file), set()).add("api")',
+        '        roles.setdefault(_module_of(r.file), set()).add("api")',
+    ),
+    (
+        "semantic facts lose canonical order",
+        "svarupa/extract/semantics.py",
+        "        routes=tuple(sorted(set(routes))),",
+        "        routes=tuple(routes),",
+    ),
+    (
+        "role evidence stops being reserved under the cap",
+        "svarupa/derive/architecture.py",
+        "    trimmed = tuple(ev for ev in base if ev not in roles)[: max(0, keep)]\n    return trimmed + roles",
+        "    return (base + roles)[:MAX_EVIDENCE_PER_BOX]",
+    ),
+    (
+        "the report stops naming the language boundary",
+        "svarupa/emit/report.py",
+        "    if uncovered:",
+        "    if False:",
     ),
 ]
 

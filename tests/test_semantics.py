@@ -148,7 +148,7 @@ def test_pyproject_scripts_cite_the_declaring_line(tmp_path: Path) -> None:
         tmp_path,
         "pyproject.toml",
         "[tool.other]\n"
-        'demo = "not.this:one"\n'
+        'demo = "pkg.cli:main"\n'
         "\n"
         "[project]\n"
         'name = "demo"\n'
@@ -382,3 +382,287 @@ def test_an_entrypoint_naming_a_missing_file_in_a_real_module_is_not_trusted(
     result = build_lock(graph_of(tmp_path), __version__)
     assert "entrypoint" not in result.lockfile.render()
     assert any(d.code == "SVA-L-012" for d in result.diagnostics)
+
+
+# --- review #13 fixes, each with the demonstration that forced it ------------
+
+
+def test_flask_tuple_methods_are_literal_and_identifier_methods_claim_nothing(
+    tmp_path: Path,
+) -> None:
+    """`methods=("POST",)` is as literal as a list and records POST; a present
+    but dynamic `methods` is unknown and must not fall back to GET, which
+    recorded `endpoint GET /pay` for a POST-only route."""
+    write(
+        tmp_path,
+        "web/app.py",
+        "from flask import Flask\n"
+        "app = Flask(__name__)\n"
+        "M = ['DELETE']\n"
+        "\n"
+        '@app.route("/pay", methods=("POST",))\n'
+        "def pay():\n"
+        "    pass\n"
+        "\n"
+        '@app.route("/dyn", methods=M)\n'
+        "def dyn():\n"
+        "    pass\n",
+    )
+    g = graph_of(tmp_path)
+    assert {(r.method, r.path) for r in g.routes} == {("POST", "/pay")}
+
+
+def test_a_route_shaped_decorator_on_a_non_path_claims_nothing(tmp_path: Path) -> None:
+    """`import fastapi` plus somebody's `@cache.get("user:profile")` recorded
+    `endpoint GET user:profile`. A route path starts with `/` (or is empty,
+    FastAPI's router-prefix idiom)."""
+    write(
+        tmp_path,
+        "api/cachey.py",
+        "import fastapi\n"
+        "cache = object()\n"
+        "\n"
+        '@cache.get("user:profile")\n'
+        "def profile():\n"
+        "    pass\n",
+    )
+    write(
+        tmp_path,
+        "api/routes.py",
+        "from fastapi import APIRouter\n"
+        "router = APIRouter()\n"
+        "\n"
+        '@router.get("")\n'
+        "def index():\n"
+        "    pass\n",
+    )
+    g = graph_of(tmp_path)
+    assert {(r.method, r.path) for r in g.routes} == {("GET", "")}
+
+
+def test_a_manifest_in_a_test_fixture_mints_no_committed_record(tmp_path: Path) -> None:
+    """tests/fixtures/pyproject.toml declared `evil = "pkg.cli:main"` and the
+    lockfile came out with `entrypoint evil pkg` plus `role pkg cli`: a test
+    fixture assigning a role to a production module."""
+    write(tmp_path, "pkg/__init__.py", "")
+    write(tmp_path, "pkg/cli.py", "def main():\n    pass\n")
+    write(
+        tmp_path,
+        "tests/fixtures/pyproject.toml",
+        '[project]\nname = "evil"\n\n[project.scripts]\nevil = "pkg.cli:main"\n',
+    )
+    text = _lock_text(tmp_path)
+    assert "entrypoint" not in text
+    assert "role" not in text
+    # And at the graph level, because after manifest-anchored resolution the
+    # lockfile filters would mask a removed gate for this shape.
+    assert graph_of(tmp_path).entrypoints == ()
+
+
+def test_a_monorepo_entrypoint_is_anchored_at_its_manifest_not_the_root(
+    tmp_path: Path,
+) -> None:
+    """A root-level decoy `pkg/` captured `packages/a`'s script silently."""
+    write(tmp_path, "pkg/__init__.py", "")
+    write(tmp_path, "pkg/cli.py", "def main():\n    pass\n")  # the decoy
+    write(tmp_path, "packages/a/pkg/__init__.py", "")
+    write(tmp_path, "packages/a/pkg/cli.py", "def main():\n    pass\n")
+    write(
+        tmp_path,
+        "packages/a/pyproject.toml",
+        '[project]\nname = "a"\n\n[project.scripts]\nrun = "pkg.cli:main"\n',
+    )
+    text = _lock_text(tmp_path)
+    assert "entrypoint\trun\tpackages/a/pkg" in text
+    assert "entrypoint\trun\tpkg\n" not in text
+
+
+def test_a_src_layout_entrypoint_resolves(tmp_path: Path) -> None:
+    write(tmp_path, "src/pkg/__init__.py", "")
+    write(tmp_path, "src/pkg/cli.py", "def main():\n    pass\n")
+    write(
+        tmp_path,
+        "pyproject.toml",
+        '[project]\nname = "demo"\n\n[project.scripts]\ndemo = "pkg.cli:main"\n',
+    )
+    assert "entrypoint\tdemo\tsrc/pkg" in _lock_text(tmp_path)
+
+
+def test_a_js_bin_is_anchored_at_its_manifest_not_the_root(tmp_path: Path) -> None:
+    write(tmp_path, "cli.js", "export const decoy = 1;\n")
+    write(tmp_path, "packages/a/cli.js", "export const real = 1;\n")
+    write(
+        tmp_path,
+        "packages/a/package.json",
+        '{\n  "name": "a",\n  "bin": {\n    "a": "./cli.js"\n  }\n}\n',
+    )
+    g = graph_of(tmp_path)
+    from svarupa.build import entrypoint_module
+
+    e = next(x for x in g.entrypoints if x.name == "a")
+    assert entrypoint_module(g, e.target, e.lang, e.file) == "packages/a"
+
+
+def test_the_toml_scan_is_not_fooled_by_a_string_containing_key_equals(
+    tmp_path: Path,
+) -> None:
+    """A multiline string reading `serve = ...` was cited instead of the real
+    declaration two lines below it."""
+    write(
+        tmp_path,
+        "pyproject.toml",
+        "[project]\n"
+        'name = "demo"\n'
+        "\n"
+        "[project.scripts]\n"
+        'helper = """\n'
+        'serve = "decoy text inside a string"\n'
+        '"""\n'
+        'serve = "pkg.cli:main"\n',
+    )
+    write(tmp_path, "pkg/cli.py", "def main():\n    pass\n")
+    g = graph_of(tmp_path)
+    serves = [e for e in g.entrypoints if e.name == "serve"]
+    assert [e.evidence.start_line for e in serves] == [8]
+
+
+def test_the_bin_scan_is_scoped_to_the_bin_object(tmp_path: Path) -> None:
+    """`"config": {"serve": "./dist/serve.js"}` above `bin` was cited for the
+    bin entry below it."""
+    write(
+        tmp_path,
+        "package.json",
+        "{\n"
+        '  "name": "demo",\n'
+        '  "config": { "serve": "./dist/serve.js" },\n'
+        '  "bin": {\n'
+        '    "serve": "./dist/serve.js"\n'
+        "  }\n"
+        "}\n",
+    )
+    write(tmp_path, "dist/serve.js", "export const x = 1;\n")
+    g = graph_of(tmp_path)
+    assert len(g.entrypoints) == 1
+    assert g.entrypoints[0].evidence.start_line == 5
+
+
+def test_a_quoted_script_key_is_located(tmp_path: Path) -> None:
+    write(
+        tmp_path,
+        "pyproject.toml",
+        '[project]\nname = "demo"\n\n[project.scripts]\n"run.dev" = "pkg.cli:main"\n',
+    )
+    write(tmp_path, "pkg/cli.py", "def main():\n    pass\n")
+    g = graph_of(tmp_path)
+    assert [(e.name, e.evidence.start_line) for e in g.entrypoints] == [("run.dev", 5)]
+
+
+def test_a_schema_minor_step_is_attributed_to_the_upgrade_not_the_change(
+    tmp_path: Path,
+) -> None:
+    """Diffing a 1.1 base against a 1.2 head showed every route and role as
+    this PR's additions and drift called the base 'out of date with the
+    code'. The tool grew record kinds; the code did not change."""
+    from svarupa.lock import drift_check
+
+    _service_repo(tmp_path)
+    head = build_lock(graph_of(tmp_path), __version__).lockfile
+    old_base = Lockfile.parse(
+        "# svarupa 0.0.9\n# schema 1.1\n# grammars python@0.25.0\nmodule\tapi\n"
+    )
+    delta = diff(old_base, head)
+    assert "SVA-L-013" in [d.code for d in delta.diagnostics]
+    drift = drift_check(old_base, head)
+    assert any("record kinds the old build could not emit" in d.message for d in drift)
+
+
+def test_dual_role_module_wears_api_by_priority_and_records_both(tmp_path: Path) -> None:
+    from svarupa.cluster import cluster
+    from svarupa.derive import derive_all
+    from svarupa.derive.base import DiagramKind
+
+    write(tmp_path, "svc/__init__.py", "")
+    write(tmp_path, "svc/routes.py", FASTAPI_FILE)
+    write(
+        tmp_path,
+        "svc/jobs.py",
+        "from celery import shared_task\n\n\n@shared_task\ndef crunch():\n    pass\n",
+    )
+    write(tmp_path, "other/__init__.py", "")
+    write(tmp_path, "other/uses.py", "x = 1\n")
+    text = _lock_text(tmp_path)
+    assert "role\tsvc\tapi" in text
+    assert "role\tsvc\tworker" in text
+    g = graph_of(tmp_path)
+    produced, _ = derive_all(g, cluster(g))
+    boxes = [
+        n for spec in produced[DiagramKind.ARCHITECTURE].specs.values() for n in spec.nodes
+    ]
+    svc = next(n for n in boxes if n.id == "svc" and n.kind != "group")
+    assert svc.kind == "api", "api outranks worker in the box colour"
+    assert svc.attr("roles") == "api,worker"
+
+
+def test_module_roles_itself_gates_on_architecture_eligibility(tmp_path: Path) -> None:
+    """The diagrams consume module_roles directly; the lockfile's own module
+    filter must not be the only guard."""
+    write(tmp_path, "pkg/__init__.py", "")
+    write(tmp_path, "pkg/real.py", "x = 1\n")
+    write(tmp_path, "tests/test_app.py", FASTAPI_FILE)
+    assert module_roles(graph_of(tmp_path)) == {}
+
+
+def test_semantic_facts_are_in_canonical_order(tmp_path: Path) -> None:
+    write(
+        tmp_path,
+        "api/z_first.py",
+        "from fastapi import APIRouter\nrouter = APIRouter()\n\n"
+        '@router.get("/zzz")\ndef z():\n    pass\n\n'
+        '@router.get("/aaa")\ndef a():\n    pass\n',
+    )
+    g = graph_of(tmp_path)
+    assert g.routes == tuple(sorted(g.routes))
+
+
+def test_the_report_states_the_semantics_language_boundary(tmp_path: Path) -> None:
+    from svarupa.emit.report import _semantics_scope
+
+    write(tmp_path, "api/routes.py", FASTAPI_FILE)
+    write(tmp_path, "web/app.ts", "export const x = 1;\n")
+    lines = "\n".join(_semantics_scope(graph_of(tmp_path)))
+    assert "python only" in lines
+    assert "not semantically analyzed" in lines
+
+
+def test_the_cli_door_writes_semantic_records(tmp_path: Path) -> None:
+    from svarupa.cli import main
+    from svarupa.lock import LOCK_NAME
+
+    _service_repo(tmp_path)
+    assert main([str(tmp_path), "--lock"]) == 0
+    text = (tmp_path / ".svarupa" / LOCK_NAME).read_text(encoding="utf8")
+    assert "endpoint\tGET /items/{item_id}\tapi" in text
+    assert "role\tpkg\tcli" in text
+
+
+def test_role_evidence_respects_the_evidence_cap(tmp_path: Path) -> None:
+    from svarupa.cluster import cluster
+    from svarupa.derive import derive_all
+    from svarupa.derive.base import MAX_EVIDENCE_PER_BOX, DiagramKind
+
+    write(tmp_path, "api/__init__.py", "")
+    for i in range(11):
+        write(tmp_path, f"api/m{i:02d}.py", "x = 1\n")
+    write(tmp_path, "api/routes.py", FASTAPI_FILE)
+    write(tmp_path, "other/__init__.py", "")
+    write(tmp_path, "other/uses.py", "x = 1\n")
+    g = graph_of(tmp_path)
+    produced, _ = derive_all(g, cluster(g))
+    boxes = [
+        n for spec in produced[DiagramKind.ARCHITECTURE].specs.values() for n in spec.nodes
+    ]
+    api = next(n for n in boxes if n.id == "api" and n.kind == "api")
+    assert len(api.evidence) <= MAX_EVIDENCE_PER_BOX
+    assert any(ev.file == "api/routes.py" and ev.start_line == 6 for ev in api.evidence), (
+        "the cap must not evict the role citation"
+    )

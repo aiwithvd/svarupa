@@ -307,7 +307,11 @@ class PythonExtractor(Extractor):
         if callee is None:
             return None
         arg: str | None = None
-        methods: tuple[str, ...] = ()
+        # None: no `methods` kwarg at all. (): the kwarg is present but not a
+        # literal collection of strings, so the methods are unknown. The two
+        # must stay distinguishable: Flask's documented default applies only
+        # to the first, and applying it to the second invents a method.
+        methods: tuple[str, ...] | None = None
         args = expr.child_by_field_name("arguments")
         if args is not None:
             for child in args.children:
@@ -316,18 +320,23 @@ class PythonExtractor(Extractor):
                 if child.type == "keyword_argument":
                     key = child.child_by_field_name("name")
                     value = child.child_by_field_name("value")
-                    if (
-                        key is not None
-                        and _text(src, key) == "methods"
-                        and value is not None
-                        and value.type == "list"
-                    ):
+                    if key is None or _text(src, key) != "methods" or value is None:
+                        continue
+                    methods = ()
+                    if value.type in ("list", "tuple"):
                         items = [
                             _string_literal(src, c)
                             for c in value.children
                             if c.type == "string"
                         ]
-                        if all(i is not None for i in items):
+                        entries = sum(
+                            1 for c in value.children if c.type not in ("[", "]", "(", ")", ",")
+                        )
+                        if (
+                            items
+                            and len(items) == entries
+                            and all(i is not None for i in items)
+                        ):
                             methods = tuple(i for i in items if i is not None)
         return DecoratorRef(name=_text(src, callee), arg=arg, evidence=ev, methods=methods)
 

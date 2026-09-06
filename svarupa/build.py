@@ -483,11 +483,25 @@ def entrypoint_module(graph: Graph, target: str, lang: str, manifest: str) -> st
     file it points at exists in the graph. An unresolvable target produces no
     claim, and the consumer diagnoses it.
     """
+    folder = manifest.rsplit("/", 1)[0] if "/" in manifest else ""
     if lang == "python":
+        # Anchored at the declaring manifest's directory, never at the repo
+        # root: `packages/a/pyproject.toml` declaring `pkg.cli:main` names
+        # `packages/a/pkg/cli.py`, and resolving from the root let a decoy
+        # `pkg/` at the top level capture the record silently. `src/` is the
+        # one extra anchor, because the src layout puts the package one level
+        # below the manifest that declares it.
         base = target.split(":", 1)[0].strip().replace(".", "/")
-        candidates = [f"{base}.py", f"{base}/__init__.py"]
+        candidates = [
+            posixpath.normpath(posixpath.join(folder, rel))
+            for rel in (
+                f"{base}.py",
+                f"{base}/__init__.py",
+                f"src/{base}.py",
+                f"src/{base}/__init__.py",
+            )
+        ]
     else:
-        folder = manifest.rsplit("/", 1)[0] if "/" in manifest else ""
         candidates = [posixpath.normpath(posixpath.join(folder, target))]
     for cand in candidates:
         if cand in graph.nodes:

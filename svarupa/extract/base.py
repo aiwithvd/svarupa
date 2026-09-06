@@ -107,11 +107,14 @@ class DecoratorRef:
     """
 
     name: str  # dotted callee text without arguments, e.g. "app.get"
-    arg: str | None  # first string-literal argument, e.g. "/items/{id}"
+    arg: str | None  # first string-literal argument, spelled as at the decorator
     evidence: Evidence
-    # `methods=["POST"]` on a Flask `.route`, captured when it is a literal
-    # list of strings. Anything dynamic stays empty rather than guessed.
-    methods: tuple[str, ...] = ()
+    # `methods=[...]` on a Flask `.route`. None means the kwarg is absent
+    # (Flask's documented GET default applies); () means it is present but
+    # not a literal collection of strings, so the methods are unknown and no
+    # fact may be minted. Conflating those two invented `GET` for
+    # `methods=("POST",)`.
+    methods: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True, slots=True)
