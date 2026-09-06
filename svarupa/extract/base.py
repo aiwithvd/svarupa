@@ -107,8 +107,16 @@ class DecoratorRef:
     """
 
     name: str  # dotted callee text without arguments, e.g. "app.get"
-    arg: str | None  # first string-literal argument, spelled as at the decorator
+    arg: str | None  # FIRST argument when it is a literal string, source-spelled
     evidence: Evidence
+    # True when the decorator call has arguments but the first is not a
+    # literal string: `@Get(PATH)`, `@Controller(['a','b'])`. Distinguishable
+    # from `@Get()` (arg is None, arg_dynamic False), whose meaning is "the
+    # controller prefix itself". Present-but-unknown must be representable:
+    # conflating the two minted `endpoint GET /users` for a route that lives
+    # at `/users/:id`, one commit after the same lesson was promoted for
+    # Flask's `methods`.
+    arg_dynamic: bool = False
     # `methods=[...]` on a Flask `.route`. None means the kwarg is absent
     # (Flask's documented GET default applies); () means it is present but
     # not a literal collection of strings, so the methods are unknown and no

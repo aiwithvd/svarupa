@@ -112,13 +112,23 @@ def _text(src: bytes, node: TSNode) -> str:
 
 def _ts_string(src: bytes, node: TSNode) -> str | None:
     """A static string value from a `string` or substitution-free
-    `template_string` node; None for anything dynamic."""
-    if node.type == "string":
-        return "".join(_text(src, c) for c in node.children if c.type == "string_fragment")
-    if node.type == "template_string":
-        if any(c.type == "template_substitution" for c in node.children):
-            return None
-        return "".join(_text(src, c) for c in node.children if c.type == "string_fragment")
+    `template_string` node; None for anything dynamic.
+
+    Escape sequences are kept in their source spelling rather than dropped:
+    joining only the fragments turned `'/a\\'b'` into `/ab`, a corrupted
+    value in a committed file, and let two distinct routes collide onto one
+    lock key.
+    """
+    if node.type == "template_string" and any(
+        c.type == "template_substitution" for c in node.children
+    ):
+        return None
+    if node.type in ("string", "template_string"):
+        return "".join(
+            _text(src, c)
+            for c in node.children
+            if c.type in ("string_fragment", "escape_sequence")
+        )
     return None
 
 
@@ -253,6 +263,15 @@ class TypeScriptExtractor(Extractor):
                 name_node = node.child_by_field_name("name")
                 if name_node is None:
                     return
+                # A non-exported decorated class carries its decorators as its
+                # own children rather than as export-statement siblings.
+                own_decs: list[DecoratorRef] = []
+                for child in node.children:
+                    if child.type == "decorator" and (
+                        (d := self._decorator(path, data, child)) is not None
+                    ):
+                        own_decs.append(d)
+                decorators = decorators + tuple(own_decs)
                 name = _text(data, name_node)
                 bases: list[str] = []
                 for child in node.children:
@@ -368,17 +387,61 @@ class TypeScriptExtractor(Extractor):
                             visit(child, [*stack, name], cls, q, depth=depth + 1)
                     return
 
+            if t in ("lexical_declaration", "variable_declaration"):
+                # Not handled directly, but `exported` must survive the hop:
+                # `export const f = () => {}` reached its declarator through
+                # the generic recursion, which dropped the flag.
+                for child in node.children:
+                    visit(child, stack, cls, fn, exported=exported, depth=depth + 1)
+                return
+
             if t == "variable_declarator":
                 name_node = node.child_by_field_name("name")
                 value = node.child_by_field_name("value")
                 if (
                     name_node is not None
-                    and name_node.type == "identifier"
                     and value is not None
                     and value.type == "call_expression"
                 ):
                     callee = value.child_by_field_name("function")
-                    if callee is not None:
+                    # `const x = require('spec')` is the CommonJS import, the
+                    # dominant dialect of real Express codebases; without it
+                    # the report claimed express coverage the extractor did
+                    # not have. `const { A, B } = require('spec')` maps the
+                    # destructured names like named imports.
+                    if callee is not None and _text(data, callee) == "require":
+                        spec = None
+                        req_args = value.child_by_field_name("arguments")
+                        if req_args is not None:
+                            for c in req_args.children:
+                                if c.type in ("(", ")", ","):
+                                    continue
+                                if c.type in ("string", "template_string"):
+                                    spec = _ts_string(data, c)
+                                break
+                        req_names: list[str] = []
+                        if name_node.type == "identifier":
+                            req_names = [_text(data, name_node)]
+                        elif name_node.type == "object_pattern":
+                            req_names = [
+                                _text(data, c)
+                                for c in name_node.children
+                                if c.type == "shorthand_property_identifier_pattern"
+                            ]
+                        if spec and req_names:
+                            imports.append(
+                                ImportRef(
+                                    specifier=spec,
+                                    names=tuple(req_names),
+                                    alias_of={},
+                                    evidence=self.evidence(
+                                        path, node.start_point[0], node.start_point[0]
+                                    ),
+                                    is_relative=spec.startswith("."),
+                                    is_from=True,
+                                )
+                            )
+                    if callee is not None and name_node.type == "identifier":
                         ctor_assigns.append((_text(data, name_node), _text(data, callee)))
                 if (
                     name_node is not None
@@ -556,13 +619,25 @@ class TypeScriptExtractor(Extractor):
         if callee is None:
             return None
         arg: str | None = None
+        dynamic = False
         args = expr.child_by_field_name("arguments")
         if args is not None:
             for child in args.children:
+                if child.type in ("(", ")", ",", "comment"):
+                    continue
+                # First argument only: a string in a later position is not
+                # the path. A first argument that is anything but a static
+                # string makes the decorator present-but-dynamic, which must
+                # stay distinguishable from "no arguments": conflating them
+                # minted `endpoint GET /users` for `@Get(PATH)` one commit
+                # after the same three-state lesson was promoted for Flask.
                 if child.type in ("string", "template_string"):
                     arg = _ts_string(src, child)
-                    break
-        return DecoratorRef(name=_text(src, callee), arg=arg, evidence=ev)
+                    dynamic = arg is None
+                else:
+                    dynamic = True
+                break
+        return DecoratorRef(name=_text(src, callee), arg=arg, evidence=ev, arg_dynamic=dynamic)
 
     @staticmethod
     def _first_str_arg(src: bytes, node: TSNode) -> str | None:

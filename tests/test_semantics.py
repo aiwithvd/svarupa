@@ -245,7 +245,7 @@ def test_lockfile_carries_endpoint_entrypoint_and_role_records(tmp_path: Path) -
     assert "role\tapi\tapi" in text
     assert "role\tjobs\tworker" in text
     assert "role\tpkg\tcli" in text
-    assert "# schema 1.2" in text
+    assert "# schema 1.3" in text
 
 
 def test_renaming_a_handler_churns_zero_lines(tmp_path: Path) -> None:
@@ -781,3 +781,181 @@ def test_ts_routes_reach_the_lockfile_and_roles(tmp_path: Path) -> None:
     text = _lock_text(tmp_path)
     assert "endpoint\tGET /items\tsrc" in text
     assert "role\tsrc\tapi" in text
+
+
+# --- review #14 fixes ---------------------------------------------------------
+
+
+def test_a_dynamic_nest_path_or_prefix_mints_nothing(tmp_path: Path) -> None:
+    """`@Get(PATH)` minted `endpoint GET /users` for a route living at
+    `/users/:id`; `@Controller(['a','b'])` composed as if it had no prefix.
+    Present-but-dynamic must stay distinguishable from absent, the same
+    three-state rule as Flask's methods, one review earlier."""
+    write(
+        tmp_path,
+        "src/c.ts",
+        "import { Controller, Get, Post } from '@nestjs/common';\n"
+        "const PATH = ':id';\n"
+        "@Controller('users')\n"
+        "export class C {\n"
+        # @Post, so a wrongly composed record (POST /users) is distinguishable
+        # from list()'s legitimate GET /users in the asserted set.
+        "  @Post(PATH)\n"
+        "  find() { return 1; }\n"
+        "  @Get()\n"
+        "  list() { return []; }\n"
+        "}\n"
+        "@Controller(['a', 'b'])\n"
+        "export class Multi {\n"
+        "  @Get(':id')\n"
+        "  byId() { return 1; }\n"
+        "}\n",
+    )
+    g = graph_of(tmp_path)
+    assert {(r.method, r.path) for r in g.routes} == {("GET", "/users")}
+
+
+def test_commonjs_require_express_is_covered(tmp_path: Path) -> None:
+    """`const express = require('express')` is the dominant Express dialect;
+    it claimed nothing while the report said express was covered."""
+    write(
+        tmp_path,
+        "server.js",
+        "const express = require('express');\n"
+        "const { Router } = require('express');\n"
+        "const app = express();\n"
+        "const r = Router();\n"
+        "app.get('/legacy-cjs', h);\n"
+        "r.post('/legacy-router', h);\n",
+    )
+    g = graph_of(tmp_path)
+    assert {(r.method, r.path) for r in g.routes} == {
+        ("GET", "/legacy-cjs"),
+        ("POST", "/legacy-router"),
+    }
+
+
+def test_a_name_bound_by_a_non_express_ctor_leaves_the_receiver_set(
+    tmp_path: Path,
+) -> None:
+    """The gate is on the object, and a name is not an object: a helper's
+    `const app = makeCache()` shares the top-level `app`'s name, and its
+    `.get('/decoy-cache-key')` was a wrong committed edge."""
+    write(
+        tmp_path,
+        "src/app.ts",
+        "import express from 'express';\n"
+        "const app = express();\n"
+        "app.get('/real', h);\n"
+        "function make() {\n"
+        "  const app = makeCache();\n"
+        "  app.get('/decoy-cache-key', h);\n"
+        "}\n",
+    )
+    g = graph_of(tmp_path)
+    # Losing /real to the collision is the accepted cost; claiming the decoy
+    # is the disallowed outcome.
+    assert {(r.method, r.path) for r in g.routes} == set()
+
+
+def test_escape_sequences_survive_in_route_paths(tmp_path: Path) -> None:
+    r"""Joining only string fragments turned '/a\'b' into /ab: a corrupted
+    committed value, and two distinct routes could collide onto one key."""
+    write(
+        tmp_path,
+        "src/app.ts",
+        "import express from 'express';\nconst app = express();\napp.get('/a\\'b', h);\n",
+    )
+    g = graph_of(tmp_path)
+    assert [r.path for r in g.routes] == ["/a\\'b"], "source-spelled, nothing deleted"
+    assert "endpoint" in _lock_text(tmp_path)
+
+
+def test_a_later_position_string_is_not_a_path(tmp_path: Path) -> None:
+    write(
+        tmp_path,
+        "src/app.ts",
+        "import express from 'express';\nconst app = express();\napp.get(handler, '/late');\n",
+    )
+    assert graph_of(tmp_path).routes == ()
+
+
+def test_a_relative_express_module_is_not_the_framework(tmp_path: Path) -> None:
+    write(
+        tmp_path,
+        "src/app.ts",
+        "import express from './express';\nconst app = express();\napp.get('/fake', h);\n",
+    )
+    write(tmp_path, "src/express.ts", "export default () => ({});\n")
+    assert graph_of(tmp_path).routes == ()
+
+
+def test_a_slash_spelled_controller_prefix_composes_once(tmp_path: Path) -> None:
+    write(
+        tmp_path,
+        "src/c.ts",
+        "import { Controller, Get } from '@nestjs/common';\n"
+        "@Controller('/users')\n"
+        "export class C {\n"
+        "  @Get('/:id')\n"
+        "  find() { return 1; }\n"
+        "}\n",
+    )
+    assert {r.path for r in graph_of(tmp_path).routes} == {"/users/:id"}
+
+
+def test_a_non_exported_controller_is_seen(tmp_path: Path) -> None:
+    write(
+        tmp_path,
+        "src/internal.ts",
+        "import { Controller, Get } from '@nestjs/common';\n"
+        "@Controller('internal')\n"
+        "class InternalController {\n"
+        "  @Get('x')\n"
+        "  go() { return 1; }\n"
+        "}\n",
+    )
+    assert {r.path for r in graph_of(tmp_path).routes} == {"/internal/x"}
+
+
+def test_the_coverage_expansion_is_attributed_to_the_upgrade(tmp_path: Path) -> None:
+    """A 1.2-era base (before TS routes) against this build's head must carry
+    SVA-L-013: the six new endpoint lines come from the tool, not the PR."""
+    write(tmp_path, "src/app.ts", EXPRESS_FILE)
+    head = build_lock(graph_of(tmp_path), __version__).lockfile
+    old_base = Lockfile.parse(
+        "# svarupa 0.1.0\n# schema 1.2\n# grammars typescript@0.23.2\nmodule\tsrc\n"
+    )
+    delta = diff(old_base, head)
+    assert "SVA-L-013" in [d.code for d in delta.diagnostics]
+
+
+def test_express_handler_is_the_enclosing_function_when_there_is_one(
+    tmp_path: Path,
+) -> None:
+    write(
+        tmp_path,
+        "src/app.ts",
+        "import express from 'express';\n"
+        "const app = express();\n"
+        "export function mount() {\n"
+        "  app.get('/in-fn', h);\n"
+        "}\n",
+    )
+    g = graph_of(tmp_path)
+    assert g.routes[0].handler.endswith("mount")
+
+
+def test_ts_pass1_details_pin_the_reviewers_probes() -> None:
+    """Direct pass-1 pins: destructuring never enters ctor_assigns, and
+    `export const f = () => {}` keeps its exported flag through the
+    declaration hop."""
+    from svarupa.extract.typescript import TypeScriptExtractor
+
+    f = TypeScriptExtractor().parse(
+        "src/a.ts",
+        b"export const handler = () => 1;\nconst { get } = app;\n",
+    )
+    assert f.ctor_assigns == ()
+    sym = next(s for s in f.symbols if s.name == "handler")
+    assert sym.exported is True

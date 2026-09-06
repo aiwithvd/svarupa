@@ -150,21 +150,29 @@ def _express_receivers(f: FileFacts) -> frozenset[str]:
     `express()` default, `express.Router()`, or an imported `Router` (alias
     respected), so the import gate is on the OBJECT, not merely the file.
     """
-    defaults: set[str] = set()
-    router_ctors: set[str] = set()
+    express_names: set[str] = set()
     for imp in f.imports:
-        if imp.is_relative or imp.specifier != "express":
+        # Exact-specifier match: a relative `./express` spells its specifier
+        # with the leading `./`, so equality alone excludes it. (A separate
+        # is_relative clause here was dead code a mutation run exposed.)
+        if imp.specifier != "express":
             continue
-        for n in imp.names:
-            real = imp.alias_of.get(n, n)
-            if real == "Router":
-                router_ctors.add(n)
-            else:
-                defaults.add(n)
-    if not (defaults or router_ctors):
+        express_names.update(imp.names)
+    if not express_names:
         return frozenset()
-    ctors = router_ctors | defaults | {f"{d}.Router" for d in defaults}
-    return frozenset(name for name, callee in f.ctor_assigns if callee in ctors)
+    # Any express-imported name is a route-holder constructor when called
+    # (`express()`, `Router()`, an alias of either), and so is `.Router` on
+    # any of them. One rule, because a Router/default split whose branches
+    # then union is a distinction the data structure cannot express.
+    ctors = express_names | {f"{n}.Router" for n in express_names}
+    held = {name for name, callee in f.ctor_assigns if callee in ctors}
+    # The gate is on the object, and a name is not an object: a same-file
+    # `const app = makeCache()` inside a helper shares the top-level `app`'s
+    # name, and claiming its `.get('/cache-key')` is a wrong committed edge.
+    # A name bound by ANY non-express constructor in the file leaves the set;
+    # losing a true route to a name collision is the cheap direction.
+    poisoned = {name for name, callee in f.ctor_assigns if callee not in ctors}
+    return frozenset(held - poisoned)
 
 
 def _express_routes(f: FileFacts) -> list[RouteFact]:
@@ -209,6 +217,9 @@ def _nest_routes(f: FileFacts) -> list[RouteFact]:
         not imp.is_relative and imp.specifier.startswith("@nestjs/") for imp in f.imports
     ):
         return []
+    # A controller whose prefix is present-but-dynamic (`@Controller(PREFIX)`,
+    # `@Controller(['a','b'])`) has an unknown prefix, so every route in it is
+    # unknown: the class is excluded rather than composed wrong.
     controllers = {
         s.name: next(
             (d.arg for d in s.decorators if d.name.rsplit(".", 1)[-1] == "Controller"),
@@ -217,6 +228,9 @@ def _nest_routes(f: FileFacts) -> list[RouteFact]:
         for s in f.symbols
         if s.kind == "class"
         and any(d.name.rsplit(".", 1)[-1] == "Controller" for d in s.decorators)
+        and not any(
+            d.arg_dynamic for d in s.decorators if d.name.rsplit(".", 1)[-1] == "Controller"
+        )
     }
     out: list[RouteFact] = []
     for s in f.symbols:
@@ -225,6 +239,11 @@ def _nest_routes(f: FileFacts) -> list[RouteFact]:
         for dec in s.decorators:
             method = _NEST_DECORATORS.get(dec.name.rsplit(".", 1)[-1])
             if method is None:
+                continue
+            if dec.arg_dynamic:
+                # `@Get(PATH)`: the route exists and its path is unknown.
+                # Composing None as "" would commit `GET /users` for a route
+                # that lives at `/users/<something>`.
                 continue
             out.append(
                 RouteFact(

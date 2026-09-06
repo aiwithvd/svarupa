@@ -47,7 +47,12 @@ SCHEMA_MAJOR = 1
 # Minor 2: `endpoint` (pre-published) is emitted, and `entrypoint` and `role`
 # are added and emitted. An older parser diffs all three as opaque adds,
 # tested the same way as the minor-1 step.
-SCHEMA_MINOR = 2
+# Minor 3: Express/NestJS route coverage. Same record kinds, new producers:
+# the minor tracks WHAT THIS BUILD CAN EMIT, not only the kind list, because
+# the delta's upgrade attribution (SVA-L-013) keys on it. Without this bump,
+# every adopter with a TS service had six new endpoint lines blamed on
+# whatever PR happened to bump svarupa.
+SCHEMA_MINOR = 3
 
 _SEP = "\t"
 _COMMENT = "#"

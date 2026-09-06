@@ -79,8 +79,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     (
         "the schema minor is not bumped for the new kinds",
         "svarupa/lock/grammar.py",
+        "SCHEMA_MINOR = 3",
         "SCHEMA_MINOR = 2",
-        "SCHEMA_MINOR = 1",
     ),
     (
         "boxes stop wearing their role",
@@ -199,8 +199,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     (
         "a substituted template literal is guessed from its static parts",
         "svarupa/extract/typescript.py",
-        '        if any(c.type == "template_substitution" for c in node.children):',
-        "        if False:",
+        '    if node.type == "template_string" and any(',
+        "    if False and any(",
     ),
     (
         "nest decorators claim routes without the nestjs import",
@@ -225,6 +225,60 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
         "svarupa/extract/typescript.py",
         '                    if child.type in ("export", "default", ";"):',
         "                    if False:",
+    ),
+    (
+        "a dynamic nest decorator argument composes as empty again",
+        "svarupa/extract/semantics.py",
+        "            if dec.arg_dynamic:",
+        "            if False:",
+    ),
+    (
+        "a dynamic controller prefix stops excluding the class",
+        "svarupa/extract/semantics.py",
+        '        and not any(\n            d.arg_dynamic for d in s.decorators if d.name.rsplit(".", 1)[-1] == "Controller"\n        )',
+        "        and True",
+    ),
+    (
+        "require() stops being an import",
+        "svarupa/extract/typescript.py",
+        '                    if callee is not None and _text(data, callee) == "require":',
+        '                    if callee is not None and _text(data, callee) == "never":',
+    ),
+    (
+        "a non-express bind stops poisoning the receiver name",
+        "svarupa/extract/semantics.py",
+        "    return frozenset(held - poisoned)",
+        "    return frozenset(held)",
+    ),
+    (
+        "escape sequences vanish from string values again",
+        "svarupa/extract/typescript.py",
+        '            if c.type in ("string_fragment", "escape_sequence")',
+        '            if c.type in ("string_fragment",)',
+    ),
+    (
+        "a later-position string becomes the decorator or call path",
+        "svarupa/extract/typescript.py",
+        '            if child.type in ("string", "template_string"):\n                return _ts_string(src, child)\n            return None',
+        '            if child.type in ("string", "template_string"):\n                return _ts_string(src, child)\n            continue',
+    ),
+    (
+        "controller prefixes stop normalizing slashes",
+        "svarupa/extract/semantics.py",
+        '    segments = [s.strip("/") for s in (prefix, sub) if s and s.strip("/")]',
+        "    segments = [s for s in (prefix, sub) if s]",
+    ),
+    (
+        "the declaration hop drops the exported flag again",
+        "svarupa/extract/typescript.py",
+        "                    visit(child, stack, cls, fn, exported=exported, depth=depth + 1)",
+        "                    visit(child, stack, cls, fn, depth=depth + 1)",
+    ),
+    (
+        "non-exported classes lose their own decorators",
+        "svarupa/extract/typescript.py",
+        "                decorators = decorators + tuple(",
+        "                decorators = decorators + () and tuple(",
     ),
 ]
 

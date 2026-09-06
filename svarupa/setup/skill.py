@@ -99,10 +99,14 @@ three per pull request.
 - Partial failure degrades: one hostile or broken file becomes a diagnostic,
   and the rest of the repository is still analyzed.
 - Routes, tasks and roles come from framework detection: FastAPI, Flask and
-  Celery (Python), Express and NestJS (TypeScript/JavaScript); declared
-  entrypoints cover pyproject scripts and package.json `bin`. A service on
-  another framework showing no api/worker role means not-yet-extracted, not
-  "no API"; REPORT.md states this boundary per run.
+  Celery (Python), Express and NestJS (TypeScript/JavaScript, ESM and
+  CommonJS); declared entrypoints cover pyproject scripts and package.json
+  `bin`. A service on another framework showing no api/worker role means
+  not-yet-extracted, not "no API"; REPORT.md states this boundary per run.
+- Endpoint paths are as declared at the handler. NestJS controller prefixes
+  are composed (same file, both cited); Express mount prefixes
+  (`app.use('/api', router)`) and FastAPI `include_router(prefix=...)` are
+  not, so an Express path may be mount-relative rather than the full URL.
 """
 
 
