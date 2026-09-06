@@ -137,6 +137,9 @@ h2 { font-size: 20px; margin: 0 0 4px; font-weight: 700; letter-spacing: -0.02em
 /* Kind colours. One variable per kind; fill and dot derive from it. */
 .sv-node { --k: var(--faint); cursor: pointer; }
 .sv-kind-module { --k: #2f9ae3; }
+.sv-kind-api { --k: #e8890c; }
+.sv-kind-worker { --k: #8250df; }
+.sv-kind-cli { --k: #5f6b7a; }
 .sv-kind-group { --k: var(--group); }
 .sv-kind-service { --k: #22a06b; }
 .sv-kind-endpoint { --k: #e8890c; }

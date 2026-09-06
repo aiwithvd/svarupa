@@ -100,6 +100,7 @@ CODES: dict[str, str] = {
     "SVA-X-004": "an extractor raised, so one file contributed no facts",
     "SVA-X-005": "a compose file could not be parsed or nested too deeply",
     "SVA-X-006": "a compose service depends on one the file does not define",
+    "SVA-X-007": "an entrypoint's declaration line could not be located",
     # build
     "SVA-B-001": "two different nodes claim the same id",
     "SVA-B-002": "an evidence range is not a valid source location",
@@ -147,6 +148,7 @@ CODES: dict[str, str] = {
     "SVA-L-009": "a dependency names a module the lockfile does not declare",
     "SVA-L-010": "no architectural facts were found, so the lockfile claims none",
     "SVA-L-011": "a grammar version changed between two lockfiles",
+    "SVA-L-012": "an entrypoint names a module the lockfile does not declare",
     # setup
     "SVA-S-001": "setup would overwrite an existing file with different content",
     "SVA-S-002": "the setup destination is not an existing directory",

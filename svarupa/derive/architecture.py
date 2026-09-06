@@ -6,7 +6,7 @@ the graph. The clustering decides *grouping*; it never becomes an identity.
 
 from __future__ import annotations
 
-from svarupa.build import Graph
+from svarupa.build import Graph, entrypoint_module, module_of, module_roles
 from svarupa.cluster import Clustering
 from svarupa.derive.base import (
     MAX_EVIDENCE_PER_BOX,
@@ -27,6 +27,50 @@ from svarupa.derive.base import (
 from svarupa.derive.components import FLOW_SUFFIX, code_spec, flow_spec
 from svarupa.diagnostics import Diagnostic, Severity
 from svarupa.model import Evidence
+
+# Box-kind priority when a module holds several roles: serving HTTP says more
+# about a box than also having a task in it, and a CLI door is the weakest
+# claim of the three. The full set stays readable in the `roles` attr.
+_ROLE_PRIORITY = ("api", "worker", "cli")
+
+
+def _role_kind(roles: dict[str, tuple[str, ...]], module: str) -> str:
+    held = roles.get(module, ())
+    return next((r for r in _ROLE_PRIORITY if r in held), "module")
+
+
+def _role_evidence(graph: Graph, module: str) -> tuple[Evidence, ...]:
+    """One citation per role a module holds: the first route, task, and
+    resolved entrypoint declaration inside it, in that order."""
+    out: list[Evidence] = []
+    route = next(
+        (
+            r.evidence
+            for r in sorted(graph.routes)
+            if r.file in graph.architecture_paths and module_of(r.file) == module
+        ),
+        None,
+    )
+    task = next(
+        (
+            t.evidence
+            for t in sorted(graph.tasks)
+            if t.file in graph.architecture_paths and module_of(t.file) == module
+        ),
+        None,
+    )
+    entry = next(
+        (
+            e.evidence
+            for e in sorted(graph.entrypoints)
+            if entrypoint_module(graph, e.target, e.lang, e.file) == module
+        ),
+        None,
+    )
+    for ev in (route, task, entry):
+        if ev is not None:
+            out.append(ev)
+    return tuple(out)
 
 
 class ArchitectureDeriver(Deriver):
@@ -105,6 +149,7 @@ class ArchitectureDeriver(Deriver):
         member_group = {m: anchor for anchor, members in groups for m in members}
         top_labels = _labels_for([anchor for anchor, _ in groups])
         top_nodes: list[DiagramNode] = []
+        roles = module_roles(graph)
         for anchor, members in groups:
             if len(members) > 1:
                 child = spec_id(anchor)
@@ -114,14 +159,24 @@ class ArchitectureDeriver(Deriver):
                 # components, the same way a leaf inside a group does. A leaf
                 # with nothing inside stays a leaf.
                 child = self._components(graph, anchor, ROOT, specs, diags)
+            # A singleton wears its module's role, the same as it would inside
+            # a group; a multi-module group stays a group, since a single role
+            # colour over several modules would be a claim about all of them.
+            singleton_kind = _role_kind(roles, members[0]) if len(members) == 1 else "group"
             top_nodes.append(
                 DiagramNode(
                     id=anchor,
                     label=top_labels[anchor],
-                    kind="group" if len(members) > 1 else "module",
-                    evidence=group_evidence(graph, members, anchor),
+                    kind="group" if len(members) > 1 else singleton_kind,
+                    evidence=group_evidence(graph, members, anchor)
+                    + (_role_evidence(graph, members[0]) if len(members) == 1 else ()),
                     child_spec=child,
-                    attrs=(("modules", str(len(members))),),
+                    attrs=(("modules", str(len(members))),)
+                    + (
+                        (("roles", ",".join(roles[members[0]])),)
+                        if len(members) == 1 and members[0] in roles
+                        else ()
+                    ),
                 )
             )
 
@@ -313,17 +368,25 @@ class ArchitectureDeriver(Deriver):
     ) -> DiagramSpec:
         inside = set(members)
         labels = _labels_for(list(members))
+        roles = module_roles(graph)
         nodes = tuple(
             sorted(
                 DiagramNode(
                     id=m,
                     label=labels[m],
-                    kind="module",
-                    evidence=module_evidence(graph, m),
+                    # A module with an evidence-backed role is drawn as that
+                    # role. The supporting decorator/manifest line joins the
+                    # box's evidence, so the colour is a claim a reader can
+                    # click, not a style.
+                    kind=_role_kind(roles, m),
+                    evidence=module_evidence(graph, m) + _role_evidence(graph, m),
                     child_spec=self._components(graph, m, spec_id(anchor), specs, diags),
-                    attrs=(("files", str(graph.modules[m].file_count)),)
-                    if m in graph.modules
-                    else (),
+                    attrs=(
+                        (("files", str(graph.modules[m].file_count)),)
+                        if m in graph.modules
+                        else ()
+                    )
+                    + ((("roles", ",".join(roles[m])),) if m in roles else ()),
                 )
                 for m in members
                 if module_evidence(graph, m)
@@ -386,14 +449,16 @@ class ModuleDepsDeriver(Deriver):
         depth = _layer(pairs, sorted(graph.modules))
         involved = {m for a, b, _w, _e in pairs for m in (a, b)}
         dep_labels = _labels_for(sorted(involved))
+        roles = module_roles(graph)
         nodes = tuple(
             sorted(
                 DiagramNode(
                     id=m,
                     label=dep_labels[m],
-                    kind="module",
-                    evidence=module_evidence(graph, m),
-                    attrs=(("layer", str(depth.get(m, 0))),),
+                    kind=_role_kind(roles, m),
+                    evidence=module_evidence(graph, m) + _role_evidence(graph, m),
+                    attrs=(("layer", str(depth.get(m, 0))),)
+                    + ((("roles", ",".join(roles[m])),) if m in roles else ()),
                 )
                 for m in sorted(involved)
                 if module_evidence(graph, m)

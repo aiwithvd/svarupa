@@ -25,7 +25,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from svarupa.build import Graph
+from svarupa.build import Graph, entrypoint_module, module_of, module_roles
 from svarupa.diagnostics import Diagnostic, Severity
 from svarupa.extract import GRAMMAR_VERSIONS
 from svarupa.identity import collision_check
@@ -95,6 +95,40 @@ def lock_records(graph: Graph) -> tuple[Record, ...]:
             Record(kind_map[node.kind], (node.label,))
             for node in graph.nodes.values()
             if node.kind in kind_map
+        )
+    )
+
+    # Semantic records. Routes and tasks are gated on architecture
+    # eligibility, so a route declared in a test file changes nothing here.
+    # Endpoint records carry the handler's MODULE, not its function name:
+    # renaming a handler is an intra-module refactor and must churn zero
+    # lines, while moving it between modules is architecture and must show.
+    modules = code_modules(graph)
+    arch_routes = [r for r in graph.routes if r.file in graph.architecture_paths]
+    records.extend(
+        sorted(
+            {
+                Record("endpoint", (f"{r.method} {r.path}", spell(module_of(r.file))))
+                for r in arch_routes
+            }
+        )
+    )
+
+    # New kinds append as their own sorted blocks after the existing ones.
+    # Re-sorting the whole list would reorder every adopted lockfile on
+    # upgrade, which is a full-file churn wearing a schema bump's clothes.
+    eps: set[Record] = set()
+    for e in graph.entrypoints:
+        target_module = entrypoint_module(graph, e.target, e.lang, e.file)
+        if target_module is not None and target_module in modules:
+            eps.add(Record("entrypoint", (e.name, spell(target_module))))
+    records.extend(sorted(eps))
+    records.extend(
+        sorted(
+            Record("role", (spell(m), role))
+            for m, role_names in module_roles(graph).items()
+            if m in modules
+            for role in role_names
         )
     )
     return tuple(records)
@@ -195,6 +229,25 @@ def build_lock(graph: Graph, tool_version: str) -> LockResult:
                         "removing one of them will not show in the diff"
                     ),
                     subject=" | ".join(sorted(holders)),
+                )
+            )
+
+    # An entrypoint whose target resolves to nothing in the graph produces no
+    # record; saying so is this layer's job, since the record was its to emit.
+    modules = code_modules(graph)
+    for e in graph.entrypoints:
+        target_module = entrypoint_module(graph, e.target, e.lang, e.file)
+        if target_module is None or target_module not in modules:
+            diagnostics.append(
+                Diagnostic(
+                    code="SVA-L-012",
+                    severity=Severity.WARNING,
+                    message=(
+                        "an entrypoint names a module the lockfile does not "
+                        "declare, so no entrypoint record was written for it"
+                    ),
+                    subject=f"{e.name} -> {e.target}",
+                    location=str(e.evidence),
                 )
             )
 

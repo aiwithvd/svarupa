@@ -30,12 +30,16 @@ from svarupa.model import Edge, EdgeKind, Evidence, Node, Resolution
 __all__ = [
     "MAX_AST_DEPTH",
     "CallSite",
+    "DecoratorRef",
+    "EntrypointFact",
     "Extractor",
     "FieldType",
     "FileFacts",
     "ImportRef",
+    "RouteFact",
     "Scorecard",
     "SymbolRef",
+    "TaskFact",
     "depth_capped",
     "node_id",
 ]
@@ -90,6 +94,24 @@ class SymbolRef:
     enclosing_class: str | None = None
     bases: tuple[str, ...] = ()
     exported: bool = True
+    decorators: tuple[DecoratorRef, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class DecoratorRef:
+    """One decorator on a definition, with its own line.
+
+    The decorator's line is not the definition's line: `@app.get("/items")`
+    sits above `def read_items():`, and a route claim cites the decorator,
+    because that is where the claim is made.
+    """
+
+    name: str  # dotted callee text without arguments, e.g. "app.get"
+    arg: str | None  # first string-literal argument, e.g. "/items/{id}"
+    evidence: Evidence
+    # `methods=["POST"]` on a Flask `.route`, captured when it is a literal
+    # list of strings. Anything dynamic stays empty rather than guessed.
+    methods: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -279,12 +301,59 @@ class Scorecard:
         return "\n".join(lines)
 
 
+@dataclass(frozen=True, order=True, slots=True)
+class RouteFact:
+    """A handler declaring an HTTP route, claimed only when the file imports
+    the framework the decorator shape belongs to.
+
+    The path is the one the decorator declares. Mount prefixes
+    (`include_router(prefix="/api/v1")`, blueprints) are not composed in, so
+    this is the route as written at the handler, not necessarily the full URL.
+    """
+
+    method: str  # GET/POST/.../WS, as declared
+    path: str  # the decorator's literal path argument
+    file: str
+    handler: str  # qualified name of the decorated definition
+    framework: str  # fastapi | flask
+    evidence: Evidence  # the decorator's own line
+
+
+@dataclass(frozen=True, order=True, slots=True)
+class TaskFact:
+    """A background-task handler (Celery), same import-gated rule as routes."""
+
+    file: str
+    handler: str
+    framework: str  # celery
+    evidence: Evidence
+
+
+@dataclass(frozen=True, order=True, slots=True)
+class EntrypointFact:
+    """A declared executable entry: pyproject scripts or package.json bin.
+
+    Evidence is the manifest line that declares it, located by a line scan
+    that is verified against the parsed content; a declaration whose line
+    cannot be located produces no fact rather than a guessed line.
+    """
+
+    name: str
+    target: str  # "pkg.mod:func" for python, a file path for javascript
+    file: str  # the manifest
+    lang: str  # python | javascript
+    evidence: Evidence
+
+
 @dataclass(frozen=True, slots=True)
 class ExtractResult:
     nodes: tuple[Node, ...]
     edges: tuple[Edge, ...]
     scorecard: Scorecard
     diagnostics: tuple[Diagnostic, ...] = ()
+    routes: tuple[RouteFact, ...] = ()
+    tasks: tuple[TaskFact, ...] = ()
+    entrypoints: tuple[EntrypointFact, ...] = ()
 
 
 # A syntax tree deeper than this is walked no further. Minified bundles nest

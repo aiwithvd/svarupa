@@ -33,10 +33,24 @@ import networkx as nx
 
 from svarupa.detect import Scan, load_toml
 from svarupa.diagnostics import Diagnostic, DiagnosticError, Severity
-from svarupa.extract.base import ExtractResult, Scorecard
-from svarupa.model import Edge, EdgeKind, MissingEvidenceError, Node
+from svarupa.extract.base import (
+    EntrypointFact,
+    ExtractResult,
+    RouteFact,
+    Scorecard,
+    TaskFact,
+)
+from svarupa.model import Edge, EdgeKind, Evidence, MissingEvidenceError, Node
 
-__all__ = ["Graph", "Module", "build", "workspace_members"]
+__all__ = [
+    "Graph",
+    "Module",
+    "build",
+    "entrypoint_module",
+    "module_of",
+    "module_roles",
+    "workspace_members",
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,6 +89,11 @@ class Graph:
     # with no extractor, no nodes exist either way, and those are different
     # facts -- only one of them is about the user's codebase.
     file_languages: tuple[tuple[str, int], ...] = ()
+    # Semantic facts (routes, tasks, declared entrypoints), evidence
+    # re-verified on the way in like every node and edge.
+    routes: tuple[RouteFact, ...] = ()
+    tasks: tuple[TaskFact, ...] = ()
+    entrypoints: tuple[EntrypointFact, ...] = ()
 
     def nx(self, directed: bool = True) -> nx.DiGraph[str] | nx.Graph[str]:
         """A NetworkX view for the algorithms later stages need.
@@ -449,6 +468,56 @@ def _module_of(path: str) -> str:
     return "" if parent == "." else parent
 
 
+# Public alias: the lockfile builder and derivers map fact files to the same
+# structural module identity this stage commits to, and a re-implementation
+# there would be a second definition of the most important id in the system.
+module_of = _module_of
+
+
+def entrypoint_module(graph: Graph, target: str, lang: str, manifest: str) -> str | None:
+    """The structural module an entrypoint target lands in, or None.
+
+    Resolved against the graph's own module nodes (file paths), never by
+    trusting the string: `pkg.mod:fn` names a module only if `pkg/mod.py` or
+    `pkg/mod/__init__.py` was actually extracted, and a `bin` path only if the
+    file it points at exists in the graph. An unresolvable target produces no
+    claim, and the consumer diagnoses it.
+    """
+    if lang == "python":
+        base = target.split(":", 1)[0].strip().replace(".", "/")
+        candidates = [f"{base}.py", f"{base}/__init__.py"]
+    else:
+        folder = manifest.rsplit("/", 1)[0] if "/" in manifest else ""
+        candidates = [posixpath.normpath(posixpath.join(folder, target))]
+    for cand in candidates:
+        if cand in graph.nodes:
+            return _module_of(cand)
+    return None
+
+
+def module_roles(graph: Graph) -> dict[str, tuple[str, ...]]:
+    """Evidence-backed roles per structural module, sorted both ways.
+
+    `api` from routes, `worker` from tasks, `cli` from a declared entrypoint
+    whose target resolves into the module. Gated on architecture eligibility,
+    so a route declared in a test file assigns nothing. One definition, used
+    by both the lockfile and the diagrams, because two implementations of
+    "what is this module's role" would eventually disagree.
+    """
+    roles: dict[str, set[str]] = {}
+    for r in graph.routes:
+        if r.file in graph.architecture_paths:
+            roles.setdefault(_module_of(r.file), set()).add("api")
+    for t in graph.tasks:
+        if t.file in graph.architecture_paths:
+            roles.setdefault(_module_of(t.file), set()).add("worker")
+    for e in graph.entrypoints:
+        target = entrypoint_module(graph, e.target, e.lang, e.file)
+        if target is not None:
+            roles.setdefault(target, set()).add("cli")
+    return {m: tuple(sorted(rs)) for m, rs in sorted(roles.items())}
+
+
 def _package_of(path: str, packages: Sequence[str]) -> str | None:
     """The longest workspace member that contains this file."""
     best: str | None = None
@@ -565,6 +634,32 @@ def build(scan: Scan, extracted: ExtractResult, strict: bool = True) -> Graph:
         if a != b:
             deps.add((a, b))
 
+    # --- semantic facts: the same independent evidence re-check ------------
+    def fact_ok(ev: Evidence, subject: str) -> bool:
+        count = lines.get(ev.file)
+        if (
+            count is None
+            or not (1 <= ev.start_line <= count)
+            or not (ev.start_line <= ev.end_line <= count)
+        ):
+            acc.diagnostics.append(
+                Diagnostic(
+                    code="SVA-B-002",
+                    severity=Severity.WARNING,
+                    message=(
+                        "a semantic fact cites an invalid source location and was dropped"
+                    ),
+                    subject=subject,
+                    location=str(ev),
+                )
+            )
+            return False
+        return True
+
+    routes = tuple(r for r in extracted.routes if fact_ok(r.evidence, r.handler))
+    tasks = tuple(t for t in extracted.tasks if fact_ok(t.evidence, t.handler))
+    entrypoints = tuple(e for e in extracted.entrypoints if fact_ok(e.evidence, e.name))
+
     return Graph(
         nodes=dict(sorted(acc.nodes.items())),
         edges=merged,
@@ -574,6 +669,9 @@ def build(scan: Scan, extracted: ExtractResult, strict: bool = True) -> Graph:
         diagnostics=tuple(acc.diagnostics) + extracted.diagnostics,
         architecture_paths=frozenset(eligible),
         file_languages=scan.languages(),
+        routes=routes,
+        tasks=tasks,
+        entrypoints=entrypoints,
     )
 
 

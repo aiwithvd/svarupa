@@ -24,6 +24,7 @@ from svarupa.extract.base import (
 from svarupa.extract.compose import extract_compose
 from svarupa.extract.python import PythonExtractor
 from svarupa.extract.resolve import Resolver, resolve
+from svarupa.extract.semantics import semantics
 from svarupa.extract.typescript import TypeScriptExtractor
 from svarupa.tsconfig import load_aliases
 
@@ -108,11 +109,18 @@ def extract(scan: Scan, declared_deps: frozenset[str] = frozenset()) -> ExtractR
     # queues join the same graph as code, with the same evidence rule: every
     # node cites the line in the file that declares it.
     compose = extract_compose(scan)
+
+    # Semantic facts: routes, tasks, declared entrypoints. Import-gated and
+    # line-cited, the same rule as everything above.
+    sem = semantics(scan, facts)
     return replace(
         result,
         nodes=result.nodes + compose.nodes,
         edges=result.edges + compose.edges,
-        diagnostics=result.diagnostics + compose.diagnostics + tuple(crashes),
+        diagnostics=result.diagnostics + compose.diagnostics + sem.diagnostics + tuple(crashes),
+        routes=sem.routes,
+        tasks=sem.tasks,
+        entrypoints=sem.entrypoints,
     )
 
 

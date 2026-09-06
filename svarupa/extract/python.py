@@ -21,6 +21,7 @@ from svarupa.extract.base import (
     MAX_AST_DEPTH,
     CallShape,
     CallSite,
+    DecoratorRef,
     Extractor,
     FileFacts,
     ImportRef,
@@ -121,6 +122,20 @@ def _text(src: bytes, node: TSNode) -> str:
     return src[node.start_byte : node.end_byte].decode("utf8", "replace")
 
 
+def _string_literal(src: bytes, node: TSNode) -> str | None:
+    """The content of a plain string literal, or None if it is not one.
+
+    An f-string with interpolation is dynamic: returning its static parts
+    would invent a route path that is not the real one.
+    """
+    if any(c.type == "interpolation" for c in node.children):
+        return None
+    parts = [c for c in node.children if c.type == "string_content"]
+    if not parts:
+        return ""  # an empty string literal has no content node
+    return "".join(_text(src, c) for c in parts)
+
+
 class PythonExtractor(Extractor):
     lang = "python"
     grammar_version = "0.25.0"
@@ -162,6 +177,7 @@ class PythonExtractor(Extractor):
             cls: str | None,
             fn: str | None,
             depth: int = 0,
+            decorators: tuple[DecoratorRef, ...] = (),
         ) -> None:
             nonlocal too_deep
             if depth > MAX_AST_DEPTH:
@@ -169,6 +185,18 @@ class PythonExtractor(Extractor):
                 return
 
             t = node.type
+
+            if t == "decorated_definition":
+                decs = tuple(
+                    d
+                    for child in node.children
+                    if child.type == "decorator"
+                    if (d := self._decorator(path, data, child)) is not None
+                )
+                definition = node.child_by_field_name("definition")
+                if definition is not None:
+                    visit(definition, stack, cls, fn, depth=depth + 1, decorators=decs)
+                return
 
             if t in ("import_statement", "import_from_statement"):
                 ref = self._import(path, data, node)
@@ -202,6 +230,7 @@ class PythonExtractor(Extractor):
                         enclosing_class=cls,
                         bases=tuple(bases),
                         exported=not name.startswith("_"),
+                        decorators=decorators,
                     )
                 )
                 body = node.child_by_field_name("body")
@@ -224,6 +253,7 @@ class PythonExtractor(Extractor):
                         evidence=self.evidence(path, node.start_point[0], node.end_point[0]),
                         enclosing_class=cls,
                         exported=not name.startswith("_"),
+                        decorators=decorators,
                     )
                 )
                 body = node.child_by_field_name("body")
@@ -257,6 +287,49 @@ class PythonExtractor(Extractor):
     # ------------------------------------------------------------------
     # imports
     # ------------------------------------------------------------------
+
+    def _decorator(self, path: str, src: bytes, node: TSNode) -> DecoratorRef | None:
+        """One decorator, with the callee text, its first literal string
+        argument, and any literal `methods=[...]` keyword.
+
+        Anything dynamic (an f-string path, a computed methods list) is left
+        out rather than guessed: a missing `arg` means "no literal path", not
+        an empty path.
+        """
+        expr = next((c for c in node.children if c.type not in ("@", "comment")), None)
+        if expr is None:
+            return None
+        ev = self.evidence(path, node.start_point[0], node.end_point[0])
+        if expr.type != "call":
+            name = _text(src, expr)
+            return DecoratorRef(name=name, arg=None, evidence=ev) if name else None
+        callee = expr.child_by_field_name("function")
+        if callee is None:
+            return None
+        arg: str | None = None
+        methods: tuple[str, ...] = ()
+        args = expr.child_by_field_name("arguments")
+        if args is not None:
+            for child in args.children:
+                if arg is None and child.type == "string":
+                    arg = _string_literal(src, child)
+                if child.type == "keyword_argument":
+                    key = child.child_by_field_name("name")
+                    value = child.child_by_field_name("value")
+                    if (
+                        key is not None
+                        and _text(src, key) == "methods"
+                        and value is not None
+                        and value.type == "list"
+                    ):
+                        items = [
+                            _string_literal(src, c)
+                            for c in value.children
+                            if c.type == "string"
+                        ]
+                        if all(i is not None for i in items):
+                            methods = tuple(i for i in items if i is not None)
+        return DecoratorRef(name=_text(src, callee), arg=arg, evidence=ev, methods=methods)
 
     def _import(self, path: str, src: bytes, node: TSNode) -> ImportRef | None:
         ev = self.evidence(path, node.start_point[0], node.end_point[0])

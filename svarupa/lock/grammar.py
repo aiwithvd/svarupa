@@ -44,7 +44,10 @@ SCHEMA_MAJOR = 1
 # kinds and arities were published in KNOWN_KINDS from the start, so a 1.0
 # parser reads a 1.1 file and diffs the new lines as opaque adds, which is the
 # additive path the evolution policy promises.
-SCHEMA_MINOR = 1
+# Minor 2: `endpoint` (pre-published) is emitted, and `entrypoint` and `role`
+# are added and emitted. An older parser diffs all three as opaque adds,
+# tested the same way as the minor-1 step.
+SCHEMA_MINOR = 2
 
 _SEP = "\t"
 _COMMENT = "#"
@@ -64,6 +67,8 @@ KNOWN_KINDS: dict[str, int] = {
     "service": 1,  # service <name>                                (P2)
     "queue": 1,  # queue <name>                                   (P2)
     "surface": 2,  # surface <module> <exported-symbol>            (P2)
+    "entrypoint": 2,  # entrypoint <name> <module>                 (1.2)
+    "role": 2,  # role <module> <api|worker|cli>                   (1.2)
 }
 
 # The grammar publishes `kind := [a-z_]+`. Enforcing it is what stops an
