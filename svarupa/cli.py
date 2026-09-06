@@ -334,8 +334,10 @@ def main(argv: list[str] | None = None) -> int:
         ),
         epilog=(
             'Also: "svarupa setup skill" and "svarupa setup ci_github" install '
-            "integration files (see: svarupa setup --help). To analyze a directory "
-            'literally named "setup", pass "./setup".'
+            'integration files (see: svarupa setup --help), and "svarupa query '
+            '<artifact> <function> ..." answers questions from graph.json (see: '
+            "svarupa query --help). To analyze a directory literally named "
+            '"setup" or "query", pass "./setup" or "./query".'
         ),
     )
     parser.add_argument("--version", action="version", version=f"svarupa {__version__}")
@@ -379,6 +381,10 @@ def main(argv: list[str] | None = None) -> int:
         # says out loud.
         if argv[:1] == ["setup"]:
             return _setup(argv[1:])
+        if argv[:1] == ["query"]:
+            from svarupa.query.cli import query_main
+
+            return query_main(argv[1:])
         args = parser.parse_args(argv)
         return _scan(args.path, args.max_files, args.out, args.lock, args.diff, args.drift_base)
     except DiagnosticError as exc:

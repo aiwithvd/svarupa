@@ -162,6 +162,8 @@ CODES: dict[str, str] = {
     "SVA-S-002": "the setup destination is not an existing directory",
     "SVA-S-003": "a setup path is a symlink or resolves outside the destination",
     "SVA-S-004": "a setup file could not be written",
+    # query
+    "SVA-Q-001": "no graph.json at the given path, so there is nothing to query",
 }
 
 # Codes whose message text comes from the caller, so there is no literal at the

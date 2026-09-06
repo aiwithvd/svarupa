@@ -28,6 +28,7 @@ from svarupa.diagnostics import Diagnostic, DiagnosticError, Severity
 from svarupa.emit.data import diagram_json, graph_json, write_json
 from svarupa.emit.report import render_report
 from svarupa.emit.viewer import render_viewer
+from svarupa.extract.rationale import rationale_facts
 from svarupa.layout import LaidOutDiagram, lay_out_set
 from svarupa.layout.geometry import Style
 from svarupa.lock import LOCK_NAME
@@ -111,7 +112,16 @@ def emit(
         problems.extend(lo.problems)
 
     written: list[tuple[str, int]] = []
-    written.append(("graph.json", write_json(directory / "graph.json", graph_json(graph))))
+    # The "why" nodes and the checkout the graph describes. Rationale runs
+    # over architecture-eligible source only, so vendored text never becomes
+    # a rationale claim; the commit is None outside a git checkout.
+    rationale = rationale_facts(root, graph.architecture_paths)
+    written.append(
+        (
+            "graph.json",
+            write_json(directory / "graph.json", graph_json(graph, rationale, git_head(root))),
+        )
+    )
     for kind in sorted(produced, key=lambda k: k.value):
         name = f"diagrams/{kind.value}.json"
         size = write_json(
@@ -128,6 +138,26 @@ def emit(
     written.append(("REPORT.md", _write_text(directory / "REPORT.md", report)))
 
     return Artifact(directory, tuple(written), laid_out, tuple(problems))
+
+
+def git_head(root: Path) -> str | None:
+    """The commit the analyzed tree is at, or None when it is not a git
+    checkout (or git is missing). Recorded in graph.json so a consumer can
+    tell which code the lines refer to; never a reason to fail."""
+    import subprocess
+
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(root), "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    head = proc.stdout.strip()
+    return head if proc.returncode == 0 and len(head) == 40 else None
 
 
 def claim(directory: Path) -> None:

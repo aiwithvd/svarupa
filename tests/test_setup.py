@@ -313,7 +313,7 @@ def _real_flags() -> set[str]:
     import io
 
     flags: set[str] = set()
-    for args in (["--help"], ["setup", "--help"]):
+    for args in (["--help"], ["setup", "--help"], ["query", "--help"]):
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf), pytest.raises(SystemExit):
             main(args)

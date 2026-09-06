@@ -48,6 +48,33 @@ error, like a case-colliding pair of files, and still be analyzable), and
 the diagnostics in the report on stdout say what is wrong. A refusal prints
 one structured diagnostic to stderr and writes nothing new.
 
+## Query the graph
+
+`graph.json` (schema 2) is a knowledge graph: code symbols, modules, routes,
+external stores and APIs, and `rationale` nodes (docstrings and NOTE / WHY /
+HACK / TODO comments) attached to what they explain. Every node and edge
+cites `file:line`; edges carry a typed `context` (`import`, `call`,
+`inherit`, `reference`, `route`, `store`, `cloud`, `message`, `rationale`).
+Query it without rescanning:
+
+```
+svarupa query <artifact-dir> get_node <label>              # exact id, qualified name or label
+svarupa query <artifact-dir> get_neighbors <label> [--relation import]
+svarupa query <artifact-dir> shortest_path <a> <b> [--max-hops 6] [--undirected]
+svarupa query <artifact-dir> affected <label> [--depth 3]  # what depends on it, in hops
+svarupa query <artifact-dir> god_nodes [--top 10]
+svarupa query <artifact-dir> graph_stats
+svarupa query <artifact-dir> query_graph "<question>" [--depth 1] [--budget 2000]
+```
+
+Add `--json` for structured output (always prefer it when acting on the
+answer). Matching is exact: a label shared by several nodes returns an
+`ambiguous` list of candidates and exit 1, never a guess; a label that
+matches nothing returns `match: null` and exit 1. `query_graph` is keyword
+search over names and rationale text, not semantic search, and says so in
+its output; a `truncated` banner names how much was cut. Exit 0 means the
+question was answered (an empty `affected` list is an answer).
+
 ## Architecture diff between commits
 
 The committed lockfile is facts only, no line numbers, so intra-module
