@@ -23,6 +23,7 @@ from svarupa.lock import (
     diff,
     drift_check,
 )
+from svarupa.setup import TARGETS, install
 
 
 def _scan(
@@ -285,12 +286,49 @@ def _lockfile(
     return failed
 
 
+def _setup(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(
+        prog="svarupa setup",
+        description="Install an integration into a repository.",
+    )
+    parser.add_argument(
+        "target",
+        choices=sorted(TARGETS),
+        help="; ".join(f"{name}: {cls.summary}" for name, cls in sorted(TARGETS.items())),
+    )
+    parser.add_argument(
+        "--dest",
+        default=".",
+        help="repository root to install into (default: current directory)",
+    )
+    parser.add_argument(
+        "--force", action="store_true", help="overwrite an existing file that differs"
+    )
+    args = parser.parse_args(argv)
+    target = TARGETS[args.target]()
+    result = install(target, Path(args.dest), args.force)
+    for path in result.written:
+        print(f"  wrote     {path}")
+    for path in result.unchanged:
+        print(f"  unchanged {path}")
+    print()
+    for step in target.next_steps():
+        print(f"  next: {step}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
+    argv = sys.argv[1:] if argv is None else argv
     parser = argparse.ArgumentParser(
         prog="svarupa",
         description=(
             "Verified architecture diagrams and a queryable knowledge graph, "
             "derived from your codebase. Every box points at a line of code."
+        ),
+        epilog=(
+            'Also: "svarupa setup skill" and "svarupa setup ci_github" install '
+            "integration files (see: svarupa setup --help). To analyze a directory "
+            'literally named "setup", pass "./setup".'
         ),
     )
     parser.add_argument("--version", action="version", version=f"svarupa {__version__}")
@@ -327,8 +365,14 @@ def main(argv: list[str] | None = None) -> int:
             "Use this to analyze a repository without writing into it."
         ),
     )
-    args = parser.parse_args(argv)
     try:
+        # Dispatched on the literal first argument rather than via subparsers,
+        # so `svarupa <path>` keeps working with no subcommand. The cost is
+        # that a repository named `setup` needs `./setup`, which the epilog
+        # says out loud.
+        if argv[:1] == ["setup"]:
+            return _setup(argv[1:])
+        args = parser.parse_args(argv)
         return _scan(args.path, args.max_files, args.out, args.lock, args.diff, args.drift_base)
     except DiagnosticError as exc:
         # A structured refusal, printed as one. A traceback here would tell a

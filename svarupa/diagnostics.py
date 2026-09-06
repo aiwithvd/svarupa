@@ -80,7 +80,7 @@ class DiagnosticError(Exception):
 # --- the code registry ----------------------------------------------------
 #
 # Prefix per stage: D detect, X extract, B build, C cluster, R derive,
-# G geometry (layout), L lock. Numbers are contiguous within a prefix, because
+# G geometry (layout), L lock, S setup. Numbers are contiguous within a prefix, because
 # a gap is indistinguishable from a code that was removed without telling
 # anyone consuming it.
 
@@ -147,6 +147,9 @@ CODES: dict[str, str] = {
     "SVA-L-009": "a dependency names a module the lockfile does not declare",
     "SVA-L-010": "no architectural facts were found, so the lockfile claims none",
     "SVA-L-011": "a grammar version changed between two lockfiles",
+    # setup
+    "SVA-S-001": "setup would overwrite an existing file with different content",
+    "SVA-S-002": "the setup destination is not an existing directory",
 }
 
 # Codes whose message text comes from the caller, so there is no literal at the
