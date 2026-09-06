@@ -27,7 +27,14 @@ from typing import cast
 
 from svarupa.detect import Scan, load_toml
 from svarupa.diagnostics import Diagnostic, Severity
-from svarupa.extract.base import DecoratorRef, EntrypointFact, FileFacts, RouteFact, TaskFact
+from svarupa.extract.base import (
+    CallSite,
+    DecoratorRef,
+    EntrypointFact,
+    FileFacts,
+    RouteFact,
+    TaskFact,
+)
 from svarupa.model import Evidence
 
 __all__ = ["SEMANTIC_FRAMEWORKS", "SEMANTIC_LANGS", "Semantics", "semantics"]
@@ -175,22 +182,103 @@ def _express_receivers(f: FileFacts) -> frozenset[str]:
     return frozenset(held - poisoned)
 
 
+def _join_paths(prefix: str, sub: str) -> str:
+    segments = [s.strip("/") for s in (prefix, sub) if s and s.strip("/")]
+    return "/" + "/".join(segments) if segments else "/"
+
+
+def _mount_prefixes(f: FileFacts, receivers: frozenset[str]) -> dict[str, list[str] | None]:
+    """Same-file `host.use('/prefix', router)` mounts, resolved to full prefixes.
+
+    Only mounts where both host and router are receivers in THIS file are
+    composed: a router imported from elsewhere, or a middleware argument that
+    is not a router, is not a mount here. A router mounted twice exists at
+    both prefixes and yields both. Any dynamic mount path anywhere in a
+    router's chain poisons that router (value None): its routes stay
+    handler-relative, the documented boundary, rather than composed wrong.
+    Nested routers (`parent.use('/a', child)` then `app.use('/v1', parent)`)
+    compose through, depth-capped against cycles.
+    """
+    mounts: dict[str, list[tuple[str, str | None]]] = {}
+    for call in f.calls:
+        if call.name != "use" or call.receiver not in receivers:
+            continue
+        routers = [i for i in call.ident_args if i in receivers]
+        if not routers:
+            continue
+        # Three first-argument shapes: a static string is the prefix; the
+        # router itself (`app.use(router)`) mounts at the host's own prefix;
+        # anything else (`app.use(PFX, router)`) is a dynamic prefix, which
+        # must poison rather than read as "". It read as "" once, and only
+        # looked right because "" composes to the declared path.
+        if call.first_str_arg is not None:
+            prefix: str | None = call.first_str_arg
+        elif call.first_arg_ident is not None and call.first_arg_ident in receivers:
+            prefix = ""
+        else:
+            prefix = None
+        for router in routers:
+            mounts.setdefault(router, []).append((call.receiver, prefix))
+
+    resolved: dict[str, list[str] | None] = {}
+
+    def prefixes(router: str, depth: int) -> list[str] | None:
+        if router in resolved:
+            return resolved[router]
+        if depth > 8:
+            return None
+        hosts = mounts.get(router)
+        if not hosts:
+            return [""]
+        out: list[str] = []
+        for host, pfx in hosts:
+            if pfx is None or (pfx and not pfx.startswith("/")):
+                resolved[router] = None
+                return None
+            above = prefixes(host, depth + 1) if host != router else None
+            if above is None:
+                resolved[router] = None
+                return None
+            out.extend(_join_paths(a, pfx) if (a or pfx) else "" for a in above)
+        resolved[router] = sorted(set(out))
+        return resolved[router]
+
+    for router in mounts:
+        prefixes(router, 0)
+    return resolved
+
+
 def _express_routes(f: FileFacts) -> list[RouteFact]:
     receivers = _express_receivers(f)
     if not receivers:
         return []
-    out: list[RouteFact] = []
+    declared: list[tuple[str, str, str, CallSite]] = []  # receiver, method, path, site
     for call in f.calls:
-        if (
-            call.receiver in receivers
-            and call.name in _EXPRESS_METHODS
-            and call.first_str_arg is not None
-            and call.first_str_arg.startswith("/")
-        ):
+        if call.receiver not in receivers or call.name not in _EXPRESS_METHODS:
+            continue
+        method = "ALL" if call.name == "all" else call.name.upper()
+        if call.recv_call is not None:
+            # `app.route('/x').get(h)`: the path lives on the chain's root.
+            root_method, root_path = call.recv_call
+            if root_method == "route" and root_path is not None and root_path.startswith("/"):
+                declared.append((call.receiver, method, root_path, call))
+            continue
+        if call.first_str_arg is not None and call.first_str_arg.startswith("/"):
+            declared.append((call.receiver, method, call.first_str_arg, call))
+
+    mounted = _mount_prefixes(f, receivers)
+    out: list[RouteFact] = []
+    for receiver, method, path, call in declared:
+        prefixes = mounted.get(receiver)
+        # Not mounted here (an app, or a router mounted elsewhere): the
+        # declared path. Poisoned by a dynamic mount: the declared path, the
+        # documented boundary. Mounted statically: one fact per full prefix.
+        full_paths = [path] if not prefixes else [_join_paths(p, path) for p in prefixes]
+        for full in full_paths:
             out.append(
                 RouteFact(
-                    method="ALL" if call.name == "all" else call.name.upper(),
-                    path=call.first_str_arg,
+                    method=method,
+                    path=full,
                     file=f.path,
                     handler=call.enclosing or f.path,
                     framework="express",

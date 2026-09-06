@@ -183,6 +183,18 @@ class CallSite:
     # A generic pass-1 fact (no framework semantics here); it is what lets
     # semantics read `app.get('/items', h)` as a route without re-parsing.
     first_str_arg: str | None = None
+    # Identifier arguments, in position order: `app.use('/api', router)`
+    # carries ("router",). Generic; the consumer decides what mounting means.
+    ident_args: tuple[str, ...] = ()
+    # The first argument when it is a bare identifier, else None. Together
+    # with first_str_arg this classifies a first argument as static string /
+    # identifier / other, and "other" is what a consumer must treat as dynamic.
+    first_arg_ident: str | None = None
+    # When the receiver is itself a call chain rooted at an identifier
+    # (`app.route('/x').get(h)`), `receiver` holds the base identifier and
+    # this holds (innermost method name, its static first string arg or None):
+    # here ("route", "/x"). None when the receiver is not such a chain.
+    recv_call: tuple[str, str | None] | None = None
 
 
 @dataclass(frozen=True, slots=True)

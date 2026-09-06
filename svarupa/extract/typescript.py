@@ -654,6 +654,55 @@ class TypeScriptExtractor(Extractor):
             return None
         return None
 
+    @staticmethod
+    def _first_arg_ident(src: bytes, node: TSNode) -> str | None:
+        args = node.child_by_field_name("arguments")
+        if args is None:
+            return None
+        for child in args.children:
+            if child.type in ("(", ")", ",", "comment"):
+                continue
+            return _text(src, child) if child.type == "identifier" else None
+        return None
+
+    @staticmethod
+    def _ident_args(src: bytes, node: TSNode) -> tuple[str, ...]:
+        args = node.child_by_field_name("arguments")
+        if args is None:
+            return ()
+        return tuple(_text(src, c) for c in args.children if c.type == "identifier")
+
+    def _chain_base(self, src: bytes, obj: TSNode) -> tuple[str, str, str | None] | None:
+        """Unwind `base.m1(...).m2(...)` to (base identifier, m1, m1's static
+        first string arg), or None if the chain is not rooted at an identifier.
+
+        `app.route('/x').get(h).post(h)`: the `.post` receiver unwinds to
+        ("app", "route", "/x") whatever the intermediate hops are; the
+        consumer decides that only a `route` root with a static path means
+        anything. Depth-capped: a chain longer than any real fluent API is
+        left as opaque text rather than walked forever.
+        """
+        cur = obj
+        innermost: TSNode | None = None
+        for _ in range(16):
+            if cur.type != "call_expression":
+                break
+            innermost = cur
+            fn = cur.child_by_field_name("function")
+            if fn is None or fn.type != "member_expression":
+                return None
+            nxt = fn.child_by_field_name("object")
+            if nxt is None:
+                return None
+            cur = nxt
+        if innermost is None or cur.type != "identifier":
+            return None
+        inner_fn = innermost.child_by_field_name("function")
+        prop = inner_fn.child_by_field_name("property") if inner_fn is not None else None
+        if prop is None:
+            return None
+        return (_text(src, cur), _text(src, prop), self._first_str_arg(src, innermost))
+
     def _call(
         self, path: str, src: bytes, node: TSNode, fn: str | None, cls: str | None
     ) -> CallSite | None:
@@ -662,6 +711,8 @@ class TypeScriptExtractor(Extractor):
             return None
         ev = self.evidence(path, node.start_point[0], node.start_point[0])
         first_arg = self._first_str_arg(src, node)
+        idents = self._ident_args(src, node)
+        first_ident = self._first_arg_ident(src, node)
 
         if func.type == "identifier":
             name = _text(src, func)
@@ -699,7 +750,33 @@ class TypeScriptExtractor(Extractor):
             if obj.type == "identifier":
                 if otext in _GLOBAL_OBJECTS:
                     return None
-                return CallSite(name, CallShape.QUALIFIED, otext, ev, fn, cls, first_arg)
-            return CallSite(name, CallShape.MEMBER, otext, ev, fn, cls, first_arg)
+                return CallSite(
+                    name,
+                    CallShape.QUALIFIED,
+                    otext,
+                    ev,
+                    fn,
+                    cls,
+                    first_arg,
+                    idents,
+                    first_ident,
+                )
+            if obj.type == "call_expression" and (chain := self._chain_base(src, obj)):
+                base, root_method, root_arg = chain
+                return CallSite(
+                    name,
+                    CallShape.MEMBER,
+                    base,
+                    ev,
+                    fn,
+                    cls,
+                    first_arg,
+                    idents,
+                    first_ident,
+                    recv_call=(root_method, root_arg),
+                )
+            return CallSite(
+                name, CallShape.MEMBER, otext, ev, fn, cls, first_arg, idents, first_ident
+            )
 
         return None

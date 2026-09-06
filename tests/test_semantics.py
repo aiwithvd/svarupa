@@ -959,3 +959,115 @@ def test_ts_pass1_details_pin_the_reviewers_probes() -> None:
     assert f.ctor_assigns == ()
     sym = next(s for s in f.symbols if s.name == "handler")
     assert sym.exported is True
+
+
+# --- Express chaining and same-file mount composition ---------------------------
+
+MOUNT_FILE = """\
+import express, { Router } from 'express';
+const app = express();
+const r = Router();
+const child = Router();
+const twice = Router();
+const dyn = Router();
+app.route('/items').get(list).post(create);
+app.route(DYN).get(h);
+app.locals('/notroute').get(h);
+app.use('/api', r);
+r.get('/things', h);
+r.use('/nested', child);
+child.get('/deep', h);
+app.use('/a', twice);
+app.use('/b', twice);
+twice.get('/x', h);
+app.use(PFX, dyn);
+dyn.get('/declared', h);
+app.use('/mw', logger);
+app.get('/plain', h);
+"""
+
+
+def _express_paths(tmp_path: Path) -> set[tuple[str, str]]:
+    write(tmp_path, "src/app.ts", MOUNT_FILE)
+    return {(r.method, r.path) for r in graph_of(tmp_path).routes}
+
+
+def test_route_chaining_claims_each_verb_on_the_chain_root_path(tmp_path: Path) -> None:
+    got = _express_paths(tmp_path)
+    assert ("GET", "/items") in got and ("POST", "/items") in got
+
+
+def test_a_dynamic_chain_root_claims_nothing(tmp_path: Path) -> None:
+    """`app.route(DYN).get(h)`: the route exists and its path is unknown."""
+    assert not any(p in ("", "/") or "DYN" in p for _, p in _express_paths(tmp_path))
+    # And specifically no GET record that is not one of the known ones.
+    gets = {p for m, p in _express_paths(tmp_path) if m == "GET"}
+    assert gets == {
+        "/items",
+        "/api/things",
+        "/api/nested/deep",
+        "/a/x",
+        "/b/x",
+        "/declared",
+        "/plain",
+    }
+
+
+def test_same_file_mounts_compose_including_nested_and_multiple(tmp_path: Path) -> None:
+    got = _express_paths(tmp_path)
+    assert ("GET", "/api/things") in got, "app.use('/api', r) composes r's routes"
+    assert ("GET", "/api/nested/deep") in got, "router-on-router mounts compose through"
+    assert ("GET", "/a/x") in got and ("GET", "/b/x") in got, "mounted twice exists twice"
+    assert ("GET", "/things") not in got, "the composed path replaces the declared one"
+
+
+def test_a_dynamic_mount_prefix_leaves_the_declared_path(tmp_path: Path) -> None:
+    """`app.use(PFX, dyn)`: composing would guess; the declared path is the
+    documented mount-relative boundary. It once read as "" and only looked
+    right because "" composes to the declared path; a second static mount
+    of the same router would then have been silently dropped."""
+    got = _express_paths(tmp_path)
+    assert ("GET", "/declared") in got
+
+
+def test_middleware_and_app_routes_are_untouched_by_mounting(tmp_path: Path) -> None:
+    got = _express_paths(tmp_path)
+    assert ("GET", "/plain") in got
+    assert not any("/mw" in p for _, p in got)
+
+
+def test_a_dynamic_mount_poisons_even_when_another_mount_is_static(tmp_path: Path) -> None:
+    write(
+        tmp_path,
+        "src/app.ts",
+        "import express, { Router } from 'express';\n"
+        "const app = express();\n"
+        "const r = Router();\n"
+        "app.use('/static', r);\n"
+        "app.use(PFX, r);\n"
+        "r.get('/x', h);\n",
+    )
+    assert {r.path for r in graph_of(tmp_path).routes} == {"/x"}
+
+
+def test_a_cross_file_mount_does_not_compose(tmp_path: Path) -> None:
+    write(
+        tmp_path,
+        "src/routes.ts",
+        "import { Router } from 'express';\nexport const r = Router();\nr.get('/things', h);\n",
+    )
+    write(
+        tmp_path,
+        "src/app.ts",
+        "import express from 'express';\nimport { r } from './routes';\n"
+        "const app = express();\napp.use('/api', r);\n",
+    )
+    assert {r.path for r in graph_of(tmp_path).routes} == {"/things"}
+
+
+def test_mount_composed_routes_reach_the_lockfile(tmp_path: Path) -> None:
+    write(tmp_path, "src/app.ts", MOUNT_FILE)
+    write(tmp_path, "other/x.ts", "export const y = 1;\n")
+    text = _lock_text(tmp_path)
+    assert "endpoint\tGET /api/nested/deep\tsrc" in text
+    assert "endpoint\tPOST /items\tsrc" in text

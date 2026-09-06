@@ -187,14 +187,14 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     (
         "express routes stop being receiver-scoped",
         "svarupa/extract/semantics.py",
-        "            call.receiver in receivers",
-        "            call.receiver is not None",
+        "        if call.receiver not in receivers or call.name not in _EXPRESS_METHODS:",
+        "        if call.receiver is None or call.name not in _EXPRESS_METHODS:",
     ),
     (
         "an express path stops needing to be a path",
         "svarupa/extract/semantics.py",
-        '            and call.first_str_arg.startswith("/")',
-        "            and True",
+        '        if call.first_str_arg is not None and call.first_str_arg.startswith("/"):',
+        "        if call.first_str_arg is not None:",
     ),
     (
         "a substituted template literal is guessed from its static parts",
@@ -279,6 +279,42 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
         "svarupa/extract/typescript.py",
         "                decorators = decorators + tuple(",
         "                decorators = decorators + () and tuple(",
+    ),
+    (
+        "a chain root other than route claims a route",
+        "svarupa/extract/semantics.py",
+        '            if root_method == "route" and root_path is not None and root_path.startswith("/"):',
+        '            if root_path is not None and root_path.startswith("/"):',
+    ),
+    (
+        "a dynamic chain root claims a route at the chain root",
+        "svarupa/extract/semantics.py",
+        '            if root_method == "route" and root_path is not None and root_path.startswith("/"):',
+        '            if root_method == "route" and (root_path is None or root_path.startswith("/")):\n                root_path = root_path or "/"',
+    ),
+    (
+        "mounts stop composing",
+        "svarupa/extract/semantics.py",
+        "        full_paths = [path] if not prefixes else [_join_paths(p, path) for p in prefixes]",
+        "        full_paths = [path]",
+    ),
+    (
+        "a dynamic mount prefix reads as empty again",
+        "svarupa/extract/semantics.py",
+        "        else:\n            prefix = None",
+        '        else:\n            prefix = ""',
+    ),
+    (
+        "nested router mounts stop composing through",
+        "svarupa/extract/semantics.py",
+        "            above = prefixes(host, depth + 1) if host != router else None",
+        '            above = [""] if host != router else None',
+    ),
+    (
+        "the chain unwinder loses the root path",
+        "svarupa/extract/typescript.py",
+        "        return (_text(src, cur), _text(src, prop), self._first_str_arg(src, innermost))",
+        "        return (_text(src, cur), _text(src, prop), None)",
     ),
 ]
 
