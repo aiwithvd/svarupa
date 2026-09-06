@@ -12,7 +12,7 @@ from svarupa.cluster import cluster
 from svarupa.derive import derive_all
 from svarupa.detect import FileRole, ScanLimits, detect
 from svarupa.diagnostics import Diagnostic, DiagnosticError, Severity
-from svarupa.emit import claim, emit
+from svarupa.emit import OUTPUT_DIR, claim, emit
 from svarupa.extract import declared_dependencies, extract
 from svarupa.lock import (
     LOCK_NAME,
@@ -41,6 +41,13 @@ def _scan(
     # arguments belong here for exactly the same reason, and were not.
     if out is not None:
         claim(Path(out))
+    elif Path(path).is_dir():
+        # The default output directory gets the same up-front claim `--out`
+        # already had. Without this, a refusal about the output directory
+        # arrived from inside `emit`, after the full scan. The `is_dir` guard
+        # keeps a nonexistent root as `detect`'s refusal (SVA-D-007) rather
+        # than creating `<typo>/.svarupa` on the way to it.
+        claim(Path(path) / OUTPUT_DIR)
     bases = {
         name: _read_lock(value, name)
         for name, value in (("--diff", diff_base), ("--drift-base", drift_base))

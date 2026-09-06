@@ -12,7 +12,9 @@ missing tab as a fact about the repository, not a failure.
 
 ## Install
 
-Check `svarupa --version`. If it is missing: `uv tool install svarupa`.
+Check `svarupa --version`. If it is missing, install it with
+`uv tool install svarupa` once the package is published; from a source
+checkout, `uv tool install <path to the svarupa checkout>` works today.
 
 ## Analyze a repository
 
@@ -38,10 +40,13 @@ large trees, `--max-files N` caps the scan and says so in a diagnostic.
 ## Read the output like a machine
 
 Diagnostics are structured: `SEVERITY SVA-<stage>-<n>: <subject> <message>`,
-each with `fix:` lines stating what to do. Act on the `fix:` lines rather
-than parsing prose. Exit code 0 means a usable artifact exists; exit 1 means
-the tool did not give a usable answer, and the last diagnostic on stderr
-says why.
+many with `fix:` lines stating what to do; when present, act on the `fix:`
+lines rather than parsing prose. Exit 0 means the run completed with no
+error-severity diagnostics. Exit 1 means at least one error or a refusal:
+an artifact may still have been written (a repository can carry a real
+error, like a case-colliding pair of files, and still be analyzable), and
+the diagnostics in the report on stdout say what is wrong. A refusal prints
+one structured diagnostic to stderr and writes nothing new.
 
 ## Architecture diff between commits
 
@@ -63,8 +68,12 @@ three per pull request.
 
 ## Rules the tool holds itself to, which you can rely on
 
-- Output is byte-deterministic: the same tree produces the same bytes, so
-  two artifacts can be compared directly.
+- The committed lockfile is byte-deterministic across machines, platforms
+  and Python versions: two lockfiles from the same tree can be compared
+  directly. The full artifact is deterministic for a given environment;
+  cross-platform byte identity of the whole artifact is verified on a
+  narrower gate, so do not diff artifacts from different machines and
+  report the difference as an architecture change.
 - Communities and visual grouping never define identity; the lockfile's
   modules come from directories, packages, and workspace members only.
 - Partial failure degrades: one hostile or broken file becomes a diagnostic,

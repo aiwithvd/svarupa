@@ -509,9 +509,11 @@ repo/
       references/*.md
 ```
 
-`SKILL.md` must be uppercase. Graphify ships lowercase `skill.md`, which resolves only on case-insensitive macOS; on Linux and in CI, `npx skills add` finds nothing there. Frontmatter requires only `name` and `description`; we also set `license`, `compatibility`, and `metadata.version`.
+`SKILL.md` must be uppercase. Graphify ships lowercase `skill.md`, which resolves only on case-insensitive macOS; on Linux and in CI, `npx skills add` finds nothing there. Frontmatter requires only `name` and `description`.
 
-Because skills.sh has no dependency install hook, `SKILL.md` instructs the agent to check for `svarupa` on PATH and run `uv tool install svarupa` if absent. One bootstrap, first run only.
+**Amended at P1-8 (review #12 S4):** frontmatter ships as `name` + `description` only; `license`, `compatibility`, `metadata.version` and `references/*.md` are deferred to P2 with the marketplace work they serve. The skill body is generated from a constant in the wheel (`svarupa/setup/skill.py`); the repo copy is byte-equality-tested against it, and every `--flag` it names is tested against the live parsers.
+
+Because skills.sh has no dependency install hook, `SKILL.md` instructs the agent to check for `svarupa` on PATH and install it if absent. **The `svarupa` name is not yet registered on PyPI, and P1-8 shipped documents that reference it: registering the name is now a blocking pre-release item, not a nice-to-have (review #12 F3).** Until then the skill points at a source-checkout install, and the generated CI workflow pins `svarupa==<generating version>` so a schema bump can never break adopters' CI overnight.
 
 ### 9.3 Target registry
 
@@ -521,21 +523,21 @@ svarupa doctor            # what is set up, stale, or broken, and how to fix it
 svarupa setup <target>    # non-interactive single target, for scripting
 ```
 
-Every integration implements one interface:
+Every integration implements one interface.
+
+**Amended at P1-8 (review #12 S4): the shipped `Target` is narrower than the one first designed here, deliberately.**
 
 ```python
-class Target(ABC):
-    def detect(self) -> Status: ...
-    def plan(self) -> list[Step]: ...
-    def apply(self) -> Result: ...
-    def verify(self) -> bool: ...
+class Target(ABC):          # shipped in P1-8 (svarupa/setup/base.py)
+    def files(self) -> tuple[tuple[str, str], ...]: ...   # (relative path, exact content)
+    def next_steps(self) -> tuple[str, ...]: ...
 ```
 
-Targets: `skill`, `ci_github`, `ci_gitlab`, `ci_docker`, `hook`, `mcp_register`, `plugin`.
+The original `detect/plan/apply/verify` quartet exists to serve `init` and `doctor`, which are P2. With two targets and no wizard, the four methods would be three trivial wrappers around one file-write, and the interesting guarantees live in the single `install()` function instead: every collision checked before any write, symlinks refused and never followed, `--force` meaning "replace your file, never follow your link". When `init`/`doctor` arrive in P2, `detect` and `verify` grow on top of `files()` (a target is installed iff its files exist byte-equal), which is a strictly easier contract than keeping four hand-written methods honest per target.
 
-Adding an integration later is one file implementing four methods. `init` is `detect()` across the registry rendered as a checklist.
+Targets shipped in P1: `skill`, `ci_github`. Remaining (`ci_gitlab`, `ci_docker`, `hook`, `mcp_register`, `plugin`) are P2/P3 with the wizard.
 
-**Critical scaling decision: we do not write agent installers.** Vercel's skills CLI already maintains 77 platform integrations and absorbs the maintenance when a platform moves its directory. Our `skill` target shells out to `npx skills add`. Graphify hand-maintains roughly twenty installers; that is a treadmill we decline to step onto.
+**Scaling decision, narrowed rather than dropped:** the original text said the `skill` target shells out to `npx skills add` so we never maintain platform installers. P1-8 ships a direct write to `.claude/skills/svarupa/SKILL.md` instead: one platform, the one the tool is developed against, with no `npx`/network dependency inside a filesystem-only command. The 77-platform delegation to skills.sh stands for P2, where multi-platform installation is actually wanted; hand-maintaining installers per platform remains declined.
 
 **Ownership split:**
 
@@ -764,3 +766,9 @@ inherit the rationale instead of relitigating it. Source review in parentheses.
 | **When a commit names a property as its point, the checklist question is which test fails if the property is deleted, answered by deleting it** (review #11 F4) | Deleting the entire barycentric sweep, the headline of the visual-rework commit, passed all 539 tests; so did routing every flow skip straight through the intervening columns. The mutation lists had not grown while the codebase grew by 2,500 lines, which is review #9's mutation lesson measured at wave scale |
 | **User-facing waves do not accumulate unreviewed** (review #11, process) | Four waves shipped under live user feedback without intermediate review, and every documented recurrence pattern fired inside that gap: the previous wave's channel fix unapplied to the new channel, the previous wave's byte-identity fix reopened by the new producer, and frozen mutation lists. The velocity of a feedback loop is precisely when recurrence is fastest, so each wave gets its review before the next |
 | **Distinctness is not spread** (review #11 C3) | The flow-track test asserted that track positions differ, and a mutation that budgeted tracks against the whole diagram survived it: the tracks were distinct and crammed into the gap's left sixth, which collides at density. Assert the quantity the failure mode actually degrades, not a property adjacent to it |
+| **The state a product's own instructions create is a test fixture** (review #12 F1) | `next_steps` and SKILL.md prescribe an exact repository state (commit `.svarupa/architecture.lock`, nothing else), and the generated per-PR workflow refused with SVA-E-001 on precisely that state, on every PR, after the full scan; so did every other contributor's first run on a fresh clone. The first end-to-end execution of the workflow happened inside the review. Any instruction the product gives a user defines a state the suite must run the product against |
+| **A symlink is a redirection: `--force` means replace your file, never follow your link** (review #12 F2) | `exists()` is False on a dangling symlink, so setup's collision sweep never saw one and the write landed wherever the link pointed, outside the repository, exit 0; with a link to a real file, SVA-S-001's own fix text walked the user into `--force`-overwriting the target. Hostile input extends to a cloned repository's paths, not just its file contents, and a refusal's suggested fix must never escalate the attack it refuses |
+| **A shipped install command is a claim about a registry** (review #12 F3) | Both shipped documents said `uv tool install svarupa` while PyPI returned 404 for the name: a failing command today, an open name-squat granting code execution in every adopter's CI tomorrow. Generated CI now pins the generating version, so upgrades are reviewable diffs and a squatter's `latest` is never installed; registering the name is release-blocking the moment any shipped document references it |
+| **A document drift check must cover the sentences an agent acts on, not only the tokens it can grep** (review #12 F4) | The wave's thesis was documents checked against reality, and the checks stopped at flags and file names: the exit-code and stderr sentences were written from recall and both were false (exit 1 co-occurs with a usable artifact; diagnostics print to stdout). The sentences that direct an agent's behaviour are the ones that most need the check and are hardest to give one, so they are written minimal and verified by hand against measured behaviour, and rewritten whenever the behaviour moves |
+| **Wiring is a component: a property tested only below the CLI leaves the CLI free to negate it** (review #12 F5) | Hardcoding `force=True` in the one CLI call site passed all 576 tests, because every collision test drove `install()` directly. Each user-facing guarantee needs at least one test that enters through the same door the user does |
+| **The failing run is the one whose report must survive** (review #12 S3) | Under `set -e` the workflow aborted before writing the job summary exactly when the delta was nonzero or the run errored, so the reviewer-facing surface vanished on precisely the runs a reviewer needed. Capture the output, write the report, then re-raise the exit code |

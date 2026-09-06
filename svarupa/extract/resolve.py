@@ -699,6 +699,50 @@ class Resolver:
             top = self._package_root(imp.specifier, f.lang)
             target = self._resolve_module(imp.specifier, f.path, imp.level, f.lang)
 
+            if target is None and f.lang == "python" and imp.is_from:
+                # A PEP 420 namespace package has no `__init__.py`, so the
+                # specifier itself names no file, but the imported names can
+                # still be its submodules: `from agent.schema import schema`
+                # in a repo where `agent/` and `agent/schema/` are plain
+                # directories must resolve to `agent/schema/schema.py`.
+                # Measured on a real two-service FastAPI repo: every absolute
+                # self-package import was unresolved, and an added
+                # cross-module import diffed the lockfile by zero lines.
+                sib_edges: list[Edge] = []
+                leftover: list[str] = []
+                for name in imp.names:
+                    lookup = self._real_name(imp, name)
+                    sibling = self._resolve_module(
+                        f"{imp.specifier}.{lookup}", f.path, imp.level, f.lang
+                    )
+                    if sibling is not None and sibling != f.path:
+                        sib_edges.append(
+                            Edge(
+                                src=f.path,
+                                dst=sibling,
+                                kind=EdgeKind.IMPORTS,
+                                evidence=(imp.evidence,),
+                                confidence=Confidence.RESOLVED,
+                                resolution=Resolution.RESOLVED,
+                                producer=f"{f.lang}.imports",
+                            )
+                        )
+                    else:
+                        leftover.append(name)
+                if sib_edges:
+                    out.extend(sib_edges)
+                    self.scorecard.record(f.lang, EdgeKind.IMPORTS, Resolution.RESOLVED)
+                    for _ in sib_edges:
+                        self.scorecard.record(f.lang, "references", Resolution.RESOLVED)
+                    for name in leftover:
+                        self.scorecard.record(
+                            f.lang,
+                            "references",
+                            Resolution.UNRESOLVED,
+                            f"{imp.specifier}.{name}",
+                        )
+                    continue
+
             if target is None:
                 # An asset import is external whether or not it is relative:
                 # `./logo.png` is a real dependency the bundler handles, not

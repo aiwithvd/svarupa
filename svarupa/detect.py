@@ -117,6 +117,11 @@ CONFIG_GLOBS: tuple[tuple[str, str], ...] = (
 DEFAULT_EXCLUDES: frozenset[str] = frozenset(
     {
         ".git",
+        # The tool's own output directory. On an adopted repository it holds
+        # the committed lockfile (and, on a dev machine, a previous artifact),
+        # none of which is input: scanning our own output would make each run
+        # a function of the previous one.
+        ".svarupa",
         ".hg",
         ".svn",
         ".venv",

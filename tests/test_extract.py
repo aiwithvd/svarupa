@@ -750,3 +750,31 @@ def test_an_extractor_that_raises_costs_only_its_own_file(tmp_path: Path) -> Non
     assert any(n.id.endswith(".keep") for n in result.nodes), (
         "one exploding file lost the others"
     )
+
+
+def test_namespace_package_submodule_import_resolves(tmp_path: Path) -> None:
+    """PEP 420: no `__init__.py` anywhere, which is how real service repos are
+    laid out. `from agent.schema import schema` must resolve to
+    `agent/schema/schema.py`. Measured before the fix on a real two-service
+    FastAPI repo: every absolute self-package import was unresolved, and an
+    added cross-module import diffed the lockfile by zero lines."""
+    write(tmp_path, "agent/config.py", "from agent.schema import schema\n")
+    write(tmp_path, "agent/schema/schema.py", "x = 1\n")
+    res = run(tmp_path)
+    imports = [
+        (e.src, e.dst)
+        for e in res.edges
+        if e.kind is EdgeKind.IMPORTS and e.resolution is Resolution.RESOLVED
+    ]
+    assert ("agent/config.py", "agent/schema/schema.py") in imports
+
+
+def test_namespace_package_import_of_missing_submodule_stays_unresolved(
+    tmp_path: Path,
+) -> None:
+    """The fallback must not invent an edge for a name that is not there."""
+    write(tmp_path, "agent/config.py", "from agent.schema import nothing\n")
+    write(tmp_path, "agent/schema/schema.py", "x = 1\n")
+    res = run(tmp_path)
+    assert not [e for e in res.edges if e.kind is EdgeKind.IMPORTS and "nothing" in e.dst]
+    assert res.scorecard.get("python", "references", Resolution.UNRESOLVED) >= 1

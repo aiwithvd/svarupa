@@ -16,7 +16,7 @@ import tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 PY = ROOT / ".venv" / "bin" / "python"
-SUITE = ["tests/test_setup.py", "tests/test_diagnostics.py"]
+SUITE = ["tests/test_setup.py", "tests/test_diagnostics.py", "tests/test_detect.py"]
 
 MUTATIONS: list[tuple[str, str, str, str]] = [
     (
@@ -84,6 +84,66 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
         "svarupa/setup/ci_github.py",
         "--drift-base /tmp/base-artifact/architecture.lock",
         "--drift-base /tmp/base-artifact/arch.lock",
+    ),
+    (
+        "the symlink check is deleted",
+        "svarupa/setup/__init__.py",
+        "    if escaping:",
+        "    if False:",
+    ),
+    (
+        "a broken symlink no longer counts as escaping",
+        "svarupa/setup/__init__.py",
+        "    if path.is_symlink():\n        return True",
+        "    if path.is_symlink():\n        return False",
+    ),
+    (
+        "a write failure escapes as a raw traceback again",
+        "svarupa/setup/__init__.py",
+        "        except OSError as exc:",
+        "        except MemoryError as exc:",
+    ),
+    (
+        "the CLI hardcodes force=True",
+        "svarupa/cli.py",
+        "    result = install(target, Path(args.dest), args.force)",
+        "    result = install(target, Path(args.dest), True)",
+    ),
+    (
+        "the workflow fetch is depth 1",
+        "svarupa/setup/ci_github.py",
+        "          fetch-depth: 0",
+        "          fetch-depth: 1",
+    ),
+    (
+        "the workflow install is unpinned",
+        "svarupa/setup/ci_github.py",
+        "        run: uv tool install 'svarupa==__SVARUPA_VERSION__'",
+        "        run: uv tool install svarupa",
+    ),
+    (
+        "the workflow swallows the exit code after writing the summary",
+        "svarupa/setup/ci_github.py",
+        '          exit "$code"',
+        "          true",
+    ),
+    (
+        "the workflow falls back silently when git cannot read the base",
+        "svarupa/setup/ci_github.py",
+        '          git cat-file -e "$BASE_SHA^{commit}"',
+        "          true",
+    ),
+    (
+        "the lockfile is foreign to claim() again",
+        "svarupa/emit/__init__.py",
+        "        owned = set(OWNED_FILES) | set(OWNED_DIRS) | set(TOLERATED_FILES)",
+        "        owned = set(OWNED_FILES) | set(OWNED_DIRS)",
+    ),
+    (
+        "the output directory is scanned as input again",
+        "svarupa/detect.py",
+        '        ".svarupa",',
+        "",
     ),
 ]
 

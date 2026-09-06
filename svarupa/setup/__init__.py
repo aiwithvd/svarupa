@@ -13,6 +13,13 @@ the filesystem, so the rules live once:
   may be theirs. `--force` exists and says what it does.
 * **An existing file is hostile input.** It can be binary, unreadable, or a
   directory; any of those counts as "different content", never as a crash.
+* **A symlink is a redirection, and setup never follows one.** A cloned
+  repository can contain a pre-planted symlink at any path setup writes:
+  `.claude/skills/svarupa/SKILL.md -> ~/.zshrc` would turn "set this repo up"
+  into a file overwrite outside it, with SVA-S-001's own `--force` hint as the
+  social engineering. A planned path that is a symlink, or whose existing
+  ancestors resolve outside the destination, is refused, and `--force` does
+  not override it: force means "replace your file", never "follow your link".
 """
 
 from __future__ import annotations
@@ -42,6 +49,27 @@ class Installed:
     unchanged: tuple[Path, ...]
 
 
+def _escapes(path: Path, dest: Path) -> bool:
+    """Whether writing `path` could land outside `dest`.
+
+    True if the path itself is a symlink (dangling ones included: `exists()`
+    is False on those, which is exactly how one slipped past the collision
+    sweep), or if its nearest existing ancestor resolves outside the resolved
+    destination, which catches a symlinked directory like `.github -> /outside`.
+    """
+    if path.is_symlink():
+        return True
+    anchor = path.parent
+    while not anchor.exists():
+        anchor = anchor.parent
+    try:
+        real = anchor.resolve(strict=True)
+        droot = dest.resolve(strict=True)
+    except OSError:
+        return True
+    return real != droot and droot not in real.parents
+
+
 def _differs(path: Path, content: str) -> bool:
     """Whether an existing path stands in the way of writing `content`.
 
@@ -68,6 +96,22 @@ def install(target: Target, dest: Path, force: bool) -> Installed:
             )
         )
     planned = [(dest / Path(rel), content) for rel, content in target.files()]
+    # Checked before collisions and never overridden by --force: force means
+    # "replace your file", never "follow your link somewhere else".
+    escaping = [p for p, _ in planned if _escapes(p, dest)]
+    if escaping:
+        raise DiagnosticError(
+            Diagnostic(
+                code="SVA-S-003",
+                severity=Severity.ERROR,
+                message=(
+                    "is a symlink or resolves outside the destination, so setup "
+                    "refuses to write through it (--force does not override this)"
+                ),
+                subject=str(escaping[0]),
+                suggested_fixes=("Remove the symlink if it is not yours, then re-run.",),
+            )
+        )
     clashes = [p for p, content in planned if p.exists() and _differs(p, content)]
     if clashes and not force:
         raise DiagnosticError(
@@ -91,9 +135,25 @@ def install(target: Target, dest: Path, force: bool) -> Installed:
         if path.exists() and not _differs(path, content):
             unchanged.append(path)
             continue
-        path.parent.mkdir(parents=True, exist_ok=True)
-        # newline="" so the bytes on disk are exactly `content` on every
-        # platform, the same rule the lockfile writer follows.
-        path.write_text(content, encoding="utf8", newline="")
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            # newline="" so the bytes on disk are exactly `content` on every
+            # platform, the same rule the lockfile writer follows.
+            path.write_text(content, encoding="utf8", newline="")
+        except OSError as exc:
+            # The write channel is part of the boundary too: a read-only
+            # checkout reached the user as a raw PermissionError traceback.
+            # If earlier files of a multi-file target were already written,
+            # the refusal says so instead of leaving a half-install silent.
+            done = "; already written: " + ", ".join(str(w) for w in written) if written else ""
+            raise DiagnosticError(
+                Diagnostic(
+                    code="SVA-S-004",
+                    severity=Severity.ERROR,
+                    message=f"could not be written ({type(exc).__name__}: {exc}){done}",
+                    subject=str(path),
+                    suggested_fixes=("Check permissions on the destination.",),
+                )
+            ) from exc
         written.append(path)
     return Installed(written=tuple(written), unchanged=tuple(unchanged))

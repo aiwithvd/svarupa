@@ -150,6 +150,8 @@ CODES: dict[str, str] = {
     # setup
     "SVA-S-001": "setup would overwrite an existing file with different content",
     "SVA-S-002": "the setup destination is not an existing directory",
+    "SVA-S-003": "a setup path is a symlink or resolves outside the destination",
+    "SVA-S-004": "a setup file could not be written",
 }
 
 # Codes whose message text comes from the caller, so there is no literal at the

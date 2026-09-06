@@ -30,8 +30,9 @@ from svarupa.emit.report import render_report
 from svarupa.emit.viewer import render_viewer
 from svarupa.layout import LaidOutDiagram, lay_out_set
 from svarupa.layout.geometry import Style
+from svarupa.lock import LOCK_NAME
 
-__all__ = ["MARKER", "OUTPUT_DIR", "Artifact", "claim", "emit"]
+__all__ = ["MARKER", "OUTPUT_DIR", "TOLERATED_FILES", "Artifact", "claim", "emit"]
 
 OUTPUT_DIR = ".svarupa"
 
@@ -46,6 +47,14 @@ MARKER = ".svarupa-artifact"
 # this run will not write.
 OWNED_FILES = ("index.html", "REPORT.md", "graph.json", MARKER)
 OWNED_DIRS = ("diagrams",)
+
+# Files svarupa writes but must never clear, and whose presence must not read
+# as foreign. The lockfile is the one file in this directory meant to be
+# committed, so on a fresh clone it is the only thing here and there is no
+# marker. Counting it as foreign made the product's own CI workflow refuse on
+# every PR of an adopted repository, and made every other contributor's first
+# run refuse the same way, after the full scan.
+TOLERATED_FILES = (LOCK_NAME,)
 
 
 @dataclass(frozen=True, slots=True)
@@ -152,7 +161,7 @@ def claim(directory: Path) -> None:
             )
         )
     if directory.is_dir() and not (directory / MARKER).exists():
-        owned = set(OWNED_FILES) | set(OWNED_DIRS)
+        owned = set(OWNED_FILES) | set(OWNED_DIRS) | set(TOLERATED_FILES)
         foreign = sorted(p.name for p in directory.iterdir() if p.name not in owned)
         if foreign:
             raise DiagnosticError(
