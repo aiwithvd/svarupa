@@ -142,6 +142,17 @@ dashed edges for candidate/unresolved resolution. Everything Graphify's
 explorer lacks and we already hold: click-through to the line, edge-relation
 filters, a path tool between two selected nodes.
 
+*As built (Wave C):* the module-level graph with drill to a module's symbols
+already IS the Module deps tab, so no separate Graph tab was added; instead
+every diagram tab carries the explorer controls: a search box (id or label,
+matches lit, the rest receded), legend swatches that mute a kind and the
+routes touching it, clickable neighbours in the passport, and a shift-click
+path tool that finds the path over the routes drawn in that view and states
+it in hops. No per-community checkbox: communities are presentation and are
+not in the artifact's nodes (decision F2). The controls only toggle classes
+on the SVG, so the artifact stays byte-deterministic and the picture never
+gains a claim the layout did not make.
+
 ## 5. Visual grammar, Archify parity with exact values
 
 Adopted from the teardown, verbatim where a value exists:

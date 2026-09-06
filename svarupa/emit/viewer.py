@@ -241,6 +241,21 @@ h2 { font-size: 20px; margin: 0 0 4px; font-weight: 700; letter-spacing: -0.02em
   border: 1.5px solid color-mix(in srgb, var(--k) 65%, var(--line));
 }
 .legend .promise { margin-left: auto; color: var(--faint); }
+/* Explorer controls (design section 4): search, kind toggles, a path tool.
+   All of it is class toggling on the SVG the reader already sees; nothing
+   here lays anything out or builds markup from repository text. */
+.legend .sw-toggle { cursor: pointer; user-select: none; }
+.legend .sw-toggle.off { opacity: .35; text-decoration: line-through; }
+.explore { display: flex; gap: 10px; align-items: center; margin: 0 0 10px; font-size: 12px; color: var(--faint); flex-wrap: wrap; }
+.explore input { font: inherit; background: var(--raised); color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; width: 280px; }
+.explore .path { color: var(--ink); }
+svg.is-searching .sv-node:not(.is-hit), svg.is-searching .sv-route { opacity: .15; }
+svg .sv-node.is-off, svg .sv-route.is-off { opacity: .1; }
+svg.is-pinned .sv-node:not(.is-path), svg.is-pinned .sv-route:not(.is-path) { opacity: .15; }
+aside .conn.link { cursor: pointer; }
+/* Shift-click is the path gesture, and shift-click also selects text. */
+svg text { user-select: none; }
+aside .conn.link:hover { text-decoration: underline; }
 
 aside {
   position: fixed; right: 0; top: 0; bottom: 0; width: 28em; overflow: auto;
@@ -364,6 +379,7 @@ def _js() -> Markup:
     });
   }
 
+  var lastScope = null;
   var kindEl = document.getElementById('panel-kind');
   var subEl = document.getElementById('panel-sub');
   var connEl = document.getElementById('panel-conn');
@@ -390,13 +406,15 @@ def _js() -> Markup:
     connEl.textContent = '';
     var id = node.getAttribute('data-id');
     var root = scopeOf(node);
+    lastScope = root;
     var n = 0;
     if (root && id) {
       root.querySelectorAll('.sv-route').forEach(function (r) {
         var s = r.getAttribute('data-src'), d = r.getAttribute('data-dst');
         if (s !== id && d !== id) return;
         var li = document.createElement('li');
-        li.className = 'conn';
+        li.className = 'conn link';
+        li.setAttribute('data-target', s === id ? d : s);
         var verb = document.createElement('span');
         verb.className = 'verb';
         // The note carries the count ("12 imports"); the label is the verb
@@ -431,7 +449,7 @@ def _js() -> Markup:
   document.addEventListener('mouseover', function (ev) {
     var el = ev.target.closest('.sv-node, .sv-route');
     var svg = el && el.closest('svg');
-    if (!svg) return;
+    if (!svg || svg.classList.contains('is-pinned')) return;
     var root = scopeOf(el);
     svg.querySelectorAll('.is-path').forEach(function (x) { x.classList.remove('is-path'); });
     var ids = {};
@@ -457,7 +475,7 @@ def _js() -> Markup:
     var svg = el && el.closest('svg');
     if (!svg) return;
     var to = ev.relatedTarget && ev.relatedTarget.closest && ev.relatedTarget.closest('.sv-node, .sv-route');
-    if (to) return;
+    if (to || svg.classList.contains('is-pinned')) return;
     svg.classList.remove('is-hovering');
     svg.querySelectorAll('.is-path').forEach(function (x) { x.classList.remove('is-path'); });
   });
@@ -472,13 +490,127 @@ def _js() -> Markup:
     }
     var node = ev.target.closest('[data-evidence]');
     if (!node) {
-      if (!ev.target.closest('aside')) panel.classList.remove('is-open');
+      if (!ev.target.closest('aside')) { panel.classList.remove('is-open'); clearPins(); }
       return;
     }
+    if (ev.shiftKey && node.classList.contains('sv-node')) { pinPath(node); return; }
     var refs = node.getAttribute('data-evidence').split('\\n').filter(Boolean);
     var child = node.getAttribute('data-child');
     if (child && ev.detail === 2) { openView(node, child); return; }
     show(node.getAttribute('data-id') || node.getAttribute('data-src') || '', refs, node);
+  });
+
+  // --- Explorer: search, kind toggles, clickable neighbours, a path tool.
+  // Everything below toggles classes on the SVG the reader already sees;
+  // the path is found over the drawn routes of one scope, so it is exactly
+  // the path the picture shows, never a claim the picture does not make.
+  var pins = [];
+  function clearPins() {
+    pins = [];
+    document.querySelectorAll('svg.is-pinned').forEach(function (s) {
+      s.classList.remove('is-pinned');
+      s.querySelectorAll('.is-path').forEach(function (x) { x.classList.remove('is-path'); });
+    });
+    document.querySelectorAll('.explore .path').forEach(function (p) { p.textContent = ''; });
+  }
+  function pinPath(node) {
+    var root = scopeOf(node);
+    if (pins.length && scopeOf(pins[0]) !== root) clearPins();
+    pins.push(node);
+    node.classList.add('is-path');
+    node.closest('svg').classList.add('is-pinned');
+    var out = node.closest('.tab').querySelector('.explore .path');
+    if (pins.length === 1) { if (out) out.textContent = 'shift-click a second box'; return; }
+    var a = pins[0].getAttribute('data-id'), b = pins[1].getAttribute('data-id');
+    var adj = {}, byPair = {};
+    root.querySelectorAll('.sv-route').forEach(function (r) {
+      var s = r.getAttribute('data-src'), d = r.getAttribute('data-dst');
+      (adj[s] = adj[s] || []).push(d);
+      (adj[d] = adj[d] || []).push(s);
+      byPair[s + ' ' + d] = r;
+      byPair[d + ' ' + s] = r;
+    });
+    var prev = {}; prev[a] = null;
+    var queue = [a]; var found = a === b;
+    while (queue.length && !found) {
+      var cur = queue.shift();
+      (adj[cur] || []).slice().sort().forEach(function (n) {
+        if (!(n in prev)) { prev[n] = cur; queue.push(n); if (n === b) found = true; }
+      });
+    }
+    if (!found) {
+      if (out) out.textContent = 'no path between ' + a + ' and ' + b + ' in this view';
+      pins = [];
+      return;
+    }
+    var chain = [b];
+    while (prev[chain[0]] !== null) chain.unshift(prev[chain[0]]);
+    var onPath = {};
+    chain.forEach(function (id) { onPath[id] = 1; });
+    root.querySelectorAll('.sv-node').forEach(function (nd) {
+      if (onPath[nd.getAttribute('data-id')]) nd.classList.add('is-path');
+    });
+    for (var i = 1; chain.length > i; i++) {
+      var r = byPair[chain[i - 1] + ' ' + chain[i]];
+      if (r) r.classList.add('is-path');
+    }
+    if (out) out.textContent = 'path (' + (chain.length - 1) + ' hops): ' + chain.join(' -> ');
+    pins = [];
+  }
+
+  document.addEventListener('input', function (ev) {
+    var box = ev.target.closest('.explore input');
+    if (!box) return;
+    var tab = box.closest('.tab');
+    var q = box.value.trim().toLowerCase();
+    tab.querySelectorAll('svg').forEach(function (svg) {
+      svg.classList.remove('is-searching');
+      svg.querySelectorAll('.is-hit').forEach(function (x) { x.classList.remove('is-hit'); });
+    });
+    var out = tab.querySelector('.explore .path');
+    var view = tab.querySelector('.view.is-open') || tab.querySelector('.view');
+    if (!q || !view) { if (out) out.textContent = ''; return; }
+    var svg = view.querySelector('svg');
+    var hits = 0;
+    svg.querySelectorAll('.sv-node').forEach(function (nd) {
+      var id = (nd.getAttribute('data-id') || '').toLowerCase();
+      var lbl = nd.querySelector('.sv-box-label');
+      var label = lbl ? lbl.textContent.toLowerCase() : '';
+      if (id.indexOf(q) >= 0 || label.indexOf(q) >= 0) { nd.classList.add('is-hit'); hits += 1; }
+    });
+    svg.classList.add('is-searching');
+    if (out) out.textContent = hits + (hits === 1 ? ' match' : ' matches');
+  });
+
+  document.addEventListener('click', function (ev) {
+    var sw = ev.target.closest('.legend .sw-toggle');
+    if (!sw) return;
+    var view = sw.closest('.view');
+    var svg = view && view.querySelector('svg');
+    if (!svg) return;
+    sw.classList.toggle('off');
+    var off = sw.classList.contains('off');
+    svg.querySelectorAll('.sv-node.sv-kind-' + sw.getAttribute('data-kind')).forEach(function (nd) {
+      nd.classList.toggle('is-off', off);
+    });
+    var offIds = {};
+    svg.querySelectorAll('.sv-node.is-off').forEach(function (nd) { offIds[nd.getAttribute('data-id')] = 1; });
+    svg.querySelectorAll('.sv-route').forEach(function (r) {
+      r.classList.toggle('is-off', !!(offIds[r.getAttribute('data-src')] || offIds[r.getAttribute('data-dst')]));
+    });
+  });
+
+  document.addEventListener('click', function (ev) {
+    var li = ev.target.closest('#panel-conn li.link');
+    if (!li || !lastScope) return;
+    var target = li.getAttribute('data-target');
+    var hit = null;
+    lastScope.querySelectorAll('.sv-node').forEach(function (nd) {
+      if (!hit && nd.getAttribute('data-id') === target) hit = nd;
+    });
+    if (!hit) return;
+    hit.scrollIntoView({ block: 'center', inline: 'center' });
+    show(target, (hit.getAttribute('data-evidence') || '').split('\\n').filter(Boolean), hit);
   });
 
   function openView(node, child) {
@@ -582,7 +714,9 @@ def _legend(canvas: object) -> Markup:
             tag(
                 "span",
                 join((raw('<span class="sw"></span>'), esc(f"{kind} {n}"))),
-                class_=f"sv-kind-{_kind_slug(kind)}",
+                class_=f"sv-kind-{_kind_slug(kind)} sw-toggle",
+                data_kind=_kind_slug(kind),
+                title="click to mute this kind",
             )
             for kind, n in sorted(counts.items())
         ),
@@ -644,6 +778,7 @@ def _tab(ds: DiagramSet, lo: LaidOutDiagram, style: Style) -> Markup:
         "section",
         join(
             (
+                _explore_bar(),
                 join(_view(ds, lo, sid, style) for sid in ordered if sid in lo.canvases),
                 join(_expanded_views(ds, lo, style)),
                 _withheld_note(lo),
@@ -651,6 +786,28 @@ def _tab(ds: DiagramSet, lo: LaidOutDiagram, style: Style) -> Markup:
         ),
         class_="tab",
         id=f"d-{ds.kind.value}",
+    )
+
+
+def _explore_bar() -> Markup:
+    """Search, and the hint for the two click gestures. Static markup: the
+    only text is ours, so `raw` is right here as it is for the base input."""
+    return tag(
+        "div",
+        join(
+            (
+                raw('<input class="search" placeholder="find a box by id or label">'),
+                tag(
+                    "span",
+                    esc(
+                        "shift-click two boxes for a path; click a legend swatch to mute a kind"
+                    ),
+                    class_="hint",
+                ),
+                tag("span", raw(""), class_="path", aria_live="polite"),
+            )
+        ),
+        class_="explore",
     )
 
 

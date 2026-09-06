@@ -272,3 +272,28 @@ def test_query_cli_exit_codes_and_json(artifact, capsys: pytest.CaptureFixture[s
     assert "SVA-Q-001" in capsys.readouterr().err
     with pytest.raises(SystemExit):
         query_main([str(out), "shortest_path", "only-one"])
+
+
+# --- the explorer controls in the viewer ------------------------------------------------
+
+
+def test_every_tab_carries_the_explorer_controls(artifact) -> None:  # type: ignore[no-untyped-def]
+    """Search, kind toggles on the legend, clickable neighbours and the
+    shift-click path tool (design section 4). The controls only toggle classes
+    on the SVG the reader sees, so the artifact stays byte-deterministic and
+    the picture never gains a claim the layout did not make."""
+    out, _ = artifact
+    html = (out / "index.html").read_text(encoding="utf8")
+    import re
+
+    diagram_tabs = re.findall(r'class="tab" id="d-(?!unavailable)', html)
+    assert diagram_tabs, "the fixture produced no diagram tab"
+    assert html.count('<div class="explore">') == len(diagram_tabs), (
+        "one toolbar per diagram tab"
+    )
+    assert 'class="search" placeholder="find a box by id or label"' in html
+    assert 'class="sv-kind-module sw-toggle" data-kind="module"' in html
+    assert "li.setAttribute('data-target'" in html, "passport neighbours are clickable"
+    assert "function pinPath(node)" in html and "ev.shiftKey" in html
+    assert "svg.is-pinned .sv-node:not(.is-path)" in html
+    assert "closest('.explore input')" in html

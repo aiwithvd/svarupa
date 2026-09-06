@@ -148,6 +148,31 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
         "        if not candidate.is_file():\n            raise DiagnosticError(",
         "        if False:\n            raise DiagnosticError(",
     ),
+    # --- explorer controls ---
+    (
+        "the explorer toolbar is gone",
+        "svarupa/emit/viewer.py",
+        "                _explore_bar(),\n",
+        "",
+    ),
+    (
+        "legend swatches stop naming their kind",
+        "svarupa/emit/viewer.py",
+        "                data_kind=_kind_slug(kind),\n",
+        "",
+    ),
+    (
+        "passport neighbours stop being clickable",
+        "svarupa/emit/viewer.py",
+        "        li.setAttribute('data-target', s === id ? d : s);\n",
+        "",
+    ),
+    (
+        "shift-click no longer pins a path",
+        "svarupa/emit/viewer.py",
+        "    if (ev.shiftKey && node.classList.contains('sv-node')) { pinPath(node); return; }\n",
+        "",
+    ),
 ]
 
 
