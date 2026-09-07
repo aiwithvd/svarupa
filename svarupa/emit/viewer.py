@@ -767,6 +767,11 @@ def _js() -> Markup:
   function openView(node, child) {
     var tab = node.closest('.tab');
     var view = node.closest('.view');
+    // A drill changes the picture: the passport and focus of the box that
+    // was double-clicked belong to the view being left.
+    panel.classList.remove('is-open');
+    clearFocus();
+    clearPins();
     // The expansion to open belongs to the view the box is IN: the plain
     // view's own id, the host of an expanded view for a sibling box, or the
     // embedded child for a box inside the container. Keyed on the child
