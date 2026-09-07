@@ -295,6 +295,9 @@ aside .chips span.chip-kind { border-color: var(--k); color: var(--k); backgroun
 aside .chips span.chip-context { color: var(--ink); }
 aside .chips span.chip-role { color: var(--security-stroke); border-color: color-mix(in srgb, var(--security-stroke) 50%, var(--line)); }
 aside .chips code { font-size: 10px; color: var(--faint); }
+aside .chips.also:not(:empty)::before { content: 'also in'; font-size: 9px; letter-spacing: .12em; text-transform: uppercase; color: var(--faint); }
+aside .chips.also span { cursor: pointer; color: var(--accent); border-color: color-mix(in srgb, var(--accent) 50%, var(--line)); }
+aside .chips.also span:hover { background: var(--raised); }
 aside .summary { margin: 0 0 8px; color: var(--dim); font-size: 11px; }
 aside .rule { border: 0; border-top: 1px solid var(--line); margin: 8px 0 10px; }
 aside .section { font-size: 9px; letter-spacing: .14em; text-transform: uppercase; color: var(--faint); margin: 12px 0 4px; font-weight: 700; }
@@ -451,6 +454,7 @@ def _js() -> Markup:
   var eyebrowEl = document.getElementById('panel-eyebrow');
   var subEl = document.getElementById('panel-sub');
   var metaEl = document.getElementById('panel-meta');
+  var alsoEl = document.getElementById('panel-also');
   var sumEl = document.getElementById('panel-summary');
   var outEl = document.getElementById('panel-out');
   var outH = document.getElementById('panel-out-h');
@@ -533,6 +537,30 @@ def _js() -> Markup:
     var code = document.createElement('code');
     code.textContent = id;
     metaEl.appendChild(code);
+    // The same box in other diagrams: a module is in Architecture, Data
+    // flow, Module deps and a request story at once, and the graph is one
+    // graph. Found by id in the plain views of every other tab.
+    alsoEl.textContent = '';
+    var hereTab = node.closest('.tab');
+    if (!isFrame) {
+      document.querySelectorAll('.tab').forEach(function (other) {
+        if (other === hereTab || !other.id) return;
+        var hit = null;
+        other.querySelectorAll('.view:not([data-host])').forEach(function (v) {
+          if (hit) return;
+          v.querySelectorAll('.sv-node').forEach(function (nd) {
+            if (!hit && nd.getAttribute('data-id') === id) hit = v;
+          });
+        });
+        if (!hit) return;
+        var s = document.createElement('span');
+        s.textContent = other.id.replace(/^d-/, '');
+        s.setAttribute('data-tab', other.id);
+        s.setAttribute('data-view', hit.getAttribute('data-view'));
+        s.setAttribute('data-target', id);
+        alsoEl.appendChild(s);
+      });
+    }
     outEl.textContent = '';
     inEl.textContent = '';
     var nOut = 0, nIn = 0;
@@ -925,6 +953,29 @@ def _js() -> Markup:
     exportView(b.closest('.tab'), b.getAttribute('data-export'));
   });
 
+  document.addEventListener('click', function (ev) {
+    var s = ev.target.closest('#panel-also span');
+    if (!s) return;
+    var tab = document.getElementById(s.getAttribute('data-tab'));
+    if (!tab) return;
+    location.hash = '#' + tab.id;
+    var target = null;
+    tab.querySelectorAll('.view').forEach(function (v) {
+      var open = v.getAttribute('data-view') === s.getAttribute('data-view');
+      v.classList.toggle('is-open', open);
+      if (open) target = v;
+    });
+    if (!target) return;
+    var wanted = s.getAttribute('data-target');
+    var hit = null;
+    target.querySelectorAll('.sv-node').forEach(function (nd) {
+      if (!hit && nd.getAttribute('data-id') === wanted) hit = nd;
+    });
+    if (!hit) return;
+    hit.scrollIntoView({ block: 'center', inline: 'center' });
+    show(wanted, (hit.getAttribute('data-evidence') || '').split('\\n').filter(Boolean), hit);
+  });
+
   function openView(node, child) {
     var tab = node.closest('.tab');
     var view = node.closest('.view');
@@ -1292,6 +1343,7 @@ def render_viewer(
                         tag("h2", raw(""), id="panel-title"),
                         tag("p", raw(""), id="panel-sub", class_="sub"),
                         tag("div", raw(""), id="panel-meta", class_="chips"),
+                        tag("div", raw(""), id="panel-also", class_="chips also"),
                         tag("p", raw(""), id="panel-summary", class_="summary"),
                         tag("h3", esc("Reach in this view"), class_="section"),
                         tag(

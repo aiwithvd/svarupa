@@ -209,6 +209,12 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
         "    copy.querySelectorAll('.is-path, .is-focus, .is-hit, .is-off').forEach(function (x) {",
         "    copy.querySelectorAll('.is-path, .is-focus').forEach(function (x) {",
     ),
+    (
+        "the passport stops listing the other tabs that show the box (JS)",
+        "svarupa/emit/viewer.py",
+        "        if (!hit) return;\n        var s = document.createElement('span');",
+        "        if (true) return;\n        var s = document.createElement('span');",
+    ),
 ]
 
 

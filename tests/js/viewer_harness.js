@@ -182,6 +182,23 @@ if (drillable) {
   console.log('ok drill (no embeddable drillable box in this fixture; skipped)');
 }
 
+// 7b. the same box in another tab: the passport offers the jump and it lands focused there
+fire(a, 'click', { detail: 1 });
+const alsoLinks = Array.from(document.querySelectorAll('#panel-also span'));
+const otherTabsWithA = Array.from(document.querySelectorAll('.tab')).filter((t2) => t2 !== tab && t2.id && Array.from(t2.querySelectorAll('.view:not([data-host]) .sv-node')).some((n) => n.getAttribute('data-id') === a.getAttribute('data-id')));
+check('the passport lists every other tab that shows this box', alsoLinks.length === otherTabsWithA.length, alsoLinks.length + ' vs ' + otherTabsWithA.length);
+if (alsoLinks.length) {
+  fire(alsoLinks[0], 'click', { detail: 1 });
+  const dest = document.getElementById(alsoLinks[0].getAttribute('data-tab'));
+  const destView = dest.querySelector('.view.is-open');
+  const destFocus = destView && destView.querySelector('.sv-node.is-focus');
+  check('the jump opens the other tab on the view holding the box and focuses it',
+    window.location.hash === '#' + dest.id && destFocus && destFocus.getAttribute('data-id') === a.getAttribute('data-id'),
+    'hash=' + window.location.hash + ' focus=' + (destFocus && destFocus.getAttribute('data-id')));
+  window.location.hash = '#' + tab.id;
+}
+fire(view.querySelector('.scroller'), 'click', { detail: 1 });
+
 // 8. export: a standalone SVG with the stylesheet and theme, no interaction state.
 // The export runs from whatever state the SVG is in; plant every state class
 // and call the exporter directly through its button handler on a live focus.
