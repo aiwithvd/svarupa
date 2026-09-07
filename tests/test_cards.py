@@ -107,7 +107,12 @@ def test_viewer_carries_the_strip_and_the_cards_once_per_tab(tmp_path: Path) -> 
     assert main([str(tmp_path), "--out", str(out)]) == 0
     html = (out / "index.html").read_text(encoding="utf8")
     tabs = len(re.findall(r'class="tab" id="d-(?!unavailable)', html))
-    assert html.count('<div class="guided"') == tabs, "one strip per diagram tab"
+    strips = html.count('<div class="guided"')
+    # The request-flow root has boxes but no arrows, so it has no story to
+    # tell and no strip (review #19 F9); every other root gets one.
+    assert strips == tabs - 1, (strips, tabs)
+    request_tab = html.split('id="d-request-flow"')[1].split('class="tab"')[0]
+    assert '<div class="guided"' not in request_tab
     assert html.count('<div class="cards">') == tabs, "cards under every root view only"
     assert 'class="chapter" data-anchor="api" data-focus="' in html
     assert "Guided views " in html and "Explore this system" in html
@@ -117,3 +122,89 @@ def test_viewer_carries_the_strip_and_the_cards_once_per_tab(tmp_path: Path) -> 
         "an empty card says so instead of vanishing"
     )
     assert "function openChapter(li)" in html and "Play story" in html
+
+
+def test_cards_pin_what_the_review_found_unpinned(tmp_path: Path) -> None:
+    """Review #19 F7: entrypoint eligibility, unresolved samples, chapter box
+    counts, chapter ranking and message buses were all mutable with the suite
+    green."""
+    _repo(tmp_path)
+    write(tmp_path, "store/bus.py", "import pika\n")
+    write(
+        tmp_path, "tests/fixtures/package.json", '{"name": "x", "bin": {"decoy": "./d.js"}}\n'
+    )
+    g = graph_of(tmp_path)
+    cards = {c.title: c for c in cards_for(g)}
+    stores = [i.text for i in cards["Data stores"].items]
+    assert "RabbitMQ via pika" in stores, stores
+    assert not any("decoy" in i.text for i in cards["Entry points"].items), (
+        "a fixture manifest under tests/ mints no entry point"
+    )
+    unresolved = cards["Unresolved"]
+    assert unresolved.items, "the fixture has unresolved calls (orders.all, db.q)"
+    assert all("e.g. " in i.text for i in unresolved.items), "samples are shown"
+    assert not any(":" in i.text.split("e.g. ", 1)[1] for i in unresolved.items), (
+        "the scorecard's bucket tag is not shown"
+    )
+    produced, _ = derive_all(g, cluster(g))
+    flow = produced[DiagramKind.DATA_FLOW].root_spec
+    chapters = chapters_for(flow)
+    degree: dict[str, int] = {}
+    for e in flow.edges:
+        degree[e.src] = degree.get(e.src, 0) + 1
+        degree[e.dst] = degree.get(e.dst, 0) + 1
+    ranks = [degree[c.anchor] for c in chapters]
+    assert ranks == sorted(ranks, reverse=True), "chapters lead with the most connected box"
+    for c in chapters:
+        neighbours = {e.dst for e in flow.edges if e.src == c.anchor} | {
+            e.src for e in flow.edges if e.dst == c.anchor
+        }
+        assert set(c.focus) == {c.anchor} | neighbours, (c.anchor, c.focus)
+        assert degree[c.anchor] > 0
+    html = str(render_guided_for_test(chapters))
+    assert " box</span>" not in html or "1 box<" in html
+
+
+def test_chapters_rank_by_connections_not_by_name() -> None:
+    from svarupa.derive.base import DiagramEdge, DiagramKind, DiagramNode, DiagramSpec
+    from svarupa.model import Evidence
+
+    ev = (Evidence(file="a.py", start_line=1, end_line=1),)
+
+    def node(nid: str) -> DiagramNode:
+        return DiagramNode(id=nid, label=nid, kind="endpoint", evidence=ev)
+
+    spec = DiagramSpec(
+        kind=DiagramKind.DATA_FLOW,
+        id="/spec/root",
+        title="t",
+        nodes=(node("alpha"), node("beta"), node("gamma"), node("delta")),
+        edges=(
+            DiagramEdge(src="beta", dst="gamma", label="", evidence=ev),
+            DiagramEdge(src="beta", dst="delta", label="", evidence=ev),
+            DiagramEdge(src="beta", dst="alpha", label="", evidence=ev),
+            DiagramEdge(src="gamma", dst="delta", label="", evidence=ev),
+        ),
+    )
+    chapters = chapters_for(spec)
+    assert [c.anchor for c in chapters][:2] == ["beta", "delta"], (
+        "most connected first, then id"
+    )
+    assert chapters[0].focus == ("beta", "alpha", "delta", "gamma")
+    assert all(len(c.focus) >= 2 for c in chapters), "a chapter has a story"
+
+
+def test_frames_name_their_members_for_the_passport(tmp_path: Path) -> None:
+    _repo(tmp_path)
+    out = tmp_path / "out"
+    assert main([str(tmp_path), "--out", str(out)]) == 0
+    html = (out / "index.html").read_text(encoding="utf8")
+    frames = re.findall(r'class="sv-boundary[^"]*"[^>]*data-members="([^"]*)"', html)
+    assert frames, "stage frames carry data-members"
+    assert any("api" in f.split("&#10;") or "api" in f.split("\n") for f in frames), frames[:3]
+
+
+def render_guided_for_test(chapters):  # type: ignore[no-untyped-def]
+    from svarupa.emit.cards import render_guided
+
+    return render_guided(chapters, "/spec/root")

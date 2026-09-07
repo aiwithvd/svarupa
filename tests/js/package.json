@@ -1,0 +1,6 @@
+{
+  "name": "svarupa-viewer-harness",
+  "private": true,
+  "description": "jsdom runner for the shipped viewer script; installed on demand, skipped by the suite when absent",
+  "devDependencies": { "jsdom": "^25.0.0" }
+}

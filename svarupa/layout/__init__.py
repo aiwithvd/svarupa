@@ -117,8 +117,10 @@ def lay_out_set(ds: DiagramSet, style: Style | None = None) -> LaidOutDiagram:
 # legibility rework), so "fits none of the four" is a fact the report states
 # about a view, not a defect in it.
 VIEWPORTS: tuple[tuple[int, int], ...] = ((1440, 900), (1600, 1000), (1920, 1080), (2048, 1320))
-CHROME_W = 48  # page margins
-CHROME_H = 330  # header, guided strip, title, legend
+# Measured in a real 1440x900 viewport on the demo artifact: the canvas
+# starts 245px down and 20px in; a classic scrollbar takes 15px more.
+CHROME_W = 57
+CHROME_H = 290
 
 
 def fits(canvas: Canvas) -> tuple[tuple[int, int], ...]:

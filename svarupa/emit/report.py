@@ -170,7 +170,7 @@ def render_report(
         ]
     else:
         parts += [
-            "| Diagram | Views | Boxes | Withheld | Depth | Root fits |",
+            "| Diagram | Views | Boxes | Withheld | Depth | Canvas fits |",
             "|---|---:|---:|---:|---:|---|",
         ]
         for kind in sorted(produced, key=lambda k: k.value):
@@ -191,6 +191,12 @@ def render_report(
                 f"| {kind.value} | {len(lo.canvases)} | {boxes} | "
                 f"{len(lo.withheld)} | {ds.depth()} | {fits_in} |"
             )
+        parts.append(
+            "*Canvas fits*: the smallest of four reference viewports (1440x900 to "
+            "2048x1320) in which the root canvas is fully visible below the page "
+            "header without scrolling; the legend and cards below it may still "
+            "scroll. `scrolls` means the canvas itself exceeds every one."
+        )
         parts.append("")
 
     withheld: list[str] = [

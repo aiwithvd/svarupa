@@ -261,6 +261,7 @@ h2 { font-size: 20px; margin: 0 0 4px; font-weight: 700; letter-spacing: -0.02em
    here lays anything out or builds markup from repository text. */
 .legend .sw-toggle { cursor: pointer; user-select: none; }
 .legend .sw-toggle.off { opacity: .35; text-decoration: line-through; }
+.tab { scroll-margin-top: 72px; }
 .explore { display: flex; gap: 10px; align-items: center; margin: 0 0 10px; font-size: 12px; color: var(--faint); flex-wrap: wrap; }
 .explore input { font: inherit; background: var(--raised); color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; width: 280px; }
 .explore .path { color: var(--ink); }
@@ -446,6 +447,7 @@ def _js() -> Markup:
   }
 
   var lastScope = null;
+  var pins = [];
   var eyebrowEl = document.getElementById('panel-eyebrow');
   var subEl = document.getElementById('panel-sub');
   var metaEl = document.getElementById('panel-meta');
@@ -538,7 +540,7 @@ def _js() -> Markup:
       var s = r.getAttribute('data-src'), d = r.getAttribute('data-dst');
       if (s !== id && d !== id) return;
       // The note carries the count ("12 imports"); the label is the verb.
-      var said = r.getAttribute('data-note') || r.getAttribute('data-label') || 'imports';
+      var said = r.getAttribute('data-note') || r.getAttribute('data-label') || 'connects';
       if (s === id) { nOut += 1; connItem(outEl, 'OUT →', said, d); }
       else { nIn += 1; connItem(inEl, '← IN', said, s); }
     });
@@ -557,12 +559,17 @@ def _js() -> Markup:
 
   // Focus: the clicked box glows, a chosen set stays lit, the rest recedes.
   function clearFocus() {
-    document.querySelectorAll('svg.is-focused').forEach(function (s) {
-      s.classList.remove('is-focused');
+    // Every lit state goes: focus, the hover left behind while focus
+    // suspended mouseout (review #19 F1: a background click left the whole
+    // canvas at 28 percent with nothing lit), and a pinned path (F2).
+    document.querySelectorAll('svg.is-focused, svg.is-hovering, svg.is-pinned').forEach(function (s) {
+      s.classList.remove('is-focused'); s.classList.remove('is-hovering'); s.classList.remove('is-pinned');
       s.querySelectorAll('.is-path, .is-focus').forEach(function (x) {
         x.classList.remove('is-path'); x.classList.remove('is-focus');
       });
     });
+    pins = [];
+    document.querySelectorAll('.explore .path').forEach(function (p) { p.textContent = ''; });
   }
   function light(root, node, ids) {
     var svg = node.closest('svg');
@@ -592,7 +599,9 @@ def _js() -> Markup:
   }
 
   function show(name, refs, node) {
-    title.textContent = name;
+    // A frame is titled by what it says (02 / Handlers), not by its id.
+    var frameLabel = node && node.classList.contains('sv-boundary') ? node.getAttribute('data-label') : null;
+    title.textContent = frameLabel || name;
     if (node && (node.classList.contains('sv-node') || node.classList.contains('sv-boundary'))) {
       passport(node);
       if (node.classList.contains('sv-node')) focus(node); else clearFocus();
@@ -684,7 +693,6 @@ def _js() -> Markup:
   // Everything below toggles classes on the SVG the reader already sees;
   // the path is found over the drawn routes of one scope, so it is exactly
   // the path the picture shows, never a claim the picture does not make.
-  var pins = [];
   function clearPins() {
     pins = [];
     document.querySelectorAll('svg.is-pinned').forEach(function (s) {
@@ -866,6 +874,9 @@ def _js() -> Markup:
     var copy = svg.cloneNode(true);
     copy.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
     copy.setAttribute('data-theme', document.documentElement.getAttribute('data-theme') || 'dark');
+    // The click that reaches this button has cleared focus, hover and path,
+    // but a search or a muted kind survives a click and would ride along:
+    // the export is of the diagram, never of the reader's session.
     copy.querySelectorAll('.is-path, .is-focus, .is-hit, .is-off').forEach(function (x) {
       x.classList.remove('is-path'); x.classList.remove('is-focus'); x.classList.remove('is-hit'); x.classList.remove('is-off');
     });
@@ -1286,10 +1297,10 @@ def render_viewer(
                         tag(
                             "div",
                             raw(
-                                '<button id="reach-up" type="button"><span>Upstream</span>'
-                                "<strong>0</strong></button>"
-                                '<button id="reach-down" type="button"><span>Downstream</span>'
-                                "<strong>0</strong></button>"
+                                '<button id="reach-up" type="button" title="everything with an arrow into this box, transitively">'
+                                "<span>Used by</span><strong>0</strong></button>"
+                                '<button id="reach-down" type="button" title="everything this box has an arrow to, transitively">'
+                                "<span>Uses</span><strong>0</strong></button>"
                             ),
                             class_="reach",
                         ),

@@ -238,12 +238,15 @@ def _settle_labels(
         if r.label_at is None or not r.label:
             out.append(r)
             continue
-        # A verb reads best on a horizontal run next to one of its boxes.
-        # "Longest segment first" put every corridor verb on the lane at the
-        # top of the canvas, a screen away from both ends (Wave B screenshots).
-        # Order: horizontal before vertical, then nearest either end, then the
-        # old longest-first list as the fallback; a segment shorter than the
-        # mask is skipped, since the mask would then straddle a corner.
+        # A verb reads best next to one of its boxes. "Longest segment first"
+        # put every corridor verb on the lane at the top of the canvas, a
+        # screen away from both ends (Wave B screenshots). Order: nearest
+        # either end first, horizontal before vertical among equals, then the
+        # old longest-first list as the fallback. A horizontal shorter than
+        # the mask is skipped (the mask would straddle a corner); a vertical
+        # only needs to be taller than the mask. On a corridor edge the end
+        # stubs are ten pixels, so the verb lands on the climb or the drop
+        # beside its box rather than on the lane.
         pts = r.points
         n = len(pts) - 1
         lengths = [
@@ -251,8 +254,8 @@ def _settle_labels(
         ]
         horizontal = [pts[i][1] == pts[i + 1][1] for i in range(n)]
         preferred = sorted(
-            (i for i in range(n) if lengths[i] >= r.label_w),
-            key=lambda i: (not horizontal[i], min(i, n - 1 - i), i),
+            (i for i in range(n) if lengths[i] >= (r.label_w if horizontal[i] else h)),
+            key=lambda i: (min(i, n - 1 - i), not horizontal[i], i),
         )
         longest = sorted(range(n), key=lambda i: -lengths[i])
         chosen: tuple[int, int] | None = None
@@ -656,16 +659,22 @@ def _routes(
             if head in by_id and row_index(by_id[head]) < r
         ]
 
+    # Three x classes that cannot coincide: exits are 0 mod 4, top-side
+    # entries are 2 mod 4, waypoint centres are odd. A box exit in one row
+    # and a box entry in the next lined up on one x, and with two chains
+    # crossing in that gap no track order could keep them apart (review #19's
+    # lattice); distinct residues remove the coincidence before the ordering
+    # has to. A residue shift moves a port by at most three pixels.
     def exit_x(head: str, tail: str) -> int:
         ports = bottom_ports[head]
-        return _fan(by_id[head], ports.index(("out", tail)) + 1, len(ports))
+        return _fan(by_id[head], ports.index(("out", tail)) + 1, len(ports)) & ~3
 
     def entry_x(head: str, tail: str) -> int:
         if row_index(by_id[head]) >= row_index(by_id[tail]):
             ports = bottom_ports[tail]
-            return _fan(by_id[tail], ports.index(("in", head)) + 1, len(ports))
+            return _fan(by_id[tail], ports.index(("in", head)) + 1, len(ports)) & ~3
         top = top_ports[tail]
-        return _fan(by_id[tail], top.index(head) + 1, len(top))
+        return (_fan(by_id[tail], top.index(head) + 1, len(top)) & ~3) | 2
 
     # Every horizontal run through a gap gets its own y inside it, whatever
     # kind of edge it belongs to. Only same-row edges had tracks; every
@@ -684,6 +693,14 @@ def _routes(
     # constraint cycle falls back to sorted order and the validator reports
     # what is left.
     hops_in_gap: dict[int, list[tuple[tuple[str, str], frozenset[int], frozenset[int]]]] = {}
+    # Edges that go round the side lane each get their own x on it: two
+    # reversed keys in one ERD ran the same vertical (SVA-G-015).
+    lane_k: dict[tuple[str, str], int] = {}
+
+    def lane_of(key: tuple[str, str]) -> int:
+        if key not in lane_k:
+            lane_k[key] = len(lane_k)
+        return place.lane_x - 8 * lane_k[key]
 
     def hop(gap: int, key: tuple[str, str], tops: set[int], bottoms: set[int]) -> None:
         hops_in_gap.setdefault(gap, []).append((key, frozenset(tops), frozenset(bottoms)))
@@ -701,19 +718,25 @@ def _routes(
         elif rb > ra:
             inner = [by_id[n] for n in c.nodes[1:-1] if n in by_id]
             if not inner and rb > ra + 1:
-                hop(ra, key, {ax}, {place.lane_x})
-                hop(rb - 1, key, {place.lane_x}, {bx})
+                lane = lane_of(key)
+                hop(ra, key, {ax}, {lane})
+                hop(rb - 1, key, {lane}, {bx})
             else:
                 previous, px = a, ax
                 for w in inner:
-                    wx = w.x + w.w // 2
+                    wx = (w.x + w.w // 2) | 1
                     hop(_row_of(previous, rows), key, {px}, {wx})
                     previous, px = w, wx
                 hop(_row_of(previous, rows), key, {px}, {bx})
         else:
-            hop(ra, key, {ax, bx}, set())
+            # Reversed without waypoints (the grid engine): round the lane,
+            # so its horizontal runs are in the gaps below a and below b.
+            lane_of(key)
+            hop(ra, key, {ax}, set())
+            hop(rb, key, {bx}, set())
 
     tracks: dict[int, dict[tuple[str, str], int]] = {}
+    dogleg: set[tuple[str, str]] = set()
     for gap, nets in hops_in_gap.items():
         keys = sorted({k for k, _t, _b in nets})
         tops: dict[tuple[str, str], set[int]] = {k: set() for k in keys}
@@ -732,7 +755,12 @@ def _routes(
         while pending:
             ready = sorted(n for n in pending if not (above[n] & pending))
             if not ready:
-                ready = sorted(pending)[:1]  # a cycle: take the smallest, report later
+                # Two nets cross inside this gap, each with a terminal on the
+                # other's column: no order satisfies both. Channel routing
+                # answers with a dogleg; here the smallest net goes first and
+                # its waypoint verticals move three pixels aside.
+                ready = sorted(pending)[:1]
+                dogleg.add(ready[0])
             order.append(ready[0])
             pending.discard(ready[0])
         tracks[gap] = {k: i for i, k in enumerate(order)}
@@ -777,7 +805,7 @@ def _routes(
             # which is ugly and correct, rather than through.
             gap_a = track_y(ra, (c.src, c.dst))
             gap_b = track_y(rb - 1, (c.src, c.dst))
-            lane = place.lane_x
+            lane = lane_of((c.src, c.dst))
             points = [
                 (ax, a.bottom),
                 (ax, gap_a),
@@ -792,18 +820,30 @@ def _routes(
             previous = a
             for w in waypoints:
                 gap = track_y(row_index(previous), (c.src, c.dst))
-                wx = w.x + w.w // 2
+                wx = ((w.x + w.w // 2) | 1) + (2 if (c.src, c.dst) in dogleg else 0)
                 points += [(points[-1][0], gap), (wx, gap), (wx, w.y), (wx, w.bottom)]
                 previous = w
             gap = track_y(row_index(previous), (c.src, c.dst))
             points += [(points[-1][0], gap), (bx, gap), (bx, b.y)]
         else:
-            # A reversed edge: it was flipped for layering, so it runs upward
-            # here. Enter the target from below so the arrowhead still points
-            # at the real dependency.
+            # A reversed edge with no waypoints: only the grid engine gets
+            # here (layering flips and dummies the others). It runs upward,
+            # round the side lane, and enters the target from below so the
+            # arrowhead still points at the real dependency. A vertical at
+            # the target's x ran straight through every full row between
+            # (review #19 F4: any ERD of three rows with a backward key was
+            # withheld).
             gap_a = track_y(ra, (c.src, c.dst))
-            gap_b = _mid(place.gaps[rb])
-            points = [(ax, a.bottom), (ax, gap_a), (bx, gap_a), (bx, gap_b), (bx, b.bottom)]
+            gap_b = track_y(rb, (c.src, c.dst))
+            lane = lane_of((c.src, c.dst))
+            points = [
+                (ax, a.bottom),
+                (ax, gap_a),
+                (lane, gap_a),
+                (lane, gap_b),
+                (bx, gap_b),
+                (bx, b.bottom),
+            ]
 
         # A reversed chain was laid out downward for the layering, so its
         # polyline runs from the layering source. Flipping the point order
@@ -845,11 +885,6 @@ def _row_of(box: Box, rows: Sequence[range]) -> int:
         if extent.start <= box.y < extent.stop:
             return i
     return 0
-
-
-def _mid(gap: range) -> int:
-    """The middle of a gap band, floored so it stays an integer."""
-    return (gap.start + gap.stop) // 2
 
 
 def _track(gap: range, nth: int, total: int) -> int:
@@ -1238,7 +1273,11 @@ def flow(
     # adjacent tracks through the same gap leave room for the trunks.
     drop_k: dict[tuple[str, str], int] = {}
     fwd_drops: dict[int, int] = {}
-    bwd_drops: dict[int, int] = {}
+    # Everything on the RIGHT side of a column (backward drops into it and
+    # corridor climbs out of it) draws from one counter per gap: two
+    # counters put a same-column edge and a backward edge on one vertical
+    # (review #19 F3), which SVA-G-015 then withheld.
+    right_k: dict[int, int] = {}
     trunk: dict[tuple[int, str], int] = {}
     straight: set[tuple[str, str]] = set()
     for src, dst in skips:
@@ -1255,20 +1294,19 @@ def flow(
         else:
             g = order.index(lb)
             if (g, dst) not in trunk:
-                trunk[(g, dst)] = bwd_drops.get(g, 0)
-                bwd_drops[g] = bwd_drops.get(g, 0) + 1
+                trunk[(g, dst)] = right_k.get(g, 0)
+                right_k[g] = right_k.get(g, 0) + 1
             drop_k[(src, dst)] = trunk[(g, dst)]
     corridor_edges = [s for s in skips if s not in straight]
-    # Each corridor climb from a column gets its own x. Indexed per SOURCE
-    # (exit rank), two sources with the same rank climbed on one line, and
-    # 65 distinct edges were drawn on top of each other on one canvas with
-    # no finding (review #17 F2); the validator now has SVA-G-015 for it.
+    # Each corridor climb from a column gets its own x, after the backward
+    # drops into that column. Indexed per SOURCE (exit rank), two sources
+    # with the same rank climbed on one line (review #17 F2).
     climb_k: dict[tuple[str, str], int] = {}
-    climbs: dict[int, int] = {}
     for s in corridor_edges:
-        col = levels.get(s[0], 0)
-        climb_k[s] = climbs.get(col, 0)
-        climbs[col] = climbs.get(col, 0) + 1
+        g = order.index(levels.get(s[0], 0))
+        climb_k[s] = right_k.get(g, 0)
+        right_k[g] = right_k.get(g, 0) + 1
+    bwd_drops = right_k
     # Lanes reserved for edges that then ran straight are given back: the
     # shift is uniform, so no crossing decision above changes.
     if straight:

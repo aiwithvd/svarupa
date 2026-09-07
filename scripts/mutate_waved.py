@@ -13,7 +13,13 @@ import tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 PY = ROOT / ".venv" / "bin" / "python"
-SUITE = ["tests/test_waved.py", "tests/test_cards.py", "tests/test_emit.py"]
+SUITE = [
+    "tests/test_waved.py",
+    "tests/test_cards.py",
+    "tests/test_emit.py",
+    "tests/test_viewer_js.py",
+    "tests/test_layout.py",
+]
 
 MUTATIONS: list[tuple[str, str, str, str]] = [
     (
@@ -49,14 +55,14 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     (
         "the export buttons are gone",
         "svarupa/emit/viewer.py",
-        "                    '<span class=\"export\"><button type=\"button\" data-export=\"svg\">Export SVG</button>'\n                    '<button type=\"button\" data-export=\"png\">Export PNG</button></span>'",
+        '                    \'<span class="export"><button type="button" data-export="svg">Export SVG</button>\'\n                    \'<button type="button" data-export="png">Export PNG</button></span>\'',
         "                    ''",
     ),
     (
         "the MCP server drops a tool",
         "svarupa/query/mcp_server.py",
-        '    @server.tool(description="The most connected nodes.")\n    def god_nodes(top_n: int = 10) -> dict[str, Any]:\n        return run_query(index, "god_nodes", [], top=top_n)\n',
-        '    def god_nodes(top_n: int = 10) -> dict[str, Any]:\n        return run_query(index, "god_nodes", [], top=top_n)\n',
+        '    @server.tool(description="The most connected nodes.")\n    def god_nodes(',
+        "    def god_nodes(",
     ),
     (
         "an MCP tool answers with a different implementation than the CLI",
@@ -69,6 +75,139 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
         "svarupa/query/mcp_server.py",
         "    except ImportError as exc:\n        raise DiagnosticError(",
         "    except MemoryError as exc:\n        raise DiagnosticError(",
+    ),
+    # --- review #19: the reviewer's surviving mutations, and the JS harness ---
+    (
+        "the unresolved card loses its samples",
+        "svarupa/emit/cards.py",
+        '            tail = f" · e.g. {\', \'.join(samples)}" if samples else ""',
+        '            tail = ""',
+    ),
+    (
+        "the unresolved card shows the scorecard's bucket tags",
+        "svarupa/emit/cards.py",
+        '                s.split(":", 1)[1] if ":" in s else s',
+        "                s",
+    ),
+    (
+        "a chapter counts a box that is not in its view",
+        "svarupa/emit/cards.py",
+        "            focus=(n.id, *sorted(neighbours.get(n.id, set()))),",
+        "            focus=(n.id, *sorted(neighbours.get(n.id, set())), n.id + '#ghost'),",
+    ),
+    (
+        "chapters are ranked by id instead of degree",
+        "svarupa/emit/cards.py",
+        "    ranked = sorted(starred, key=lambda n: (-degree.get(n.id, 0), n.id))[:MAX_CHAPTERS]",
+        "    ranked = sorted(starred, key=lambda n: n.id)[:MAX_CHAPTERS]",
+    ),
+    (
+        "a box with no arrows leads a chapter",
+        "svarupa/emit/cards.py",
+        "        if degree.get(n.id)\n        and (",
+        "        if True\n        and (",
+    ),
+    (
+        "message buses fall out of Data stores",
+        "svarupa/emit/cards.py",
+        '        if x.category in ("database", "messagebus"):',
+        '        if x.category == "database":',
+    ),
+    (
+        "SVA-G-016 becomes a warning",
+        "svarupa/layout/__init__.py",
+        '            code="SVA-G-016",\n            severity=Severity.INFO,',
+        '            code="SVA-G-016",\n            severity=Severity.WARNING,',
+    ),
+    (
+        "the mutual-pair exemption is dropped",
+        "svarupa/layout/validate.py",
+        "            if r.src == s.src or r.dst == s.dst or {r.src, r.dst} == {s.src, s.dst}:",
+        "            if r.src == s.src or r.dst == s.dst:",
+    ),
+    (
+        "the overlap gate tolerates a few pixels",
+        "svarupa/layout/validate.py",
+        "                    if hi > lo:",
+        "                    if hi > lo + 3:",
+    ),
+    (
+        "backward drops and climbs draw from separate counters again",
+        "svarupa/layout/engines.py",
+        "        g = order.index(levels.get(s[0], 0))\n        climb_k[s] = right_k.get(g, 0)\n        right_k[g] = right_k.get(g, 0) + 1",
+        "        g = order.index(levels.get(s[0], 0))\n        climb_k[s] = 0\n        right_k[g] = right_k.get(g, 0) + 1",
+    ),
+    (
+        "the grid's reversed edge runs through the rows again",
+        "svarupa/layout/engines.py",
+        "            points = [\n                (ax, a.bottom),\n                (ax, gap_a),\n                (lane, gap_a),\n                (lane, gap_b),\n                (bx, gap_b),\n                (bx, b.bottom),\n            ]",
+        "            points = [(ax, a.bottom), (ax, gap_a), (bx, gap_a), (bx, gap_b), (bx, b.bottom)]",
+    ),
+    (
+        "the channel constraint is inverted",
+        "svarupa/layout/engines.py",
+        "                if m != n and tops[m] & bottoms[n]:",
+        "                if m != n and bottoms[m] & tops[n]:",
+    ),
+    (
+        "the chrome constants are ignored",
+        "svarupa/layout/__init__.py",
+        "CHROME_W = 57\nCHROME_H = 290",
+        "CHROME_W = 0\nCHROME_H = 0",
+    ),
+    (
+        "MCP affected ignores a negative depth clamp",
+        "svarupa/query/mcp_server.py",
+        '        return run_query(index, "affected", [label], relation=relation, depth=max(0, depth))',
+        '        return run_query(index, "affected", [label], relation=relation, depth=depth)',
+    ),
+    (
+        "regions stop naming their members",
+        "svarupa/emit/svg.py",
+        '        data_members="\\n".join(region.members),\n',
+        "",
+    ),
+    (
+        "a background click leaves the hover state behind (JS)",
+        "svarupa/emit/viewer.py",
+        "      s.classList.remove('is-focused'); s.classList.remove('is-hovering'); s.classList.remove('is-pinned');",
+        "      s.classList.remove('is-focused'); s.classList.remove('is-pinned');",
+    ),
+    (
+        "a pinned path survives the next click (JS)",
+        "svarupa/emit/viewer.py",
+        "    document.querySelectorAll('svg.is-focused, svg.is-hovering, svg.is-pinned').forEach(function (s) {",
+        "    document.querySelectorAll('svg.is-focused, svg.is-hovering').forEach(function (s) {",
+    ),
+    (
+        "reach direction inverted (JS)",
+        "svarupa/emit/viewer.py",
+        "        var nxt = dir === 'down' ? (s === cur ? d : null) : (d === cur ? s : null);",
+        "        var nxt = dir === 'up' ? (s === cur ? d : null) : (d === cur ? s : null);",
+    ),
+    (
+        "an invented verb for an unlabelled arrow (JS)",
+        "svarupa/emit/viewer.py",
+        "      var said = r.getAttribute('data-note') || r.getAttribute('data-label') || 'connects';",
+        "      var said = r.getAttribute('data-note') || r.getAttribute('data-label') || 'imports';",
+    ),
+    (
+        "a drill keeps the passport open (JS)",
+        "svarupa/emit/viewer.py",
+        "    panel.classList.remove('is-open');\n    clearFocus();\n    clearPins();",
+        "    clearPins();",
+    ),
+    (
+        "export keeps a search or mute state (JS)",
+        "svarupa/emit/viewer.py",
+        "    copy.classList.remove('is-focused', 'is-hovering', 'is-pinned', 'is-searching');\n",
+        "    copy.classList.remove('is-focused', 'is-hovering', 'is-pinned');\n",
+    ),
+    (
+        "export keeps hit and muted boxes (JS)",
+        "svarupa/emit/viewer.py",
+        "    copy.querySelectorAll('.is-path, .is-focus, .is-hit, .is-off').forEach(function (x) {",
+        "    copy.querySelectorAll('.is-path, .is-focus').forEach(function (x) {",
     ),
 ]
 

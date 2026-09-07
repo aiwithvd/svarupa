@@ -79,11 +79,16 @@ def cards_for(graph: Graph) -> tuple[Card, ...]:
         shown = ", ".join(paths[:3]) + (" …" if len(paths) > 3 else "")
         label = m or "(repo root)"
         entries.append(
-            CardItem(f"{label}: {len(by_module[m])} routes · {shown}", tuple(route_ev[m][:8]))
+            CardItem(
+                f"{label}: {len(by_module[m])} route{'s' if len(by_module[m]) != 1 else ''} · {shown}",
+                tuple(route_ev[m][:8]),
+            )
         )
+    # Declared entrypoints are manifest facts; the extractor already refuses
+    # manifests under test and fixture paths (review #13 F3), so every fact
+    # here is eligible by construction.
     for ep in sorted(graph.entrypoints):
-        if ep.file in eligible or ep.file.endswith(("pyproject.toml", "package.json")):
-            entries.append(CardItem(f"{ep.name} → {ep.target} ({ep.lang})", (ep.evidence,)))
+        entries.append(CardItem(f"{ep.name} → {ep.target} ({ep.lang})", (ep.evidence,)))
 
     stores: dict[str, list[Evidence]] = {}
     apis: dict[str, list[Evidence]] = {}
@@ -106,7 +111,12 @@ def cards_for(graph: Graph) -> tuple[Card, ...]:
     unresolved: list[CardItem] = []
     for (lang, kind, res), n in sorted(graph.scorecard.counts.items()):
         if res is Resolution.UNRESOLVED and n:
-            samples = sorted(graph.scorecard.samples.get((lang, kind), []))[:3]
+            # Samples are recorded as `<bucket>:<name>`; the bucket tag is the
+            # scorecard's, not the repository's (review #19 F10).
+            samples = sorted(
+                s.split(":", 1)[1] if ":" in s else s
+                for s in graph.scorecard.samples.get((lang, kind), [])
+            )[:3]
             tail = f" · e.g. {', '.join(samples)}" if samples else ""
             unresolved.append(CardItem(f"{lang} {kind}: {n} unresolved{tail}", ()))
 
@@ -140,10 +150,13 @@ def chapters_for(spec: DiagramSpec) -> tuple[Chapter, ...]:
         degree[e.dst] = degree.get(e.dst, 0) + 1
         neighbours.setdefault(e.src, set()).add(e.dst)
         neighbours.setdefault(e.dst, set()).add(e.src)
+    # A chapter is a story: a box with no arrows in this view has none to
+    # tell (review #19 F9 found "1 boxes" chapters on the request-flow root).
     starred = [
         n
         for n in spec.nodes
-        if "api" in (n.attr("roles") or "").split(",") or n.kind in ("service", "endpoint")
+        if degree.get(n.id)
+        and ("api" in (n.attr("roles") or "").split(",") or n.kind in ("service", "endpoint"))
     ]
     if not starred:
         starred = [n for n in spec.nodes if degree.get(n.id)]
@@ -218,7 +231,11 @@ def render_guided(chapters: tuple[Chapter, ...], root: str) -> Markup:
                 (
                     tag("span", esc(f"{i + 1:02d}"), class_="num"),
                     tag("span", esc(ch.title), class_="title"),
-                    tag("span", esc(f"{len(ch.focus)} boxes"), class_="counts"),
+                    tag(
+                        "span",
+                        esc(f"{len(ch.focus)} box{'es' if len(ch.focus) != 1 else ''}"),
+                        class_="counts",
+                    ),
                 )
             ),
             class_="chapter",

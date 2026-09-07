@@ -227,6 +227,20 @@ hash), guided views and cards (Wave D).
 | **D. Gates and stories** | four-viewport containment in CI, guided views, computed cards (from B), legend and card polish, export; corridor labels settle near an end of their edge rather than on the lane (seen in B's screenshots) | the containment gate fails on a planted overflow |
 | **E. MCP** | the query tools as an MCP server (P2 item) | tool names and params match section 4 |
 
+*As built (D and E, 2026-09-07):* one line per edge in every router with
+SVA-G-015 as an ERROR (620 shared lines on descovo went to zero); labels
+prefer a horizontal segment near an end; guided views and cards computed
+from the root spec and the graph (section 2.4), every item citing; the
+four-viewport containment check is arithmetic on the canvas and an INFO
+(SVA-G-016) plus a "Root fits" report column, because wide views scroll at
+natural size by decision, so the check informs rather than fails; Export
+SVG and PNG (2x) serialise the open view with the stylesheet and theme
+inlined; `svarupa mcp <artifact>` serves the seven query functions under
+Graphify's names over stdio through the same `run_query` as the CLI, with
+the SDK as an optional extra (SVA-Q-002 without it). Not built: guided
+views as animated stories beyond stepping, cross-tab navigation from a
+service into its code (still a stub), "Copy link".
+
 The Archify teardown's sharpest line still holds and is the reason this can
 work: their spec-to-HTML step is deterministic and only their prompt-to-spec
 step is not. Wave A replaces the prompt with extraction.

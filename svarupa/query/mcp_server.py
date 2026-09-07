@@ -35,7 +35,7 @@ def _sdk() -> Any:
                 message="the MCP server needs the optional mcp dependency",
                 subject="svarupa mcp",
                 suggested_fixes=(
-                    "pip install 'svarupa[mcp]'",
+                    "pip install 'svarupa[mcp]'  (the SDK 2.x; 1.x has a different module layout)",
                     "or: uv tool install 'svarupa[mcp]'",
                 ),
             )
@@ -59,7 +59,9 @@ def build_server(index: GraphIndex, name: str = "svarupa") -> Any:
         description="Keyword search over names and rationale text, then the neighbourhood of the hits."
     )
     def query_graph(question: str, depth: int = 1, token_budget: int = 2000) -> dict[str, Any]:
-        return run_query(index, "query_graph", [question], depth=depth, budget=token_budget)
+        return run_query(
+            index, "query_graph", [question], depth=max(0, depth), budget=max(50, token_budget)
+        )
 
     @server.tool(
         description="One node by exact id, qualified name or label, with its citations."
@@ -78,18 +80,22 @@ def build_server(index: GraphIndex, name: str = "svarupa") -> Any:
         source: str, target: str, max_hops: int = 6, undirected: bool = False
     ) -> dict[str, Any]:
         return run_query(
-            index, "shortest_path", [source, target], max_hops=max_hops, undirected=undirected
+            index,
+            "shortest_path",
+            [source, target],
+            max_hops=max(1, max_hops),
+            undirected=undirected,
         )
 
     @server.tool(
         description="What depends on a node, transitively, with the hop count and the relation each was reached by."
     )
     def affected(label: str, relation: str | None = None, depth: int = 3) -> dict[str, Any]:
-        return run_query(index, "affected", [label], relation=relation, depth=depth)
+        return run_query(index, "affected", [label], relation=relation, depth=max(0, depth))
 
     @server.tool(description="The most connected nodes.")
     def god_nodes(top_n: int = 10) -> dict[str, Any]:
-        return run_query(index, "god_nodes", [], top=top_n)
+        return run_query(index, "god_nodes", [], top=max(1, top_n))
 
     @server.tool(
         description="Counts by node kind, edge kind and context; the commit and dirty flag of the tree."

@@ -47,7 +47,7 @@ dependencies = [
 leiden = ["leidenalg>=0.10", "python-igraph>=0.11"]
 # The MCP server (`svarupa mcp <artifact>`) exposes the query functions to
 # agents; the SDK is optional so the CLI stays light.
-mcp = ["mcp>=1.2"]
+mcp = ["mcp>=2"]
 
 [project.scripts]
 svarupa = "svarupa.cli:main"
