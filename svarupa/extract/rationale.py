@@ -2,15 +2,19 @@
 
 Graphify's consumers ask "why does this exist" as often as "what calls this",
 and the answer, when the codebase has one, is a docstring or a `# NOTE`,
-`# WHY`, `# HACK`, `# TODO` comment. Each becomes a node cited at its own
-line, attached by a `rationale_for` edge to the innermost definition that
-contains it, or to the module when nothing does.
+`# WHY`, `# HACK`, `# TODO`, `# FIXME` comment. Each becomes a node cited at
+its own lines, attached by a `rationale_for` edge to the innermost definition
+that contains it, or to the module when nothing does.
 
-This is a line scanner, not a parser: a docstring is the first string
-statement of a file or the one right under a `class` line, a marker comment
-is a line whose comment starts with one of the markers. It runs only over
-architecture-eligible source, so vendored and generated text never becomes a
-rationale claim.
+The parser decides what is a comment and what is a docstring. The first
+version was a line scanner, and review #18 fed it a `TODO` inside a URL
+string, a `class B:` inside a docstring and a one-line docstring with a
+trailing comment, and got a rationale node for each, one of them cited as
+spanning fourteen lines into the next class. tree-sitter is already loaded
+for both languages; a `comment` node is a comment and a `string` that is the
+first statement of a module or class body is a docstring, and nothing else
+is either. Runs only over architecture-eligible source, so vendored and
+generated text never becomes a rationale claim.
 """
 
 from __future__ import annotations
@@ -19,18 +23,24 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+import tree_sitter_python as tsp
+import tree_sitter_typescript as tst
+from tree_sitter import Language, Node, Parser
+
 from svarupa.model import Evidence
 
 __all__ = ["MARKERS", "RationaleFact", "rationale_facts"]
 
 MARKERS = ("NOTE", "WHY", "HACK", "TODO", "FIXME")
-_MARKER_RE = re.compile(
-    r"(?:#|//)\s*(?P<kind>" + "|".join(MARKERS) + r")\b[:\s-]*(?P<text>.*)$"
-)
-_CLASS_RE = re.compile(r"^\s*class\s+\w+.*:\s*(#.*)?$")
-_TS_LEAD = re.compile(r"^\s*/\*\*")
+# Anchored at the start of the comment's text, so a marker word later in a
+# sentence ("see the TODO list") is not a marker.
+_MARKER_RE = re.compile(r"^\s*(?P<kind>" + "|".join(MARKERS) + r")\b[:\s-]*(?P<text>.*)$")
 _MAX_TEXT = 200
-_SOURCE_SUFFIXES = (".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs")
+_PY = Language(tsp.language())
+_TS = Language(tst.language_typescript())
+_TSX = Language(tst.language_tsx())
+_PY_SUFFIXES = (".py",)
+_TS_SUFFIXES = (".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs")
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,81 +61,146 @@ def _clean(text: str) -> str:
     return text[: _MAX_TEXT - 1] + "…" if len(text) > _MAX_TEXT else text
 
 
-def _docstring_at(lines: list[str], i: int) -> tuple[str, int] | None:
-    """The first content line of a triple-quoted string starting at `i`, and
-    the index of its closing line; None when `i` does not open one."""
-    stripped = lines[i].strip()
-    for q in ('"""', "'''"):
-        if stripped.startswith(q):
-            body = stripped[len(q) :]
-            if body.endswith(q) and len(body) >= len(q):
-                return _clean(body[: -len(q)]), i
-            first = body.strip()
-            for j in range(i + 1, min(len(lines), i + 200)):
-                seg = lines[j]
-                if q in seg:
-                    if not first:
-                        first = seg.split(q, 1)[0].strip()
-                    return _clean(first), j
-                if not first:
-                    first = seg.strip()
-            return None
-    return None
+def _text(data: bytes, node: Node) -> str:
+    return data[node.start_byte : node.end_byte].decode("utf8", errors="replace")
 
 
-def _ts_block_at(lines: list[str], i: int) -> tuple[str, int] | None:
-    if not _TS_LEAD.match(lines[i]):
+def _first_line(body: str) -> str:
+    for line in body.splitlines():
+        cleaned = _clean(line)
+        if cleaned:
+            return cleaned
+    return ""
+
+
+def _py_string_body(text: str) -> str:
+    """The content of a Python string literal: prefix and quotes removed."""
+    i = 0
+    while i < len(text) and text[i] in "rRbBuUfF":
+        i += 1
+    text = text[i:]
+    for q in ('"""', "'''", '"', "'"):
+        if text.startswith(q) and text.endswith(q) and len(text) >= 2 * len(q):
+            return text[len(q) : -len(q)]
+    return text
+
+
+def _docstring_of(body: Node | None, data: bytes) -> tuple[Node, str] | None:
+    """The string node that is the first statement of `body`, with its text."""
+    if body is None:
         return None
-    first = lines[i].split("/**", 1)[1].split("*/", 1)[0].strip()
-    for j in range(i, min(len(lines), i + 200)):
-        seg = lines[j]
-        if j > i and not first:
-            first = seg.strip().lstrip("*").strip()
-        if "*/" in seg:
-            return (_clean(first), j) if first else None
+    for child in body.children:
+        if child.type == "comment":
+            continue
+        if child.type == "expression_statement" and child.children:
+            s = child.children[0]
+            if s.type == "string":
+                return s, _first_line(_py_string_body(_text(data, s)))
+        return None
     return None
 
 
-def _scan(file: str, lines: list[str]) -> list[RationaleFact]:
+def _comment_fact(file: str, node: Node, data: bytes) -> RationaleFact | None:
+    text = _text(data, node)
+    if text.startswith("#"):
+        text = text[1:]
+    elif text.startswith("/*"):
+        text = text[2:].removeprefix("*").removesuffix("*/")
+    elif text.startswith("//"):
+        text = text[2:]
+    first = text.strip().splitlines()[0] if text.strip() else ""
+    m = _MARKER_RE.match(first)
+    if not m or not _clean(m.group("text")):
+        return None
+    return RationaleFact(
+        file,
+        node.start_point.row + 1,
+        node.end_point.row + 1,
+        m.group("kind").lower(),
+        _clean(m.group("text")),
+    )
+
+
+def _walk(node: Node):  # type: ignore[no-untyped-def]
+    stack = [node]
+    while stack:
+        n = stack.pop()
+        yield n
+        stack.extend(reversed(n.children))
+
+
+def _scan_python(file: str, data: bytes) -> list[RationaleFact]:
+    root = Parser(_PY).parse(data).root_node
     out: list[RationaleFact] = []
-    is_py = file.endswith(".py")
-    # Module docstring: the first non-blank, non-comment line.
-    for i, raw in enumerate(lines):
-        s = raw.strip()
-        if not s or s.startswith("#") or (not is_py and s.startswith("//")):
-            continue
-        found = _docstring_at(lines, i) if is_py else _ts_block_at(lines, i)
-        if found and found[0]:
-            out.append(RationaleFact(file, i + 1, found[1] + 1, "docstring", found[0]))
-        break
-    # Class docstrings (Python): the string right under a class line.
-    if is_py:
-        for i, raw in enumerate(lines[:-1]):
-            if _CLASS_RE.match(raw):
-                found = _docstring_at(lines, i + 1)
-                if found and found[0]:
-                    out.append(RationaleFact(file, i + 2, found[1] + 1, "docstring", found[0]))
-    # Marker comments.
-    for i, raw in enumerate(lines):
-        m = _MARKER_RE.search(raw)
-        if m and _clean(m.group("text")):
-            out.append(
-                RationaleFact(
-                    file, i + 1, i + 1, m.group("kind").lower(), _clean(m.group("text"))
+    found = _docstring_of(root, data)
+    if found and found[1]:
+        s, text = found
+        out.append(
+            RationaleFact(file, s.start_point.row + 1, s.end_point.row + 1, "docstring", text)
+        )
+    for n in _walk(root):
+        if n.type == "class_definition":
+            found = _docstring_of(n.child_by_field_name("body"), data)
+            if found and found[1]:
+                s, text = found
+                out.append(
+                    RationaleFact(
+                        file, s.start_point.row + 1, s.end_point.row + 1, "docstring", text
+                    )
                 )
-            )
-    return sorted(out, key=lambda f: (f.line, f.kind))
+        elif n.type == "comment":
+            fact = _comment_fact(file, n, data)
+            if fact:
+                out.append(fact)
+    return out
+
+
+def _scan_typescript(file: str, data: bytes) -> list[RationaleFact]:
+    root = Parser(_TSX if file.endswith(".tsx") else _TS).parse(data).root_node
+    out: list[RationaleFact] = []
+    first = next((c for c in root.children), None)
+    doc: Node | None = None
+    if first is not None and first.type == "comment":
+        text = _text(data, first)
+        if text.startswith("/**"):
+            body = text[3:].removesuffix("*/")
+            line = _first_line(body)
+            if line:
+                doc = first
+                out.append(
+                    RationaleFact(
+                        file,
+                        first.start_point.row + 1,
+                        first.end_point.row + 1,
+                        "docstring",
+                        line,
+                    )
+                )
+    # Only the comment consumed as the docstring is exempt: a `// TODO` that
+    # happens to be the file's first node is still a marker.
+    for n in _walk(root):
+        if n.type == "comment" and n is not doc:
+            fact = _comment_fact(file, n, data)
+            if fact:
+                out.append(fact)
+    return out
 
 
 def rationale_facts(root: Path, files: frozenset[str] | set[str]) -> tuple[RationaleFact, ...]:
     """Every rationale in the given repository-relative source files."""
     out: list[RationaleFact] = []
     for rel in sorted(files):
-        if not rel.endswith(_SOURCE_SUFFIXES):
+        if not rel.endswith(_PY_SUFFIXES + _TS_SUFFIXES):
             continue
         try:
-            text = (root / rel).read_text(encoding="utf8", errors="replace")
+            data = (root / rel).read_bytes()
         except OSError:
             continue
-        out.extend(_scan(rel, text.splitlines()))
+        try:
+            facts = (
+                _scan_python(rel, data) if rel.endswith(".py") else _scan_typescript(rel, data)
+            )
+        except (RecursionError, ValueError):
+            continue
+        out.extend(sorted(facts, key=lambda f: (f.line, f.kind, f.text)))
     return tuple(out)

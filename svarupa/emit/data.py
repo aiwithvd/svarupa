@@ -81,6 +81,19 @@ _EXTERNAL_KIND = {"database": "datastore", "messagebus": "queue", "cloud": "reso
 _EXTERNAL_CONTEXT = {"database": "store", "messagebus": "message", "cloud": "cloud"}
 
 
+def _fresh(candidate: str, taken: set[str]) -> str:
+    """`candidate`, or `candidate#2`, `#3`... if it is already a node id.
+
+    Deterministic, and never silent: a consumer indexing nodes by id (the
+    query surface, the viewer) would keep the last of two and lose one."""
+    nid, n = candidate, 1
+    while nid in taken:
+        n += 1
+        nid = f"{candidate}#{n}"
+    taken.add(nid)
+    return nid
+
+
 def _fact_nodes_and_edges(
     graph: Graph,
 ) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
@@ -89,10 +102,14 @@ def _fact_nodes_and_edges(
     eligibility like the diagrams; each cites the declaring or importing line."""
     nodes: list[dict[str, object]] = []
     edges: list[dict[str, object]] = []
+    taken: set[str] = set()
     for r in sorted(graph.routes):
         if r.file not in graph.architecture_paths:
             continue
-        rid = f"{r.file}#route:{r.method} {r.path}"
+        # The handler is part of the id: one file holding two routers with
+        # the same declared paths collapsed four endpoints into two ids on
+        # the acceptance repo (review #18 F1). A node id is a key.
+        rid = _fresh(f"{r.file}#{r.handler}#route:{r.method} {r.path}", taken)
         nodes.append(
             {
                 "id": rid,
@@ -173,6 +190,7 @@ def _rationale_nodes_and_edges(
             ranges.setdefault(e.file, []).append((e.start_line, e.end_line, n.id))
     nodes: list[dict[str, object]] = []
     edges: list[dict[str, object]] = []
+    taken: set[str] = set()
     for f in rationale:
         # The innermost definition whose range holds the line: a class
         # docstring sits inside its class, a NOTE inside its function.
@@ -182,7 +200,7 @@ def _rationale_nodes_and_edges(
             target = f.file
         if target is None:
             continue
-        rid = f"{f.file}#rationale:{f.line}"
+        rid = _fresh(f"{f.file}#rationale:{f.line}:{f.kind}", taken)
         nodes.append(
             {
                 "id": rid,
@@ -213,6 +231,7 @@ def graph_json(
     graph: Graph,
     rationale: tuple[RationaleFact, ...] = (),
     built_at_commit: str | None = None,
+    worktree_dirty: bool | None = None,
 ) -> dict[str, object]:
     """The whole graph, evidence included.
 
@@ -228,9 +247,18 @@ def graph_json(
     """
     fact_nodes, fact_edges = _fact_nodes_and_edges(graph)
     why_nodes, why_edges = _rationale_nodes_and_edges(graph, rationale)
+    ids = [n.id for n in graph.nodes.values()] + [str(n["id"]) for n in fact_nodes + why_nodes]
+    if len(set(ids)) != len(ids):  # pragma: no cover - guarded by _fresh; a defect if reached
+        dup = sorted({i for i in ids if ids.count(i) > 1})
+        raise ValueError(f"graph.json would carry duplicate node ids: {dup[:5]}")
     return {
         "schema": 2,
+        # The graph describes the WORKING TREE. `built_at_commit` is HEAD,
+        # and `worktree_dirty` says whether tracked files differed from it
+        # when the graph was built (review #18 F2: an artifact named a
+        # commit while carrying nodes from files that commit did not have).
         "built_at_commit": built_at_commit,
+        "worktree_dirty": worktree_dirty,
         "nodes": [
             {
                 "id": n.id,

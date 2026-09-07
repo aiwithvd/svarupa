@@ -515,7 +515,9 @@ def _js() -> Markup:
   }
   function pinPath(node) {
     var root = scopeOf(node);
-    if (pins.length && scopeOf(pins[0]) !== root) clearPins();
+    // A new selection starts a new path: without this the SVG showed the
+    // union of every path tried under a caption naming only the last.
+    if (pins.length === 0 || scopeOf(pins[0]) !== root) clearPins();
     pins.push(node);
     node.classList.add('is-path');
     node.closest('svg').classList.add('is-pinned');
@@ -550,11 +552,17 @@ def _js() -> Markup:
     root.querySelectorAll('.sv-node').forEach(function (nd) {
       if (onPath[nd.getAttribute('data-id')]) nd.classList.add('is-path');
     });
+    // The caption follows each arrow's drawn direction: the search is
+    // undirected so a path exists whenever the picture connects the two
+    // boxes, but "A -> B" for an arrow drawn B -> A is a wrong claim.
+    var caption = chain[0];
     for (var i = 1; chain.length > i; i++) {
       var r = byPair[chain[i - 1] + ' ' + chain[i]];
       if (r) r.classList.add('is-path');
+      var forward = r && r.getAttribute('data-src') === chain[i - 1];
+      caption += (forward ? ' \\u2192 ' : ' \\u2190 ') + chain[i];
     }
-    if (out) out.textContent = 'path (' + (chain.length - 1) + ' hops): ' + chain.join(' -> ');
+    if (out) out.textContent = 'path (' + (chain.length - 1) + ' hops, undirected): ' + caption;
     pins = [];
   }
 
@@ -604,8 +612,13 @@ def _js() -> Markup:
     var li = ev.target.closest('#panel-conn li.link');
     if (!li || !lastScope) return;
     var target = li.getAttribute('data-target');
+    // Resolve in the view the reader is looking at: after a drill the
+    // passport's scope is a hidden view, and lighting a box there is a
+    // rewrite of the panel for something the reader cannot see.
+    var open = document.querySelector('.view.is-open');
+    var scope = (open && open.contains(lastScope)) ? lastScope : (open || lastScope);
     var hit = null;
-    lastScope.querySelectorAll('.sv-node').forEach(function (nd) {
+    scope.querySelectorAll('.sv-node').forEach(function (nd) {
       if (!hit && nd.getAttribute('data-id') === target) hit = nd;
     });
     if (!hit) return;

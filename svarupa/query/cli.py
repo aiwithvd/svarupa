@@ -72,8 +72,10 @@ def run_query(
 
 
 def _unanswered(result: dict[str, Any]) -> bool:
-    return ("match" in result and result["match"] is None) or (
-        "path" in result and result["path"] is None
+    return (
+        ("match" in result and result["match"] is None)
+        or ("path" in result and result["path"] is None)
+        or result.get("hits") == 0
     )
 
 

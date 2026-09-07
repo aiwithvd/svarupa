@@ -90,13 +90,22 @@ class GraphIndex:
             )
         return cls(json.loads(candidate.read_text(encoding="utf8")))
 
-    def resolve(self, label: str) -> list[str]:
-        """Node ids an exact label names: id, then qualified name, then label."""
+    def resolve(self, label: str) -> dict[str, str]:
+        """Node ids an exact label names, each with the tier it matched by
+        (`id`, `qualified_name` or `label`). Every tier is consulted: an id
+        that is also another node's label is an ambiguity, not a hit."""
+        hits: dict[str, str] = {}
         if label in self.nodes:
-            return [label]
-        if label in self.by_qualified:
-            return sorted(self.by_qualified[label])
-        return sorted(self.by_label.get(label, []))
+            hits[label] = "id"
+        for nid in self.by_qualified.get(label, []):
+            hits.setdefault(nid, "qualified_name")
+        for nid in self.by_label.get(label, []):
+            hits.setdefault(nid, "label")
+        return dict(sorted(hits.items()))
+
+
+def _is_rationale(e: Edge) -> bool:
+    return e.get("context") == "rationale" or e.get("kind") == "rationale_for"
 
 
 def _brief(n: Node) -> Node:
@@ -120,32 +129,45 @@ def _edge_brief(e: Edge) -> Edge:
     }
 
 
-def _one(index: GraphIndex, label: str, role: str) -> tuple[str | None, dict[str, Any]]:
-    """Exactly one node for `label`, or the structured reason there is not."""
-    ids = index.resolve(label)
-    if len(ids) == 1:
-        return ids[0], {}
-    if not ids:
-        return None, {
+def _one(index: GraphIndex, label: str, role: str) -> tuple[str | None, str, dict[str, Any]]:
+    """Exactly one node for `label` and how it matched, or the structured
+    reason there is not."""
+    hits = index.resolve(label)
+    if len(hits) == 1:
+        ((nid, by),) = hits.items()
+        return nid, by, {}
+    if not hits:
+        return (
+            None,
+            "",
+            {
+                role: label,
+                "match": None,
+                "reason": "no node has this id, qualified name or label",
+            },
+        )
+    return (
+        None,
+        "",
+        {
             role: label,
             "match": None,
-            "reason": "no node has this id, qualified name or label",
-        }
-    return None, {
-        role: label,
-        "match": None,
-        "reason": f"{len(ids)} nodes share this label; pass one of these ids",
-        "ambiguous": [_brief(index.nodes[i]) for i in ids],
-    }
+            "reason": f"{len(hits)} nodes match this text; pass one of these ids",
+            "ambiguous": [
+                {**_brief(index.nodes[i]), "matched_by": by} for i, by in hits.items()
+            ],
+        },
+    )
 
 
 def get_node(index: GraphIndex, label: str) -> dict[str, Any]:
-    nid, err = _one(index, label, "query")
+    nid, by, err = _one(index, label, "query")
     if nid is None:
         return err
     n = index.nodes[nid]
     return {
         "query": label,
+        "matched_by": by,
         "match": {**_brief(n), "lang": n.get("lang"), "attrs": n.get("attrs", {})},
         "out_degree": len(index.out.get(nid, [])),
         "in_degree": len(index.inc.get(nid, [])),
@@ -155,7 +177,7 @@ def get_node(index: GraphIndex, label: str) -> dict[str, Any]:
 def get_neighbors(
     index: GraphIndex, label: str, relation: str | None = None, direction: str = "both"
 ) -> dict[str, Any]:
-    nid, err = _one(index, label, "query")
+    nid, by, err = _one(index, label, "query")
     if nid is None:
         return err
 
@@ -166,6 +188,7 @@ def get_neighbors(
     incoming = [e for e in index.inc.get(nid, []) if keep(e)] if direction != "out" else []
     return {
         "query": label,
+        "matched_by": by,
         "node": _brief(index.nodes[nid]),
         "relation": relation,
         "outgoing": [
@@ -184,10 +207,10 @@ def get_neighbors(
 def shortest_path(
     index: GraphIndex, source: str, target: str, max_hops: int = 6, undirected: bool = False
 ) -> dict[str, Any]:
-    s, err = _one(index, source, "source")
+    s, _by_s, err = _one(index, source, "source")
     if s is None:
         return err
-    t, err = _one(index, target, "target")
+    t, _by_t, err = _one(index, target, "target")
     if t is None:
         return err
     prev: dict[str, tuple[str, Edge] | None] = {s: None}
@@ -198,9 +221,11 @@ def shortest_path(
             break
         if d >= max_hops:
             continue
-        steps = [(e["dst"], e) for e in index.out.get(cur, [])]
+        # A docstring is not a hop: `rationale_for` edges are left out of
+        # paths and blast radius (review #18 F4), and the answer says so.
+        steps = [(e["dst"], e) for e in index.out.get(cur, []) if not _is_rationale(e)]
         if undirected:
-            steps += [(e["src"], e) for e in index.inc.get(cur, [])]
+            steps += [(e["src"], e) for e in index.inc.get(cur, []) if not _is_rationale(e)]
         for nxt, e in sorted(steps, key=lambda p: p[0]):
             if nxt not in prev and nxt in index.nodes:
                 prev[nxt] = (cur, e)
@@ -209,6 +234,7 @@ def shortest_path(
         return {
             "source": s,
             "target": t,
+            "excluded": ["rationale"],
             "path": None,
             "reason": f"no {'undirected ' if undirected else ''}path within {max_hops} hops",
         }
@@ -222,7 +248,13 @@ def shortest_path(
         hops.append(_edge_brief(e))
         cur = back
     hops.reverse()
-    return {"source": s, "target": t, "hops": len(hops), "path": hops}
+    return {
+        "source": s,
+        "target": t,
+        "excluded": ["rationale"],
+        "hops": len(hops),
+        "path": hops,
+    }
 
 
 def affected(
@@ -230,27 +262,36 @@ def affected(
 ) -> dict[str, Any]:
     """What depends on `label`, transitively over incoming edges: the blast
     radius of changing it."""
-    nid, err = _one(index, label, "query")
+    nid, by, err = _one(index, label, "query")
     if nid is None:
         return err
-    seen: dict[str, int] = {nid: 0}
+    seen: dict[str, tuple[int, str]] = {nid: (0, "")}
     frontier = [nid]
     for hop in range(1, depth + 1):
         nxt: list[str] = []
         for cur in frontier:
             for e in index.inc.get(cur, []):
+                if _is_rationale(e) and relation != "rationale":
+                    continue
                 if relation is not None and relation not in (e.get("kind"), e.get("context")):
                     continue
                 if e["src"] not in seen and e["src"] in index.nodes:
-                    seen[e["src"]] = hop
+                    seen[e["src"]] = (hop, str(e.get("context") or e.get("kind")))
                     nxt.append(e["src"])
         frontier = sorted(nxt)
     hits = [
-        {**_brief(index.nodes[i]), "hops": h}
-        for i, h in sorted(seen.items(), key=lambda kv: (kv[1], kv[0]))
+        {**_brief(index.nodes[i]), "hops": h, "via": via}
+        for i, (h, via) in sorted(seen.items(), key=lambda kv: (kv[1][0], kv[0]))
         if i != nid
     ]
-    return {"query": label, "node": _brief(index.nodes[nid]), "depth": depth, "affected": hits}
+    return {
+        "query": label,
+        "matched_by": by,
+        "node": _brief(index.nodes[nid]),
+        "depth": depth,
+        "excluded": [] if relation == "rationale" else ["rationale"],
+        "affected": hits,
+    }
 
 
 def god_nodes(index: GraphIndex, top_n: int = 10) -> dict[str, Any]:
@@ -292,6 +333,13 @@ def graph_stats(index: GraphIndex) -> dict[str, Any]:
         "modules": len(index.data.get("modules", [])),
         "hyperedges": len(index.data.get("hyperedges", [])),
     }
+
+
+def _cost(obj: object) -> int:
+    """Approximate tokens of `obj` as the CLI prints it: `indent=2`, and every
+    line of a list item sits four spaces deeper than a top-level dump."""
+    s = json.dumps(obj, indent=2)
+    return (len(s) + 4 * s.count("\n")) // 4
 
 
 _WORD = re.compile(r"[a-z0-9]+")
@@ -371,13 +419,17 @@ def query_graph(
         "edges": [],
         "truncated": None,
     }
-    # Budget in approximate tokens (4 characters each), nodes first.
-    used = len(json.dumps(result)) // 4
+    # Budget in approximate tokens (4 characters each) of the output AS
+    # PRINTED (`indent=2`, which is what `--json` emits; compact estimates
+    # understated by up to 40 percent). Nodes take at most 60 percent, so a
+    # graph answer keeps some edges instead of always sacrificing them all.
+    used = _cost(result) + 24  # the envelope plus room for the banner
+    node_cap = used + (token_budget - used) * 6 // 10
     shown_nodes: list[Node] = []
     for nid in ordered:
         item = {**_brief(index.nodes[nid]), "hops": included[nid]}
-        cost = len(json.dumps(item)) // 4
-        if used + cost > token_budget:
+        cost = _cost(item)
+        if used + cost > node_cap:
             break
         shown_nodes.append(item)
         used += cost
@@ -386,7 +438,7 @@ def query_graph(
     for e in edges:
         if e["src"] not in kept or e["dst"] not in kept:
             continue
-        cost = len(json.dumps(e)) // 4
+        cost = _cost(e)
         if used + cost > token_budget:
             break
         shown_edges.append(e)

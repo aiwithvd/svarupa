@@ -51,11 +51,15 @@ one structured diagnostic to stderr and writes nothing new.
 ## Query the graph
 
 `graph.json` (schema 2) is a knowledge graph: code symbols, modules, routes,
-external stores and APIs, and `rationale` nodes (docstrings and NOTE / WHY /
-HACK / TODO comments) attached to what they explain. Every node and edge
-cites `file:line`; edges carry a typed `context` (`import`, `call`,
-`inherit`, `reference`, `route`, `store`, `cloud`, `message`, `rationale`).
-Query it without rescanning:
+external stores and APIs, and `rationale` nodes (module and class docstrings
+and NOTE / WHY / HACK / TODO / FIXME comments, as the parser sees them)
+attached to what they explain. Every node and edge cites `file:line`; node
+ids are unique; edges carry a typed `context` (`import`, `call`, `inherit`,
+`reference`, `route`, `store`, `cloud`, `message`, `depends_on`, `contain`,
+`deploy`, `rationale`). The graph describes the working tree at build time:
+`built_at_commit` is HEAD (null outside a git checkout or for untracked
+files) and `worktree_dirty` says whether files differed from it. Query it
+without rescanning:
 
 ```
 svarupa query <artifact-dir> get_node <label>              # exact id, qualified name or label
@@ -69,11 +73,15 @@ svarupa query <artifact-dir> query_graph "<question>" [--depth 1] [--budget 2000
 
 Add `--json` for structured output (always prefer it when acting on the
 answer). Matching is exact: a label shared by several nodes returns an
-`ambiguous` list of candidates and exit 1, never a guess; a label that
-matches nothing returns `match: null` and exit 1. `query_graph` is keyword
-search over names and rationale text, not semantic search, and says so in
-its output; a `truncated` banner names how much was cut. Exit 0 means the
-question was answered (an empty `affected` list is an answer).
+`ambiguous` list of candidates (each with `matched_by`: id, qualified_name
+or label) and exit 1, never a guess; a label that matches nothing returns
+`match: null` and exit 1. `shortest_path` and `affected` follow dependency
+edges only (`rationale_for` is excluded and the answer says so); `affected`
+hits carry the relation they were reached by. `query_graph` is keyword search
+over names and rationale text, not semantic search, and says so in its
+output; a `truncated` banner names how much was cut against a budget measured
+on the printed JSON; zero hits exits 1. Exit 0 means the question was
+answered (an empty `affected` list is an answer).
 
 ## Architecture diff between commits
 

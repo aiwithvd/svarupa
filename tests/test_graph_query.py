@@ -87,12 +87,17 @@ def test_graph_json_is_schema_2_with_context_on_every_edge(artifact) -> None:  #
 def test_routes_and_externals_are_nodes_with_their_lines(artifact) -> None:  # type: ignore[no-untyped-def]
     _, g = artifact
     nodes = {n["id"]: n for n in g["nodes"]}
-    route = nodes["api/routes.py#route:GET /orders"]
-    assert route["kind"] == "endpoint" and route["label"] == "GET /orders"
+    route = next(
+        n for n in nodes.values() if n["kind"] == "endpoint" and n["label"] == "GET /orders"
+    )
+    assert route["id"] == "api/routes.py#api.routes.list_orders#route:GET /orders", (
+        "handler in the id"
+    )
     assert route["evidence"][0] == {"file": "api/routes.py", "start_line": 8, "end_line": 8}
     assert route["attrs"]["framework"] == "fastapi"
     exposes = next(e for e in g["edges"] if e["dst"] == route["id"])
     assert exposes["src"] == "api/routes.py" and exposes["context"] == "route"
+    assert exposes["evidence"][0]["start_line"] == 8, "the exposes edge cites the decorator"
     ext = nodes["ext:database:PostgreSQL"]
     assert ext["kind"] == "datastore" and ext["attrs"]["packages"] == "psycopg2"
     store = next(e for e in g["edges"] if e["dst"] == "ext:database:PostgreSQL")
@@ -109,6 +114,7 @@ def test_rationale_nodes_cite_their_lines_and_attach_to_the_innermost_definition
     # Module docstring: first paragraph line only, attached to the module.
     mod = why["api/routes.py:1"]
     assert mod["attrs"] == {"kind": "docstring", "text": "HTTP surface of the shop."}
+    assert mod["evidence"][0]["end_line"] == 3, "the whole string is the citation"
     assert targets[mod["id"]] == "api/routes.py"
     # Class docstring attaches to the class node.
     cls = why["domain/orders.py:5"]
@@ -297,3 +303,238 @@ def test_every_tab_carries_the_explorer_controls(artifact) -> None:  # type: ign
     assert "function pinPath(node)" in html and "ev.shiftKey" in html
     assert "svg.is-pinned .sv-node:not(.is-path)" in html
     assert "closest('.explore input')" in html
+
+
+# --- review #18: identity, the working tree, the parser decides ------------------
+
+
+def test_node_ids_are_unique_even_for_two_routers_with_the_same_paths(tmp_path: Path) -> None:
+    """One file with two routers each declaring GET "" collapsed four
+    endpoints into two ids on the acceptance repo (review #18 F1)."""
+    write(tmp_path, "app/__init__.py", "")
+    write(
+        tmp_path,
+        "app/main.py",
+        "from fastapi import APIRouter\nrouter = APIRouter()\nother = APIRouter()\n\n"
+        '@router.get("/real")\ndef a():\n    pass\n\n@other.get("/real")\ndef b():\n    pass\n',
+    )
+    out = tmp_path / "out"
+    assert main([str(tmp_path), "--out", str(out)]) == 0
+    g = json.loads((out / "graph.json").read_text(encoding="utf8"))
+    ids = [n["id"] for n in g["nodes"]]
+    assert len(ids) == len(set(ids)), "a node id is a key"
+    routes = sorted(n["id"] for n in g["nodes"] if n["kind"] == "endpoint")
+    assert routes == [
+        "app/main.py#app.main.a#route:GET /real",
+        "app/main.py#app.main.b#route:GET /real",
+    ]
+    index = GraphIndex.load(out)
+    assert len(get_neighbors(index, "app/main.py", relation="route")["outgoing"]) == 2
+
+
+def test_graph_json_names_the_working_tree_state(tmp_path: Path) -> None:
+    """The graph describes the working tree; `built_at_commit` is HEAD and
+    `worktree_dirty` says whether they differed. An untracked directory inside
+    another repository borrows no commit (review #18 F2)."""
+    repo = tmp_path / "repo"
+    _repo(repo)
+    git = ["git", "-c", "user.email=t@t", "-c", "user.name=t"]
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+    subprocess.run([*git, "add", "."], cwd=repo, check=True)
+    subprocess.run([*git, "commit", "-q", "-m", "x"], cwd=repo, check=True)
+    out = tmp_path / "clean"
+    assert main([str(repo), "--out", str(out)]) == 0
+    g = json.loads((out / "graph.json").read_text(encoding="utf8"))
+    assert len(g["built_at_commit"]) == 40 and g["worktree_dirty"] is False
+    write(repo, "store/db.py", "import psycopg2\n\n\ndef q():\n    return [1]\n")
+    out2 = tmp_path / "dirty"
+    assert main([str(repo), "--out", str(out2)]) == 0
+    g2 = json.loads((out2 / "graph.json").read_text(encoding="utf8"))
+    assert g2["built_at_commit"] == g["built_at_commit"] and g2["worktree_dirty"] is True
+    stray = repo / "stray"
+    _repo(stray)  # untracked directory inside the checkout
+    out3 = tmp_path / "stray"
+    assert main([str(stray), "--out", str(out3)]) == 0
+    g3 = json.loads((out3 / "graph.json").read_text(encoding="utf8"))
+    assert g3["built_at_commit"] is None and g3["worktree_dirty"] is None
+
+
+def test_the_parser_decides_what_is_a_comment_or_a_docstring(tmp_path: Path) -> None:
+    """Review #18 F3: a TODO inside a URL string, a `class` line inside a
+    docstring, a `# NOTE` inside a string and a one-line docstring with a
+    trailing comment all produced rationale claims from the line scanner."""
+    write(
+        tmp_path,
+        "pkg/tricky.py",
+        '"""Module doc."""  # NOTE: same line as the docstring\n'
+        "\n"
+        'URL = "https://TODO.example.com/path"\n'
+        'MSG = "# NOTE: not a comment"\n'
+        "\n"
+        "\n"
+        "class A:\n"
+        '    """Real A doc.\n'
+        "\n"
+        "    class B:\n"
+        "        '''Fake B doc inside a docstring.'''\n"
+        '    """\n'
+        "\n"
+        "    def m(self):\n"
+        "        # NOTE inside a method\n"
+        "        s = '''\n"
+        "class C:\n"
+        '    """C doc inside a string"""\n'
+        "'''\n"
+        "        return s  # see the TODO list, not a marker\n"
+        "\n"
+        "# NOTES: not a marker either\n",
+    )
+    facts = rationale_facts(tmp_path, {"pkg/tricky.py"})
+    got = sorted((f.line, f.end_line, f.kind, f.text) for f in facts)
+    assert got == [
+        (1, 1, "docstring", "Module doc."),
+        (1, 1, "note", "same line as the docstring"),
+        (8, 12, "docstring", "Real A doc."),
+        (15, 15, "note", "inside a method"),
+    ], got
+    out = tmp_path / "out"
+    assert main([str(tmp_path), "--out", str(out)]) == 0
+    g = json.loads((out / "graph.json").read_text(encoding="utf8"))
+    targets = {e["src"]: e["dst"] for e in g["edges"] if e["kind"] == "rationale_for"}
+    assert targets["pkg/tricky.py#rationale:15:note"].endswith("#pkg.tricky.A.m"), "innermost"
+    assert targets["pkg/tricky.py#rationale:8:docstring"].endswith("#pkg.tricky.A")
+    ids = [n["id"] for n in g["nodes"]]
+    assert len(ids) == len(set(ids))
+    write(tmp_path, "pkg/README.md", "// TODO not source, whatever the parser would say\n")
+    assert not rationale_facts(tmp_path, {"pkg/README.md"})
+
+
+def test_rationale_is_not_blast_radius_and_matches_say_how(artifact) -> None:  # type: ignore[no-untyped-def]
+    out, _ = artifact
+    index = GraphIndex.load(out)
+    orders = "domain/orders.py#domain.orders.Orders"
+    blast = affected(index, orders, depth=2)
+    assert blast["excluded"] == ["rationale"]
+    assert not any(a["kind"] == "rationale" for a in blast["affected"])
+    assert all(a["via"] for a in blast["affected"])
+    doc = next(n["id"] for n in index.nodes.values() if n["kind"] == "rationale")
+    assert shortest_path(index, doc, "api/routes.py", undirected=True)["path"] is None
+    assert get_node(index, "store/db.py")["matched_by"] == "id"
+    assert get_node(index, "domain.orders.Orders")["matched_by"] == "qualified_name"
+    # A label that is also another node's id is an ambiguity across tiers.
+    data = json.loads((out / "graph.json").read_text(encoding="utf8"))
+    data["nodes"].append(
+        {
+            "id": "shadow",
+            "kind": "module",
+            "label": "store/db.py",
+            "qualified_name": "shadow",
+            "lang": None,
+            "evidence": [{"file": "store/db.py", "start_line": 1, "end_line": 1}],
+            "attrs": {},
+        }
+    )
+    both = get_node(GraphIndex(data), "store/db.py")
+    assert both["match"] is None and {c["matched_by"] for c in both["ambiguous"]} == {
+        "id",
+        "label",
+    }
+
+
+def test_query_graph_budget_is_measured_on_the_printed_json_and_keeps_edges(artifact) -> None:  # type: ignore[no-untyped-def]
+    out, _ = artifact
+    index = GraphIndex.load(out)
+    r = query_graph(index, "orders store db", depth=1, token_budget=900)
+    printed = len(json.dumps(r, indent=2)) // 4
+    assert printed <= 900 + 60, printed  # the envelope itself is the slack
+    assert r["truncated"] and r["edges"], "edges keep a share of the budget"
+    assert query_graph(index, "zzqqxx", depth=1)["hits"] == 0
+    assert main(["query", str(out), "query_graph", "zzqqxx", "--json"]) == 1, (
+        "zero hits is no answer"
+    )
+
+
+def test_external_nodes_cite_every_importing_line_and_test_files_mint_nothing(
+    tmp_path: Path,
+) -> None:
+    _repo(tmp_path)
+    write(tmp_path, "store/other.py", "import psycopg2\n")
+    write(
+        tmp_path,
+        "tests/test_api.py",
+        "from fastapi import APIRouter\nimport psycopg2\nrouter = APIRouter()\n\n"
+        "@router.get('/from-test')\ndef t():\n    pass\n",
+    )
+    out = tmp_path / "out"
+    assert main([str(tmp_path), "--out", str(out)]) == 0
+    g = json.loads((out / "graph.json").read_text(encoding="utf8"))
+    ext = next(n for n in g["nodes"] if n["id"] == "ext:database:PostgreSQL")
+    assert {e["file"] for e in ext["evidence"]} == {"store/db.py", "store/other.py"}
+    assert not any("from-test" in n["id"] for n in g["nodes"])
+    assert not any(e["src"].startswith("tests/") for e in g["edges"])
+
+
+def test_long_rationale_labels_are_cut_and_the_text_kept(tmp_path: Path) -> None:
+    write(tmp_path, "m/__init__.py", "")
+    write(tmp_path, "m/x.py", '"""' + "word " * 30 + '"""\n')
+    out = tmp_path / "out"
+    assert main([str(tmp_path), "--out", str(out)]) == 0
+    g = json.loads((out / "graph.json").read_text(encoding="utf8"))
+    why = next(n for n in g["nodes"] if n["kind"] == "rationale")
+    assert len(why["label"]) == 60 and why["label"].endswith("…")
+    assert why["attrs"]["text"].startswith("word word") and len(why["attrs"]["text"]) > 60
+
+
+def test_query_edge_cases_hand_built() -> None:
+    def node(i: str) -> dict[str, object]:
+        return {
+            "id": i,
+            "kind": "module",
+            "label": i,
+            "qualified_name": i,
+            "lang": None,
+            "evidence": [{"file": i, "start_line": 1, "end_line": 1}],
+            "attrs": {},
+        }
+
+    def edge(a: str, b: str) -> dict[str, object]:
+        return {
+            "src": a,
+            "dst": b,
+            "kind": "imports",
+            "context": "import",
+            "resolution": "resolved",
+            "arity": 1,
+            "evidence": [{"file": a, "start_line": 1, "end_line": 1}],
+            "attrs": {},
+        }
+
+    index = GraphIndex(
+        {
+            "nodes": [node("beta"), node("alpha"), node("gamma")],
+            "edges": [edge("alpha", "gamma"), edge("beta", "gamma")],
+        }
+    )
+    assert [n["id"] for n in god_nodes(index, top_n=3)["nodes"]] == [
+        "gamma",
+        "alpha",
+        "beta",
+    ], "ties by id"
+    assert query_graph(index, "amm", depth=0)["hits"] == 0, "no substring match on short words"
+    small = query_graph(index, "alpha beta gamma", depth=1, token_budget=150)
+    assert small["truncated"] and "of 3 nodes" in small["truncated"], (
+        "the banner names the total"
+    )
+    names = ["alpha", "beta", "gamma", "delta", "epsilon", "zeta"]
+    dense = GraphIndex(
+        {
+            "nodes": [node(n) for n in names],
+            "edges": [edge(a, b) for a in names for b in names if a < b],
+        }
+    )
+    r = query_graph(dense, " ".join(names), depth=0, token_budget=600)
+    assert len(json.dumps(r, indent=2)) // 4 <= 600, "the printed answer fits the budget"
+    assert r["truncated"] and "of 15 edges" in r["truncated"]
+    kept = {n["id"] for n in r["nodes"]}
+    among = sum(1 for a in kept for b in kept if a < b)
+    assert 0 < len(r["edges"]) < among, "edges among the kept nodes were cut to fit"

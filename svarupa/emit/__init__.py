@@ -116,10 +116,11 @@ def emit(
     # over architecture-eligible source only, so vendored text never becomes
     # a rationale claim; the commit is None outside a git checkout.
     rationale = rationale_facts(root, graph.architecture_paths)
+    head, dirty = git_state(root)
     written.append(
         (
             "graph.json",
-            write_json(directory / "graph.json", graph_json(graph, rationale, git_head(root))),
+            write_json(directory / "graph.json", graph_json(graph, rationale, head, dirty)),
         )
     )
     for kind in sorted(produced, key=lambda k: k.value):
@@ -140,24 +141,43 @@ def emit(
     return Artifact(directory, tuple(written), laid_out, tuple(problems))
 
 
-def git_head(root: Path) -> str | None:
-    """The commit the analyzed tree is at, or None when it is not a git
-    checkout (or git is missing). Recorded in graph.json so a consumer can
-    tell which code the lines refer to; never a reason to fail."""
+def git_state(root: Path) -> tuple[str | None, bool | None]:
+    """(HEAD, dirty) for the tree at `root`, or (None, None).
+
+    The graph describes the working tree, so HEAD alone can mislead: the
+    acceptance artifact once named a commit while carrying twelve nodes from
+    files that commit did not have. `dirty` says whether tracked files under
+    `root` differed from HEAD or untracked files existed there. None when
+    `root` is not inside a git checkout, when none of its files are tracked
+    (an untracked directory inside an unrelated repository would otherwise
+    borrow that repository's HEAD), or when git is missing. Never a reason to
+    fail.
+    """
     import subprocess
 
-    try:
-        proc = subprocess.run(
-            ["git", "-C", str(root), "rev-parse", "HEAD"],
-            capture_output=True,
-            text=True,
-            timeout=10,
-            check=False,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return None
-    head = proc.stdout.strip()
-    return head if proc.returncode == 0 and len(head) == 40 else None
+    def git(*args: str) -> str | None:
+        try:
+            proc = subprocess.run(
+                ["git", "-C", str(root), *args],
+                capture_output=True,
+                text=True,
+                timeout=20,
+                check=False,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return None
+        return proc.stdout if proc.returncode == 0 else None
+
+    head = (git("rev-parse", "HEAD") or "").strip()
+    if len(head) != 40:
+        return None, None
+    tracked = git("ls-files", "--", ".")
+    if not tracked or not tracked.strip():
+        return None, None
+    status = git("status", "--porcelain", "--", ".")
+    if status is None:
+        return head, None
+    return head, bool(status.strip())
 
 
 def claim(directory: Path) -> None:

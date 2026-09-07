@@ -1,4 +1,5 @@
-"""Mutation check for Wave C: graph.json schema 2, rationale, the query surface.
+"""Mutation check for Wave C: graph.json schema 2, rationale, the query surface,
+the explorer controls; plus every mutation review #18 wrote that survived.
 
 Each entry deletes a property the wave names; a test must go red.
 """
@@ -29,10 +30,22 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
         "    for r in sorted(graph.routes):\n        if True:\n            continue",
     ),
     (
+        "routes in test files become graph nodes",
+        "svarupa/emit/data.py",
+        "    for r in sorted(graph.routes):\n        if r.file not in graph.architecture_paths:\n            continue",
+        "    for r in sorted(graph.routes):\n        if False:\n            continue",
+    ),
+    (
         "externals are no longer graph nodes",
         "svarupa/emit/data.py",
         "        if x.file not in graph.architecture_paths or x.category not in _EXTERNAL_KIND:\n            continue",
         "        if True:\n            continue",
+    ),
+    (
+        "externals in test files become graph nodes",
+        "svarupa/emit/data.py",
+        "        if x.file not in graph.architecture_paths or x.category not in _EXTERNAL_KIND:\n            continue",
+        "        if x.category not in _EXTERNAL_KIND:\n            continue",
     ),
     (
         "a route node cites the module's first line instead of the decorator",
@@ -41,10 +54,28 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
         '                "evidence": _evidence(tuple(graph.nodes[r.file].evidence)),',
     ),
     (
+        "the exposes edge cites the module's first line",
+        "svarupa/emit/data.py",
+        '                "context": "route",\n                "resolution": "resolved",\n                "arity": 1,\n                "evidence": _evidence((r.evidence,)),',
+        '                "context": "route",\n                "resolution": "resolved",\n                "arity": 1,\n                "evidence": _evidence(tuple(graph.nodes[r.file].evidence)),',
+    ),
+    (
+        "an external node cites only its first importing line",
+        "svarupa/emit/data.py",
+        '                "evidence": _evidence(tuple(seen_ext[xid])),',
+        '                "evidence": _evidence(tuple(seen_ext[xid][:1])),',
+    ),
+    (
         "the store edge loses its store context",
         "svarupa/emit/data.py",
         '                "context": _EXTERNAL_CONTEXT[xid.split(":")[1]],',
         '                "context": "depends_on",',
+    ),
+    (
+        "two routes with the same declared path share one id",
+        "svarupa/emit/data.py",
+        '        rid = _fresh(f"{r.file}#{r.handler}#route:{r.method} {r.path}", taken)',
+        '        rid = f"{r.file}#route:{r.method} {r.path}"',
     ),
     (
         "rationale attaches to the module, never the innermost definition",
@@ -53,16 +84,46 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
         "        target: str | None = None",
     ),
     (
-        "the module docstring takes the whole string instead of its first line",
+        "rationale attaches to the outermost definition instead of the innermost",
+        "svarupa/emit/data.py",
+        "        target: str | None = min(inner)[1] if inner else None",
+        "        target: str | None = max(inner)[1] if inner else None",
+    ),
+    (
+        "rationale labels are never cut",
+        "svarupa/emit/data.py",
+        '                "label": f.text if len(f.text) <= 60 else f.text[:59] + "…",',
+        '                "label": f.text,',
+    ),
+    (
+        "a docstring takes its whole text instead of the first line",
         "svarupa/extract/rationale.py",
-        "                if not first:\n                    first = seg.strip()\n            return None",
-        "                first += ' ' + seg.strip()\n            return None",
+        "    for line in body.splitlines():\n        cleaned = _clean(line)",
+        "    for line in [body]:\n        cleaned = _clean(line)",
     ),
     (
         "a marker with no text becomes a rationale",
         "svarupa/extract/rationale.py",
-        '        if m and _clean(m.group("text")):',
-        "        if m:",
+        '    if not m or not _clean(m.group("text")):',
+        "    if not m:",
+    ),
+    (
+        "a marker word anywhere in a comment is a marker",
+        "svarupa/extract/rationale.py",
+        '_MARKER_RE = re.compile(r"^\\s*(?P<kind>" + "|".join(MARKERS) + r")\\b[:\\s-]*(?P<text>.*)$")',
+        '_MARKER_RE = re.compile(r"(?P<kind>" + "|".join(MARKERS) + r")[:\\s-]*(?P<text>.*)$")',
+    ),
+    (
+        "a comment's end line is dropped",
+        "svarupa/extract/rationale.py",
+        '            RationaleFact(file, s.start_point.row + 1, s.end_point.row + 1, "docstring", text)',
+        '            RationaleFact(file, s.start_point.row + 1, s.start_point.row + 1, "docstring", text)',
+    ),
+    (
+        "every file is scanned for rationale, yaml and markdown too",
+        "svarupa/extract/rationale.py",
+        "        if not rel.endswith(_PY_SUFFIXES + _TS_SUFFIXES):\n            continue",
+        "        if False:\n            continue",
     ),
     (
         "rationale runs over every source file, vendored ones too",
@@ -73,26 +134,44 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     (
         "built_at_commit is always None",
         "svarupa/emit/__init__.py",
-        "    return head if proc.returncode == 0 and len(head) == 40 else None",
-        "    return None",
+        "    return head, bool(status.strip())",
+        "    return None, None",
+    ),
+    (
+        "a dirty tree is reported clean",
+        "svarupa/emit/__init__.py",
+        "    return head, bool(status.strip())",
+        "    return head, False",
+    ),
+    (
+        "an untracked directory borrows the enclosing repository's commit",
+        "svarupa/emit/__init__.py",
+        "    if not tracked or not tracked.strip():\n        return None, None",
+        "    if False:\n        return None, None",
     ),
     (
         "schema stays 1",
         "svarupa/emit/data.py",
-        '        "schema": 2,\n        "built_at_commit": built_at_commit,',
-        '        "schema": 1,\n        "built_at_commit": built_at_commit,',
+        '        "schema": 2,\n',
+        '        "schema": 1,\n',
     ),
     (
         "an ambiguous label resolves to the first match",
         "svarupa/query/__init__.py",
-        "    if len(ids) == 1:\n        return ids[0], {}",
-        "    if len(ids) >= 1:\n        return ids[0], {}",
+        "    if len(hits) == 1:\n        ((nid, by),) = hits.items()",
+        "    if len(hits) >= 1:\n        (nid, by) = next(iter(hits.items()))",
     ),
     (
         "labels match as substrings",
         "svarupa/query/__init__.py",
-        "        return sorted(self.by_label.get(label, []))",
-        "        return sorted(i for lbl, ids in self.by_label.items() if label in lbl for i in ids)",
+        '        for nid in self.by_label.get(label, []):\n            hits.setdefault(nid, "label")',
+        '        for lbl, ids in self.by_label.items():\n            if label in lbl:\n                for nid in ids:\n                    hits.setdefault(nid, "label")',
+    ),
+    (
+        "an id that is also another node's label is not an ambiguity",
+        "svarupa/query/__init__.py",
+        '        if label in self.nodes:\n            hits[label] = "id"\n        for nid in self.by_qualified.get(label, []):',
+        '        if label in self.nodes:\n            return {label: "id"}\n        for nid in self.by_qualified.get(label, []):',
     ),
     (
         "relation filters are ignored",
@@ -109,14 +188,32 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     (
         "shortest_path is always undirected",
         "svarupa/query/__init__.py",
-        '        if undirected:\n            steps += [(e["src"], e) for e in index.inc.get(cur, [])]',
-        '        if True:\n            steps += [(e["src"], e) for e in index.inc.get(cur, [])]',
+        "        if undirected:\n            steps += [",
+        "        if True:\n            steps += [",
+    ),
+    (
+        "shortest_path walks through docstrings",
+        "svarupa/query/__init__.py",
+        '        steps = [(e["dst"], e) for e in index.out.get(cur, []) if not _is_rationale(e)]',
+        '        steps = [(e["dst"], e) for e in index.out.get(cur, [])]',
     ),
     (
         "affected follows outgoing edges (what X uses) instead of incoming (what uses X)",
         "svarupa/query/__init__.py",
-        "            for e in index.inc.get(cur, []):\n                if relation is not None and relation not in",
-        "            for e in index.out.get(cur, []):\n                if relation is not None and relation not in",
+        '            for e in index.inc.get(cur, []):\n                if _is_rationale(e) and relation != "rationale":',
+        '            for e in index.out.get(cur, []):\n                if _is_rationale(e) and relation != "rationale":',
+    ),
+    (
+        "a docstring counts as blast radius",
+        "svarupa/query/__init__.py",
+        '                if _is_rationale(e) and relation != "rationale":\n                    continue',
+        "                if False:\n                    continue",
+    ),
+    (
+        "affected hits stop saying how they were reached",
+        "svarupa/query/__init__.py",
+        '        {**_brief(index.nodes[i]), "hops": h, "via": via}',
+        '        {**_brief(index.nodes[i]), "hops": h, "via": ""}',
     ),
     (
         "stopwords are searched",
@@ -125,10 +222,34 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
         "    return [w for w in words if len(w) > 1]",
     ),
     (
+        "one-character substrings match",
+        "svarupa/query/__init__.py",
+        "    return len(word) >= 4 and any(word in tok for tok in tokens)",
+        "    return any(word in tok for tok in tokens)",
+    ),
+    (
         "query_graph stops announcing truncation",
         "svarupa/query/__init__.py",
         "    if len(shown_nodes) < len(ordered) or len(shown_edges) < len(edges):",
         "    if False:",
+    ),
+    (
+        "the truncation banner counts what was shown as the total",
+        "svarupa/query/__init__.py",
+        'f"TRUNCATED to {token_budget} tokens: showing {len(shown_nodes)} of "\n            f"{len(ordered)} nodes',
+        'f"TRUNCATED to {token_budget} tokens: showing {len(shown_nodes)} of "\n            f"{len(shown_nodes)} nodes',
+    ),
+    (
+        "the budget is measured on compact JSON while the CLI prints indented",
+        "svarupa/query/__init__.py",
+        "        cost = _cost(item)",
+        "        cost = len(json.dumps(item)) // 6",
+    ),
+    (
+        "edges are never truncated",
+        "svarupa/query/__init__.py",
+        "        cost = _cost(e)\n        if used + cost > token_budget:\n            break",
+        "        cost = _cost(e)\n        if False:\n            break",
     ),
     (
         "query_graph claims to be semantic",
@@ -137,10 +258,22 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
         '        "matching": "semantic",',
     ),
     (
+        "god_nodes ties are in dict order",
+        "svarupa/query/__init__.py",
+        "    ranked = sorted(degree.items(), key=lambda kv: (-kv[1], kv[0]))[:top_n]",
+        "    ranked = sorted(degree.items(), key=lambda kv: -kv[1])[:top_n]",
+    ),
+    (
         "the CLI exits 0 on an unanswered question",
         "svarupa/query/cli.py",
         "    return 1 if _unanswered(result) else 0",
         "    return 0",
+    ),
+    (
+        "zero hits is an answer",
+        "svarupa/query/cli.py",
+        '        or result.get("hits") == 0',
+        "        or False",
     ),
     (
         "a missing graph.json is a traceback instead of SVA-Q-001",
