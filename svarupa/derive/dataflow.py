@@ -226,7 +226,7 @@ def _import_edge(a: str, b: str, ev: tuple[Evidence, ...], via: tuple[str, ...])
     return DiagramEdge(
         src=a,
         dst=b,
-        label="",
+        label="imports",
         note=note,
         evidence=ev[:MAX_EVIDENCE_PER_BOX],
         weight=len(ev),

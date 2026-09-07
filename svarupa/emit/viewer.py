@@ -201,14 +201,27 @@ h2 { font-size: 20px; margin: 0 0 4px; font-weight: 700; letter-spacing: -0.02em
 .sv-canvas.is-hovering .sv-route.is-path .sv-edge { stroke: var(--accent); opacity: 1; }
 .sv-canvas.is-hovering .sv-route.is-path .sv-arrowhead { fill: var(--accent); }
 .sv-canvas.is-hovering .sv-node.is-path .sv-box { stroke-width: 2; }
+/* Click focuses: the clicked box glows, its neighbours and their arrows stay
+   lit with their verbs, everything else recedes hard (Archify's 13%). */
+.sv-canvas.is-focused .sv-node:not(.is-path), .sv-canvas.is-focused .sv-route:not(.is-path) { opacity: .13; transition: opacity .14s; }
+.sv-canvas.is-focused .sv-boundary { opacity: .4; }
+.sv-canvas.is-focused .sv-route.is-path .sv-edge { stroke: var(--accent); opacity: 1; stroke-width: 2.25; }
+.sv-canvas.is-focused .sv-route.is-path .sv-arrowhead { fill: var(--accent); }
+.sv-canvas.is-focused .sv-route.is-path .sv-edge-label { fill: var(--ink); font-weight: 700; }
+.sv-canvas.is-focused .sv-node.is-path .sv-box { stroke-width: 2; }
+.sv-canvas.is-focused .sv-node.is-focus .sv-box { stroke: var(--accent); stroke-width: 2.5; filter: drop-shadow(0 0 7px var(--accent)); }
+/* An opened container: accent frame, siblings receded so the eye lands inside. */
+[data-scope="parent"] .sv-node:not(.sv-expanded-host):not(.is-path), [data-scope="parent"] .sv-route:not(.is-path) { opacity: .5; }
+[data-scope="parent"] .sv-boundary { opacity: .55; }
 
 .sv-container {
-  fill: color-mix(in srgb, var(--k, var(--faint)) 5%, var(--canvas));
-  stroke: color-mix(in srgb, var(--k, var(--faint)) 60%, var(--line));
+  fill: color-mix(in srgb, var(--accent) 4%, var(--canvas));
+  stroke: var(--accent);
   stroke-width: 1.5; stroke-dasharray: 7 4;
+  filter: drop-shadow(0 0 10px color-mix(in srgb, var(--accent) 35%, transparent));
 }
 .sv-container-label {
-  fill: var(--ink); font-family: var(--mono); font-weight: 650;
+  fill: var(--accent); font-family: var(--mono); font-weight: 700; letter-spacing: .02em;
 }
 .sv-collapse { fill: var(--faint); text-anchor: end; cursor: pointer; }
 .sv-collapse:hover { fill: var(--accent); }
@@ -257,27 +270,47 @@ aside .conn.link { cursor: pointer; }
 svg text { user-select: none; }
 aside .conn.link:hover { text-decoration: underline; }
 
+/* The passport: a card over the canvas, Archify's semantic passport with
+   what only we have, the verified source lines. */
 aside {
-  position: fixed; right: 0; top: 0; bottom: 0; width: 28em; overflow: auto;
-  background: var(--surface); border-left: 1px solid var(--line);
-  padding: 20px; transform: translateX(100%); transition: transform .16s ease;
-  box-shadow: -16px 0 40px #0003;
+  position: fixed; left: 28px; top: 132px; width: 352px; max-height: calc(100vh - 160px);
+  overflow: auto; background: var(--surface); border: 1px solid var(--accent);
+  border-radius: 6px; padding: 14px 16px 16px; font-family: var(--mono); font-size: 11px;
+  transform: translateX(-120%); transition: transform .16s ease; z-index: 5;
+  box-shadow: 0 18px 48px #0000004d;
 }
 aside.is-open { transform: none; }
-aside h2 { font-size: 14px; margin: 0 0 2px; font-family: var(--mono); }
-aside .kind { margin: 0; font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); font-weight: 700; }
-aside .sub { margin: 0 0 10px; color: var(--dim); font-size: 12px; }
-aside .section { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--faint); margin: 16px 0 4px; font-weight: 700; }
-aside .conn { color: var(--ink); font-size: 12px; padding: 4px 8px; }
-aside .conn .verb { color: var(--dim); }
-aside ul { list-style: none; padding: 0; margin: 10px 0 0; }
-aside li { margin: 0 0 2px; }
+aside .eyebrow { margin: 0 0 4px; font-size: 9px; letter-spacing: .16em; text-transform: uppercase; color: var(--accent); font-weight: 700; }
+aside h2 { font-size: 15px; margin: 0 0 2px; font-family: var(--mono); font-weight: 700; padding-right: 60px; }
+aside .sub { margin: 0 0 10px; color: var(--dim); font-size: 11px; }
+aside .chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 0 0 10px; }
+aside .chips span { font-size: 9px; letter-spacing: .08em; text-transform: uppercase; padding: 2px 7px; border: 1px solid var(--line); border-radius: 3px; color: var(--dim); }
+aside .chips span.chip-kind { border-color: var(--k); color: var(--k); background: color-mix(in srgb, var(--k) 12%, transparent); font-weight: 700; }
+aside .chips span.chip-context { color: var(--ink); }
+aside .chips span.chip-role { color: var(--security-stroke); border-color: color-mix(in srgb, var(--security-stroke) 50%, var(--line)); }
+aside .chips code { font-size: 10px; color: var(--faint); }
+aside .summary { margin: 0 0 8px; color: var(--dim); font-size: 11px; }
+aside .rule { border: 0; border-top: 1px solid var(--line); margin: 8px 0 10px; }
+aside .section { font-size: 9px; letter-spacing: .14em; text-transform: uppercase; color: var(--faint); margin: 12px 0 4px; font-weight: 700; }
+aside .reach { display: flex; gap: 8px; margin: 0 0 4px; }
+aside .reach button { flex: 1; display: flex; justify-content: space-between; align-items: center; font: inherit; font-size: 11px; color: var(--ink); background: var(--raised); border: 1px solid var(--line); border-radius: 4px; padding: 6px 9px; cursor: pointer; }
+aside .reach button strong { color: var(--accent); }
+aside .reach button:disabled { opacity: .4; cursor: default; }
+aside .reach button:hover:not(:disabled) { border-color: var(--accent); }
+aside .conn { display: grid; grid-template-columns: 52px 1fr; column-gap: 8px; color: var(--ink); font-size: 11px; padding: 5px 4px; border-radius: 4px; }
+aside .conn .dir { color: var(--accent); font-size: 9px; letter-spacing: .1em; font-weight: 700; padding-top: 2px; }
+aside .conn .name { font-weight: 600; }
+aside .conn .verb { grid-column: 2; color: var(--dim); font-size: 10px; }
+aside ul { list-style: none; padding: 0; margin: 0; }
+aside li { margin: 0; }
 aside a, aside span.dead {
-  color: var(--accent); font-family: var(--mono); font-size: 12px;
-  text-decoration: none; display: block; padding: 5px 8px; border-radius: 6px;
+  color: var(--accent); font-family: var(--mono); font-size: 11px;
+  text-decoration: none; display: block; padding: 4px 4px; border-radius: 4px;
 }
 aside a:hover { background: var(--raised); }
 aside span.dead { color: var(--warn); }
+aside .close { position: absolute; top: 10px; right: 10px; font: inherit; font-size: 14px; color: var(--faint); background: none; border: 0; cursor: pointer; padding: 2px 6px; }
+aside .close:hover { color: var(--ink); }
 
 .hint { color: var(--dim); font-size: 13px; }
 .withheld {
@@ -380,76 +413,181 @@ def _js() -> Markup:
   }
 
   var lastScope = null;
-  var kindEl = document.getElementById('panel-kind');
+  var eyebrowEl = document.getElementById('panel-eyebrow');
   var subEl = document.getElementById('panel-sub');
-  var connEl = document.getElementById('panel-conn');
-  var connH = document.getElementById('panel-conn-h');
+  var metaEl = document.getElementById('panel-meta');
+  var sumEl = document.getElementById('panel-summary');
+  var outEl = document.getElementById('panel-out');
+  var outH = document.getElementById('panel-out-h');
+  var inEl = document.getElementById('panel-in');
+  var inH = document.getElementById('panel-in-h');
+  var upBtn = document.getElementById('reach-up');
+  var downBtn = document.getElementById('reach-down');
 
-  // The passport: what the element is, its semantic line, and the
-  // connections it takes part in, read from the same SVG the reader sees.
-  // Everything set via textContent; nothing here builds markup from data.
-  // A node's canvas: in an expanded view the parent and the embedded child
-  // are two canvases in one SVG and can share ids, so connections are read
-  // from the nearest scope, never from the whole document.
+  // The passport: what the element is, the frames it sits in, its
+  // connections in both directions with their verbs, and how far it reaches
+  // over the arrows drawn in this view. Everything set via textContent;
+  // nothing here builds markup from data. A node's canvas: in an expanded
+  // view the parent and the embedded child are two canvases in one SVG and
+  // can share ids, so connections are read from the nearest scope.
   function scopeOf(el) {
     return el.closest('[data-scope]') || el.closest('svg');
   }
-
-  function passport(node) {
+  function routesOf(root) {
+    return Array.prototype.slice.call(root.querySelectorAll('.sv-route'));
+  }
+  function chip(text, cls, kind) {
+    if (!text) return;
+    var s = document.createElement('span');
+    s.textContent = text;
+    s.className = cls;
+    if (kind) s.classList.add('sv-kind-' + kind);
+    metaEl.appendChild(s);
+  }
+  function connItem(list, dir, said, other) {
+    var li = document.createElement('li');
+    li.className = 'conn link';
+    li.setAttribute('data-target', other);
+    var d = document.createElement('span'); d.className = 'dir'; d.textContent = dir;
+    var n = document.createElement('span'); n.className = 'name'; n.textContent = other;
+    var v = document.createElement('span'); v.className = 'verb'; v.textContent = said;
+    li.appendChild(d); li.appendChild(n); li.appendChild(v);
+    list.appendChild(li);
+  }
+  // Directed closure over the drawn arrows: what feeds this box (up) or
+  // what it feeds (down), within the view the reader is looking at.
+  function reach(root, id, dir) {
+    var seen = {}; seen[id] = 1;
+    var queue = [id];
+    var rs = routesOf(root);
+    while (queue.length) {
+      var cur = queue.shift();
+      rs.forEach(function (r) {
+        var s = r.getAttribute('data-src'), d = r.getAttribute('data-dst');
+        var nxt = dir === 'down' ? (s === cur ? d : null) : (d === cur ? s : null);
+        if (nxt && !seen[nxt]) { seen[nxt] = 1; queue.push(nxt); }
+      });
+    }
+    delete seen[id];
+    return Object.keys(seen);
+  }
+  function kindOf(node) {
     var kind = node.getAttribute('data-kind') || '';
     if (!kind) {
       node.classList.forEach(function (c) { if (c.indexOf('sv-kind-') === 0) kind = c.slice(8); });
     }
-    var roles = node.getAttribute('data-roles');
-    kindEl.textContent = kind + (roles ? ' \u00b7 ' + roles : '');
-    subEl.textContent = node.getAttribute('data-sublabel') || '';
-    connEl.textContent = '';
-    var id = node.getAttribute('data-id');
+    return kind;
+  }
+  function passport(node) {
+    var id = node.getAttribute('data-id') || '';
     var root = scopeOf(node);
     lastScope = root;
-    var n = 0;
-    if (root && id) {
-      root.querySelectorAll('.sv-route').forEach(function (r) {
-        var s = r.getAttribute('data-src'), d = r.getAttribute('data-dst');
-        if (s !== id && d !== id) return;
-        var li = document.createElement('li');
-        li.className = 'conn link';
-        li.setAttribute('data-target', s === id ? d : s);
-        var verb = document.createElement('span');
-        verb.className = 'verb';
-        // The note carries the count ("12 imports"); the label is the verb
-        // or empty for a structural arrow.
-        var said = r.getAttribute('data-note') || r.getAttribute('data-label') || 'imports';
-        verb.textContent = (s === id ? '\u2192 ' : '\u2190 ') + said + ' ';
-        li.appendChild(verb);
-        li.appendChild(document.createTextNode(s === id ? d : s));
-        connEl.appendChild(li);
-        n += 1;
+    var isFrame = node.classList.contains('sv-boundary');
+    eyebrowEl.textContent = isFrame ? 'Frame' : 'Passport';
+    subEl.textContent = node.getAttribute('data-sublabel') || '';
+    metaEl.textContent = '';
+    var kind = kindOf(node);
+    chip(kind, 'chip-kind', kind);
+    if (!isFrame) {
+      root.querySelectorAll('.sv-boundary').forEach(function (b) {
+        var members = (b.getAttribute('data-members') || '').split('\\n');
+        if (members.indexOf(id) >= 0) chip(b.getAttribute('data-label') || '', 'chip-context');
       });
     }
-    connH.textContent = n ? 'Connections (' + n + ')' : 'Connections';
+    (node.getAttribute('data-roles') || '').split(',').forEach(function (r) { chip(r, 'chip-role'); });
+    var code = document.createElement('code');
+    code.textContent = id;
+    metaEl.appendChild(code);
+    outEl.textContent = '';
+    inEl.textContent = '';
+    var nOut = 0, nIn = 0;
+    routesOf(root).forEach(function (r) {
+      var s = r.getAttribute('data-src'), d = r.getAttribute('data-dst');
+      if (s !== id && d !== id) return;
+      // The note carries the count ("12 imports"); the label is the verb.
+      var said = r.getAttribute('data-note') || r.getAttribute('data-label') || 'imports';
+      if (s === id) { nOut += 1; connItem(outEl, 'OUT →', said, d); }
+      else { nIn += 1; connItem(inEl, '← IN', said, s); }
+    });
+    outH.textContent = 'Outgoing · ' + nOut;
+    inH.textContent = 'Incoming · ' + nIn;
+    sumEl.textContent = nOut + ' outgoing · ' + nIn + ' incoming';
+    var up = isFrame ? [] : reach(root, id, 'up');
+    var down = isFrame ? [] : reach(root, id, 'down');
+    upBtn.querySelector('strong').textContent = up.length;
+    downBtn.querySelector('strong').textContent = down.length;
+    upBtn.disabled = !up.length;
+    downBtn.disabled = !down.length;
+    upBtn.onclick = function () { light(root, node, up); };
+    downBtn.onclick = function () { light(root, node, down); };
+  }
+
+  // Focus: the clicked box glows, a chosen set stays lit, the rest recedes.
+  function clearFocus() {
+    document.querySelectorAll('svg.is-focused').forEach(function (s) {
+      s.classList.remove('is-focused');
+      s.querySelectorAll('.is-path, .is-focus').forEach(function (x) {
+        x.classList.remove('is-path'); x.classList.remove('is-focus');
+      });
+    });
+  }
+  function light(root, node, ids) {
+    var svg = node.closest('svg');
+    if (!svg) return;
+    clearFocus();
+    var set = {};
+    ids.forEach(function (i) { set[i] = 1; });
+    set[node.getAttribute('data-id')] = 1;
+    root.querySelectorAll('.sv-node').forEach(function (nd) {
+      if (set[nd.getAttribute('data-id')]) nd.classList.add('is-path');
+    });
+    routesOf(root).forEach(function (r) {
+      if (set[r.getAttribute('data-src')] && set[r.getAttribute('data-dst')]) r.classList.add('is-path');
+    });
+    node.classList.add('is-focus');
+    svg.classList.add('is-focused');
+  }
+  function focus(node) {
+    var root = scopeOf(node);
+    var id = node.getAttribute('data-id');
+    var ids = [];
+    routesOf(root).forEach(function (r) {
+      var s = r.getAttribute('data-src'), d = r.getAttribute('data-dst');
+      if (s === id) ids.push(d); else if (d === id) ids.push(s);
+    });
+    light(root, node, ids);
   }
 
   function show(name, refs, node) {
     title.textContent = name;
     if (node && (node.classList.contains('sv-node') || node.classList.contains('sv-boundary'))) {
       passport(node);
+      if (node.classList.contains('sv-node')) focus(node); else clearFocus();
     } else {
-      kindEl.textContent = node ? 'connection' : '';
+      eyebrowEl.textContent = 'Connection';
       subEl.textContent = node ? (node.getAttribute('data-note') || node.getAttribute('data-label') || '') : '';
-      connEl.textContent = '';
-      connH.textContent = 'Connections';
+      metaEl.textContent = '';
+      outEl.textContent = ''; inEl.textContent = '';
+      outH.textContent = 'Outgoing'; inH.textContent = 'Incoming';
+      sumEl.textContent = node ? (node.getAttribute('data-src') + ' → ' + node.getAttribute('data-dst')) : '';
+      upBtn.disabled = true; downBtn.disabled = true;
+      clearFocus();
+      if (node) { node.classList.add('is-path'); var svg = node.closest('svg'); if (svg) svg.classList.add('is-focused'); }
     }
     current = refs;
     render();
     panel.classList.add('is-open');
   }
+  document.getElementById('panel-close').addEventListener('click', function () {
+    panel.classList.remove('is-open');
+    clearFocus();
+  });
 
   // Hover: light the path through the element and recede the rest.
   document.addEventListener('mouseover', function (ev) {
     var el = ev.target.closest('.sv-node, .sv-route');
     var svg = el && el.closest('svg');
-    if (!svg || svg.classList.contains('is-pinned')) return;
+    if (!svg || svg.classList.contains('is-pinned') || svg.classList.contains('is-focused')) return;
     var root = scopeOf(el);
     svg.querySelectorAll('.is-path').forEach(function (x) { x.classList.remove('is-path'); });
     var ids = {};
@@ -475,7 +613,7 @@ def _js() -> Markup:
     var svg = el && el.closest('svg');
     if (!svg) return;
     var to = ev.relatedTarget && ev.relatedTarget.closest && ev.relatedTarget.closest('.sv-node, .sv-route');
-    if (to || svg.classList.contains('is-pinned')) return;
+    if (to || svg.classList.contains('is-pinned') || svg.classList.contains('is-focused')) return;
     svg.classList.remove('is-hovering');
     svg.querySelectorAll('.is-path').forEach(function (x) { x.classList.remove('is-path'); });
   });
@@ -490,7 +628,7 @@ def _js() -> Markup:
     }
     var node = ev.target.closest('[data-evidence]');
     if (!node) {
-      if (!ev.target.closest('aside')) { panel.classList.remove('is-open'); clearPins(); }
+      if (!ev.target.closest('aside')) { panel.classList.remove('is-open'); clearPins(); clearFocus(); }
       return;
     }
     if (ev.shiftKey && node.classList.contains('sv-node')) { pinPath(node); return; }
@@ -609,7 +747,7 @@ def _js() -> Markup:
   });
 
   document.addEventListener('click', function (ev) {
-    var li = ev.target.closest('#panel-conn li.link');
+    var li = ev.target.closest('#panel li.link');
     if (!li || !lastScope) return;
     var target = li.getAttribute('data-target');
     // Resolve in the view the reader is looking at: after a drill the
@@ -959,16 +1097,36 @@ def render_viewer(
                 "aside",
                 join(
                     (
-                        tag("p", raw(""), id="panel-kind", class_="kind"),
+                        raw('<button class="close" id="panel-close" type="button" '
+                            'aria-label="close">\u00d7</button>'),
+                        tag("p", esc("Passport"), id="panel-eyebrow", class_="eyebrow"),
                         tag("h2", raw(""), id="panel-title"),
                         tag("p", raw(""), id="panel-sub", class_="sub"),
-                        tag("h3", esc("Connections"), id="panel-conn-h", class_="section"),
-                        tag("ul", raw(""), id="panel-conn"),
-                        tag("h3", esc("Sources"), class_="section"),
+                        tag("div", raw(""), id="panel-meta", class_="chips"),
+                        tag("p", raw(""), id="panel-summary", class_="summary"),
+                        tag("h3", esc("Reach in this view"), class_="section"),
+                        tag(
+                            "div",
+                            raw(
+                                '<button id="reach-up" type="button"><span>Upstream</span>'
+                                "<strong>0</strong></button>"
+                                '<button id="reach-down" type="button"><span>Downstream</span>'
+                                "<strong>0</strong></button>"
+                            ),
+                            class_="reach",
+                        ),
+                        raw('<hr class="rule">'),
+                        tag("h3", esc("Outgoing"), id="panel-out-h", class_="section"),
+                        tag("ul", raw(""), id="panel-out"),
+                        tag("h3", esc("Incoming"), id="panel-in-h", class_="section"),
+                        tag("ul", raw(""), id="panel-in"),
+                        tag("h3", esc("Verified source"), class_="section"),
                         tag("ul", raw(""), id="panel-list"),
                     )
                 ),
                 id="panel",
+                role="region",
+                aria_label="passport",
             ),
             tag(
                 "noscript",

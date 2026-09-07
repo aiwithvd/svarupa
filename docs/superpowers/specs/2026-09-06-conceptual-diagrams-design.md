@@ -185,6 +185,25 @@ identically in every diagram type, because the layout data is the same shape
 in all of them. Hover state never reaches the bytes (it is CSS on the same
 SVG), so byte-identity is unaffected.
 
+*As built (visual pass after the user compared the click state against
+Archify's live gallery, 2026-09-07):* a click is a **focus**, not only a
+panel: the clicked box glows, its neighbours and the arrows between them stay
+lit with their verbs, everything else recedes to 13 percent (Archify's
+value), and hover is suspended until the focus is cleared by a background
+click or the card's close. The passport is a **card over the canvas**
+(352px, accent border, mono 11px) in Archify's order: eyebrow, title,
+sublabel, chips (kind in its colour, the frames the box sits in, roles, the
+id), "N outgoing · M incoming", **Upstream / Downstream** reach buttons that
+light the directed closure over the arrows drawn in that view, OUTGOING and
+INCOMING lists with the verb under each name, and last what only we have:
+the verified source lines. Structural arrows say **imports** again (a
+knowing reversal of the Wave A decision that silenced them): the label
+settles or drops under the same collision gates as any other, so dense
+views stay clean and focused edges show their verb. An opened container is
+drawn in the accent colour and its siblings recede, so the eye lands inside.
+Not built: Archify's "Copy link" (a focus hash would collide with the tab
+hash), guided views and cards (Wave D).
+
 ## 6. What stays as it is, and why
 
 - Structural module identity, presentation-only communities, the lockfile

@@ -287,6 +287,8 @@ def _region(region: RegionBox, style: Style) -> Markup:
         class_=f"sv-boundary sv-kind-{_slug(region.kind)}",
         data_id=region.id,
         data_kind=region.kind,
+        data_label=region.label,
+        data_members="\n".join(region.members),
         **{EVIDENCE_ATTR: evidence_ref(region.evidence)},
     )
 

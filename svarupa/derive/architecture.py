@@ -61,7 +61,7 @@ def _import_edge(a: str, b: str, w: int, ev: tuple[Evidence, ...]) -> DiagramEdg
     return DiagramEdge(
         src=a,
         dst=b,
-        label="",
+        label="imports",
         note=f"{w} import{'s' if w != 1 else ''}",
         evidence=ev,
         weight=w,

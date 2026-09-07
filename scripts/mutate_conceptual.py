@@ -76,10 +76,10 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
         "            chosen = (cx, cy)\n            break",
     ),
     (
-        "structural import arrows draw their verb again",
+        "structural import arrows fall silent again",
         "svarupa/derive/architecture.py",
-        '        label="",\n        note=f"{w} import',
         '        label="imports",\n        note=f"{w} import',
+        '        label="",\n        note=f"{w} import',
     ),
     (
         "external boxes stop sinking to the bottom layer",

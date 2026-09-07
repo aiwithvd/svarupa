@@ -173,8 +173,12 @@ def test_edge_labels_are_verbs_and_counts_live_in_notes(tmp_path: Path) -> None:
             for e in spec.edges:
                 assert not any(ch.isdigit() for ch in e.label), (e.label, spec.id)
                 if e.variant == "default" and not e.dst.startswith("ext:"):
-                    assert e.label == "", "structural arrows draw no text"
-                    assert e.note, "the count moved to the note, it did not vanish"
+                    # Structural arrows say their verb again (a knowing reversal
+                    # of ec3c911, on the user's comparison with Archify's canvas);
+                    # the count stays in the note, and the label settles or
+                    # drops under the same collision gates as any other.
+                    assert e.label == "imports", "structural arrows say their verb"
+                    assert e.note, "the count lives in the note, not the label"
 
 
 # --- boundaries -------------------------------------------------------------------
