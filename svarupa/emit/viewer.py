@@ -17,7 +17,9 @@ Three properties, in the order they were designed for:
 
 from __future__ import annotations
 
+from svarupa.build import Graph
 from svarupa.derive.base import DiagramKind, DiagramSet
+from svarupa.emit.cards import Card, cards_for, chapters_for, render_cards, render_guided
 from svarupa.emit.markup import Markup, esc, join, raw, tag
 from svarupa.emit.svg import canvas_svg, evidence_ref, expanded_svg
 from svarupa.layout import LaidOutDiagram
@@ -313,6 +315,34 @@ aside .close { position: absolute; top: 10px; right: 10px; font: inherit; font-s
 aside .close:hover { color: var(--ink); }
 
 .hint { color: var(--dim); font-size: 13px; }
+/* Guided views: Archify's strip above the canvas, computed. A chapter is a
+   box and what the drawn arrows connect it to; clicking one focuses it. */
+.guided { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; margin: 0 0 12px; background: color-mix(in srgb, var(--surface) 70%, transparent); }
+.guided-head { display: flex; flex-direction: column; gap: 2px; min-width: 190px; font-family: var(--mono); }
+.guided-head .eyebrow { font-size: 9px; letter-spacing: .16em; text-transform: uppercase; color: var(--accent); font-weight: 700; }
+.guided-head .eyebrow .progress { color: var(--dim); margin-left: 6px; }
+.guided-head strong { font-size: 13px; }
+.guided-head .play { align-self: flex-start; margin-top: 4px; font: inherit; font-size: 11px; color: var(--accent); background: none; border: 0; padding: 0; cursor: pointer; }
+.guided-head .play:hover { text-decoration: underline; }
+.chapters { display: flex; gap: 8px; flex-wrap: wrap; list-style: none; margin: 0; padding: 0; }
+.chapter { display: flex; gap: 8px; align-items: center; border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; cursor: pointer; font-family: var(--mono); font-size: 11px; background: var(--raised); }
+.chapter:hover, .chapter.is-active { border-color: var(--accent); }
+.chapter.is-active { box-shadow: inset 0 0 0 1px var(--accent); }
+.chapter .num { color: var(--accent); font-weight: 700; font-size: 10px; border: 1px solid color-mix(in srgb, var(--accent) 50%, var(--line)); border-radius: 3px; padding: 0 4px; }
+.chapter .title { color: var(--ink); font-weight: 600; }
+.chapter .counts { color: var(--faint); font-size: 10px; }
+/* Cards under the root canvas: computed from the graph, every item cites. */
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin: 14px 0 4px; }
+.card { border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; background: color-mix(in srgb, var(--surface) 70%, transparent); font-family: var(--mono); }
+.card-header { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 13px; margin: 0 0 8px; }
+.card-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.card-dot.cyan { background: var(--accent); } .card-dot.violet { background: var(--database-stroke); }
+.card-dot.amber { background: var(--cloud-stroke); } .card-dot.rose { background: var(--security-stroke); }
+.card ul { list-style: none; margin: 0; padding: 0; }
+.card-item { font-size: 11px; color: var(--ink); padding: 4px 0; border-radius: 4px; display: flex; justify-content: space-between; gap: 8px; }
+.card-item.link { cursor: pointer; } .card-item.link:hover { color: var(--accent); }
+.card-src { color: var(--accent); font-size: 9px; letter-spacing: .08em; border: 1px solid color-mix(in srgb, var(--accent) 50%, var(--line)); border-radius: 3px; padding: 0 5px; white-space: nowrap; align-self: flex-start; }
+.card-more, .card-empty { font-size: 11px; color: var(--faint); margin: 4px 0 0; }
 .withheld {
   border-left: 3px solid var(--warn); padding: 2px 0 2px 14px;
   margin-top: 24px; color: var(--dim); font-size: 13px;
@@ -563,6 +593,15 @@ def _js() -> Markup:
     if (node && (node.classList.contains('sv-node') || node.classList.contains('sv-boundary'))) {
       passport(node);
       if (node.classList.contains('sv-node')) focus(node); else clearFocus();
+    } else if (node && node.classList.contains('card-item')) {
+      eyebrowEl.textContent = 'Fact';
+      subEl.textContent = '';
+      metaEl.textContent = '';
+      outEl.textContent = ''; inEl.textContent = '';
+      outH.textContent = 'Outgoing'; inH.textContent = 'Incoming';
+      sumEl.textContent = 'computed from the graph; the lines below are the claim';
+      upBtn.disabled = true; downBtn.disabled = true;
+      clearFocus();
     } else {
       eyebrowEl.textContent = 'Connection';
       subEl.textContent = node ? (node.getAttribute('data-note') || node.getAttribute('data-label') || '') : '';
@@ -635,7 +674,7 @@ def _js() -> Markup:
     var refs = node.getAttribute('data-evidence').split('\\n').filter(Boolean);
     var child = node.getAttribute('data-child');
     if (child && ev.detail === 2) { openView(node, child); return; }
-    show(node.getAttribute('data-id') || node.getAttribute('data-src') || '', refs, node);
+    show(node.getAttribute('data-id') || node.getAttribute('data-src') || (node.classList.contains('card-item') ? node.textContent.replace(/SRC \\d+$/, '').trim() : ''), refs, node);
   });
 
   // --- Explorer: search, kind toggles, clickable neighbours, a path tool.
@@ -764,6 +803,54 @@ def _js() -> Markup:
     show(target, (hit.getAttribute('data-evidence') || '').split('\\n').filter(Boolean), hit);
   });
 
+  // Guided views: a chapter focuses its anchor box in the root view and
+  // lights the boxes the drawn arrows connect it to. Play steps through.
+  var playing = null;
+  function openChapter(li) {
+    var strip = li.closest('.guided');
+    var tab = li.closest('.tab');
+    var root = tab.querySelector('.view[data-view="' + CSS.escape(strip.getAttribute('data-root')) + '"]');
+    if (!root) return;
+    tab.querySelectorAll('.view').forEach(function (v) { v.classList.remove('is-open'); });
+    root.classList.add('is-open');
+    var anchorId = li.getAttribute('data-anchor');
+    var anchor = null;
+    root.querySelectorAll('.sv-node').forEach(function (nd) { if (!anchor && nd.getAttribute('data-id') === anchorId) anchor = nd; });
+    if (!anchor) return;
+    var ids = (li.getAttribute('data-focus') || '').split('\\n').filter(Boolean);
+    clearPins();
+    passport(anchor);
+    title.textContent = anchorId;
+    current = (anchor.getAttribute('data-evidence') || '').split('\\n').filter(Boolean);
+    render();
+    panel.classList.add('is-open');
+    light(scopeOf(anchor), anchor, ids);
+    strip.querySelectorAll('.chapter').forEach(function (c) { c.classList.remove('is-active'); });
+    li.classList.add('is-active');
+    var all = strip.querySelectorAll('.chapter');
+    var idx = Array.prototype.indexOf.call(all, li);
+    var progress = strip.querySelector('.progress');
+    if (progress) progress.textContent = (idx + 1) + ' / ' + all.length;
+    anchor.scrollIntoView({ block: 'center', inline: 'center' });
+  }
+  document.addEventListener('click', function (ev) {
+    var li = ev.target.closest('.chapter');
+    if (li) { if (playing) { clearInterval(playing); playing = null; } openChapter(li); return; }
+    var play = ev.target.closest('.guided .play');
+    if (!play) return;
+    var strip = play.closest('.guided');
+    var chapters = Array.prototype.slice.call(strip.querySelectorAll('.chapter'));
+    if (playing) { clearInterval(playing); playing = null; play.textContent = '▶ Play story'; return; }
+    var i = 0;
+    play.textContent = '■ Stop';
+    openChapter(chapters[0]);
+    playing = setInterval(function () {
+      i += 1;
+      if (i >= chapters.length) { clearInterval(playing); playing = null; play.textContent = '▶ Play story'; return; }
+      openChapter(chapters[i]);
+    }, 2500);
+  });
+
   function openView(node, child) {
     var tab = node.closest('.tab');
     var view = node.closest('.view');
@@ -814,7 +901,13 @@ def _js() -> Markup:
     )
 
 
-def _view(ds: DiagramSet, lo: LaidOutDiagram, spec_id: str, style: Style) -> Markup:
+def _view(
+    ds: DiagramSet,
+    lo: LaidOutDiagram,
+    spec_id: str,
+    style: Style,
+    cards: tuple[Card, ...] = (),
+) -> Markup:
     canvas = lo.canvases[spec_id]
     spec = ds.specs[spec_id]
     crumb: Markup = raw("")
@@ -843,6 +936,7 @@ def _view(ds: DiagramSet, lo: LaidOutDiagram, spec_id: str, style: Style) -> Mar
                 tag("p", esc(spec.subtitle), class_="meta"),
                 tag("div", canvas_svg(canvas, style), class_="scroller"),
                 _legend(canvas),
+                render_cards(cards) if cards and spec_id == ds.root else raw(""),
             )
         ),
         class_="view" + (" is-open" if spec_id == ds.root else ""),
@@ -928,14 +1022,22 @@ def _withheld_note(lo: LaidOutDiagram) -> Markup:
     )
 
 
-def _tab(ds: DiagramSet, lo: LaidOutDiagram, style: Style) -> Markup:
+def _tab(
+    ds: DiagramSet, lo: LaidOutDiagram, style: Style, cards: tuple[Card, ...] = ()
+) -> Markup:
     ordered = [ds.root, *sorted(s for s in lo.canvases if s != ds.root)]
+    guided = (
+        render_guided(chapters_for(ds.root_spec), ds.root)
+        if ds.root in lo.canvases
+        else raw("")
+    )
     return tag(
         "section",
         join(
             (
                 _explore_bar(),
-                join(_view(ds, lo, sid, style) for sid in ordered if sid in lo.canvases),
+                guided,
+                join(_view(ds, lo, sid, style, cards) for sid in ordered if sid in lo.canvases),
                 join(_expanded_views(ds, lo, style)),
                 _withheld_note(lo),
             )
@@ -1060,9 +1162,11 @@ def render_viewer(
     notes: tuple[str, ...],
     style: Style,
     version: str,
+    graph: Graph | None = None,
 ) -> str:
     """The whole document, as one self-contained string."""
     kinds = sorted(produced, key=lambda k: k.value)
+    cards = cards_for(graph) if graph is not None else ()
     nav = join(
         [tag("a", esc(k.value), href=f"#d-{k.value}") for k in kinds]
         + ([tag("a", esc("not drawn"), href="#d-unavailable")] if notes else [])
@@ -1096,14 +1200,16 @@ def render_viewer(
     body = join(
         (
             header,
-            join(_tab(produced[k], laid_out[k], style) for k in kinds),
+            join(_tab(produced[k], laid_out[k], style, cards) for k in kinds),
             _unavailable(notes),
             tag(
                 "aside",
                 join(
                     (
-                        raw('<button class="close" id="panel-close" type="button" '
-                            'aria-label="close">\u00d7</button>'),
+                        raw(
+                            '<button class="close" id="panel-close" type="button" '
+                            'aria-label="close">\u00d7</button>'
+                        ),
                         tag("p", esc("Passport"), id="panel-eyebrow", class_="eyebrow"),
                         tag("h2", raw(""), id="panel-title"),
                         tag("p", raw(""), id="panel-sub", class_="sub"),

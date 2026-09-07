@@ -14,6 +14,7 @@ import tempfile
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 PY = ROOT / ".venv" / "bin" / "python"
 SUITE = [
+    "tests/test_cards.py",
     "tests/test_conceptual.py",
     "tests/test_conceptual_review16.py",
     "tests/test_emit.py",
@@ -188,6 +189,55 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
         "svarupa/derive/architecture.py",
         "            if build_line and build_line.isdigit():",
         "            if False:",
+    ),
+    # --- Wave D: cards and guided views ---
+    (
+        "a test file's routes become entry points",
+        "svarupa/emit/cards.py",
+        "    for r in sorted(graph.routes):\n        if r.file not in eligible:\n            continue",
+        "    for r in sorted(graph.routes):\n        if False:\n            continue",
+    ),
+    (
+        "a test file's imports become stores and APIs",
+        "svarupa/emit/cards.py",
+        "    for x in sorted(graph.externals):\n        if x.file not in eligible:\n            continue",
+        "    for x in sorted(graph.externals):\n        if False:\n            continue",
+    ),
+    (
+        "card items lose their citations",
+        "svarupa/emit/cards.py",
+        '            CardItem(f"{label}: {len(by_module[m])} routes · {shown}", tuple(route_ev[m][:8]))',
+        '            CardItem(f"{label}: {len(by_module[m])} routes · {shown}", ())',
+    ),
+    (
+        "an empty card vanishes instead of saying so",
+        "svarupa/emit/cards.py",
+        '        body = tag("ul", join(items)) if items else tag("p", esc(c.empty), class_="card-empty")',
+        '        body = tag("ul", join(items))',
+    ),
+    (
+        "chapters light boxes outside their view",
+        "svarupa/emit/cards.py",
+        "            focus=(n.id, *sorted(neighbours.get(n.id, set()))),",
+        "            focus=(n.id, *sorted(neighbours.get(n.id, set())), 'nowhere'),",
+    ),
+    (
+        "handlers no longer lead a chapter",
+        "svarupa/emit/cards.py",
+        '        if "api" in (n.attr("roles") or "").split(",") or n.kind in ("service", "endpoint")',
+        '        if n.kind in ("service", "endpoint")',
+    ),
+    (
+        "the guided strip is not rendered",
+        "svarupa/emit/viewer.py",
+        "                guided,\n",
+        "",
+    ),
+    (
+        "cards are rendered under every view, not the root only",
+        "svarupa/emit/viewer.py",
+        '                render_cards(cards) if cards and spec_id == ds.root else raw(""),',
+        '                render_cards(cards) if cards else raw(""),',
     ),
 ]
 

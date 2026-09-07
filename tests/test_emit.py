@@ -576,6 +576,7 @@ def test_the_document_parses_as_the_elements_it_was_built_from(
         "ul",
         "li",
         "aside",
+        "ol",
         "hr",
         "strong",
         "noscript",

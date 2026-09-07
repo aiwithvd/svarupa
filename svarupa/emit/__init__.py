@@ -132,7 +132,7 @@ def emit(
         written.append((name, size))
 
     shown = display_root if display_root is not None else root.name
-    html = render_viewer(shown, produced, laid_out, notes, style, __version__)
+    html = render_viewer(shown, produced, laid_out, notes, style, __version__, graph)
     written.append(("index.html", _write_text(directory / "index.html", html)))
 
     report = render_report(shown, graph, produced, laid_out, notes, tuple(problems))
