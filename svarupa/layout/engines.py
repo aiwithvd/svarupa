@@ -238,17 +238,25 @@ def _settle_labels(
         if r.label_at is None or not r.label:
             out.append(r)
             continue
-        segments = sorted(
-            range(len(r.points) - 1),
-            key=lambda i: (
-                -(
-                    abs(r.points[i + 1][0] - r.points[i][0])
-                    + abs(r.points[i + 1][1] - r.points[i][1])
-                )
-            ),
+        # A verb reads best on a horizontal run next to one of its boxes.
+        # "Longest segment first" put every corridor verb on the lane at the
+        # top of the canvas, a screen away from both ends (Wave B screenshots).
+        # Order: horizontal before vertical, then nearest either end, then the
+        # old longest-first list as the fallback; a segment shorter than the
+        # mask is skipped, since the mask would then straddle a corner.
+        pts = r.points
+        n = len(pts) - 1
+        lengths = [
+            abs(pts[i + 1][0] - pts[i][0]) + abs(pts[i + 1][1] - pts[i][1]) for i in range(n)
+        ]
+        horizontal = [pts[i][1] == pts[i + 1][1] for i in range(n)]
+        preferred = sorted(
+            (i for i in range(n) if lengths[i] >= r.label_w),
+            key=lambda i: (not horizontal[i], min(i, n - 1 - i), i),
         )
+        longest = sorted(range(n), key=lambda i: -lengths[i])
         chosen: tuple[int, int] | None = None
-        for i in segments:
+        for i in [*preferred, *longest]:
             (x0, y0), (x1, y1) = r.points[i], r.points[i + 1]
             cx, cy = (x0 + x1) // 2, (y0 + y1) // 2
             if clear(cx, cy, r.label_w, r):
@@ -627,17 +635,110 @@ def _routes(
     def row_index(box: Box) -> int:
         return _row_of(box, rows)
 
-    # Every edge that runs horizontally through a gap gets its own y inside
-    # it. Sharing one track is what turned a cycle-heavy diagram into a row of
-    # overlapping stubs: the routes were individually correct and collectively
-    # one thick line.
-    tracks: dict[int, dict[tuple[str, str], int]] = {}
+    # Ports are per SIDE of a box, not per direction. Every edge leaves from
+    # the bottom edge, and a same-row or reversed edge also ENTERS at the
+    # bottom edge, so an exit and an entry fanned over separate lists landed
+    # on one x and two arrows shared the last stretch into the box
+    # (SVA-G-015 on every cycle in the clustered view). Downward entries
+    # alone use the top edge.
+    bottom_ports: dict[str, list[tuple[str, str]]] = {}
+    top_ports: dict[str, list[str]] = {}
+    for bid, box in by_id.items():
+        r = row_index(box)
+        bottom_ports[bid] = [("out", tail) for tail in exits.get(bid, [])] + [
+            ("in", head)
+            for head in entries.get(bid, [])
+            if head in by_id and row_index(by_id[head]) >= r
+        ]
+        top_ports[bid] = [
+            head
+            for head in entries.get(bid, [])
+            if head in by_id and row_index(by_id[head]) < r
+        ]
+
+    def exit_x(head: str, tail: str) -> int:
+        ports = bottom_ports[head]
+        return _fan(by_id[head], ports.index(("out", tail)) + 1, len(ports))
+
+    def entry_x(head: str, tail: str) -> int:
+        if row_index(by_id[head]) >= row_index(by_id[tail]):
+            ports = bottom_ports[tail]
+            return _fan(by_id[tail], ports.index(("in", head)) + 1, len(ports))
+        top = top_ports[tail]
+        return _fan(by_id[tail], top.index(head) + 1, len(top))
+
+    # Every horizontal run through a gap gets its own y inside it, whatever
+    # kind of edge it belongs to. Only same-row edges had tracks; every
+    # downward hop and every reversed edge ran at the gap's midpoint, so on
+    # one acceptance canvas 842 pairs of different edges shared a line
+    # (SVA-G-015, review #17 F2). The gap was already sized for one track
+    # per hop by `_gap_demand`; this hands the tracks out.
+    #
+    # The order matters too. Two hops through one gap descend on the same x
+    # when one leaves a waypoint above and the other enters a waypoint below
+    # in the same column, and their verticals then overlap unless the one
+    # coming from above runs on a HIGHER track than the one going below.
+    # That is channel routing's vertical constraint: a net with a top
+    # terminal at column x sits above every net with a bottom terminal at x.
+    # Tracks are ordered by those constraints, sorted keys breaking ties; a
+    # constraint cycle falls back to sorted order and the validator reports
+    # what is left.
+    hops_in_gap: dict[int, list[tuple[tuple[str, str], frozenset[int], frozenset[int]]]] = {}
+
+    def hop(gap: int, key: tuple[str, str], tops: set[int], bottoms: set[int]) -> None:
+        hops_in_gap.setdefault(gap, []).append((key, frozenset(tops), frozenset(bottoms)))
+
     for c in sorted(chains, key=lambda c: (c.src, c.dst)):
         head, tail = c.nodes[0], c.nodes[-1]
         if head not in by_id or tail not in by_id:
             continue
-        gap = _row_of(by_id[head], rows)
-        tracks.setdefault(gap, {})[(c.src, c.dst)] = len(tracks.get(gap, {}))
+        key = (c.src, c.dst)
+        a, b = by_id[head], by_id[tail]
+        ax, bx = exit_x(head, tail), entry_x(head, tail)
+        ra, rb = _row_of(a, rows), _row_of(b, rows)
+        if rb == ra:
+            hop(ra, key, {ax, bx}, set())
+        elif rb > ra:
+            inner = [by_id[n] for n in c.nodes[1:-1] if n in by_id]
+            if not inner and rb > ra + 1:
+                hop(ra, key, {ax}, {place.lane_x})
+                hop(rb - 1, key, {place.lane_x}, {bx})
+            else:
+                previous, px = a, ax
+                for w in inner:
+                    wx = w.x + w.w // 2
+                    hop(_row_of(previous, rows), key, {px}, {wx})
+                    previous, px = w, wx
+                hop(_row_of(previous, rows), key, {px}, {bx})
+        else:
+            hop(ra, key, {ax, bx}, set())
+
+    tracks: dict[int, dict[tuple[str, str], int]] = {}
+    for gap, nets in hops_in_gap.items():
+        keys = sorted({k for k, _t, _b in nets})
+        tops: dict[tuple[str, str], set[int]] = {k: set() for k in keys}
+        bottoms: dict[tuple[str, str], set[int]] = {k: set() for k in keys}
+        for k, tp, bt in nets:
+            tops[k] |= tp
+            bottoms[k] |= bt
+        # above[n] = nets that must sit above n (their top is at n's bottom).
+        above: dict[tuple[str, str], set[tuple[str, str]]] = {k: set() for k in keys}
+        for n in keys:
+            for m in keys:
+                if m != n and tops[m] & bottoms[n]:
+                    above[n].add(m)
+        order: list[tuple[str, str]] = []
+        pending = set(keys)
+        while pending:
+            ready = sorted(n for n in pending if not (above[n] & pending))
+            if not ready:
+                ready = sorted(pending)[:1]  # a cycle: take the smallest, report later
+            order.append(ready[0])
+            pending.discard(ready[0])
+        tracks[gap] = {k: i for i, k in enumerate(order)}
+
+    def track_y(gap: int, key: tuple[str, str]) -> int:
+        return _track(place.gaps[gap], tracks[gap][key], len(tracks[gap]))
 
     out: list[Route] = []
     for c in sorted(chains, key=lambda c: (c.src, c.dst)):
@@ -660,8 +761,7 @@ def _routes(
         if head not in by_id or tail not in by_id:
             continue
         a, b = by_id[head], by_id[tail]
-        ax = _fan(a, exits[head].index(tail) + 1, len(exits[head]))
-        bx = _fan(b, entries[tail].index(head) + 1, len(entries[tail]))
+        ax, bx = exit_x(head, tail), entry_x(head, tail)
         ra, rb = row_index(a), row_index(b)
 
         points: list[tuple[int, int]] = []
@@ -669,14 +769,14 @@ def _routes(
             # Same row: down into the gap below, across, back up. The gap is
             # empty of boxes by construction, and each such edge gets its own
             # track inside it so they do not stack.
-            mid = _track(place.gaps[ra], tracks[ra][(c.src, c.dst)], len(tracks[ra]))
+            mid = track_y(ra, (c.src, c.dst))
             points = [(ax, a.bottom), (ax, mid), (bx, mid), (bx, b.bottom)]
         elif rb > ra and not [n for n in c.nodes[1:-1] if n in by_id] and rb > ra + 1:
             # No waypoints and not adjacent: `grid` builds rows that are not
             # layers, so nothing reserved space in between. Go round the side,
             # which is ugly and correct, rather than through.
-            gap_a = _mid(place.gaps[ra])
-            gap_b = _mid(place.gaps[rb - 1])
+            gap_a = track_y(ra, (c.src, c.dst))
+            gap_b = track_y(rb - 1, (c.src, c.dst))
             lane = place.lane_x
             points = [
                 (ax, a.bottom),
@@ -691,17 +791,17 @@ def _routes(
             points = [(ax, a.bottom)]
             previous = a
             for w in waypoints:
-                gap = _mid(place.gaps[row_index(previous)])
+                gap = track_y(row_index(previous), (c.src, c.dst))
                 wx = w.x + w.w // 2
                 points += [(points[-1][0], gap), (wx, gap), (wx, w.y), (wx, w.bottom)]
                 previous = w
-            gap = _mid(place.gaps[row_index(previous)])
+            gap = track_y(row_index(previous), (c.src, c.dst))
             points += [(points[-1][0], gap), (bx, gap), (bx, b.y)]
         else:
             # A reversed edge: it was flipped for layering, so it runs upward
             # here. Enter the target from below so the arrowhead still points
             # at the real dependency.
-            gap_a = _mid(place.gaps[ra])
+            gap_a = track_y(ra, (c.src, c.dst))
             gap_b = _mid(place.gaps[rb])
             points = [(ax, a.bottom), (ax, gap_a), (bx, gap_a), (bx, gap_b), (bx, b.bottom)]
 
@@ -1087,7 +1187,12 @@ def flow(
 
     def exit_y(src: str, dst: str) -> int:
         ports = right_ports[src]
-        return fan_y(placed[src], ports.index(("out", dst)) + 1, len(ports))
+        # Even, and left-side entries odd: two boxes in adjacent columns share
+        # row bands, and with any two fan formulas some exit height meets some
+        # entry height on a big enough canvas (measured in embedded code
+        # views). Parity makes the two sets disjoint by construction.
+        y = fan_y(placed[src], ports.index(("out", dst)) + 1, len(ports))
+        return y - (y % 2)
 
     def entry_fan_y(b: Box, nth: int, total: int) -> int:
         """Entry heights on a box's left side sit between the exit heights
@@ -1101,7 +1206,7 @@ def flow(
             ports = right_ports[dst]
             return fan_y(placed[dst], ports.index(("in", src)) + 1, len(ports))
         left = left_ports[dst]
-        return entry_fan_y(placed[dst], left.index(src) + 1, len(left))
+        return entry_fan_y(placed[dst], left.index(src) + 1, len(left)) | 1
 
     order = sorted(columns)
     # A column's horizontal extent: a corridor edge climbs and drops BESIDE

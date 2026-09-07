@@ -75,10 +75,11 @@ def _check_route_overlap(canvas: Canvas) -> list[Diagnostic]:
     arrows still end on the same box. Two edges between the same two boxes
     (a mutual dependency) are also allowed to share a line.
 
-    WARNING, not ERROR, for now: the layered and clustered routers also
-    share lines between distinct edges in row gaps (measured when this gate
-    was added), and fixing their track allocation is Wave D work. The
-    finding reaches the report either way; the flow engine produces none.
+    An ERROR, so the view is withheld: when this gate arrived as a WARNING it
+    counted 620 shared lines on one acceptance repo across the layered and
+    clustered routers (tracks at the gap midpoint, exits and entries fanned
+    over separate lists); with tracks per hop ordered by channel constraints
+    and ports per side, both repos measure zero, and the gate holds it there.
     """
     out: list[Diagnostic] = []
     routes = canvas.routes
@@ -100,14 +101,11 @@ def _check_route_overlap(canvas: Canvas) -> list[Diagnostic]:
                         continue
                     if hi > lo:
                         out.append(
-                            Diagnostic(
-                                code="SVA-G-015",
-                                severity=Severity.WARNING,
-                                message=(
-                                    f"is drawn on top of the different edge {s.src} -> {s.dst} "
-                                    f"for {hi - lo}px at ({ax1},{ay1})-({ax2},{ay2})"
-                                ),
-                                subject=f"{r.src} -> {r.dst}",
+                            _err(
+                                "SVA-G-015",
+                                f"{r.src} -> {r.dst}",
+                                f"is drawn on top of the different edge {s.src} -> {s.dst} "
+                                f"for {hi - lo}px at ({ax1},{ay1})-({ax2},{ay2})",
                             )
                         )
                         break

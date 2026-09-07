@@ -1176,7 +1176,7 @@ def test_two_different_edges_on_one_line_are_a_finding() -> None:
     codes = [x.code for x in validate(cv, STYLE)]
     assert "SVA-G-015" in codes
     found = next(x for x in validate(cv, STYLE) if x.code == "SVA-G-015")
-    assert found.severity.value == "WARNING" and "for 122px" in found.message
+    assert found.severity.value == "ERROR" and "for 122px" in found.message
     bundle = Route(
         src="c",
         dst="b",
@@ -1230,3 +1230,36 @@ def test_flow_entry_heights_do_not_meet_exit_heights_across_a_gap() -> None:
     s = flow_spec_of(("a", "d"), ("b", "c"), layers={"a": "0", "b": "0", "c": "1", "d": "1"})
     c = lay_out(s, STYLE, "flow")
     assert validate(c, STYLE) == (), [x.render() for x in validate(c, STYLE)]
+
+
+def test_layered_hops_through_one_gap_take_different_tracks() -> None:
+    """Only same-row edges had their own track; every downward hop and every
+    reversed edge ran at the gap's midpoint, so 842 pairs of different edges
+    shared a line on one acceptance canvas (SVA-G-015, review #17 F2). Three
+    edges from row 0 to row 1 plus a same-row edge all
+    cross the first gap: every horizontal run in it has its own y."""
+    s = spec(
+        node("a"),
+        node("b"),
+        node("c"),
+        node("d"),
+        node("e"),
+        node("f"),
+        edges=(edge("a", "e"), edge("b", "f"), edge("c", "d"), edge("a", "b")),
+    )
+    c = lay_out(s, STYLE, "layered")
+    assert not [x for x in validate(c, STYLE) if x.severity.value == "ERROR"]
+    codes = [x.code for x in validate(c, STYLE)]
+    assert "SVA-G-015" not in codes, [
+        x.render() for x in validate(c, STYLE) if x.code == "SVA-G-015"
+    ]
+    top = c.box("a")
+    assert top is not None
+    horizontals = {
+        (r.src, r.dst): y1
+        for r in c.routes
+        for (x1, y1), (x2, y2) in zip(r.points, r.points[1:], strict=False)
+        if y1 == y2 and x1 != x2 and y1 > top.bottom
+    }
+    assert len(horizontals) >= 4, horizontals
+    assert len(set(horizontals.values())) == len(horizontals), "one y per edge in the gap"
