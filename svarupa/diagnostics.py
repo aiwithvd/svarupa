@@ -141,6 +141,7 @@ CODES: dict[str, str] = {
     "SVA-G-013": "a route label overlaps a box or another label",
     "SVA-G-014": "a boundary was not drawn because it would enclose non-members",
     "SVA-G-015": "two different edges are drawn on top of each other",
+    "SVA-G-016": "a root view fits none of the four reference viewports without scrolling",
     # emit
     "SVA-E-001": "the output directory holds files this tool does not own",
     # lock
@@ -164,6 +165,7 @@ CODES: dict[str, str] = {
     "SVA-S-004": "a setup file could not be written",
     # query
     "SVA-Q-001": "no graph.json at the given path, so there is nothing to query",
+    "SVA-Q-002": "the MCP server needs the optional mcp dependency",
 }
 
 # Codes whose message text comes from the caller, so there is no literal at the

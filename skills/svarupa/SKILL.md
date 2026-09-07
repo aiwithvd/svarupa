@@ -83,6 +83,12 @@ output; a `truncated` banner names how much was cut against a budget measured
 on the printed JSON; zero hits exits 1. Exit 0 means the question was
 answered (an empty `affected` list is an answer).
 
+For an agent runtime, `svarupa mcp <artifact-dir>` serves the same seven
+functions as MCP tools over stdio (needs the optional dependency:
+`pip install 'svarupa[mcp]'`; without it the command refuses with
+`SVA-Q-002`). Tool names and parameters follow Graphify's, answers follow
+svarupa's rules above.
+
 ## Architecture diff between commits
 
 The committed lockfile is facts only, no line numbers, so intra-module

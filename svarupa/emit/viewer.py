@@ -264,6 +264,9 @@ h2 { font-size: 20px; margin: 0 0 4px; font-weight: 700; letter-spacing: -0.02em
 .explore { display: flex; gap: 10px; align-items: center; margin: 0 0 10px; font-size: 12px; color: var(--faint); flex-wrap: wrap; }
 .explore input { font: inherit; background: var(--raised); color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; width: 280px; }
 .explore .path { color: var(--ink); }
+.explore .export { margin-left: auto; display: flex; gap: 6px; }
+.explore .export button { font: inherit; font-size: 11px; color: var(--accent); background: var(--raised); border: 1px solid var(--line); border-radius: 6px; padding: 4px 9px; cursor: pointer; }
+.explore .export button:hover { border-color: var(--accent); }
 svg.is-searching .sv-node:not(.is-hit), svg.is-searching .sv-route { opacity: .15; }
 svg .sv-node.is-off, svg .sv-route.is-off { opacity: .1; }
 svg.is-pinned .sv-node:not(.is-path), svg.is-pinned .sv-route:not(.is-path) { opacity: .15; }
@@ -851,6 +854,66 @@ def _js() -> Markup:
     }, 2500);
   });
 
+  // Export: the open view's SVG as a file, or rasterised at 2x. The page's
+  // own stylesheet travels with it (a standalone SVG's :root is the svg
+  // element, so the theme variables resolve), and the current theme goes
+  // along as the data attribute the stylesheet keys on. Serialised by the
+  // browser, never assembled from strings.
+  function exportView(tab, format) {
+    var view = tab.querySelector('.view.is-open') || tab.querySelector('.view');
+    var svg = view && view.querySelector('svg');
+    if (!svg) return;
+    var copy = svg.cloneNode(true);
+    copy.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    copy.setAttribute('data-theme', document.documentElement.getAttribute('data-theme') || 'dark');
+    copy.querySelectorAll('.is-path, .is-focus, .is-hit, .is-off').forEach(function (x) {
+      x.classList.remove('is-path'); x.classList.remove('is-focus'); x.classList.remove('is-hit'); x.classList.remove('is-off');
+    });
+    copy.classList.remove('is-focused', 'is-hovering', 'is-pinned', 'is-searching');
+    var style = document.createElementNS('http://www.w3.org/2000/svg', 'style');
+    var sheet = document.querySelector('style');
+    style.textContent = sheet ? sheet.textContent : '';
+    copy.insertBefore(style, copy.firstChild);
+    var bg = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    bg.setAttribute('width', '100%'); bg.setAttribute('height', '100%');
+    bg.setAttribute('fill', getComputedStyle(document.documentElement).getPropertyValue('--canvas') || '#0f172a');
+    copy.insertBefore(bg, style.nextSibling);
+    var name = (view.getAttribute('data-view') || 'view').replace(/[^A-Za-z0-9._-]+/g, '_');
+    var xml = new XMLSerializer().serializeToString(copy);
+    if (format === 'svg') {
+      download(new Blob([xml], { type: 'image/svg+xml;charset=utf-8' }), name + '.svg');
+      return;
+    }
+    var w = parseInt(svg.getAttribute('width'), 10) || svg.viewBox.baseVal.width;
+    var h = parseInt(svg.getAttribute('height'), 10) || svg.viewBox.baseVal.height;
+    var img = new Image();
+    var url = URL.createObjectURL(new Blob([xml], { type: 'image/svg+xml;charset=utf-8' }));
+    img.onload = function () {
+      var c = document.createElement('canvas');
+      c.width = w * 2; c.height = h * 2;
+      var ctx = c.getContext('2d');
+      ctx.scale(2, 2);
+      ctx.drawImage(img, 0, 0);
+      URL.revokeObjectURL(url);
+      c.toBlob(function (blob) { if (blob) download(blob, name + '.png'); }, 'image/png');
+    };
+    img.src = url;
+  }
+  function download(blob, filename) {
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+  }
+  document.addEventListener('click', function (ev) {
+    var b = ev.target.closest('.explore [data-export]');
+    if (!b) return;
+    exportView(b.closest('.tab'), b.getAttribute('data-export'));
+  });
+
   function openView(node, child) {
     var tab = node.closest('.tab');
     var view = node.closest('.view');
@@ -1063,6 +1126,10 @@ def _explore_bar() -> Markup:
                     class_="hint",
                 ),
                 tag("span", raw(""), class_="path", aria_live="polite"),
+                raw(
+                    '<span class="export"><button type="button" data-export="svg">Export SVG</button>'
+                    '<button type="button" data-export="png">Export PNG</button></span>'
+                ),
             )
         ),
         class_="explore",

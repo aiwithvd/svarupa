@@ -336,8 +336,9 @@ def main(argv: list[str] | None = None) -> int:
             'Also: "svarupa setup skill" and "svarupa setup ci_github" install '
             'integration files (see: svarupa setup --help), and "svarupa query '
             '<artifact> <function> ..." answers questions from graph.json (see: '
-            "svarupa query --help). To analyze a directory literally named "
-            '"setup" or "query", pass "./setup" or "./query".'
+            'svarupa query --help); "svarupa mcp <artifact>" serves the same '
+            "functions over MCP. To analyze a directory literally named "
+            '"setup", "query" or "mcp", pass it as "./setup" and so on.'
         ),
     )
     parser.add_argument("--version", action="version", version=f"svarupa {__version__}")
@@ -385,6 +386,10 @@ def main(argv: list[str] | None = None) -> int:
             from svarupa.query.cli import query_main
 
             return query_main(argv[1:])
+        if argv[:1] == ["mcp"]:
+            from svarupa.query.mcp_server import mcp_main
+
+            return mcp_main(argv[1:])
         args = parser.parse_args(argv)
         return _scan(args.path, args.max_files, args.out, args.lock, args.diff, args.drift_base)
     except DiagnosticError as exc:

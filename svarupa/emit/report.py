@@ -14,7 +14,7 @@ from __future__ import annotations
 from svarupa.build import Graph
 from svarupa.derive.base import DiagramKind, DiagramSet
 from svarupa.diagnostics import Diagnostic, Severity
-from svarupa.layout import LaidOutDiagram
+from svarupa.layout import LaidOutDiagram, fits
 
 __all__ = ["MAX_LISTED", "render_report"]
 
@@ -170,15 +170,26 @@ def render_report(
         ]
     else:
         parts += [
-            "| Diagram | Views | Boxes | Withheld | Depth |",
-            "|---|---:|---:|---:|---:|",
+            "| Diagram | Views | Boxes | Withheld | Depth | Root fits |",
+            "|---|---:|---:|---:|---:|---|",
         ]
         for kind in sorted(produced, key=lambda k: k.value):
             ds, lo = produced[kind], laid_out[kind]
             boxes = sum(len(c.boxes) for c in lo.canvases.values())
+            root_canvas = lo.canvases.get(ds.root)
+            # The smallest of the four reference viewports the root view fits
+            # without scrolling, or "scrolls": Archify's containment check,
+            # as arithmetic on the canvas.
+            fit = fits(root_canvas) if root_canvas is not None else ()
+            if root_canvas is None:
+                fits_in = "withheld"
+            elif fit:
+                fits_in = f"{fit[0][0]}x{fit[0][1]}"
+            else:
+                fits_in = "scrolls"
             parts.append(
                 f"| {kind.value} | {len(lo.canvases)} | {boxes} | "
-                f"{len(lo.withheld)} | {ds.depth()} |"
+                f"{len(lo.withheld)} | {ds.depth()} | {fits_in} |"
             )
         parts.append("")
 

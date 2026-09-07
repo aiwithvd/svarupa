@@ -45,6 +45,9 @@ dependencies = [
 # revisit tracked in the design's open items. Default clustering is
 # networkx.louvain_communities (BSD), measured at identical quality.
 leiden = ["leidenalg>=0.10", "python-igraph>=0.11"]
+# The MCP server (`svarupa mcp <artifact>`) exposes the query functions to
+# agents; the SDK is optional so the CLI stays light.
+mcp = ["mcp>=1.2"]
 
 [project.scripts]
 svarupa = "svarupa.cli:main"

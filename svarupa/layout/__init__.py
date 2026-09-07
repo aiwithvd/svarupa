@@ -19,15 +19,19 @@ from svarupa.layout.geometry import Band, Box, Canvas, Route, Style
 from svarupa.layout.validate import MIN_GAP, validate
 
 __all__ = [
+    "CHROME_H",
+    "CHROME_W",
     "ENGINES",
     "ENGINE_FOR_KIND",
     "MIN_GAP",
+    "VIEWPORTS",
     "Band",
     "Box",
     "Canvas",
     "LaidOutDiagram",
     "Route",
     "Style",
+    "fits",
     "lay_out",
     "lay_out_set",
     "validate",
@@ -100,7 +104,47 @@ def lay_out_set(ds: DiagramSet, style: Style | None = None) -> LaidOutDiagram:
         else:
             good[spec_id] = canvas
     problems.extend(_navigability_after_withholding(ds, good, bad))
+    if ds.root in good:
+        problems.extend(_containment(ds.root, good[ds.root]))
     return LaidOutDiagram(ds.kind, engine, good, bad, tuple(problems))
+
+
+# Archify's visual-check measures overflow at four viewports in a headless
+# browser and fails on it. Ours is arithmetic on the canvas, which is what
+# the browser would measure (coordinates are integers and the SVG is drawn at
+# natural size), minus the chrome above and beside the canvas. It is an
+# INFO, not a failure: wide diagrams scroll at natural size by decision (the
+# legibility rework), so "fits none of the four" is a fact the report states
+# about a view, not a defect in it.
+VIEWPORTS: tuple[tuple[int, int], ...] = ((1440, 900), (1600, 1000), (1920, 1080), (2048, 1320))
+CHROME_W = 48  # page margins
+CHROME_H = 330  # header, guided strip, title, legend
+
+
+def fits(canvas: Canvas) -> tuple[tuple[int, int], ...]:
+    """The reference viewports the root canvas fits in without scrolling."""
+    return tuple(
+        (w, h)
+        for w, h in VIEWPORTS
+        if canvas.width <= w - CHROME_W and canvas.height <= h - CHROME_H
+    )
+
+
+def _containment(root: str, canvas: Canvas) -> list[Diagnostic]:
+    if fits(canvas):
+        return []
+    return [
+        Diagnostic(
+            code="SVA-G-016",
+            severity=Severity.INFO,
+            message=(
+                f"the root view is {canvas.width}x{canvas.height} and fits none of the four "
+                "reference viewports without scrolling (1440x900 to 2048x1320); it is drawn "
+                "at natural size and scrolls"
+            ),
+            subject=root,
+        )
+    ]
 
 
 def _navigability_after_withholding(
