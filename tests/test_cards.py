@@ -16,7 +16,14 @@ from svarupa.cluster import cluster
 from svarupa.derive import derive_all
 from svarupa.derive.base import DiagramKind
 from svarupa.detect import detect
-from svarupa.emit.cards import MAX_CHAPTERS, Card, cards_for, chapters_for, render_cards
+from svarupa.emit.cards import (
+    MAX_CHAPTERS,
+    Card,
+    cards_for,
+    chapters_for,
+    render_cards,
+    render_guided,
+)
 from svarupa.extract import declared_dependencies, extract
 
 
@@ -101,6 +108,36 @@ def test_chapters_are_api_modules_with_their_neighbours(tmp_path: Path) -> None:
     assert all(set(c.focus) <= ids for c in arch), "a chapter lights only boxes in its view"
 
 
+def test_chapters_star_built_services_not_only_image_only_ones() -> None:
+    """The System view types a built service by its code (backend, frontend,
+    security), so a chapter rule keyed on `service` skipped exactly the
+    services with a story and told grafana's instead (review #20 S8)."""
+    from svarupa.derive.base import DiagramEdge, DiagramNode, DiagramSpec
+    from svarupa.model import Evidence
+
+    ev = (Evidence(file="docker-compose.yml", start_line=1, end_line=1),)
+    nodes = tuple(
+        DiagramNode(id=i, label=i, kind=k, evidence=ev)
+        for i, k in (
+            ("app", "backend"),
+            ("db", "database"),
+            ("grafana", "service"),
+            ("ui", "frontend"),
+        )
+    )
+    edges = (
+        DiagramEdge(src="app", dst="db", label="", evidence=ev),
+        DiagramEdge(src="ui", dst="app", label="", evidence=ev),
+        DiagramEdge(src="grafana", dst="db", label="", evidence=ev),
+    )
+    spec = DiagramSpec(
+        kind=DiagramKind.DEPLOY_TOPOLOGY, id="/spec/root", title="t", nodes=nodes, edges=edges
+    )
+    anchors = [c.anchor for c in chapters_for(spec)]
+    assert anchors[0] == "app", anchors
+    assert set(anchors) == {"app", "grafana", "ui"}, "stores do not lead a chapter"
+
+
 def test_viewer_carries_the_strip_and_the_cards_once_per_tab(tmp_path: Path) -> None:
     _repo(tmp_path)
     out = tmp_path / "out"
@@ -108,11 +145,13 @@ def test_viewer_carries_the_strip_and_the_cards_once_per_tab(tmp_path: Path) -> 
     html = (out / "index.html").read_text(encoding="utf8")
     tabs = len(re.findall(r'class="tab" id="d-(?!unavailable)', html))
     strips = html.count('<div class="guided"')
-    # The request-flow root has boxes but no arrows, so it has no story to
-    # tell and no strip (review #19 F9); every other root gets one.
-    assert strips == tabs - 1, (strips, tabs)
+    # Every root has arrows here: the one request story is the request-flow
+    # root itself (review #20 C10), so it has a strip like the others. A
+    # root of boxes with no arrows gets none (review #19 F9), pinned below.
+    assert strips == tabs, (strips, tabs)
     request_tab = html.split('id="d-request-flow"')[1].split('class="tab"')[0]
-    assert '<div class="guided"' not in request_tab
+    assert '<div class="guided"' in request_tab
+    assert '<div class="guided"' not in str(render_guided((), "/spec/root"))
     assert html.count('<div class="cards">') == tabs, "cards under every root view only"
     assert 'class="chapter" data-anchor="api" data-focus="' in html
     assert "Guided views " in html and "Explore this system" in html

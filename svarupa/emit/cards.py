@@ -71,11 +71,13 @@ def cards_for(graph: Graph) -> tuple[Card, ...]:
         if r.file not in eligible:
             continue
         m = module_of(r.file)
-        by_module.setdefault(m, []).append(f"{r.method} {r.path}")
+        # A route with path "" (handler-relative, prefix not composed) counts
+        # but is not shown: joined, it was a leading comma (review #20 S4).
+        by_module.setdefault(m, []).append(f"{r.method} {r.path}" if r.path else "")
         route_ev.setdefault(m, []).append(r.evidence)
     entries: list[CardItem] = []
     for m in sorted(by_module, key=lambda m: (-len(by_module[m]), m)):
-        paths = sorted(set(by_module[m]))
+        paths = sorted({p for p in by_module[m] if p})
         shown = ", ".join(paths[:3]) + (" …" if len(paths) > 3 else "")
         label = m or "(repo root)"
         entries.append(
@@ -156,7 +158,13 @@ def chapters_for(spec: DiagramSpec) -> tuple[Chapter, ...]:
         n
         for n in spec.nodes
         if degree.get(n.id)
-        and ("api" in (n.attr("roles") or "").split(",") or n.kind in ("service", "endpoint"))
+        and (
+            "api" in (n.attr("roles") or "").split(",")
+            # A built service is typed by its code (backend, frontend,
+            # security) and is the service with a story; `service` alone is
+            # the image-only kind (review #20 S8).
+            or n.kind in ("service", "backend", "frontend", "security", "endpoint")
+        )
     ]
     if not starred:
         starred = [n for n in spec.nodes if degree.get(n.id)]

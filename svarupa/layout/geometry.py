@@ -230,6 +230,32 @@ class RegionBox:
         return self.y + self.h
 
 
+def band_label_rect(band: Band, style: Style) -> tuple[int, int, int, int]:
+    """Where the renderer draws a band's label: (x, y, w, h).
+
+    One definition read by the engine that keeps route labels off it, the
+    validator that checks them and the renderer that draws it. The label is a
+    10px uppercase run above the band's top edge (see `emit.svg._band`); six
+    band-label collisions with route verbs survived every gate because no
+    gate knew where the band label was (review #20 S5).
+    """
+    from svarupa.layout.text import advance
+
+    h = 10
+    y = band.y - style.band_pad - 6 - h // 2 - 1
+    w = advance(band.label.upper(), h) + len(band.label) + 2
+    return style.margin // 2, y, w, h + 2
+
+
+def region_label_rect(region: RegionBox, style: Style) -> tuple[int, int, int, int]:
+    """Where the renderer draws a region's label (see `emit.svg._region`)."""
+    from svarupa.layout.text import advance
+
+    h = style.label_font_size
+    cy = region.y + 6 + style.region_label_height // 2 + 1
+    return region.x + 13, cy - h // 2 - 1, advance(region.label, h) + 2, h + 2
+
+
 @dataclass(frozen=True, slots=True)
 class Canvas:
     """One positioned diagram, ready to draw."""

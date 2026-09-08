@@ -164,7 +164,10 @@ def _ingress_node(graph: Graph, module: str) -> DiagramNode | None:
     )
     if not routes:
         return None
-    paths = sorted({r.path for r in routes})
+    # A route declared with path "" (handler-relative; its router prefix is
+    # composed elsewhere or not at all) counts but is not shown: joined, it
+    # was a leading comma in 51 places on the acceptance repo (review #20 S4).
+    paths = sorted({r.path for r in routes if r.path})
     return DiagramNode(
         id=f"in:{module}",
         label=_cut(paths),
@@ -469,6 +472,21 @@ class RequestFlowDeriver(Deriver):
                     sublabel=ingress.sublabel + " · " + ingress.label,
                 )
             )
+        if len(top) == 1 and top[0].child_spec in specs:
+            # One story is the diagram: a root holding a single box that must
+            # be drilled is a menu with one item (review #20 C10).
+            only = specs[top[0].child_spec]
+            specs[only.id] = DiagramSpec(
+                kind=only.kind,
+                id=only.id,
+                title=only.title,
+                subtitle=only.subtitle,
+                nodes=only.nodes,
+                edges=only.edges,
+                parent=None,
+                regions=only.regions,
+            )
+            return DiagramSet(self.kind, only.id, specs, tuple(diags))
         specs[ROOT] = DiagramSpec(
             kind=self.kind,
             id=ROOT,

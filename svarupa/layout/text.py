@@ -120,7 +120,7 @@ def advance(text: str, font_size: int) -> int:
     return math.ceil(cells(text) * font_size * ADVANCE_RATIO)
 
 
-def truncate(text: str, font_size: int, max_px: int) -> str:
+def truncate(text: str, font_size: int, max_px: int, keep_tail: bool = True) -> str:
     """Shorten `text` until it fits `max_px`, marking the cut with an ellipsis.
 
     Truncation happens at layout time, not in the browser, for the same reason
@@ -128,8 +128,11 @@ def truncate(text: str, font_size: int, max_px: int) -> str:
     `Box.label` is what gets drawn and what validation measures, and the full
     text is kept beside it for the tooltip, so nothing is lost.
 
-    Cuts from the **left**, keeping the tail. These labels are paths, and what
-    distinguishes `src/services/billing/invoice` is its end.
+    Cuts from the **left** by default, keeping the tail. Labels are paths, and
+    what distinguishes `src/services/billing/invoice` is its end. A semantic
+    sublabel (`FastAPI · 7 routes · JWT`) reads from its head, so it is cut
+    from the right instead: head truncation left `…r · FastAPI · 2 routes`
+    on a story box, the ellipsis having eaten the word (review #20 C4).
     """
     if advance(text, font_size) <= max_px:
         return text
@@ -138,7 +141,7 @@ def truncate(text: str, font_size: int, max_px: int) -> str:
         return ""
     kept: list[str] = []
     width = 0
-    for ch in reversed(text):
+    for ch in reversed(text) if keep_tail else text:
         w = cells(ch) * font_size * ADVANCE_RATIO
         if width + w > budget:
             break
@@ -153,4 +156,6 @@ def truncate(text: str, font_size: int, max_px: int) -> str:
         kept.pop()
     if not kept:
         return ""
+    if not keep_tail:
+        return "".join(kept) + _ELLIPSIS
     return _ELLIPSIS + "".join(reversed(kept))

@@ -227,6 +227,79 @@ def _rationale_nodes_and_edges(
     return nodes, edges
 
 
+def _module_nodes_and_edges(
+    graph: Graph, taken: set[str]
+) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+    """Structural modules as nodes, so the ids the diagrams draw are the ids
+    the graph answers for.
+
+    `get_node api/routers` returned null while the passport's id chip read
+    `api/routers` (review #20 S7): directory modules lived only in a bare
+    `modules` list. Each module node cites its files' first lines (the same
+    evidence its box carries), `contains` its files, and `imports` the modules
+    it depends on at runtime with the import lines. The repository root
+    module (id "") has no id a query can name and is left to its files.
+    """
+    from svarupa.derive.base import module_evidence, runtime_edges
+
+    nodes: list[dict[str, object]] = []
+    edges: list[dict[str, object]] = []
+    drawn: set[str] = set()
+    for m in sorted(graph.modules):
+        if not m or m in taken:
+            continue
+        ev = module_evidence(graph, m)
+        if not ev:
+            continue
+        drawn.add(m)
+        mod = graph.modules[m]
+        nodes.append(
+            {
+                "id": m,
+                "kind": "module",
+                "label": m.rsplit("/", 1)[-1],
+                "qualified_name": m,
+                "lang": None,
+                "evidence": _evidence(ev),
+                "attrs": {"files": str(mod.file_count), "structural": "directory"},
+            }
+        )
+        for nid in sorted(graph.nodes):
+            node = graph.nodes[nid]
+            if node.kind.value != "module" or not node.evidence:
+                continue
+            if nid.rsplit("/", 1)[0] != m or "/" not in nid:
+                continue
+            edges.append(
+                {
+                    "src": m,
+                    "dst": nid,
+                    "kind": "contains",
+                    "context": "contain",
+                    "resolution": "resolved",
+                    "arity": 1,
+                    "evidence": _evidence(node.evidence[:1]),
+                    "attrs": {},
+                }
+            )
+    pairs, _skipped = runtime_edges(graph)
+    for a, b, weight, ev in pairs:
+        if a in drawn and b in drawn:
+            edges.append(
+                {
+                    "src": a,
+                    "dst": b,
+                    "kind": "imports",
+                    "context": "import",
+                    "resolution": "resolved",
+                    "arity": 1,
+                    "evidence": _evidence(tuple(sorted(set(ev)))[:8]),
+                    "attrs": {"weight": str(weight)},
+                }
+            )
+    return nodes, edges
+
+
 def graph_json(
     graph: Graph,
     rationale: tuple[RationaleFact, ...] = (),
@@ -247,7 +320,12 @@ def graph_json(
     """
     fact_nodes, fact_edges = _fact_nodes_and_edges(graph)
     why_nodes, why_edges = _rationale_nodes_and_edges(graph, rationale)
-    ids = [n.id for n in graph.nodes.values()] + [str(n["id"]) for n in fact_nodes + why_nodes]
+    mod_nodes, mod_edges = _module_nodes_and_edges(
+        graph, set(graph.nodes) | {str(n["id"]) for n in fact_nodes + why_nodes}
+    )
+    ids = [n.id for n in graph.nodes.values()] + [
+        str(n["id"]) for n in fact_nodes + why_nodes + mod_nodes
+    ]
     if len(set(ids)) != len(ids):  # pragma: no cover - guarded by _fresh; a defect if reached
         dup = sorted({i for i in ids if ids.count(i) > 1})
         raise ValueError(f"graph.json would carry duplicate node ids: {dup[:5]}")
@@ -272,7 +350,8 @@ def graph_json(
             for n in sorted(graph.nodes.values(), key=lambda n: n.id)
         ]
         + fact_nodes
-        + why_nodes,
+        + why_nodes
+        + mod_nodes,
         "edges": [
             {
                 "src": e.src,
@@ -287,7 +366,8 @@ def graph_json(
             for e in sorted(graph.edges, key=lambda e: (e.src, e.dst, e.kind.value))
         ]
         + fact_edges
-        + why_edges,
+        + why_edges
+        + mod_edges,
         "hyperedges": [],
         "modules": sorted(graph.modules),
         "module_deps": sorted([a, b] for a, b in graph.module_deps),

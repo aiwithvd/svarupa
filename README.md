@@ -3,8 +3,10 @@
 **स्वरूप** — *"its own true form."*
 
 Svarupa reads a codebase and produces a **verified** map of it: a queryable
-knowledge graph plus seven types of architecture diagram, delivered as one
-interactive HTML artifact.
+knowledge graph plus six types of architecture diagram (architecture, module
+dependencies, data flow, request flow, deploy topology, ERD), delivered as one
+interactive HTML artifact. A type the evidence cannot produce is named as
+absent, never fabricated.
 
 The defining constraint: **every node and every edge in every diagram carries
 `file:line` evidence, or it does not render.** Not a heuristic guess, not a
@@ -16,6 +18,32 @@ one. Architecture documents describe what someone meant to build. Svarupa
 renders what exists.
 
 > **Status: pre-alpha, under active development.** Nothing here is stable yet.
+
+---
+
+## Usage
+
+```bash
+uv tool install <path to this checkout>   # `uv tool install svarupa` once published
+svarupa <path to a repository>            # writes <path>/.svarupa/
+svarupa <path> --out ./map                # or anywhere else
+open ./map/index.html
+```
+
+`python -m svarupa` is the same command. The artifact holds:
+
+- `index.html`: every diagram type as a tab. Click a box for its passport
+  (kind, connections, reach, cited source lines); double-click a drillable box,
+  or click its chevron, to open it in place down to component and code level.
+- `graph.json`: the knowledge graph. `svarupa query <dir> get_node <label>`,
+  `get_neighbors`, `shortest_path`, `affected`, `god_nodes`, `graph_stats`,
+  `query_graph`; `svarupa mcp <dir>` serves the same over MCP.
+- `REPORT.md`: the resolution scorecard and every finding, with its code.
+- `--lock` writes the committed architecture lockfile; `--diff` prints the
+  architecture delta against a base lockfile. `svarupa setup ci_github`
+  installs the per-pull-request workflow.
+
+![The architecture tab of the demo repository](docs/images/demo-architecture.png)
 
 ---
 

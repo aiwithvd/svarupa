@@ -6,6 +6,8 @@ the graph. The clustering decides *grouping*; it never becomes an identity.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 from svarupa.build import (
     Graph,
     build_context_of,
@@ -56,16 +58,28 @@ _EXTERNAL_VERB = {"database": "reads/writes", "messagebus": "publishes", "cloud"
 
 
 def _import_edge(a: str, b: str, w: int, ev: tuple[Evidence, ...]) -> DiagramEdge:
-    """A structural import arrow: no drawn text (the word is noise when every
-    arrow in a view is an import), the count in the note for the tooltip."""
+    """A structural import arrow: no drawn text, the count in the note.
+
+    The word was drawn for one wave (6b5866a) and review #20 measured it: 76
+    identical `imports` on descovo's module deps, doubling the ink and saying
+    nothing the solid stroke does not. The legend says once what a solid arrow
+    is; the passport and tooltip carry the count.
+    """
     return DiagramEdge(
         src=a,
         dst=b,
-        label="imports",
+        label="",
         note=f"{w} import{'s' if w != 1 else ''}",
         evidence=ev,
         weight=w,
     )
+
+
+def show_module(module_id: str) -> str:
+    """A module id for a diagnostic: the repository root reads `(repo root)`,
+    as its box does, never an empty string a reader cannot see (review #20
+    C7 found `'' 1 module(s) omitted` in a report)."""
+    return module_id or "(repo root)"
 
 
 def _role_kind(roles: dict[str, tuple[str, ...]], module: str) -> str:
@@ -145,14 +159,17 @@ def _externals_of(
 
 
 def external_nodes_and_edges(
-    graph: Graph, modules: set[str], source_of: dict[str, str] | None = None
+    graph: Graph,
+    modules: set[str],
+    source_of: Mapping[str, str | tuple[str, ...]] | None = None,
 ) -> tuple[list[DiagramNode], list[DiagramEdge]]:
     """External boxes for what these modules import, plus dashed verb edges.
 
-    `source_of` maps a module to the box that stands for it in this spec (its
-    group at the top level), so edges attach to what is drawn. One external
-    box per (category, label): three modules talking to MongoDB share one
-    box and three arrows, which is the picture, not three MongoDBs.
+    `source_of` maps a module to the box, or boxes, that stand for it in this
+    spec (its group at the top level; every service built from a context that
+    holds it in the System view), so edges attach to what is drawn. One
+    external box per (category, label): three modules talking to MongoDB
+    share one box and three arrows, which is the picture, not three MongoDBs.
     """
     nodes: list[DiagramNode] = []
     edges: list[DiagramEdge] = []
@@ -177,18 +194,20 @@ def external_nodes_and_edges(
         )
         by_src: dict[str, list[Evidence]] = {}
         for m, ev in holders:
-            src = (source_of or {}).get(m, m)
-            by_src.setdefault(src, []).append(ev)
-        for k, (src, evs) in enumerate(sorted(by_src.items())):
-            # The verb is drawn once per external box (on the first arrow in
-            # canonical order); twelve `reads/writes` fanning into one store
-            # said one thing twelve times. Every arrow keeps the verb in its
-            # note, so the tooltip and the passport still say it.
+            stands = (source_of or {}).get(m, m)
+            for src in (stands,) if isinstance(stands, str) else stands:
+                by_src.setdefault(src, []).append(ev)
+        for src, evs in sorted(by_src.items()):
+            # Every store arrow carries its verb; the label gate drops the
+            # ones that would collide. Drawing it on the first arrow only
+            # left both MongoDB arrows on the demo unlabelled when that one
+            # was dropped (review #20 C3), and the structural arrows are
+            # silent now, so the verbs are the only words on the canvas.
             edges.append(
                 DiagramEdge(
                     src=src,
                     dst=nid,
-                    label=_EXTERNAL_VERB[category] if k == 0 else "",
+                    label=_EXTERNAL_VERB[category],
                     note=_EXTERNAL_VERB[category],
                     evidence=tuple(sorted(set(evs)))[:MAX_EVIDENCE_PER_BOX],
                     weight=len(evs),
@@ -346,7 +365,7 @@ class ArchitectureDeriver(Deriver):
                         f"{len(undrawable)} module(s) omitted for lack of any "
                         "extractable source; no evidence means no box"
                     ),
-                    subject=", ".join(undrawable[:5]),
+                    subject=", ".join(show_module(m) for m in undrawable[:5]),
                 )
             )
         if not drawable:
@@ -366,9 +385,17 @@ class ArchitectureDeriver(Deriver):
         groups = self._top_groups(clustering, graph, diags, drawable)
         specs: dict[str, DiagramSpec] = {}
 
-        # Top level: one box per group, edges aggregated between groups.
-        member_group = {m: anchor for anchor, members in groups for m in members}
-        top_labels = labels_for([anchor for anchor, _ in groups])
+        # Top level: one box per group, edges aggregated between groups. A
+        # group is its own box with its own id: it borrowed its anchor's name
+        # and id for nineteen reviews, so `src/api -> scripts (16 imports)`
+        # cited six lines none of which imported anything under `scripts/`,
+        # and the passport's "also in" jumped from the group to the module
+        # (review #20 M3). Communities are presentation (decision F2); the box
+        # says so in its label and never wears a member's identity.
+        member_group = {
+            m: group_box_id(anchor, members) for anchor, members in groups for m in members
+        }
+        top_labels = top_box_labels(groups)
         top_nodes: list[DiagramNode] = []
         roles = module_roles(graph)
         for anchor, members in groups:
@@ -386,7 +413,7 @@ class ArchitectureDeriver(Deriver):
             singleton_kind = _role_kind(roles, members[0]) if len(members) == 1 else "group"
             top_nodes.append(
                 DiagramNode(
-                    id=anchor,
+                    id=group_box_id(anchor, members),
                     label=top_labels[anchor],
                     kind="group" if len(members) > 1 else singleton_kind,
                     evidence=(
@@ -401,7 +428,7 @@ class ArchitectureDeriver(Deriver):
                     + (
                         (("roles", ",".join(roles[members[0]])),)
                         if len(members) == 1 and members[0] in roles
-                        else ()
+                        else (("members", "\n".join(members)),)
                     ),
                     sublabel=(
                         module_sublabel(graph, members[0])
@@ -664,8 +691,16 @@ class ArchitectureDeriver(Deriver):
 class ModuleDepsDeriver(Deriver):
     """Every module and every dependency, layered by depth.
 
-    No grouping and no drill-down: this is the flat, complete picture, and its
-    value is precisely that nothing was summarized away.
+    Complete, and readable at every level. Up to the top-box budget this is
+    the flat picture: every module a box, every dependency an arrow. Past it
+    (30 boxes and 76 arrows on the second acceptance repo, review #20 M5), the
+    picture follows the directory tree the modules already have: a box per
+    top-level part, its arrows the dependencies between parts, and a drill
+    into a part shows the modules inside it and the dependencies among them.
+    Every dependency is drawn at exactly one level, the one where both ends
+    are different boxes, so nothing is summarized away; it is placed where a
+    reader can see it. No community grouping here: the tree is structural,
+    the same identity the lockfile rests on.
     """
 
     kind = DiagramKind.MODULE_DEPS
@@ -674,7 +709,7 @@ class ModuleDepsDeriver(Deriver):
     def derive(
         self,
         graph: Graph,
-        clustering: Clustering,  # noqa: ARG002 - flat by design; grouping is the point of the other view
+        clustering: Clustering,  # noqa: ARG002 - structural by design; communities are the other view
     ) -> DiagramSet | None:
         pairs, skipped = runtime_edges(graph)
         if not pairs:
@@ -691,31 +726,40 @@ class ModuleDepsDeriver(Deriver):
                 ),
             )
 
-        depth = _layer(pairs, sorted(graph.modules))
         involved = {m for a, b, _w, _e in pairs for m in (a, b)}
-        dep_labels = labels_for(sorted(involved))
-        roles = module_roles(graph)
-        nodes = tuple(
-            sorted(
-                DiagramNode(
-                    id=m,
-                    label=dep_labels[m],
-                    kind=_role_kind(roles, m),
-                    evidence=_evidence_with_roles(graph, m, module_evidence(graph, m)),
-                    attrs=(("layer", str(depth.get(m, 0))),)
-                    + ((("roles", ",".join(roles[m])),) if m in roles else ()),
-                )
-                for m in sorted(involved)
-                if module_evidence(graph, m)
-            )
-        )
-        known = {n.id for n in nodes}
-        edges = tuple(
-            sorted(
-                _import_edge(a, b, w, ev) for a, b, w, ev in pairs if a in known and b in known
-            )
-        )
+        known = {m for m in involved if module_evidence(graph, m)}
         diags: list[Diagnostic] = []
+        specs: dict[str, DiagramSpec] = {}
+        if len(known) > MAX_TOP_BOXES:
+            live = tuple(p for p in pairs if p[0] in known and p[1] in known)
+            self._tree(graph, live, known, ROOT, None, specs, diags)
+            nodes = specs[ROOT].nodes
+            edges = specs[ROOT].edges
+        else:
+            depth = _layer(pairs, sorted(graph.modules))
+            dep_labels = labels_for(sorted(known))
+            roles = module_roles(graph)
+            nodes = tuple(
+                sorted(
+                    DiagramNode(
+                        id=m,
+                        label=dep_labels[m],
+                        kind=_role_kind(roles, m),
+                        evidence=_evidence_with_roles(graph, m, module_evidence(graph, m)),
+                        attrs=(("layer", str(depth.get(m, 0))),)
+                        + ((("roles", ",".join(roles[m])),) if m in roles else ()),
+                        sublabel=module_sublabel(graph, m),
+                    )
+                    for m in sorted(known)
+                )
+            )
+            edges = tuple(
+                sorted(
+                    _import_edge(a, b, w, ev)
+                    for a, b, w, ev in pairs
+                    if a in known and b in known
+                )
+            )
         if skipped:
             diags.append(
                 Diagnostic(
@@ -741,18 +785,145 @@ class ModuleDepsDeriver(Deriver):
                         "dependency(ies) omitted for lack of extractable source; "
                         "no evidence means no box"
                     ),
-                    subject=", ".join(dropped_modules[:5]) or self.kind.value,
+                    subject=", ".join(show_module(m) for m in dropped_modules[:5])
+                    or self.kind.value,
                 )
             )
-        spec = DiagramSpec(
-            kind=self.kind,
-            id=ROOT,
-            title=self.title,
-            subtitle=f"{len(nodes)} modules, {len(edges)} dependencies",
-            nodes=nodes,
-            edges=edges,
+        if ROOT not in specs:
+            specs[ROOT] = DiagramSpec(
+                kind=self.kind,
+                id=ROOT,
+                title=self.title,
+                subtitle=f"{len(nodes)} modules, {len(edges)} dependencies",
+                nodes=nodes,
+                edges=edges,
+            )
+        return DiagramSet(self.kind, ROOT, specs, tuple(diags))
+
+    def _tree(
+        self,
+        graph: Graph,
+        pairs: tuple[ModulePair, ...],
+        members: set[str],
+        sid: str,
+        parent: str | None,
+        specs: dict[str, DiagramSpec],
+        diags: list[Diagnostic],
+    ) -> None:
+        """One level of the directory tree over `members`, as a spec.
+
+        A level whose members all share one more path segment is skipped
+        (a root holding only `src` would be one box), so every level drawn
+        has at least two boxes. A box is a module itself when it is the only
+        member under its segment, and a part (`tree:<path>`) holding several
+        modules otherwise; a part drills into the level below it.
+        """
+        # Group by the next path segment under `prefix`; a member that IS the
+        # prefix is its own box. While everything falls into one part, descend
+        # into it (a root holding only `src` would be one box), so every level
+        # drawn has at least two boxes and the walk always terminates.
+        prefix = ""
+        while True:
+            parts: dict[str, list[str]] = {}
+            for m in sorted(members):
+                if m == prefix:
+                    parts.setdefault(m, []).append(m)
+                    continue
+                rest = m[len(prefix) :].lstrip("/") if prefix else m
+                head = rest.split("/", 1)[0]
+                parts.setdefault(f"{prefix}/{head}".strip("/"), []).append(m)
+            if len(parts) == 1:
+                ((key, ms),) = parts.items()
+                if ms != [key]:
+                    prefix = key
+                    continue
+            break
+        box_of: dict[str, str] = {}
+        roles = module_roles(graph)
+        nodes: list[DiagramNode] = []
+        # A part with one module in it IS that module (`dagster/jobs` alone
+        # under `dagster/`): a part box around one module would drill into a
+        # one-box level, which review #19 F9 already named as nothing to say.
+        leaves = [ms[0] for ms in parts.values() if len(ms) == 1]
+        leaf_labels = labels_for(leaves)
+        arch = ArchitectureDeriver()
+        for _key, ms in sorted(parts.items()):
+            key = _key
+            if len(ms) == 1:
+                key = ms[0]
+                box_of[key] = key
+                nodes.append(
+                    DiagramNode(
+                        id=key,
+                        label=leaf_labels[key],
+                        kind=_role_kind(roles, key),
+                        evidence=_evidence_with_roles(graph, key, module_evidence(graph, key)),
+                        attrs=((("roles", ",".join(roles[key])),) if key in roles else ()),
+                        sublabel=module_sublabel(graph, key),
+                        child_spec=arch.components_for(graph, key, sid, specs, diags),
+                    )
+                )
+                continue
+            bid = f"tree:{key}"
+            for m in ms:
+                box_of[m] = bid
+            child = spec_id(bid)
+            inside = tuple(p for p in pairs if p[0] in ms and p[1] in ms)
+            self._tree(graph, inside, set(ms), child, sid, specs, diags)
+            nodes.append(
+                DiagramNode(
+                    id=bid,
+                    label=_label(key) if key else "(repo root)",
+                    kind="module",
+                    evidence=group_evidence(graph, tuple(ms), ms[0]),
+                    attrs=(("modules", str(len(ms))), ("members", "\n".join(ms))),
+                    sublabel=f"{len(ms)} modules",
+                    child_spec=child,
+                )
+            )
+        agg: dict[tuple[str, str], tuple[int, list[Evidence]]] = {}
+        for a, b, w, ev in pairs:
+            ba, bb = box_of[a], box_of[b]
+            if ba == bb:
+                continue  # drawn one level down, where the two are distinct boxes
+            cw, cev = agg.get((ba, bb), (0, []))
+            agg[(ba, bb)] = (cw + w, [*cev, *ev])
+        edges = tuple(
+            sorted(
+                _import_edge(a, b, w, tuple(sorted(set(ev)))[:MAX_EVIDENCE_PER_BOX])
+                for (a, b), (w, ev) in agg.items()
+            )
         )
-        return DiagramSet(self.kind, ROOT, {ROOT: spec}, tuple(diags))
+        depth = _layer(
+            tuple((a, b, w, ()) for (a, b), (w, _e) in agg.items()), sorted(box_of.values())
+        )
+        nodes = [
+            DiagramNode(
+                id=n.id,
+                label=n.label,
+                kind=n.kind,
+                evidence=n.evidence,
+                attrs=(*n.attrs, ("layer", str(depth.get(n.id, 0)))),
+                sublabel=n.sublabel,
+                child_spec=n.child_spec,
+            )
+            for n in nodes
+        ]
+        within = sum(1 for a, b, _w, _e in pairs if box_of[a] == box_of[b])
+        where = _label(prefix) if prefix else "the repository"
+        specs[sid] = DiagramSpec(
+            kind=self.kind,
+            id=sid,
+            title=self.title if sid == ROOT else f"{_label(prefix)} module dependencies",
+            subtitle=(
+                f"{len(members)} modules in {len(nodes)} parts of {where}; "
+                f"{len(edges)} dependencies between parts"
+                + (f", {within} inside them (drill into a part)" if within else "")
+            ),
+            nodes=tuple(sorted(nodes)),
+            edges=edges,
+            parent=parent,
+        )
 
 
 def _file_module(path: str) -> str:
@@ -784,6 +955,67 @@ def _label(module_id: str) -> str:
     if module_id == "":
         return "(repo root)"
     return module_id.rsplit("/", 1)[-1] or module_id
+
+
+def group_box_id(anchor: str, members: tuple[str, ...]) -> str:
+    """The id of a top-level box: the module itself for a singleton, a
+    distinct `group:` id for a community, so no group is ever mistaken for
+    the module it was anchored on."""
+    return anchor if len(members) == 1 else f"group:{anchor}"
+
+
+def _common_dir(members: tuple[str, ...]) -> str:
+    parts = [m.split("/") for m in members]
+    shared: list[str] = []
+    for segs in zip(*parts, strict=False):
+        if len(set(segs)) != 1:
+            break
+        shared.append(segs[0])
+    return "/".join(shared)
+
+
+def top_box_labels(groups: list[tuple[str, tuple[str, ...]]]) -> dict[str, str]:
+    """Labels for the top level, keyed by anchor.
+
+    A singleton is its module. A group is named by the one fact all its
+    members share, the directory they sit under, when there is one (`agent`
+    for `agent, agent/routers, agent/schema`); with no shared directory it is
+    named for its anchor with the count of the rest (`pipeline +5`), which
+    reads as a set and never as the anchor alone. Labels are then made unique
+    the way module labels are.
+    """
+    singles = labels_for([a for a, m in groups if len(m) == 1])
+    out: dict[str, str] = {}
+    for anchor, members in groups:
+        if len(members) == 1:
+            out[anchor] = singles[anchor]
+            continue
+        shared = _common_dir(members)
+        out[anchor] = (
+            _label(shared)
+            if shared and shared not in ("", ".")
+            else f"{_label(anchor)} +{len(members) - 1}"
+        )
+    # Two groups under one directory (`src` holding `src/*` twice over) share
+    # a label; the colliding groups fall back to their anchor's leaf and count,
+    # then to the anchor's last two segments, and singletons to theirs.
+    size = dict(groups)
+    for _attempt in range(2):
+        seen: dict[str, list[str]] = {}
+        for anchor, label in out.items():
+            seen.setdefault(label, []).append(anchor)
+        clashes = [a for anchors in seen.values() if len(anchors) > 1 for a in anchors]
+        if not clashes:
+            break
+        for anchor in clashes:
+            parts = anchor.split("/")
+            n = len(size[anchor])
+            if n > 1 and _attempt == 0:
+                out[anchor] = f"{_label(anchor)} +{n - 1}"
+            else:
+                stem = "/".join(parts[-2:]) if len(parts) > 1 else _label(anchor)
+                out[anchor] = stem + (f" +{n - 1}" if n > 1 else "")
+    return out
 
 
 def labels_for(module_ids: list[str]) -> dict[str, str]:

@@ -95,11 +95,13 @@ _CLOUD: dict[str, str] = {
     "langchain_openai": "OpenAI API",
     "langchain_anthropic": "Anthropic API",
     "cohere": "Cohere API",
-    "boto3": "AWS",
-    "botocore": "AWS",
-    "aioboto3": "AWS",
-    "@aws-sdk": "AWS",
-    "aws-sdk": "AWS",
+    # The SDK, not the vendor: boto3 pointed at a MinIO endpoint is still the
+    # AWS SDK and is not AWS (review #20 S12).
+    "boto3": "AWS SDK",
+    "botocore": "AWS SDK",
+    "aioboto3": "AWS SDK",
+    "@aws-sdk": "AWS SDK",
+    "aws-sdk": "AWS SDK",
     "google.cloud": "Google Cloud",
     "@google-cloud": "Google Cloud",
     "googleapis": "Google APIs",

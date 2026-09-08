@@ -245,6 +245,7 @@ def test_every_module_lands_in_exactly_one_community(tmp_path: Path) -> None:
 
 
 def test_empty_graph_yields_no_communities(tmp_path: Path) -> None:
+    (tmp_path / "README.md").write_text("# no code here\n", encoding="utf8")
     cl = cluster(graph_of(tmp_path))
     assert cl.communities == ()
 

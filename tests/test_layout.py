@@ -764,6 +764,21 @@ def test_a_cycle_band_says_so_instead_of_claiming_a_level() -> None:
     assert set(cyclic.members) == {"p", "q"}
 
 
+def test_the_externals_band_is_labelled_external_never_in_a_cycle() -> None:
+    """Externals sink below every level after the cycle fallback has run, so
+    a band of stores read "IN A CYCLE" on both acceptance repos (review #20
+    S1). Externals only receive arrows and cannot be in one."""
+    s = spec(
+        node("p"),
+        node("q"),
+        node("ext:database:Redis", external="database"),
+        edges=(edge("p", "q"), edge("q", "p"), edge("p", "ext:database:Redis")),
+    )
+    c = lay_out(s, STYLE, "clustered")
+    by_label = {b.label: set(b.members) for b in c.bands}
+    assert by_label == {"in a cycle": {"p", "q"}, "external": {"ext:database:Redis"}}, by_label
+
+
 # --------------------------------------------------------------------------
 # Review #8: silent drops and fan-out collapse
 # --------------------------------------------------------------------------
@@ -1263,3 +1278,78 @@ def test_layered_hops_through_one_gap_take_different_tracks() -> None:
     }
     assert len(horizontals) >= 4, horizontals
     assert len(set(horizontals.values())) == len(horizontals), "one y per edge in the gap"
+
+
+def test_a_route_label_on_a_band_label_is_a_finding() -> None:
+    """Review #20 S5: six band-label collisions with route verbs survived
+    every gate because no gate knew where a band label was."""
+    from svarupa.layout.geometry import Band, band_label_rect
+
+    a, b = box("a", 100, 120), box("b", 400, 120)
+    band = Band(label="level 1", y=120, h=44, members=("a", "b"))
+    x, y, w, h = band_label_rect(band, STYLE)
+    on_band = Route(
+        src="a",
+        dst="b",
+        label="reads/writes",
+        points=((196, y + h // 2), (400, y + h // 2)),
+        evidence=EV,
+        label_at=(x + w // 2, y + h // 2),
+        label_w=60,
+    )
+    cv = Canvas(
+        spec_id="/spec/root",
+        kind=DiagramKind.MODULE_DEPS,
+        engine="clustered",
+        title="t",
+        subtitle="",
+        width=600,
+        height=300,
+        boxes=(a, b),
+        routes=(on_band,),
+        bands=(band,),
+    )
+    found = [d for d in validate(cv, STYLE) if d.code == "SVA-G-013"]
+    assert found and "band label level 1" in found[0].message, [
+        d.message for d in validate(cv, STYLE)
+    ]
+    # The settle keeps a verb off the band label when it lays the view out.
+    s = spec(
+        node("p"),
+        node("q"),
+        node("ext:database:Redis", external="database"),
+        edges=(edge("p", "q"), edge("q", "p"), edge("p", "ext:database:Redis")),
+    )
+    c = lay_out(s, STYLE, "clustered")
+    assert validate(c, STYLE) == ()
+
+
+def test_flow_columns_align_at_the_top_once_the_tallest_exceeds_a_screen() -> None:
+    """Review #20 S6: one ingress centred against a 24-box column put the
+    story 700px below the fold. Short flows still centre."""
+    tall = [node(f"d{i:02d}", layer="1") for i in range(12)]
+    s = spec(node("in", layer="0"), *tall, edges=tuple(edge("in", t.id) for t in tall))
+    c = lay_out(s, STYLE, "flow")
+    by_id = {b.id: b for b in c.boxes}
+    assert by_id["in"].y == min(b.y for b in c.boxes), "the single source box sits at the top"
+    short = spec(
+        node("a", layer="0"),
+        node("b1", layer="1"),
+        node("b2", layer="1"),
+        edges=(edge("a", "b1"), edge("a", "b2")),
+    )
+    c2 = lay_out(short, STYLE, "flow")
+    by2 = {b.id: b for b in c2.boxes}
+    assert by2["b1"].y < by2["a"].y < by2["b2"].bottom, "a short flow centres its columns"
+
+
+def test_sublabels_truncate_from_the_tail_and_paths_from_the_head() -> None:
+    """Review #20 C4: `…r · FastAPI · 2 routes` on a story box, the ellipsis
+    having eaten the word a reader needed."""
+    long_sub = "FastAPI · 7 routes · Celery · 3 tasks · JWT · React · more words"
+    cut = truncate(long_sub, STYLE.sublabel_font_size, 120, keep_tail=False)
+    assert cut.startswith("FastAPI · 7") and cut.endswith("…"), cut
+    assert truncate("src/services/billing/invoice", STYLE.font_size, 90).startswith("…")
+    s = spec(DiagramNode(id="m", label="m", kind="module", evidence=EV, sublabel=long_sub))
+    c = lay_out(s, STYLE, "clustered")
+    assert c.boxes[0].sublabel.startswith("FastAPI"), c.boxes[0].sublabel

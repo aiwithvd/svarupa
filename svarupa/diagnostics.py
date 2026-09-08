@@ -93,6 +93,7 @@ CODES: dict[str, str] = {
     "SVA-D-005": "a directory could not be read",
     "SVA-D-006": "an ignore pattern would not compile and was dropped",
     "SVA-D-007": "the scan root does not exist or is not a directory",
+    "SVA-D-008": "the scan root is an empty directory, so there is nothing to analyze",
     # extract
     "SVA-X-001": "a file has syntax errors, so extraction over it is incomplete",
     "SVA-X-002": "a symbol is defined more than once in one file",

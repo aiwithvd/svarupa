@@ -85,7 +85,9 @@ def _box(box: Box, style: Style) -> Markup:
     """
     # Two text lines when there is a sublabel: label above centre, sublabel
     # 14px below it (Archify's spacing); one centred line otherwise.
-    label_y = box.y + box.h // 2 - (7 if box.sublabel else 0)
+    # In a one-line box the label sits 2px below centre, clear of the SRC
+    # capsule at the top right (1.6px of overlap on 48 boxes, review #20 C5).
+    label_y = box.y + box.h // 2 - (7 if box.sublabel else -2)
     body = join(
         (
             tag(
@@ -152,6 +154,7 @@ def _box(box: Box, style: Style) -> Markup:
         )
     )
     roles = next((v for k, v in box.attrs if k == "roles"), None)
+    members = next((v for k, v in box.attrs if k == "members"), None)
     return tag(
         "g",
         body,
@@ -167,6 +170,10 @@ def _box(box: Box, style: Style) -> Markup:
         # and go through the same escaping as every other attribute.
         data_sublabel=box.sublabel or None,
         data_roles=roles,
+        data_members=members,
+        # Reachable from the keyboard: Enter opens the passport, as a click
+        # does (review #20 S9 found no focusable box and no Escape).
+        tabindex="0",
         **{EVIDENCE_ATTR: evidence_ref(box.evidence)},
     )
 
@@ -328,12 +335,15 @@ def _weight_class(weight: int) -> str:
 
 
 def _route(route: Route, style: Style) -> Markup:
-    """An edge as a rounded path, with no text on it.
+    """An edge as a rounded path, with its verb on a mask where the layout
+    found room for one.
 
     Every edge used to stamp its count at its polyline midpoint. On a real
     diagram they all landed in the same band and collapsed into strings like
-    `7122.26.62.5nimports`. The count is still there, in the tooltip and in the
-    evidence panel, where it can be read.
+    `7122.26.62.5nimports`. Numbers never return; a short verb does, at a
+    position the layout settled against every other label and box, and only
+    on arrows whose verb says something (a store, a bus, an API). Structural
+    import arrows are silent; the count is in the tooltip and the passport.
 
     Corners are rounded because a diagram of hard right angles reads as a
     circuit board. Weight is a stroke width, which shows the same information

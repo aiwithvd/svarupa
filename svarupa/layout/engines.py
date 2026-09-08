@@ -19,7 +19,16 @@ from itertools import pairwise
 
 from svarupa.derive.base import DiagramEdge, DiagramSpec
 from svarupa.diagnostics import Diagnostic, Severity
-from svarupa.layout.geometry import Band, Box, Canvas, RegionBox, Route, Style
+from svarupa.layout.geometry import (
+    Band,
+    Box,
+    Canvas,
+    RegionBox,
+    Route,
+    Style,
+    band_label_rect,
+    region_label_rect,
+)
 from svarupa.layout.sugiyama import DUMMY_WIDTH, Chain, layer_out
 from svarupa.layout.text import advance, sanitize, truncate
 
@@ -33,6 +42,14 @@ MAX_ROW_WIDTH = 1280
 # --------------------------------------------------------------------------
 # Boxes
 # --------------------------------------------------------------------------
+
+
+# Width reserved on each side of a drillable box's label for the chevron and
+# the SRC capsule (see `emit.svg._drill_marker` and `_src_capsule`).
+DRILL_RESERVE = 22
+# A flow's columns are centred against the tallest while it fits a 1440x900
+# screen under the chrome; taller than that they align at the top.
+FLOW_CENTRE_MAX_H = 600
 
 
 def _boxes(
@@ -50,9 +67,16 @@ def _boxes(
     out: list[Box] = []
     for n in spec.nodes:
         full = sanitize(n.label)
-        label = truncate(full, style.font_size, style.text_budget)
-        sub = truncate(sanitize(n.sublabel), style.sublabel_font_size, style.text_budget)
-        width = advance(label, style.font_size) + 2 * style.box_pad_x
+        # A drillable box carries a chevron at its right edge and every box a
+        # SRC capsule at its top right; the label is centred, so the room is
+        # reserved on both sides or the chevron sits on the last glyph (5px
+        # of overlap on 64 boxes, review #20 C5).
+        reserve = 2 * DRILL_RESERVE if n.child_spec else 0
+        label = truncate(full, style.font_size, style.text_budget - reserve)
+        sub = truncate(
+            sanitize(n.sublabel), style.sublabel_font_size, style.text_budget, keep_tail=False
+        )
+        width = advance(label, style.font_size) + 2 * style.box_pad_x + reserve
         if sub:
             width = max(width, advance(sub, style.sublabel_font_size) + 2 * style.box_pad_x)
         width = max(style.box_min_width, min(style.box_max_width, width))
@@ -196,7 +220,11 @@ def _region_pad(spec: DiagramSpec, style: Style) -> int:
 
 
 def _settle_labels(
-    routes: list[Route], boxes: Sequence[Box], style: Style, waypoints: frozenset[str]
+    routes: list[Route],
+    boxes: Sequence[Box],
+    style: Style,
+    waypoints: frozenset[str],
+    obstacles: Sequence[tuple[int, int, int, int]] = (),
 ) -> list[Route]:
     """Place each route label where it collides with nothing, or drop it.
 
@@ -211,7 +239,9 @@ def _settle_labels(
     h = style.label_font_size + style.label_pad
     gap = style.label_gap
     solid = [b for b in boxes if b.id not in waypoints]
-    placed: list[tuple[int, int, int, int]] = []
+    # Band and region labels are text too; a route verb settled on one is the
+    # same collision as two verbs on each other (review #20 S5).
+    placed: list[tuple[int, int, int, int]] = list(obstacles)
 
     def clear(cx: int, cy: int, w: int, own: Route) -> bool:
         x, y = cx - w // 2, cy - h // 2
@@ -1001,11 +1031,12 @@ def clustered(
     place = _place(
         rows, style, _gap_demand(rows, chains), _region_pad(spec, style), bool(spec.regions)
     )
-    routes = _settle_labels(
-        _routes(chains, place, _edge_map(spec), diags, style), place.boxes, style, dummies
-    )
     regions = _regions(spec, place.boxes, style, diags, dummies)
 
+    # Externals sink below every level after the cycle fallback has run, so
+    # a band of stores and APIs read "in a cycle" (review #20 S1). A label
+    # is computed from the fact it claims: externals are "external".
+    external = {n.id for n in spec.nodes if any(k == "external" for k, _ in n.attrs)}
     cyclic = _cyclic_ids(spec)
     by_level: dict[int, list[Box]] = {}
     for b in place.boxes:
@@ -1015,7 +1046,9 @@ def clustered(
     bands = tuple(
         Band(
             label=(
-                "in a cycle"
+                "external"
+                if all(b.id in external for b in members)
+                else "in a cycle"
                 if all(b.id in cyclic for b in members)
                 else f"level {sorted(by_level).index(level) + 1}"
             ),
@@ -1024,6 +1057,14 @@ def clustered(
             members=tuple(sorted(b.id for b in members)),
         )
         for level, members in sorted(by_level.items())
+    )
+    routes = _settle_labels(
+        _routes(chains, place, _edge_map(spec), diags, style),
+        place.boxes,
+        style,
+        dummies,
+        [band_label_rect(b, style) for b in bands]
+        + [region_label_rect(r, style) for r in regions],
     )
     return _canvas(
         spec,
@@ -1173,13 +1214,18 @@ def flow(
         gaps.append((x + col_w, x + col_w + col_gap))
         x += col_w + col_gap
 
-    # Centre every column vertically against the tallest.
-    for level in sorted(columns):
-        col = columns[level]
-        height = sum(b.h for b in col) + style.gap_y * (len(col) - 1)
-        shift = (tallest - height) // 2
-        for b in col:
-            placed[b.id] = replace(placed[b.id], y=placed[b.id].y + shift)
+    # Centre every column vertically against the tallest, while the tallest
+    # fits one screen. Past that, columns align at the top: one ingress and
+    # one handler centred against a 24-box domain column put the story 700px
+    # below the fold, and the first screen showed none of "enters, is
+    # handled, lands" (review #20 S6).
+    if tallest <= FLOW_CENTRE_MAX_H:
+        for level in sorted(columns):
+            col = columns[level]
+            height = sum(b.h for b in col) + style.gap_y * (len(col) - 1)
+            shift = (tallest - height) // 2
+            for b in col:
+                placed[b.id] = replace(placed[b.id], y=placed[b.id].y + shift)
 
     width = x - col_gap + style.margin + pad + style.lane_gutter
     height = top + tallest + style.margin + pad
@@ -1387,8 +1433,14 @@ def flow(
         )
         _ = i
 
-    routes = _settle_labels(routes, list(placed.values()), style, frozenset())
     regions = _regions(spec, list(placed.values()), style, diags)
+    routes = _settle_labels(
+        routes,
+        list(placed.values()),
+        style,
+        frozenset(),
+        [region_label_rect(r, style) for r in regions],
+    )
     return Canvas(
         spec_id=spec.id,
         kind=spec.kind,

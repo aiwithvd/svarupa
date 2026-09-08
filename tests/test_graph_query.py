@@ -538,3 +538,53 @@ def test_query_edge_cases_hand_built() -> None:
     kept = {n["id"] for n in r["nodes"]}
     among = sum(1 for a in kept for b in kept if a < b)
     assert 0 < len(r["edges"]) < among, "edges among the kept nodes were cut to fit"
+
+
+def test_the_rationale_scanner_survives_svarupa_s_own_source_in_a_fresh_process() -> None:
+    """Review #20 M1: building svarupa on itself died with a bus error (exit
+    138) and no diagnostic. Reading `start_point` on a docstring node reached
+    through `child_by_field_name` and `children` corrupted the heap for the
+    next collection on py-tree-sitter 0.26; lines now come from byte offsets.
+    Run in a fresh interpreter, because a signal cannot be caught here."""
+    import subprocess
+    import sys
+
+    root = Path(__file__).resolve().parents[1]
+    files = ["svarupa/detect.py", "svarupa/layout/engines.py", "tests/test_emit.py"]
+    code = (
+        "import gc, pathlib, sys\n"
+        "from svarupa.extract.rationale import _scan_python\n"
+        f"root = pathlib.Path({str(root)!r})\n"
+        f"for rel in {files!r}:\n"
+        "    data = (root / rel).read_bytes()\n"
+        "    for _ in range(3):\n"
+        "        facts = _scan_python(rel, data)\n"
+        "        gc.collect()\n"
+        "    assert facts, rel\n"
+        "print('scanned')\n"
+    )
+    proc = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, cwd=root
+    )
+    assert proc.returncode == 0, (proc.returncode, proc.stderr[-400:])
+    assert proc.stdout.strip() == "scanned"
+
+
+def test_directory_modules_are_graph_nodes_the_diagrams_ids_resolve_to(artifact) -> None:  # type: ignore[no-untyped-def]
+    """Review #20 S7: `get_node api/routers` returned null for the id the
+    passport showed, because directory modules were a bare list."""
+    out, data = artifact
+    by_id = {n["id"]: n for n in data["nodes"]}
+    dirs = [m for m in data["modules"] if m and m in by_id]
+    assert dirs, "no directory module became a node"
+    m = dirs[0]
+    assert by_id[m]["attrs"]["structural"] == "directory" and by_id[m]["evidence"]
+    kinds = {(e["kind"], e["context"]) for e in data["edges"] if e["src"] == m}
+    assert ("contains", "contain") in kinds, kinds
+    index = GraphIndex.load(out)
+    assert get_node(index, m)["match"]["id"] == m
+    importer = next(
+        (e["src"] for e in data["edges"] if e["kind"] == "imports" and e["src"] in dirs), None
+    )
+    if importer is not None:
+        assert get_neighbors(index, importer, relation="import")["outgoing"]

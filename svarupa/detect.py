@@ -753,6 +753,24 @@ def detect(root: str | Path, limits: ScanLimits | None = None) -> Scan:
         )
 
     ordered = tuple(sorted(files))
+    if not ordered and not any(p.name != ".git" for p in root_path.iterdir()):
+        # An empty directory scanned to "0 files", exit 0, and a 51 KB artifact
+        # whose only tab was "not drawn" (review #20 C6): a typo in the path
+        # that lands on an empty directory read as success. No input at all is
+        # the refusal case, as with a missing root. A directory that holds
+        # files, none of them source (a README, only docs), is a real
+        # repository and still gets its artifact and its named absences.
+        raise DiagnosticError(
+            Diagnostic(
+                code="SVA-D-008",
+                severity=Severity.ERROR,
+                message="is empty, so there is nothing to analyze",
+                subject=str(root_path),
+                suggested_fixes=(
+                    "Check the path: an empty directory is usually a typo or an unfinished checkout.",
+                ),
+            )
+        )
     return Scan(
         root=root_path,
         files=ordered,

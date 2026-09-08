@@ -39,7 +39,7 @@ class SystemDeriver(Deriver):
     """One box per deployed thing, one arrow per declared dependency."""
 
     kind = DiagramKind.DEPLOY_TOPOLOGY
-    title = "System"
+    title = "Deploy topology"
 
     def derive(self, graph: Graph, clustering: Clustering) -> DiagramSet | None:
         _ = clustering
@@ -118,7 +118,7 @@ class SystemDeriver(Deriver):
                     what.append(f"{n_routes} route{'s' if n_routes != 1 else ''}")
                 if "worker" in held and ctx:
                     what.append("workers")
-                sublabel = ("built from " + (ctx or ".") + ("/" if ctx else "")) + (
+                sublabel = ("built from " + (ctx + "/" if ctx else "the repository root")) + (
                     " · " + ", ".join(what) if what else ""
                 )
             elif node.attr("build_context"):
@@ -156,10 +156,19 @@ class SystemDeriver(Deriver):
         # family label (`sqlalchemy` says SQL, not which) attaches to a compose
         # store of that family when there is exactly one, else stays its own
         # honest box.
-        stand_in: dict[str, str] = {}
-        for svc, mods in modules_of_service.items():
+        # A module stands for EVERY service whose build context holds it.
+        # Two services built from `.` each ship the whole tree, so the code
+        # that talks to MongoDB is in both images; mapping each module to
+        # one service gave the demo's `api` no database and cited `api`'s
+        # file under `agent` (review #20 M2). A wrong edge is worse than a
+        # missing one, and a missing one is worse than the two true ones.
+        stand_in: dict[str, str | tuple[str, ...]] = {}
+        holders: dict[str, list[str]] = {}
+        for svc, mods in sorted(modules_of_service.items()):
             for m in mods:
-                stand_in.setdefault(m, svc)
+                holders.setdefault(m, []).append(svc)
+        for m, svcs in holders.items():
+            stand_in[m] = tuple(sorted(svcs))
         ext_nodes, ext_edges = external_nodes_and_edges(graph, set(stand_in), stand_in)
         redirect: dict[str, str] = {}
         for n in ext_nodes:

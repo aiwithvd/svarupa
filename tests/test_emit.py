@@ -435,6 +435,26 @@ def test_a_missing_root_refuses_instead_of_emitting_an_empty_artifact(
     assert "does not exist" in exc.value.diagnostic.message
 
 
+def test_an_empty_directory_refuses_and_a_docs_only_one_does_not(tmp_path: Path) -> None:
+    """Review #20 C6: an empty directory scanned to "0 files", exit 0, and an
+    artifact whose only tab was "not drawn"; a typo landing on an empty
+    directory read as success. A directory holding files that are not source
+    is a real repository and is analyzed (its absences are named)."""
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    (empty / ".git").mkdir()  # VCS metadata alone does not make a repository
+    with pytest.raises(DiagnosticError) as exc:
+        detect(empty)
+    assert exc.value.diagnostic.code == "SVA-D-008"
+    assert "empty" in exc.value.diagnostic.message
+    docs = tmp_path / "docs-only"
+    docs.mkdir()
+    (docs / "README.md").write_text("# hi\n", encoding="utf8")
+    assert detect(docs).files == ()
+    code = main([str(empty), "--out", str(tmp_path / "out")])
+    assert code == 1 and not (tmp_path / "out" / "index.html").exists()
+
+
 def test_a_file_given_as_a_root_refuses_too(tmp_path: Path) -> None:
     target = tmp_path / "a.py"
     target.write_text("x = 1\n", encoding="utf8")
@@ -592,6 +612,7 @@ def test_the_document_parses_as_the_elements_it_was_built_from(
         "button",
         "circle",
         "span",
+        "link",  # the empty favicon, so a page load logs no 404 (review #20 C11)
     }
     unexpected = sorted(set(parser.tags) - expected)
     assert not unexpected, f"elements this stage never writes: {unexpected}"
@@ -602,14 +623,18 @@ def test_the_heading_separates_the_tool_name_from_the_repository(
 ) -> None:
     """`<h1>svarupa<small>repo</small></h1>` reads as one word to a screen
     reader and in any text extraction. Found by reading the accessibility tree
-    of the rendered page, which reported the heading as "svarupasvarupa"."""
+    of the rendered page, which reported the heading as "svarupasvarupa". The
+    repository now sits outside the heading and is labelled as one (review
+    #20 S11: a bare word after the tool name read as part of the name)."""
     repo = tmp_path / "myrepo"
     repo.mkdir()
     build_repo(repo)
     out = tmp_path / "out"
     run(repo, out)
     html = (out / "index.html").read_text(encoding="utf8")
-    assert "svarupa <small>myrepo</small>" in html
+    assert "<h1>svarupa</h1>" in html
+    assert '<span class="repo" title="the repository this artifact describes">' in html
+    assert "<small>repo</small>myrepo</span>" in html
 
 
 # --------------------------------------------------------------------------
@@ -963,8 +988,8 @@ def test_edge_labels_are_short_verbs_on_masks_never_counts(tmp_path: Path) -> No
     repo.mkdir()
     build_repo(repo)
     # An external store, so at least one arrow carries a semantic verb; the
-    # structural import arrows say "imports" where the label fits, and their
-    # count lives in the tooltip note, never on the mask.
+    # structural import arrows are silent (review #20 M5) and their count
+    # lives in the tooltip note, never on the mask.
     (repo / "src" / "store.py").write_text("import redis\n", encoding="utf8")
     out = tmp_path / "out"
     run(repo, out)
@@ -973,8 +998,8 @@ def test_edge_labels_are_short_verbs_on_masks_never_counts(tmp_path: Path) -> No
 
     labels = re.findall(r'class="sv-edge-label[^"]*"[^>]*>([^<]*)<', html)
     assert labels, "no edge labels drawn at all; the verb channel is broken"
-    assert "imports" in labels, "structural import arrows say their verb where it fits"
-    assert any(lb != "imports" for lb in labels), "the external arrow carries its own verb"
+    assert "imports" not in labels, "structural import arrows carry no drawn word"
+    assert "reads/writes" in labels, "the external arrow carries its verb"
     for text in labels:
         assert not re.search(r"\d", text), f"an edge label carries a number: {text!r}"
         assert len(text) <= 16, f"an edge label is prose, not a verb: {text!r}"

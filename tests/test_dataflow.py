@@ -56,6 +56,15 @@ def _service(root: Path) -> None:
     write(root, "manage.py", "z = 3\n")  # the repo root is a module too, and unstaged
 
 
+def _story_of(ds):  # type: ignore[no-untyped-def]
+    """The request story: the root itself when one endpoint group is the
+    whole diagram (review #20 C10), else the first menu item's child."""
+    root = ds.root_spec
+    if root.nodes and root.nodes[0].id.startswith("req:"):
+        return ds.specs[root.nodes[0].child_spec or ""]
+    return root
+
+
 def _produced(root: Path):
     g = graph_of(root)
     return g, derive_all(g, cluster(g))
@@ -127,18 +136,60 @@ def test_request_flow_has_one_story_per_endpoint_group(tmp_path: Path) -> None:
     _service(tmp_path)
     _, (produced, _notes) = _produced(tmp_path)
     ds = produced[DiagramKind.REQUEST_FLOW]
-    root = ds.root_spec
-    assert [n.id for n in root.nodes] == ["req:api"]
-    story = ds.specs[root.nodes[0].child_spec or ""]
+    # One endpoint group: the story IS the diagram, with no one-item menu in
+    # front of it (review #20 C10), and it has no crumb to a parent.
+    story = ds.root_spec
+    assert story.id == "/spec/req:api" and story.parent is None, (story.id, story.parent)
+    assert not any(n.id.startswith("req:") for n in story.nodes)
     hops = {n.id: n.attr("hop") for n in story.nodes if n.attr("hop") is not None}
     assert hops == {"api": "0", "domain": "1", "store": "2"}
     assert any(n.id == "ext:database:PostgreSQL" for n in story.nodes)
     assert {r.label for r in story.regions} == {"handler", "hop 1", "hop 2"}
-    assert "not call order" in story.subtitle and "not call order" in root.subtitle
+    assert "not call order" in story.subtitle
     assert story.subtitle.endswith("; 1 upstream import not drawn"), story.subtitle
     assert {(e.src, e.dst) for e in story.edges if e.src == "store"} == {
         ("store", "ext:database:PostgreSQL")
     }, "store -> domain runs against the hops and is counted, not drawn"
+
+
+def test_two_endpoint_groups_get_a_menu_root_and_one_story_each(tmp_path: Path) -> None:
+    _service(tmp_path)
+    write(tmp_path, "admin/__init__.py", "")
+    write(
+        tmp_path,
+        "admin/routes.py",
+        "from fastapi import APIRouter\nfrom domain import orders\nrouter = APIRouter()\n\n"
+        '@router.get("/admin")\ndef home():\n    return orders.all()\n',
+    )
+    _, (produced, _notes) = _produced(tmp_path)
+    ds = produced[DiagramKind.REQUEST_FLOW]
+    root = ds.root_spec
+    assert [n.id for n in root.nodes] == ["req:admin", "req:api"]
+    assert "2 endpoint groups; drill into one" in root.subtitle
+    for n in root.nodes:
+        story = ds.specs[n.child_spec or ""]
+        assert story.parent == "/spec/root"
+        assert any(m.attr("hop") == "0" for m in story.nodes)
+
+
+def test_an_empty_route_path_counts_but_is_not_shown(tmp_path: Path) -> None:
+    """A handler-relative route declared as `""` joined into `, /orders …`:
+    a leading comma in 51 places on the acceptance repo (review #20 S4)."""
+    _service(tmp_path)
+    write(
+        tmp_path,
+        "api/routes.py",
+        "from fastapi import APIRouter\nfrom domain import orders\nrouter = APIRouter()\n\n"
+        '@router.get("")\ndef index():\n    return orders.all()\n\n'
+        '@router.get("/orders")\ndef list_orders():\n    return orders.all()\n',
+    )
+    _, (produced, _notes) = _produced(tmp_path)
+    ingress = _by_id(produced[DiagramKind.DATA_FLOW].root_spec)["in:api"]
+    assert ingress.sublabel == "2 routes" and ingress.label == "/orders", ingress
+    from svarupa.emit.cards import cards_for
+
+    entry = cards_for(graph_of(tmp_path))[0].items[0].text
+    assert "2 routes" in entry and ", ," not in entry and ": ," not in entry, entry
 
 
 def test_request_flow_lays_out_and_drills(tmp_path: Path) -> None:
@@ -227,8 +278,7 @@ def test_every_module_box_in_both_flow_views_has_a_drill_door(tmp_path: Path) ->
     root = produced[DiagramKind.DATA_FLOW].root_spec
     for mid in ("api", "domain", "store"):
         assert _by_id(root)[mid].child_spec, f"{mid} in data flow drills nowhere"
-    ds = produced[DiagramKind.REQUEST_FLOW]
-    story = ds.specs[ds.root_spec.nodes[0].child_spec or ""]
+    story = _story_of(produced[DiagramKind.REQUEST_FLOW])
     for mid in ("api", "domain", "store"):
         assert _by_id(story)[mid].child_spec, f"{mid} in the request story drills nowhere"
     assert _by_id(story)["api"].attr("roles") == "api", "roles travel into the story"
@@ -252,9 +302,7 @@ def test_kinds_edges_and_counts_are_the_named_ones(tmp_path: Path) -> None:
     assert {(e.file, e.start_line) for e in api_domain.evidence} == {("api/routes.py", 2)}
     assert root.subtitle.startswith("1 ingress module, 2 domain modules, 1 external")
     assert all(r.kind == "stage" for r in root.regions)
-    ds = produced[DiagramKind.REQUEST_FLOW]
-    assert ds.root_spec.nodes[0].kind == "endpoint"
-    story = ds.specs[ds.root_spec.nodes[0].child_spec or ""]
+    story = _story_of(produced[DiagramKind.REQUEST_FLOW])
     assert story.subtitle.startswith("3 modules within 2 import hops")
     assert {n.attr("layer") for n in story.nodes if n.attr("hop")} == {"0", "1", "2"}
     sev = next(d for d in produced[DiagramKind.DATA_FLOW].diagnostics if d.code == "SVA-R-007")
@@ -275,8 +323,7 @@ def test_stage_and_hop_frames_cite_the_lines_that_put_members_in_them(tmp_path: 
     assert frames["02 / Handlers"] == {("api/routes.py", 5)}
     assert frames["03 / Domain"] == {("api/routes.py", 2), ("domain/orders.py", 1)}
     assert frames["04 / Storage / External"] == {("store/db.py", 1)}
-    ds = produced[DiagramKind.REQUEST_FLOW]
-    story = ds.specs[ds.root_spec.nodes[0].child_spec or ""]
+    story = _story_of(produced[DiagramKind.REQUEST_FLOW])
     hop_frames = {r.label: {(e.file, e.start_line) for e in r.evidence} for r in story.regions}
     assert hop_frames["handler"] == {("api/routes.py", 5)}
     assert hop_frames["hop 1"] == {("api/routes.py", 2)}
@@ -443,4 +490,6 @@ def test_report_groups_informational_findings_and_counts_findings_not_lines() ->
     lines = _grouped(many)
     assert len(lines) == MAX_LISTED
     shown = 3 * 5 + 2  # three full codes (5 findings each) and two lines of the fourth
-    assert lines[-1] == f"*... and {40 - shown} more finding(s), see `--json`*"
+    assert lines[-1] == (
+        f"*... and {40 - shown} more finding(s) of these codes; the build prints every one*"
+    )

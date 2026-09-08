@@ -97,14 +97,27 @@ connected.slice(0, 40).forEach((n) => {
   const id = n.getAttribute('data-id');
   fire(n, 'click', { detail: 1 });
   const exp = expected(scopeOf(n), id);
-  const gotOut = Array.from(document.querySelectorAll('#panel-out li .name')).map((x) => x.textContent);
-  const gotIn = Array.from(document.querySelectorAll('#panel-in li .name')).map((x) => x.textContent);
+  // Rows carry the id in data-target and title; the name is the box's label.
+  const gotOut = Array.from(document.querySelectorAll('#panel-out li')).map((x) => x.getAttribute('data-target'));
+  const gotIn = Array.from(document.querySelectorAll('#panel-in li')).map((x) => x.getAttribute('data-target'));
   const up = +document.querySelector('#reach-up strong').textContent;
   const down = +document.querySelector('#reach-down strong').textContent;
   if (JSON.stringify(gotOut) !== JSON.stringify(exp.outs) || JSON.stringify(gotIn) !== JSON.stringify(exp.ins) || up !== exp.up || down !== exp.down) mismatches += 1;
   fire(view.querySelector('.scroller'), 'click', { detail: 1 });
 });
 check('passport matches the drawn arrows for every box', mismatches === 0, mismatches + ' mismatches');
+
+// 2b. rows name the box by its label and keep the id as the tooltip (review #20 C12)
+fire(a, 'click', { detail: 1 });
+const rows = Array.from(document.querySelectorAll('#panel-out li, #panel-in li'));
+const labelled = rows.every((li) => {
+  const id = li.getAttribute('data-target');
+  const nd = Array.from(scopeOf(a).querySelectorAll('.sv-node')).find((n) => n.getAttribute('data-id') === id);
+  const want = nd ? nd.querySelector('title').textContent.split('\n')[0] : id;
+  return li.title === id && li.querySelector('.name').textContent === want;
+});
+check('connection rows show the label and carry the id', rows.length > 0 && labelled);
+fire(view.querySelector('.scroller'), 'click', { detail: 1 });
 
 // 3. reach button lights exactly the directed closure
 fire(a, 'click', { detail: 1 });
@@ -171,6 +184,22 @@ if (chapter) {
 // 7. a drill clears the passport and the focus of the view being left
 const drillable = Array.from(svg.querySelectorAll('.sv-node.sv-drillable[data-child]')).find((n) => tab.querySelector('[data-view="' + view.getAttribute('data-view') + '//' + n.getAttribute('data-id') + '//expanded"]'));
 if (drillable) {
+  const expandedId = view.getAttribute('data-view') + '//' + drillable.getAttribute('data-id') + '//expanded';
+  const crumbBack = () => { const o = tab.querySelector('.view.is-open'); const c = o && o.querySelector('[data-up]'); if (c) fire(c, 'click', { detail: 1 }); };
+  // review #20 M4: the chevron and the passport's button both open the drill; a plain click does not
+  fire(drillable, 'click', { detail: 1 });
+  const openBtn = document.getElementById('panel-open');
+  check('a single click on a drillable box opens its passport, not the drill', tab.querySelector('.view.is-open') === view && panel.classList.contains('is-open'));
+  check('the passport of a drillable box offers Open in place', !openBtn.hidden);
+  openBtn.click();
+  check('the Open button opens the expansion', (tab.querySelector('.view.is-open') || {}).getAttribute && tab.querySelector('.view.is-open').getAttribute('data-view') === expandedId);
+  crumbBack();
+  const chevron = drillable.querySelector('.sv-drill');
+  fire(chevron, 'click', { detail: 1 });
+  check('a click on the chevron opens the expansion', tab.querySelector('.view.is-open').getAttribute('data-view') === expandedId);
+  crumbBack();
+  const leaf = Array.from(svg.querySelectorAll('.sv-node[data-id]')).find((n) => !n.hasAttribute('data-child'));
+  if (leaf) { fire(leaf, 'click', { detail: 1 }); check('a leaf box has no Open button', openBtn.hidden); fire(view.querySelector('.scroller'), 'click', { detail: 1 }); }
   fire(drillable, 'click', { detail: 1 });
   fire(drillable, 'click', { detail: 2 });
   const open = tab.querySelector('.view.is-open');
@@ -180,6 +209,33 @@ if (drillable) {
   if (crumb) { fire(crumb, 'click', { detail: 1 }); check('the crumb returns to a clean root', tab.querySelector('.view.is-open') === view && !svg.classList.contains('is-hovering')); }
 } else {
   console.log('ok drill (no embeddable drillable box in this fixture; skipped)');
+}
+
+// 7a. keyboard (review #20 S9): Enter on a focused box is its click; Escape closes everything
+check('boxes are focusable', a.getAttribute('tabindex') === '0');
+a.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+check('Enter on a box opens its passport and focus', panel.classList.contains('is-open') && a.classList.contains('is-focus'));
+document.body.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+check('Escape closes the passport and clears every lit state',
+  !panel.classList.contains('is-open') && !svg.classList.contains('is-focused') && svg.querySelectorAll('.is-path').length === 0);
+
+// 7a'. chrome that states rather than implies (review #20 C1, S11, C2)
+const themeBtn = document.getElementById('theme');
+check('the theme button names the current theme', /dark$/.test(themeBtn.textContent) && !document.documentElement.hasAttribute('data-theme') && /light/.test(themeBtn.title));
+themeBtn.click();
+check('after a switch it names the new current theme', /light$/.test(themeBtn.textContent) && document.documentElement.getAttribute('data-theme') === 'light' && /dark/.test(themeBtn.title));
+themeBtn.click();
+check('the repository is labelled as one in the header', !!document.querySelector('header .repo small') && document.querySelector('header .repo small').textContent === 'repo');
+check('the explore hint names the drill gesture', /double-click/.test(tab.querySelector('.explore .hint').textContent));
+const groupNode = Array.from(document.querySelectorAll('.sv-node[data-members]'))[0];
+if (groupNode) {
+  fire(groupNode, 'click', { detail: 1 });
+  const members = groupNode.getAttribute('data-members').split('\n').filter(Boolean);
+  const chips = Array.from(document.querySelectorAll('#panel-meta .chip-member')).map((c) => c.textContent);
+  check('a group passport lists its members', JSON.stringify(chips) === JSON.stringify(members), JSON.stringify(chips));
+  fire(groupNode.closest('.view').querySelector('.scroller'), 'click', { detail: 1 });
+} else {
+  console.log('ok group members (no group in this fixture; skipped)');
 }
 
 // 7b. the same box in another tab: the passport offers the jump and it lands focused there

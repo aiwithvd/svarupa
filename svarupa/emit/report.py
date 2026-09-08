@@ -65,7 +65,9 @@ def _grouped(diags: list[Diagnostic]) -> list[str]:
         return [text for text, _ in lines]
     kept = lines[: MAX_LISTED - 1]
     rest = len(diags) - sum(n for _, n in kept)
-    return [text for text, _ in kept] + [f"*... and {rest} more finding(s), see `--json`*"]
+    return [text for text, _ in kept] + [
+        f"*... and {rest} more finding(s) of these codes; the build prints every one*"
+    ]
 
 
 def _semantics_scope(graph: Graph) -> list[str]:
@@ -246,8 +248,9 @@ def render_report(
         "",
         _listing(_grouped(infos), "Nothing was left undrawn for an informational reason."),
         "",
-        "Codes are stable and machine-readable; run with `--json` to consume "
-        "them along with their suggested fixes.",
+        "Codes are stable and machine-readable (`SVA-<stage>-<n>`); the build "
+        "prints every finding with its `fix:` lines, and `svarupa query` "
+        "answers what the report does not.",
         "",
         "## What this artifact does not claim",
         "",

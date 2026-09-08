@@ -25,14 +25,16 @@ svarupa <path>
 This writes `<path>/.svarupa/`:
 
 - `index.html` - the interactive artifact. Open it in a browser. Tabs per
-  diagram; click a drillable box (marked with a chevron) to expand it in
-  place; every box and arrow shows its citations on hover and in the
-  evidence panel.
+  diagram. Click a box for its passport (kind, connections, reach, cited
+  lines); a drillable box is marked with a chevron, and a double-click on it,
+  a click on the chevron, or the passport's "Open in place" button expands it
+  in place. Every box and arrow shows its citations on hover.
 - `graph.json` - the full knowledge graph: nodes, edges, evidence. Query
   this when you need relationships programmatically.
 - `REPORT.md` - the resolution scorecard: how many edges resolved, per
   language and edge kind. Read this before trusting call edges.
-- `diagrams/*.json` - the positioned diagram data, one file per view.
+- `diagrams/*.json` - the positioned diagram data, one file per diagram type
+  holding every view of it.
 
 To analyze a repository without writing into it, use `--out DIR`. On very
 large trees, `--max-files N` caps the scan and says so in a diagnostic.

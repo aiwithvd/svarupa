@@ -89,36 +89,44 @@ body {
 }
 code, .mono { font-family: var(--mono); }
 
+/* One row at every width from 1024 up: the header wrapped to 108px at 1280
+   and took 15 percent of a 720px viewport (review 20, S11). The nav scrolls
+   sideways before anything wraps; the source-base input gives way first. */
 header {
   position: sticky; top: 0; z-index: 5;
   background: color-mix(in srgb, var(--surface) 94%, transparent);
   backdrop-filter: blur(8px);
   border-bottom: 1px solid var(--line); padding: 12px 20px;
-  display: flex; gap: 20px; align-items: center; flex-wrap: wrap;
+  display: flex; gap: 16px; align-items: center; flex-wrap: nowrap; min-height: 57px; box-sizing: border-box;
 }
-h1 { font-size: 15px; margin: 0; font-weight: 700; letter-spacing: -0.01em; }
-h1 small {
-  color: var(--dim); font-weight: 400; margin-left: 10px;
-  font-family: var(--mono); font-size: 12px;
+h1 { font-size: 15px; margin: 0; font-weight: 700; letter-spacing: -0.01em; white-space: nowrap; }
+/* The repository the artifact describes, said as such: a bare word after the
+   tool name read as part of the name. */
+.repo {
+  color: var(--dim); font-family: var(--mono); font-size: 12px; white-space: nowrap;
+  border: 1px solid var(--line); border-radius: 7px; padding: 3px 9px;
 }
-nav { display: flex; gap: 6px; flex-wrap: wrap; }
+.repo small { color: var(--faint); font-size: 9px; letter-spacing: .12em; text-transform: uppercase; margin-right: 6px; }
+nav { display: flex; gap: 6px; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; min-width: 0; }
 nav a {
-  color: var(--dim); text-decoration: none; padding: 5px 12px;
+  color: var(--dim); text-decoration: none; padding: 5px 12px; white-space: nowrap;
   border-radius: 7px; font-size: 13px; transition: background .12s, color .12s;
 }
 nav a:hover { color: var(--ink); background: var(--raised); }
-.controls { margin-left: auto; display: flex; gap: 8px; align-items: center; }
-.controls label { color: var(--dim); font-size: 12px; }
+/* "not drawn" is a list of absences, not a diagram: set apart from the tabs. */
+nav a.muted { color: var(--faint); border-left: 1px solid var(--line); border-radius: 0 7px 7px 0; margin-left: 4px; font-size: 12px; }
+.controls { margin-left: auto; display: flex; gap: 8px; align-items: center; flex: 0 1 auto; min-width: 0; }
+.controls label { color: var(--dim); font-size: 12px; white-space: nowrap; }
 .controls input {
   background: var(--bg); color: var(--ink); border: 1px solid var(--line);
   border-radius: 7px; padding: 6px 10px; font-size: 12px;
-  font-family: var(--mono); width: 22em;
+  font-family: var(--mono); width: 22em; max-width: 30vw; min-width: 6em;
 }
 .controls input:focus { outline: none; border-color: var(--accent); }
 #theme {
   background: var(--surface); color: var(--dim); border: 1px solid var(--line);
   border-radius: 7px; padding: 6px 12px; font: inherit; font-size: 12px;
-  cursor: pointer;
+  cursor: pointer; white-space: nowrap;
 }
 #theme:hover { color: var(--ink); border-color: var(--accent); }
 
@@ -132,8 +140,17 @@ h2 { font-size: 20px; margin: 0 0 4px; font-weight: 700; letter-spacing: -0.02em
 .crumbs { margin: 0 0 12px; font-size: 13px; }
 .crumbs a { color: var(--accent); text-decoration: none; }
 .crumbs a:hover { text-decoration: underline; }
-.view { display: none; }
+.view { display: none; scroll-margin-top: 84px; }
 .view.is-open { display: block; animation: sv-enter .18s ease; }
+/* The passport is a side panel, not an overlay: while it is open the tab
+   makes room for it, so no box, chapter or title sits under the card
+   (review 20, S3 measured two boxes and the whole guided strip covered). */
+.tab { transition: padding-left .16s ease; }
+body:has(aside.is-open) .tab { padding-left: 404px; }
+@media (max-width: 1100px) { body:has(aside.is-open) .tab { padding-left: 20px; } }
+/* Keyboard: a focused box shows the same ring as a hovered one. */
+.sv-node:focus { outline: none; }
+.sv-node:focus-visible .sv-box { stroke: var(--accent); stroke-width: 2.5; }
 @keyframes sv-enter {
   from { opacity: 0; transform: translateY(6px); }
   to { opacity: 1; transform: none; }
@@ -256,6 +273,7 @@ h2 { font-size: 20px; margin: 0 0 4px; font-weight: 700; letter-spacing: -0.02em
   border: 1.5px solid color-mix(in srgb, var(--k) 65%, var(--line));
 }
 .legend .promise { margin-left: auto; color: var(--faint); }
+.legend .arrows { color: var(--faint); }
 /* Explorer controls (design section 4): search, kind toggles, a path tool.
    All of it is class toggling on the SVG the reader already sees; nothing
    here lays anything out or builds markup from repository text. */
@@ -294,6 +312,11 @@ aside .chips span { font-size: 9px; letter-spacing: .08em; text-transform: upper
 aside .chips span.chip-kind { border-color: var(--k); color: var(--k); background: color-mix(in srgb, var(--k) 12%, transparent); font-weight: 700; }
 aside .chips span.chip-context { color: var(--ink); }
 aside .chips span.chip-role { color: var(--security-stroke); border-color: color-mix(in srgb, var(--security-stroke) 50%, var(--line)); }
+aside .chips span.chip-member { text-transform: none; letter-spacing: 0; font-size: 10px; }
+aside .open { display: block; width: 100%; margin: 0 0 10px; font: inherit; font-size: 11px; font-weight: 700; color: var(--accent); background: var(--raised); border: 1px solid color-mix(in srgb, var(--accent) 50%, var(--line)); border-radius: 4px; padding: 6px 9px; cursor: pointer; text-align: left; }
+aside .open:hover { border-color: var(--accent); }
+aside .open[hidden] { display: none; }
+aside a, aside span.dead, aside .conn .name { overflow-wrap: anywhere; }
 aside .chips code { font-size: 10px; color: var(--faint); }
 aside .chips.also:not(:empty)::before { content: 'also in'; font-size: 9px; letter-spacing: .12em; text-transform: uppercase; color: var(--faint); }
 aside .chips.also span { cursor: pointer; color: var(--accent); border-color: color-mix(in srgb, var(--accent) 50%, var(--line)); }
@@ -384,14 +407,17 @@ def _js() -> Markup:
   var THEME = 'svarupa.theme';
   var themeBtn = document.getElementById('theme');
   // Dark is the root palette (Archify's midnight console); light is the
-  // attribute. The button names the theme you would switch TO.
+  // attribute. The button shows the theme you are IN and its title the one a
+  // click gives: naming the target alone read as the state (review #20 C1).
   function applyTheme(name) {
     if (name === 'light') {
       document.documentElement.setAttribute('data-theme', 'light');
-      themeBtn.textContent = 'dark';
+      themeBtn.textContent = '☀ light';
+      themeBtn.title = 'switch to the dark theme';
     } else {
       document.documentElement.removeAttribute('data-theme');
-      themeBtn.textContent = 'light';
+      themeBtn.textContent = '☾ dark';
+      themeBtn.title = 'switch to the light theme';
     }
   }
   applyTheme(localStorage.getItem(THEME) || 'dark');
@@ -462,6 +488,17 @@ def _js() -> Markup:
   var inH = document.getElementById('panel-in-h');
   var upBtn = document.getElementById('reach-up');
   var downBtn = document.getElementById('reach-down');
+  var openBtn = document.getElementById('panel-open');
+
+  // A box's full label, from the title the renderer wrote for it: the OUT
+  // and IN lists showed raw ids (`ext:database:SQL database`) where the box
+  // shows a label (review #20 C12). The id stays as the row's tooltip.
+  function labelOf(root, id) {
+    var nd = null;
+    root.querySelectorAll('.sv-node').forEach(function (x) { if (!nd && x.getAttribute('data-id') === id) nd = x; });
+    var t = nd && nd.querySelector('title');
+    return t ? t.textContent.split('\\n')[0] : id;
+  }
 
   // The passport: what the element is, the frames it sits in, its
   // connections in both directions with their verbs, and how far it reaches
@@ -483,12 +520,13 @@ def _js() -> Markup:
     if (kind) s.classList.add('sv-kind-' + kind);
     metaEl.appendChild(s);
   }
-  function connItem(list, dir, said, other) {
+  function connItem(list, dir, said, other, shown) {
     var li = document.createElement('li');
     li.className = 'conn link';
     li.setAttribute('data-target', other);
+    li.title = other;
     var d = document.createElement('span'); d.className = 'dir'; d.textContent = dir;
-    var n = document.createElement('span'); n.className = 'name'; n.textContent = other;
+    var n = document.createElement('span'); n.className = 'name'; n.textContent = shown || other;
     var v = document.createElement('span'); v.className = 'verb'; v.textContent = said;
     li.appendChild(d); li.appendChild(n); li.appendChild(v);
     list.appendChild(li);
@@ -534,6 +572,8 @@ def _js() -> Markup:
       });
     }
     (node.getAttribute('data-roles') || '').split(',').forEach(function (r) { chip(r, 'chip-role'); });
+    // A group names what it holds; its own id is not a module's.
+    (node.getAttribute('data-members') || '').split('\\n').filter(Boolean).forEach(function (m) { chip(m, 'chip-context chip-member'); });
     var code = document.createElement('code');
     code.textContent = id;
     metaEl.appendChild(code);
@@ -569,8 +609,8 @@ def _js() -> Markup:
       if (s !== id && d !== id) return;
       // The note carries the count ("12 imports"); the label is the verb.
       var said = r.getAttribute('data-note') || r.getAttribute('data-label') || 'connects';
-      if (s === id) { nOut += 1; connItem(outEl, 'OUT →', said, d); }
-      else { nIn += 1; connItem(inEl, '← IN', said, s); }
+      if (s === id) { nOut += 1; connItem(outEl, 'OUT →', said, d, labelOf(root, d)); }
+      else { nIn += 1; connItem(inEl, '← IN', said, s, labelOf(root, s)); }
     });
     outH.textContent = 'Outgoing · ' + nOut;
     inH.textContent = 'Incoming · ' + nIn;
@@ -583,6 +623,12 @@ def _js() -> Markup:
     downBtn.disabled = !down.length;
     upBtn.onclick = function () { light(root, node, up); };
     downBtn.onclick = function () { light(root, node, down); };
+    // The drill, named: a single click on a drillable box gave a card and no
+    // way on to the next level (review #20 M4). The button and the chevron
+    // both open it; a double-click still does.
+    var child = node.getAttribute('data-child');
+    openBtn.hidden = !child;
+    openBtn.onclick = child ? function () { openView(node, child); } : null;
   }
 
   // Focus: the clicked box glows, a chosen set stays lit, the rest recedes.
@@ -634,6 +680,7 @@ def _js() -> Markup:
       passport(node);
       if (node.classList.contains('sv-node')) focus(node); else clearFocus();
     } else if (node && node.classList.contains('card-item')) {
+      openBtn.hidden = true;
       eyebrowEl.textContent = 'Fact';
       subEl.textContent = '';
       metaEl.textContent = '';
@@ -643,6 +690,7 @@ def _js() -> Markup:
       upBtn.disabled = true; downBtn.disabled = true;
       clearFocus();
     } else {
+      openBtn.hidden = true;
       eyebrowEl.textContent = 'Connection';
       subEl.textContent = node ? (node.getAttribute('data-note') || node.getAttribute('data-label') || '') : '';
       metaEl.textContent = '';
@@ -660,6 +708,18 @@ def _js() -> Markup:
   document.getElementById('panel-close').addEventListener('click', function () {
     panel.classList.remove('is-open');
     clearFocus();
+  });
+  // Keyboard (review #20 S9): Escape closes the passport and clears every lit
+  // state; Enter on a focused box is its click. Boxes carry tabindex="0".
+  document.addEventListener('keydown', function (ev) {
+    if (ev.key === 'Escape') {
+      panel.classList.remove('is-open'); clearPins(); clearFocus();
+      return;
+    }
+    if (ev.key === 'Enter' && ev.target && ev.target.classList && ev.target.classList.contains('sv-node')) {
+      ev.preventDefault();
+      ev.target.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 1 }));
+    }
   });
 
   // Hover: light the path through the element and recede the rest.
@@ -713,7 +773,7 @@ def _js() -> Markup:
     if (ev.shiftKey && node.classList.contains('sv-node')) { pinPath(node); return; }
     var refs = node.getAttribute('data-evidence').split('\\n').filter(Boolean);
     var child = node.getAttribute('data-child');
-    if (child && ev.detail === 2) { openView(node, child); return; }
+    if (child && (ev.detail === 2 || ev.target.closest('.sv-drill'))) { openView(node, child); return; }
     show(node.getAttribute('data-id') || node.getAttribute('data-src') || (node.classList.contains('card-item') ? node.textContent.replace(/SRC \\d+$/, '').trim() : ''), refs, node);
   });
 
@@ -1091,17 +1151,28 @@ def _legend(canvas: object) -> Markup:
                 join((raw('<span class="sw"></span>'), esc(f"{kind} {n}"))),
                 class_=f"sv-kind-{_kind_slug(kind)} sw-toggle",
                 data_kind=_kind_slug(kind),
-                title="click to mute this kind",
+                title=_KIND_HELP.get(kind, "") + "click to mute this kind",
             )
             for kind, n in sorted(counts.items())
         ),
         sep=" ",
+    )
+    # What the arrows are, said once (the structural ones carry no word).
+    variants = {r.variant for r in canvas.routes}
+    arrow_words: list[str] = []
+    if "default" in variants:
+        arrow_words.append("solid arrows are imports (count on hover)")
+    if "dashed" in variants:
+        arrow_words.append("dashed arrows carry their verb")
+    arrows = (
+        tag("span", esc("; ".join(arrow_words)), class_="arrows") if arrow_words else raw("")
     )
     return tag(
         "div",
         join(
             (
                 swatches,
+                arrows,
                 tag(
                     "span",
                     esc("every box and arrow cites a source line; click one"),
@@ -1111,6 +1182,23 @@ def _legend(canvas: object) -> Markup:
         ),
         class_="legend",
     )
+
+
+# One line per kind for the legend's tooltip, so "group 7" is not internal
+# vocabulary (review #20 C2). Archify's component types, in our terms.
+_KIND_HELP: dict[str, str] = {
+    "group": "modules that import each other, grouped for reading; a group is not an identity. ",
+    "module": "a directory of code with no evidenced role. ",
+    "backend": "code that serves routes, runs tasks or is a declared entrypoint. ",
+    "frontend": "code that imports a UI framework. ",
+    "security": "code that imports an auth library. ",
+    "database": "a store the code imports a driver for, or composes. ",
+    "messagebus": "a queue or bus the code imports a client for, or composes. ",
+    "cloud": "an external API the code imports an SDK for. ",
+    "service": "a composed service that builds no code in this repository. ",
+    "endpoint": "declared routes, grouped by the module that declares them. ",
+    "table": "a table from SQL DDL. ",
+}
 
 
 def _kind_slug(kind: str) -> str:
@@ -1183,7 +1271,8 @@ def _explore_bar() -> Markup:
                 tag(
                     "span",
                     esc(
-                        "shift-click two boxes for a path; click a legend swatch to mute a kind"
+                        "click a box for its passport; double-click it, or its \u203a, to open "
+                        "it in place; shift-click two boxes for a path; a legend swatch mutes a kind"
                     ),
                     class_="hint",
                 ),
@@ -1298,15 +1387,30 @@ def render_viewer(
     cards = cards_for(graph) if graph is not None else ()
     nav = join(
         [tag("a", esc(k.value), href=f"#d-{k.value}") for k in kinds]
-        + ([tag("a", esc("not drawn"), href="#d-unavailable")] if notes else [])
+        + (
+            [
+                tag(
+                    "a",
+                    esc("not drawn"),
+                    href="#d-unavailable",
+                    class_="muted",
+                    title="the diagram types the evidence could not produce, and why",
+                )
+            ]
+            if notes
+            else []
+        )
     )
     header = tag(
         "header",
         join(
             (
+                tag("h1", esc("svarupa")),
                 tag(
-                    "h1",
-                    join((esc("svarupa"), raw(" "), tag("small", esc(root)))),
+                    "span",
+                    join((tag("small", esc("repo")), esc(root))),
+                    class_="repo",
+                    title="the repository this artifact describes",
                 ),
                 tag("nav", nav),
                 tag(
@@ -1318,7 +1422,10 @@ def render_viewer(
                                 '<input id="base" placeholder="../ or '
                                 'https://github.com/org/repo/blob/main">'
                             ),
-                            raw('<button id="theme" type="button">dark</button>'),
+                            raw(
+                                '<button id="theme" type="button" '
+                                'title="switch to the light theme">☾ dark</button>'
+                            ),
                         )
                     ),
                     class_="controls",
@@ -1345,6 +1452,10 @@ def render_viewer(
                         tag("div", raw(""), id="panel-meta", class_="chips"),
                         tag("div", raw(""), id="panel-also", class_="chips also"),
                         tag("p", raw(""), id="panel-summary", class_="summary"),
+                        raw(
+                            '<button id="panel-open" class="open" type="button" hidden>'
+                            "Open in place \u203a</button>"
+                        ),
                         tag("h3", esc("Reach in this view"), class_="section"),
                         tag(
                             "div",
@@ -1390,6 +1501,7 @@ def render_viewer(
         "<!doctype html>\n"
         '<html lang="en"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width,initial-scale=1">'
+        '<link rel="icon" href="data:,">'
         f"<title>{esc(f'svarupa {version}: {root}')}</title>"
         f"<style>{css}</style>"
         f"</head><body>{body}</body></html>\n"

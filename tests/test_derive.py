@@ -26,6 +26,7 @@ from svarupa.derive.base import (
     UnnavigableDiagramSet,
     group_evidence,
     module_evidence,
+    runtime_edges,
 )
 from svarupa.derive.erd import ErdDeriver
 from svarupa.detect import detect
@@ -214,7 +215,9 @@ def test_no_diagram_id_is_a_community_artifact(tmp_path: Path) -> None:
     layered(tmp_path)
     graph, clustering = pipeline(tmp_path)
     produced, _ = derive_all(graph, clustering)
-    known = set(graph.modules) | set(graph.nodes)
+    # A community box has its own `group:<anchor>` id (review #20 M3), anchored
+    # on a module id and so as stable as the anchor; it is never a module's id.
+    known = set(graph.modules) | set(graph.nodes) | {f"group:{m}" for m in graph.modules}
     fingerprints = {c.fingerprint() for c in clustering.communities}
 
     for ds in produced.values():
@@ -226,10 +229,44 @@ def test_no_diagram_id_is_a_community_artifact(tmp_path: Path) -> None:
                 assert e.src in known and e.dst in known
 
 
+def test_a_group_box_has_its_own_id_and_a_name_that_reads_as_a_set(tmp_path: Path) -> None:
+    """Groups borrowed their anchor's name and id for nineteen reviews, so an
+    arrow into the group read as an arrow into that module and the passport
+    jumped between the two (review #20 M3)."""
+    layered(tmp_path)
+    graph, _ = pipeline(tmp_path)
+    members = ("src/api", "src/api/routes", "src/api/views")
+    clustering = Clustering(
+        (
+            Community("src/api/views", members, 1.0),
+            Community("src/worker/tasks", ("src/worker/tasks",), 1.0),
+        ),
+        "hand",
+        1,
+        1.0,
+    )
+    ds = ArchitectureDeriver().derive(graph, clustering)
+    assert ds is not None
+    by_id = {n.id: n for n in ds.root_spec.nodes}
+    group = by_id["group:src/api/views"]
+    assert group.kind == "group" and group.label == "api", group
+    assert group.attr("members") == "\n".join(members)
+    assert "src/api/views" not in by_id, "the anchor module is not a box beside its group"
+    assert by_id["src/worker/tasks"].kind != "group", "a singleton is the module itself"
+    edge = next(e for e in ds.root_spec.edges if e.src == "src/worker/tasks")
+    assert edge.dst == "group:src/api/views"
+    # With no shared directory the group is named for its anchor and the size
+    # of the rest, so it cannot be read as the anchor alone.
+    from svarupa.derive.architecture import top_box_labels
+
+    labels = top_box_labels([("b/x", ("a/one", "b/x", "c/y")), ("d", ("d",))])
+    assert labels == {"b/x": "x +2", "d": "d"}
+
+
 def test_reclustering_does_not_invent_new_ids(tmp_path: Path) -> None:
     layered(tmp_path)
     graph, _ = pipeline(tmp_path)
-    known = set(graph.modules) | set(graph.nodes)
+    known = set(graph.modules) | set(graph.nodes) | {f"group:{m}" for m in graph.modules}
     for seed in (1, 42, 999):
         ds = ArchitectureDeriver().derive(graph, cluster(graph, seed=seed))
         assert ds is not None
@@ -243,6 +280,8 @@ def test_reclustering_does_not_invent_new_ids(tmp_path: Path) -> None:
 
 
 def test_an_empty_repository_yields_no_diagram_and_says_why(tmp_path: Path) -> None:
+    # A repository with no source (an empty directory is a refusal, SVA-D-008).
+    write(tmp_path, "README.md", "# no code here\n")
     produced, notes = derive_all(*pipeline(tmp_path))
     assert produced == {}
     assert notes, "absence must be explained"
@@ -250,6 +289,7 @@ def test_an_empty_repository_yields_no_diagram_and_says_why(tmp_path: Path) -> N
 
 def test_erd_distinguishes_no_sql_from_cannot_read_sql(tmp_path: Path) -> None:
     """Two different facts, and only one is about the user's codebase."""
+    write(tmp_path, "README.md", "# no code here\n")
     graph, clustering = pipeline(tmp_path)
     ds = ErdDeriver().derive(graph, clustering)
     assert ds is not None and not ds.specs
@@ -796,3 +836,81 @@ def test_derive_all_drops_an_unnavigable_set_and_keeps_the_others(tmp_path: Path
     assert DiagramKind.ARCHITECTURE not in produced
     assert DiagramKind.MODULE_DEPS in produced, "one broken set took the others down"
     assert any("unnavigable, dropped" in n for n in notes)
+
+
+def _wide_repo(root: Path) -> None:
+    """Fourteen modules under two directories, more than the top-box budget."""
+    for i in range(8):
+        write(root, f"src/p{i}/__init__.py", "")
+        write(root, f"src/p{i}/m.py", f"from src.p{(i + 1) % 8} import m\n")
+    for i in range(5):
+        write(root, f"tools/t{i}/__init__.py", "")
+        write(root, f"tools/t{i}/m.py", "from src.p0 import m\n")
+    write(root, "tools/__init__.py", "")
+    write(
+        root, "tools/shared.py", "from tools.t0 import m\n"
+    )  # `tools` is a module AND a directory
+    write(root, "src/__init__.py", "")
+
+
+def test_module_deps_follow_the_directory_tree_past_the_top_box_budget(tmp_path: Path) -> None:
+    """Review #20 M5: 30 boxes and 76 arrows validated clean and could not be
+    read. Past the budget the view is the directory tree: parts at the root,
+    the modules of a part one drill down, every dependency drawn at exactly
+    one level, none summarized away."""
+    _wide_repo(tmp_path)
+    graph, clustering = pipeline(tmp_path)
+    pairs, _ = runtime_edges(graph)
+    assert len({m for a, b, _w, _e in pairs for m in (a, b)}) > MAX_TOP_BOXES
+    ds = ModuleDepsDeriver().derive(graph, clustering)
+    assert ds is not None
+    root = ds.root_spec
+    by_id = {n.id: n for n in root.nodes}
+    assert set(by_id) == {"tree:src", "tree:tools"}, sorted(by_id)
+    assert by_id["tree:src"].sublabel == "8 modules" and by_id["tree:src"].kind == "module"
+    assert by_id["tree:src"].attr("members") == "\n".join(f"src/p{i}" for i in range(8))
+    assert [(e.src, e.dst, e.weight) for e in root.edges] == [("tree:tools", "tree:src", 5)]
+    assert "14 modules in 2 parts of the repository" in root.subtitle
+    # 8 ring imports inside src, `tools -> tools/t0` inside tools; the five
+    # `tools/t* -> src/p0` imports are the one aggregated arrow between parts.
+    assert "1 dependencies between parts, 9 inside them" in root.subtitle
+    tools = ds.specs[by_id["tree:tools"].child_spec or ""]
+    assert tools.parent == "/spec/root" and tools.title == "tools module dependencies"
+    # `tools` is a module beside its own subdirectories: its own box, a leaf.
+    assert {n.id for n in tools.nodes} == {"tools", *(f"tools/t{i}" for i in range(5))}
+    assert all(
+        n.child_spec is None or not n.child_spec.startswith("/spec/tree:") for n in tools.nodes
+    )
+    assert [(e.src, e.dst) for e in tools.edges] == [("tools", "tools/t0")]
+    src = ds.specs[by_id["tree:src"].child_spec or ""]
+    assert len(src.edges) == 8, "the ring of eight imports is drawn inside src"
+    # Completeness: every module pair appears at exactly one level.
+    drawn: list[tuple[str, str]] = []
+    for spec in ds.specs.values():
+        if spec.id == "/spec/root" or spec.id.startswith("/spec/tree:"):
+            for e in spec.edges:
+                drawn.append((e.src, e.dst))
+    assert len(drawn) == 1 + 1 + 8, drawn
+    assert sum(
+        e.weight
+        for spec in ds.specs.values()
+        if spec.id in ("/spec/root", "/spec/tree:src", "/spec/tree:tools")
+        for e in spec.edges
+    ) == len(pairs)
+    # No level has one box, and every level validates.
+    for spec in ds.specs.values():
+        if spec.id.startswith("/spec/tree:") or spec.id == "/spec/root":
+            assert len(spec.nodes) >= 2, spec.id
+    from svarupa.layout import lay_out_set
+    from svarupa.layout.geometry import Style
+
+    assert not lay_out_set(ds, Style()).withheld
+
+
+def test_module_deps_stay_flat_within_the_top_box_budget(tmp_path: Path) -> None:
+    layered(tmp_path)
+    graph, clustering = pipeline(tmp_path)
+    ds = ModuleDepsDeriver().derive(graph, clustering)
+    assert ds is not None
+    assert not any(n.id.startswith("tree:") for n in ds.root_spec.nodes)
+    assert all(n.sublabel for n in ds.root_spec.nodes), "flat boxes say what they are too"

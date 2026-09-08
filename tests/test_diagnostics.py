@@ -57,7 +57,7 @@ def live_modules() -> set[str]:
     filesystem, because the filesystem is what was wrong.
     """
     seen: set[str] = set()
-    queue = ["svarupa", "svarupa.cli"]
+    queue = ["svarupa", "svarupa.cli", "svarupa.__main__"]
     while queue:
         name = queue.pop()
         if name in seen:

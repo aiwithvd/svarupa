@@ -204,6 +204,18 @@ drawn in the accent colour and its siblings recede, so the eye lands inside.
 Not built: Archify's "Copy link" (a focus hash would collide with the tab
 hash), guided views and cards (Wave D).
 
+*As built (review #20, product readiness, 2026-09-08):* the passport is a
+**side panel**: the tab makes room for it while it is open, so no box,
+chapter or title sits under the card. The drill has three doors, all named on
+the page: a double-click, a click on the chevron, and the passport's "Open in
+place" button. Structural arrows are silent again, this time for a measured
+reason (76 identical `imports` on one view) and with the legend saying once
+what a solid arrow is; every store arrow carries its verb. Community boxes
+have their own `group:` ids and set names (`agent`, `models +5`) and list
+their members; the passport's connection rows show labels with the id as a
+tooltip. Escape closes, Enter opens, boxes are focusable. The theme button
+names the theme you are in.
+
 ## 6. What stays as it is, and why
 
 - Structural module identity, presentation-only communities, the lockfile
@@ -240,6 +252,14 @@ Graphify's names over stdio through the same `run_query` as the CLI, with
 the SDK as an optional extra (SVA-Q-002 without it). Not built: guided
 views as animated stories beyond stepping, cross-tab navigation from a
 service into its code (still a stub), "Copy link".
+
+*As built (review #20, 2026-09-08):* module dependencies past the top-box
+budget follow the directory tree (a box per part at the root, the modules of
+a part one drill down, every dependency at exactly one level); band and
+region labels are obstacles for route verbs in the settle and the gate; flow
+columns align at the top once the tallest exceeds a screen; the externals
+band reads `external`; directory modules are graph nodes so the ids the
+diagrams draw are queryable; an empty directory is a refusal (SVA-D-008).
 
 The Archify teardown's sharpest line still holds and is the reason this can
 work: their spec-to-HTML step is deterministic and only their prompt-to-spec

@@ -173,11 +173,10 @@ def test_edge_labels_are_verbs_and_counts_live_in_notes(tmp_path: Path) -> None:
             for e in spec.edges:
                 assert not any(ch.isdigit() for ch in e.label), (e.label, spec.id)
                 if e.variant == "default" and not e.dst.startswith("ext:"):
-                    # Structural arrows say their verb again (a knowing reversal
-                    # of ec3c911, on the user's comparison with Archify's canvas);
-                    # the count stays in the note, and the label settles or
-                    # drops under the same collision gates as any other.
-                    assert e.label == "imports", "structural arrows say their verb"
+                    # Structural arrows are silent: 76 identical `imports` on
+                    # one view doubled the ink (review #20 M5). The legend says
+                    # once what a solid arrow is; the count lives in the note.
+                    assert e.label == "", "structural arrows carry no drawn word"
                     assert e.note, "the count lives in the note, not the label"
 
 
@@ -288,8 +287,30 @@ def test_services_built_from_the_root_claim_no_per_service_counts(tmp_path: Path
         "services:\n  a:\n    build: .\n  b:\n    build:\n      context: .\n",
     )
     nodes = {n.label: n for n in boxes_of(tmp_path, DiagramKind.DEPLOY_TOPOLOGY)}
-    assert nodes["a"].sublabel == "built from ."
+    assert nodes["a"].sublabel == "built from the repository root"
     assert "route" not in nodes["b"].sublabel
+
+
+def test_services_sharing_a_build_context_each_get_the_stores_of_the_code(
+    tmp_path: Path,
+) -> None:
+    """Two services built from `.` both ship the code that talks to the store.
+    Mapping each module to one service gave the demo's `api` no database and
+    cited `api`'s file under `agent` (review #20 M2)."""
+    _service_repo(tmp_path)
+    write(tmp_path, "api/db.py", "import psycopg2\n")
+    write(
+        tmp_path,
+        "docker-compose.yml",
+        "services:\n  a:\n    build: .\n  b:\n    build:\n      context: .\n",
+    )
+    g = graph_of(tmp_path)
+    produced, _ = derive_all(g, cluster(g))
+    spec = produced[DiagramKind.DEPLOY_TOPOLOGY].root_spec
+    store = [e for e in spec.edges if e.dst == "ext:database:PostgreSQL"]
+    assert sorted(e.src.split("#")[-1] for e in store) == ["service.a", "service.b"], store
+    assert all(e.evidence[0].file == "api/db.py" for e in store)
+    assert store[0].evidence == store[1].evidence, "the same line justifies both"
 
 
 # --- unit pins the integration fixtures cannot reach -------------------------------
@@ -362,7 +383,10 @@ def test_rows_keep_a_boundarys_members_adjacent() -> None:
     assert [x.id for x in _group_rows_by_region(rows, spec)[0]] == ["m1", "m2", "out", "other"]
 
 
-def test_external_verbs_are_drawn_once_per_target(tmp_path: Path) -> None:
+def test_every_external_arrow_carries_its_verb(tmp_path: Path) -> None:
+    """One verb per target left both MongoDB arrows unlabelled on the demo
+    when the label gate dropped that one (review #20 C3). Every store arrow
+    carries the verb; the gate drops the ones that would collide."""
     _service_repo(tmp_path)
     write(tmp_path, "web/db.py", "import openai\n")
     write(tmp_path, "guard/db.py", "import openai\n")
@@ -371,8 +395,7 @@ def test_external_verbs_are_drawn_once_per_target(tmp_path: Path) -> None:
     for spec in produced[DiagramKind.ARCHITECTURE].specs.values():
         to_openai = [e for e in spec.edges if e.dst == "ext:cloud:OpenAI API"]
         if len(to_openai) > 1:
-            assert sum(1 for e in to_openai if e.label) == 1
-            assert all(e.note == "calls" for e in to_openai)
+            assert all(e.label == "calls" and e.note == "calls" for e in to_openai)
             break
     else:
         raise AssertionError("fixture produced no shared external target")

@@ -65,6 +65,21 @@ def _text(data: bytes, node: Node) -> str:
     return data[node.start_byte : node.end_byte].decode("utf8", errors="replace")
 
 
+def _lines(data: bytes, node: Node) -> tuple[int, int]:
+    """The 1-based first and last line of `node`, counted from its byte range.
+
+    Not the node's row points: on py-tree-sitter 0.26 reading the points of a
+    docstring node reached through `child_by_field_name` and `children` left
+    the heap in a state the next garbage collection died on (bus error, exit
+    138, no traceback), which review #20 found by building svarupa on itself.
+    The same scan with byte offsets survives every file that crashed, so the
+    line is computed from what the library returns without corrupting.
+    """
+    start = data.count(b"\n", 0, node.start_byte) + 1
+    end = start + data.count(b"\n", node.start_byte, node.end_byte)
+    return start, end
+
+
 def _first_line(body: str) -> str:
     for line in body.splitlines():
         cleaned = _clean(line)
@@ -112,13 +127,8 @@ def _comment_fact(file: str, node: Node, data: bytes) -> RationaleFact | None:
     m = _MARKER_RE.match(first)
     if not m or not _clean(m.group("text")):
         return None
-    return RationaleFact(
-        file,
-        node.start_point.row + 1,
-        node.end_point.row + 1,
-        m.group("kind").lower(),
-        _clean(m.group("text")),
-    )
+    start, end = _lines(data, node)
+    return RationaleFact(file, start, end, m.group("kind").lower(), _clean(m.group("text")))
 
 
 def _walk(node: Node):  # type: ignore[no-untyped-def]
@@ -130,24 +140,21 @@ def _walk(node: Node):  # type: ignore[no-untyped-def]
 
 
 def _scan_python(file: str, data: bytes) -> list[RationaleFact]:
-    root = Parser(_PY).parse(data).root_node
+    # The tree stays bound for the whole walk (a `Node` does not own its
+    # `Tree`); lines come from byte offsets, see `_lines`.
+    tree = Parser(_PY).parse(data)
+    root = tree.root_node
     out: list[RationaleFact] = []
     found = _docstring_of(root, data)
     if found and found[1]:
         s, text = found
-        out.append(
-            RationaleFact(file, s.start_point.row + 1, s.end_point.row + 1, "docstring", text)
-        )
+        out.append(RationaleFact(file, *_lines(data, s), "docstring", text))
     for n in _walk(root):
         if n.type == "class_definition":
             found = _docstring_of(n.child_by_field_name("body"), data)
             if found and found[1]:
                 s, text = found
-                out.append(
-                    RationaleFact(
-                        file, s.start_point.row + 1, s.end_point.row + 1, "docstring", text
-                    )
-                )
+                out.append(RationaleFact(file, *_lines(data, s), "docstring", text))
         elif n.type == "comment":
             fact = _comment_fact(file, n, data)
             if fact:
@@ -156,7 +163,8 @@ def _scan_python(file: str, data: bytes) -> list[RationaleFact]:
 
 
 def _scan_typescript(file: str, data: bytes) -> list[RationaleFact]:
-    root = Parser(_TSX if file.endswith(".tsx") else _TS).parse(data).root_node
+    tree = Parser(_TSX if file.endswith(".tsx") else _TS).parse(data)
+    root = tree.root_node
     out: list[RationaleFact] = []
     first = next((c for c in root.children), None)
     doc: Node | None = None
@@ -167,15 +175,7 @@ def _scan_typescript(file: str, data: bytes) -> list[RationaleFact]:
             line = _first_line(body)
             if line:
                 doc = first
-                out.append(
-                    RationaleFact(
-                        file,
-                        first.start_point.row + 1,
-                        first.end_point.row + 1,
-                        "docstring",
-                        line,
-                    )
-                )
+                out.append(RationaleFact(file, *_lines(data, first), "docstring", line))
     # Only the comment consumed as the docstring is exempt: a `// TODO` that
     # happens to be the file's first node is still a marker.
     for n in _walk(root):

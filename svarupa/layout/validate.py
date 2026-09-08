@@ -19,7 +19,7 @@ from __future__ import annotations
 from itertools import pairwise
 
 from svarupa.diagnostics import Diagnostic, Severity
-from svarupa.layout.geometry import Canvas, Style
+from svarupa.layout.geometry import Canvas, Style, band_label_rect, region_label_rect
 from svarupa.layout.text import advance, sanitize
 
 __all__ = ["MIN_GAP", "validate"]
@@ -484,6 +484,19 @@ def _check_labels(canvas: Canvas, style: Style) -> list[Diagnostic]:
                     _err("SVA-G-013", who, f"route label covers the route {r.src} -> {r.dst}")
                 )
                 break
+    # Band and region labels are text on the same canvas (review #20 S5).
+    fixed = [("band label " + b.label, *band_label_rect(b, style)) for b in canvas.bands] + [
+        ("frame label " + r.label, *region_label_rect(r, style)) for r in canvas.regions
+    ]
+    for who, x, y, w, h in masks:
+        for who2, x2, y2, w2, h2 in fixed:
+            if (
+                x < x2 + w2 + gap
+                and x + w + gap > x2
+                and y < y2 + h2 + gap
+                and y + h + gap > y2
+            ):
+                out.append(_err("SVA-G-013", who, f"route label collides with the {who2}"))
     for i, (who, x, y, w, h) in enumerate(masks):
         for who2, x2, y2, w2, h2 in masks[i + 1 :]:
             if (
