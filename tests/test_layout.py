@@ -1374,3 +1374,36 @@ def test_sublabels_truncate_from_the_tail_and_paths_from_the_head() -> None:
     s = spec(DiagramNode(id="m", label="m", kind="module", evidence=EV, sublabel=long_sub))
     c = lay_out(s, STYLE, "clustered")
     assert c.boxes[0].sublabel.startswith("FastAPI"), c.boxes[0].sublabel
+
+
+def test_a_verb_far_from_both_of_its_boxes_is_dropped_not_stranded() -> None:
+    """Review #21 N16: `reads/writes` sat on the top lane of a corridor whose
+    ends were 1000px apart. A verb is drawn within MAX_VERB_DISTANCE of one of
+    its boxes or not at all; the passport still says it."""
+    from svarupa.layout.engines import MAX_VERB_DISTANCE, _settle_labels
+
+    a, b = box("a", 0, 500), box("b", 1200, 500)
+    far = Route(
+        src="a",
+        dst="b",
+        label="reads/writes",
+        points=((96, 522), (110, 522), (110, 40), (1190, 40), (1190, 522), (1200, 522)),
+        evidence=EV,
+        label_at=(650, 40),
+        label_w=80,
+    )
+    near = Route(
+        src="a",
+        dst="b",
+        label="calls",
+        points=((96, 530), (1200, 530)),
+        evidence=EV,
+        label_at=(648, 530),
+        label_w=40,
+    )
+    settled = {r.label: r for r in _settle_labels([far, near], [a, b], STYLE, frozenset())}
+    assert settled["reads/writes"].label_at is None, (
+        "the lane is farther than the limit from both ends"
+    )
+    assert settled["calls"].label_at is not None
+    assert MAX_VERB_DISTANCE >= 200

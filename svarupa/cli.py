@@ -10,6 +10,7 @@ from svarupa import __version__
 from svarupa.build import Graph, build
 from svarupa.cluster import cluster
 from svarupa.derive import derive_all
+from svarupa.derive.architecture import top_box_labels
 from svarupa.detect import FileRole, ScanLimits, detect
 from svarupa.diagnostics import Diagnostic, DiagnosticError, Severity
 from svarupa.emit import OUTPUT_DIR, claim, emit
@@ -114,9 +115,15 @@ def _scan(
         f"  grouping: {len(clustering.communities)} communities "
         f"(presentation only; never reaches the lockfile)"
     )
+    # Named as the architecture view names them (the shared directory, else
+    # the anchor's leaf and a count), never by the anchor alone: the CLI said
+    # `routers` where the diagram said `agent` (review #22 polish).
+    names = top_box_labels([(c.anchor, c.members) for c in clustering.communities])
     for c in sorted(clustering.communities, key=lambda c: -c.size)[:8]:
         head = ", ".join(c.members[:3]) + ("..." if c.size > 3 else "")
-        print(f"    {c.label:<22} n={c.size:<3} cohesion={c.cohesion:.2f}  {head}")
+        print(
+            f"    {names.get(c.anchor, c.label):<22} n={c.size:<3} cohesion={c.cohesion:.2f}  {head}"
+        )
 
     produced, notes = derive_all(graph, clustering)
     print()

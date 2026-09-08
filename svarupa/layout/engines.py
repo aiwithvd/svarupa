@@ -50,6 +50,9 @@ DRILL_RESERVE = 22
 # A flow's columns are centred against the tallest while it fits a 1440x900
 # screen under the chrome; taller than that they align at the top.
 FLOW_CENTRE_MAX_H = 600
+# A route verb is drawn only within this distance (along the route) of one of
+# its boxes; farther than that it is dropped and lives in the passport.
+MAX_VERB_DISTANCE = 240
 
 
 def _boxes(
@@ -283,11 +286,28 @@ def _settle_labels(
             abs(pts[i + 1][0] - pts[i][0]) + abs(pts[i + 1][1] - pts[i][1]) for i in range(n)
         ]
         horizontal = [pts[i][1] == pts[i + 1][1] for i in range(n)]
+
+        def near_an_end(i: int, lengths: list[int] = lengths, n: int = n) -> bool:
+            # A verb a screen away from both of its boxes says nothing about
+            # either (review #21 N16: `reads/writes` on the lane of a
+            # 1000px corridor detour). Measured along the polyline from the
+            # segment's midpoint to the nearer end. A straight arrow is exempt:
+            # its midpoint sits between its two boxes and reads as theirs.
+            if n == 1:
+                return True
+            before = sum(lengths[:i]) + lengths[i] // 2
+            after = sum(lengths[i + 1 :]) + lengths[i] // 2
+            return min(before, after) <= MAX_VERB_DISTANCE
+
         preferred = sorted(
-            (i for i in range(n) if lengths[i] >= (r.label_w if horizontal[i] else h)),
+            (
+                i
+                for i in range(n)
+                if lengths[i] >= (r.label_w if horizontal[i] else h) and near_an_end(i)
+            ),
             key=lambda i: (min(i, n - 1 - i), not horizontal[i], i),
         )
-        longest = sorted(range(n), key=lambda i: -lengths[i])
+        longest = [i for i in sorted(range(n), key=lambda i: -lengths[i]) if near_an_end(i)]
         chosen: tuple[int, int] | None = None
         for i in [*preferred, *longest]:
             (x0, y0), (x1, y1) = r.points[i], r.points[i + 1]

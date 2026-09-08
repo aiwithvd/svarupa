@@ -268,6 +268,9 @@ tab visible and may take a second row below 1100px; the side panel narrows to
 280px there; a drill lands below the header at any header height; "in a
 cycle" is cycle membership; group drills carry the group's name; flow import
 arrows are silent too; an exact id resolves alone.
+A route verb is drawn only within 240px along its route of one of its boxes
+(a straight arrow is exempt); the CLI names communities as the architecture
+view does.
 
 The Archify teardown's sharpest line still holds and is the reason this can
 work: their spec-to-HTML step is deterministic and only their prompt-to-spec
