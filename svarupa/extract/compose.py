@@ -25,7 +25,10 @@ not what its docstring names.
 
 from __future__ import annotations
 
+import json
+import posixpath
 from dataclasses import dataclass
+from pathlib import Path
 
 import yaml
 
@@ -126,6 +129,87 @@ def _key_lines(node: yaml.Node | None) -> dict[str, int]:
     return out
 
 
+_MAX_DOCKERFILE_BYTES = 256 * 1024
+
+
+def _dockerfile_ships(
+    root: Path, compose_path: str, context: str, dockerfile: str | None
+) -> tuple[str, list[tuple[str, int]]] | None:
+    """The repository-relative sources a service's Dockerfile copies in, each
+    with the line of its COPY or ADD, plus the Dockerfile's own path.
+
+    `context:` says where a build may read from; the Dockerfile says what the
+    image holds. Two services built from `.` with `Dockerfile.api` (`COPY api
+    /app/api`) and `Dockerfile.agent` (`COPY agent /app/agent`) ship disjoint
+    code, and mapping both to the whole context drew `api -> Gemini API`
+    cited to a file the api image never copies (review #21 N1). Sources are
+    taken from every stage (a builder stage's COPY still puts the code in the
+    build); `--from=` copies move image layers, not repository code, and are
+    skipped; a glob is cut at its first wildcard and read as a directory;
+    `.dockerignore` is not read. None when no Dockerfile can be read, so the
+    caller falls back to the context.
+    """
+    folder = posixpath.dirname(compose_path)
+    ctx_dir = posixpath.normpath(posixpath.join(folder, context.replace("\\", "/")))
+    if ctx_dir.startswith("..") or posixpath.isabs(ctx_dir):
+        return None
+    name = (dockerfile or "Dockerfile").replace("\\", "/")
+    rel = posixpath.normpath(posixpath.join(ctx_dir, name))
+    if rel.startswith("..") or posixpath.isabs(rel):
+        return None
+    try:
+        raw_bytes = (root / rel).read_bytes()
+    except OSError:
+        return None
+    if len(raw_bytes) > _MAX_DOCKERFILE_BYTES:
+        return None
+    text = raw_bytes.decode("utf8", errors="replace")
+    ships: list[tuple[str, int]] = []
+    pending = ""
+    start = 0
+    for i, raw_line in enumerate(text.splitlines(), start=1):
+        line = raw_line.strip()
+        if not pending:
+            start = i
+        if line.startswith("#") and not pending:
+            continue
+        if line.endswith("\\"):
+            pending += line[:-1] + " "
+            continue
+        full = (pending + line).strip()
+        pending = ""
+        if not full:
+            continue
+        parts = full.split()
+        if parts[0].upper() not in ("COPY", "ADD"):
+            continue
+        flags = [p for p in parts[1:] if p.startswith("--")]
+        if any(f.startswith("--from") for f in flags):
+            continue
+        args = [p for p in parts[1:] if not p.startswith("--")]
+        rest = full[len(parts[0]) :].strip()
+        for f in flags:
+            rest = rest.replace(f, "", 1).strip()
+        if rest.startswith("["):
+            try:
+                loaded = json.loads(rest)
+            except json.JSONDecodeError:
+                loaded = None
+            if isinstance(loaded, list):
+                args = [str(a) for a in loaded if isinstance(a, str)]  # pyright: ignore[reportUnknownVariableType, reportUnknownArgumentType]
+        if len(args) < 2:
+            continue
+        for src in args[:-1]:
+            if "://" in src:
+                continue  # ADD of a URL is not repository code
+            head = src.split("*", 1)[0].split("?", 1)[0].split("[", 1)[0]
+            joined = posixpath.normpath(posixpath.join(ctx_dir, head.replace("\\", "/")))
+            if joined.startswith("..") or posixpath.isabs(joined):
+                continue
+            ships.append(("" if joined == "." else joined, start))
+    return rel, ships
+
+
 def extract_compose(scan: Scan) -> ComposeFacts:
     """Every compose file in the scan, as evidenced nodes and edges.
 
@@ -214,6 +298,7 @@ def extract_compose(scan: Scan) -> ComposeFacts:
             image = _scalar(body.get("image")) or ""
             build = body.get("build")
             build_context = _scalar(build) or _scalar(_mapping(build).get("context"))
+            dockerfile = _scalar(_mapping(build).get("dockerfile"))
             # The citation is the line of the service's *key*. The body node's
             # mark is its first child, so `minio:` declared at line 90 was
             # cited as line 91: off by one on the wave's headline claim.
@@ -254,6 +339,14 @@ def extract_compose(scan: Scan) -> ComposeFacts:
                 build_line = _key_lines(body_node).get("build")
                 if build_line is not None:
                     attrs.append(("build_line", str(build_line)))
+                shipped = _dockerfile_ships(scan.root, path, build_context, dockerfile)
+                if shipped is not None:
+                    dockerfile_rel, sources = shipped
+                    attrs.append(("dockerfile", dockerfile_rel))
+                    # What the image holds, source by source, with the line
+                    # that copies it. Empty when the Dockerfile copies nothing
+                    # from the repository, which is a fact too.
+                    attrs.append(("ships", "\n".join(f"{s}:{ln}" for s, ln in sources)))
             node_id = f"{path}#service.{name}"
             nodes[node_id] = Node(
                 id=node_id,

@@ -247,6 +247,8 @@ def render_guided(chapters: tuple[Chapter, ...], root: str) -> Markup:
                 )
             ),
             class_="chapter",
+            tabindex="0",
+            role="button",
             data_anchor=ch.anchor,
             data_focus="\n".join(ch.focus),
             title=ch.sublabel or None,

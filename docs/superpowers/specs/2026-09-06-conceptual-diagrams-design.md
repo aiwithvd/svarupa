@@ -261,6 +261,14 @@ columns align at the top once the tallest exceeds a screen; the externals
 band reads `external`; directory modules are graph nodes so the ids the
 diagrams draw are queryable; an empty directory is a refusal (SVA-D-008).
 
+*As built (review #21, 2026-09-08):* a service's arrows come from the code its
+Dockerfile copies (COPY/ADD sources, each cited), with the build context as
+the fallback; every surface names a box by its label; the header keeps every
+tab visible and may take a second row below 1100px; the side panel narrows to
+280px there; a drill lands below the header at any header height; "in a
+cycle" is cycle membership; group drills carry the group's name; flow import
+arrows are silent too; an exact id resolves alone.
+
 The Archify teardown's sharpest line still holds and is the reason this can
 work: their spec-to-HTML step is deterministic and only their prompt-to-spec
 step is not. Wave A replaces the prompt with extraction.

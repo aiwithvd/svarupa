@@ -421,24 +421,29 @@ def test_rationale_is_not_blast_radius_and_matches_say_how(artifact) -> None:  #
     assert shortest_path(index, doc, "api/routes.py", undirected=True)["path"] is None
     assert get_node(index, "store/db.py")["matched_by"] == "id"
     assert get_node(index, "domain.orders.Orders")["matched_by"] == "qualified_name"
-    # A label that is also another node's id is an ambiguity across tiers.
+    # An exact id names one node (ids are unique by construction), even when
+    # another node's label spells the same (review #21 N11: `get_node agent`
+    # was ambiguous between the module and the compose service labelled
+    # `agent`). A label shared by two nodes stays an ambiguity.
     data = json.loads((out / "graph.json").read_text(encoding="utf8"))
-    data["nodes"].append(
-        {
-            "id": "shadow",
-            "kind": "module",
-            "label": "store/db.py",
-            "qualified_name": "shadow",
-            "lang": None,
-            "evidence": [{"file": "store/db.py", "start_line": 1, "end_line": 1}],
-            "attrs": {},
-        }
-    )
-    both = get_node(GraphIndex(data), "store/db.py")
-    assert both["match"] is None and {c["matched_by"] for c in both["ambiguous"]} == {
-        "id",
-        "label",
+    node = {
+        "kind": "module",
+        "lang": None,
+        "evidence": [{"file": "store/db.py", "start_line": 1, "end_line": 1}],
+        "attrs": {},
     }
+    data["nodes"].append(
+        {**node, "id": "shadow", "label": "store/db.py", "qualified_name": "shadow"}
+    )
+    data["nodes"].append({**node, "id": "t1", "label": "twin", "qualified_name": "t1"})
+    data["nodes"].append({**node, "id": "t2", "label": "twin", "qualified_name": "t2"})
+    hit = get_node(GraphIndex(data), "store/db.py")
+    assert hit["match"]["id"] == "store/db.py" and hit["matched_by"] == "id"
+    both = get_node(GraphIndex(data), "twin")
+    assert both["match"] is None and [c["matched_by"] for c in both["ambiguous"]] == [
+        "label",
+        "label",
+    ]
 
 
 def test_query_graph_budget_is_measured_on_the_printed_json_and_keeps_edges(artifact) -> None:  # type: ignore[no-untyped-def]

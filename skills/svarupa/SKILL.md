@@ -77,7 +77,9 @@ Add `--json` for structured output (always prefer it when acting on the
 answer). Matching is exact: a label shared by several nodes returns an
 `ambiguous` list of candidates (each with `matched_by`: id, qualified_name
 or label) and exit 1, never a guess; a label that matches nothing returns
-`match: null` and exit 1. `shortest_path` and `affected` follow dependency
+`match: null` and exit 1. Boxes whose id starts with `group:` or `tree:` are
+drawn groupings (a community, a directory) with no graph node of their own;
+query their member modules, which the passport lists. `shortest_path` and `affected` follow dependency
 edges only (`rationale_for` is excluded and the answer says so); `affected`
 hits carry the relation they were reached by. `query_graph` is keyword search
 over names and rationale text, not semantic search, and says so in its

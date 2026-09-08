@@ -168,10 +168,21 @@ def test_edge_labels_are_verbs_and_counts_live_in_notes(tmp_path: Path) -> None:
     _service_repo(tmp_path)
     g = graph_of(tmp_path)
     produced, _ = derive_all(g, cluster(g))
-    for kind in (DiagramKind.ARCHITECTURE, DiagramKind.MODULE_DEPS):
+    import re
+
+    for kind in (
+        DiagramKind.ARCHITECTURE,
+        DiagramKind.MODULE_DEPS,
+        DiagramKind.DATA_FLOW,
+        DiagramKind.REQUEST_FLOW,
+    ):
         for spec in produced[kind].specs.values():
             for e in spec.edges:
                 assert not any(ch.isdigit() for ch in e.label), (e.label, spec.id)
+                if re.match(r"\d+ imports?\b", e.note):
+                    # An import arrow is silent in every view (review #21 N9
+                    # found 79 `imports` labels left in the two flow views).
+                    assert e.label == "", (kind, spec.id, e.src, e.dst, e.label)
                 if e.variant == "default" and not e.dst.startswith("ext:"):
                     # Structural arrows are silent: 76 identical `imports` on
                     # one view doubled the ink (review #20 M5). The legend says
@@ -294,9 +305,9 @@ def test_services_built_from_the_root_claim_no_per_service_counts(tmp_path: Path
 def test_services_sharing_a_build_context_each_get_the_stores_of_the_code(
     tmp_path: Path,
 ) -> None:
-    """Two services built from `.` both ship the code that talks to the store.
-    Mapping each module to one service gave the demo's `api` no database and
-    cited `api`'s file under `agent` (review #20 M2)."""
+    """Two services built from `.` with no readable Dockerfile: the context is
+    all the evidence there is, so both ship the code that talks to the store
+    (review #20 M2 gave `api` no database and cited its file under `agent`)."""
     _service_repo(tmp_path)
     write(tmp_path, "api/db.py", "import psycopg2\n")
     write(
@@ -311,6 +322,86 @@ def test_services_sharing_a_build_context_each_get_the_stores_of_the_code(
     assert sorted(e.src.split("#")[-1] for e in store) == ["service.a", "service.b"], store
     assert all(e.evidence[0].file == "api/db.py" for e in store)
     assert store[0].evidence == store[1].evidence, "the same line justifies both"
+
+
+def test_a_dockerfile_says_which_code_a_service_ships(tmp_path: Path) -> None:
+    """Review #21 N1: two services from `.` with `Dockerfile.api` (COPY api)
+    and `Dockerfile.agent` (COPY agent) ship disjoint code; the context alone
+    drew `api -> Gemini API` from a file only the agent image copies. Each
+    arrow cites the import and the COPY line that puts it in the image."""
+    _service_repo(tmp_path)
+    write(tmp_path, "api/db.py", "import psycopg2\n")
+    write(tmp_path, "agent/__init__.py", "")
+    write(tmp_path, "agent/llm.py", "import openai\n")
+    write(
+        tmp_path,
+        "docker-compose.yml",
+        "services:\n"
+        "  api:\n    build:\n      context: .\n      dockerfile: Dockerfile.api\n"
+        "  agent:\n    build:\n      context: .\n      dockerfile: Dockerfile.agent\n"
+        "  all:\n    build:\n      context: .\n      dockerfile: Dockerfile.all\n",
+    )
+    write(
+        tmp_path,
+        "Dockerfile.api",
+        "FROM python:3.12\nCOPY requirements.txt .\nCOPY api /app/api\n",
+    )
+    write(
+        tmp_path,
+        "Dockerfile.agent",
+        "FROM python:3.12 AS build\nCOPY agent/ /app/agent\nFROM python:3.12\n"
+        "COPY --from=build /app /app\n",
+    )
+    write(tmp_path, "Dockerfile.all", 'FROM python:3.12\nCOPY ["." , "/app"]\n')
+    g = graph_of(tmp_path)
+    api = g.nodes["docker-compose.yml#service.api"]
+    assert api.attr("dockerfile") == "Dockerfile.api"
+    assert api.attr("ships") == "requirements.txt:2\napi:3", (
+        "every copied source, with its line"
+    )
+    agent = g.nodes["docker-compose.yml#service.agent"]
+    assert agent.attr("ships") == "agent:2", "the --from copy is not repository code"
+    assert g.nodes["docker-compose.yml#service.all"].attr("ships") == ":2"
+    produced, _ = derive_all(g, cluster(g))
+    spec = produced[DiagramKind.DEPLOY_TOPOLOGY].root_spec
+    by_src: dict[str, list[str]] = {}
+    for e in spec.edges:
+        if e.dst.startswith("ext:"):
+            by_src.setdefault(e.src.split("#")[-1], []).append(e.dst)
+
+    def ext_of(prefix: str) -> list[str]:
+        return sorted(
+            {
+                f"ext:{x.category}:{x.label}"
+                for x in g.externals
+                if x.file.startswith(prefix)
+                and x.category in ("database", "messagebus", "cloud")
+            }
+        )
+
+    # Each service talks to exactly what the code its image copies imports.
+    assert (
+        sorted(by_src["service.api"]) == ext_of("api/")
+        and "ext:database:PostgreSQL" in by_src["service.api"]
+    )
+    assert sorted(by_src["service.agent"]) == ext_of("agent/") == ["ext:cloud:OpenAI API"]
+    assert sorted(by_src["service.all"]) == sorted(set(ext_of("api/")) | set(ext_of("agent/")))
+    api_store = next(
+        e
+        for e in spec.edges
+        if e.src.endswith("service.api") and e.dst == "ext:database:PostgreSQL"
+    )
+    files = {ev.file for ev in api_store.evidence}
+    assert files == {"api/db.py", "Dockerfile.api"}, files
+    assert any(ev.file == "Dockerfile.api" and ev.start_line == 3 for ev in api_store.evidence)
+    # A Dockerfile that copies nothing from the repository ships no module.
+    write(tmp_path, "Dockerfile.api", "FROM python:3.12\nRUN pip install x\n")
+    g2 = graph_of(tmp_path)
+    assert g2.nodes["docker-compose.yml#service.api"].attr("ships") == ""
+    spec2 = derive_all(g2, cluster(g2))[0][DiagramKind.DEPLOY_TOPOLOGY].root_spec
+    assert not any(
+        e.src.endswith("service.api") and e.dst.startswith("ext:") for e in spec2.edges
+    )
 
 
 # --- unit pins the integration fixtures cannot reach -------------------------------

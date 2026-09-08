@@ -41,7 +41,7 @@ from svarupa.extract.base import (
     Scorecard,
     TaskFact,
 )
-from svarupa.model import Edge, EdgeKind, Evidence, MissingEvidenceError, Node
+from svarupa.model import Edge, EdgeKind, Evidence, MissingEvidenceError, Node, NodeKind
 
 __all__ = [
     "Graph",
@@ -542,6 +542,43 @@ def modules_under(graph: Graph, context: str) -> set[str]:
     return {
         m for m in graph.modules if context == "" or m == context or m.startswith(context + "/")
     }
+
+
+def modules_shipped(
+    graph: Graph, service_id: str
+) -> tuple[set[str], dict[str, Evidence]] | None:
+    """The modules a built service's image holds, each with the Dockerfile
+    COPY/ADD line that puts it there; None for a service that builds nothing
+    in the tree.
+
+    From the Dockerfile's sources when the extractor read one (review #21 N1:
+    the build context says where a build may read, the Dockerfile says what
+    the image holds), else every module under the context. A copied file
+    stands for its module only when it is a source file the graph knows.
+    """
+    ctx = build_context_of(graph, service_id)
+    if ctx is None:
+        return None
+    node = graph.nodes.get(service_id)
+    ships = node.attr("ships") if node is not None else None
+    dockerfile = node.attr("dockerfile") if node is not None else None
+    if ships is None or dockerfile is None:
+        return modules_under(graph, ctx), {}
+    out: set[str] = set()
+    where: dict[str, Evidence] = {}
+    for entry in ships.split("\n"):
+        if not entry:
+            continue
+        src, _, line = entry.rpartition(":")
+        ev = Evidence(file=dockerfile, start_line=int(line), end_line=int(line))
+        if src in graph.nodes and graph.nodes[src].kind is NodeKind.MODULE:
+            mods = {module_of(src)}
+        else:
+            mods = modules_under(graph, src)
+        for m in sorted(mods):
+            out.add(m)
+            where.setdefault(m, ev)
+    return out, where
 
 
 def module_roles(graph: Graph) -> dict[str, tuple[str, ...]]:

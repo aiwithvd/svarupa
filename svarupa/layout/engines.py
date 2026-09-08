@@ -400,29 +400,6 @@ def _inferred_layers(spec: DiagramSpec) -> dict[str, int]:
     return depth
 
 
-def _inferred_layers_cyclic(spec: DiagramSpec) -> frozenset[str]:
-    """The ids Kahn could not drain, which is exactly the cyclic set."""
-    ids = [n.id for n in spec.nodes]
-    present = set(ids)
-    incoming: dict[str, set[str]] = {i: set() for i in ids}
-    outgoing: dict[str, set[str]] = {i: set() for i in ids}
-    for e in spec.edges:
-        if e.src in present and e.dst in present and e.src != e.dst:
-            incoming[e.dst].add(e.src)
-            outgoing[e.src].add(e.dst)
-    drained: set[str] = set()
-    ready = sorted(i for i in ids if not incoming[i])
-    remaining = {i: set(v) for i, v in incoming.items()}
-    while ready:
-        nid = ready.pop(0)
-        drained.add(nid)
-        for nxt in sorted(outgoing[nid]):
-            remaining[nxt].discard(nid)
-            if not remaining[nxt] and nxt not in drained and nxt not in ready:
-                ready.append(nxt)
-    return frozenset(set(ids) - drained)
-
-
 def _levels(
     spec: DiagramSpec, boxes: Sequence[Box], sink_externals: bool = True
 ) -> dict[str, int]:
@@ -445,14 +422,34 @@ def _levels(
 
 
 def _cyclic_ids(spec: DiagramSpec) -> frozenset[str]:
-    """Ids whose level came from the cycle fallback rather than from an order.
+    """Ids that sit ON a cycle: each can reach itself along the edges.
 
     Needed so a band over them can say so instead of claiming a level number,
-    which for a cycle is a placement decision and not a measured fact.
+    which for a cycle is a placement decision and not a measured fact. Not
+    "what Kahn could not drain": that set is the cycle plus everything below
+    it, and labelled a leaf `schema` module "in a cycle" (review #21 N6).
     """
     if _declared_layers(spec) is not None:
         return frozenset()
-    return _inferred_layers_cyclic(spec)
+    ids = {n.id for n in spec.nodes}
+    outgoing: dict[str, set[str]] = {i: set() for i in ids}
+    for e in spec.edges:
+        if e.src in ids and e.dst in ids:
+            outgoing[e.src].add(e.dst)
+    cyclic: set[str] = set()
+    for start in sorted(ids):
+        seen: set[str] = set()
+        stack = sorted(outgoing[start])
+        while stack:
+            cur = stack.pop()
+            if cur == start:
+                cyclic.add(start)
+                break
+            if cur in seen:
+                continue
+            seen.add(cur)
+            stack.extend(sorted(outgoing[cur]))
+    return frozenset(cyclic)
 
 
 def _dummy_box(nid: str, style: Style) -> Box:
@@ -1043,6 +1040,9 @@ def clustered(
         if b.id in dummies:
             continue
         by_level.setdefault(levels.get(b.id, 0), []).append(b)
+    # A band is "in a cycle" only when every box in it is on one; a band the
+    # fallback floor filled with a cycle and what hangs below it says both
+    # (review #21 N6: a leaf `schema` module read as cyclic).
     bands = tuple(
         Band(
             label=(
@@ -1051,6 +1051,7 @@ def clustered(
                 else "in a cycle"
                 if all(b.id in cyclic for b in members)
                 else f"level {sorted(by_level).index(level) + 1}"
+                + (" · cycle inside" if any(b.id in cyclic for b in members) else "")
             ),
             y=min(b.y for b in members),
             h=max(b.bottom for b in members) - min(b.y for b in members),

@@ -83,7 +83,9 @@ fire(a, 'mouseover', { relatedTarget: document.body });
 check('hover lights a path', svg.classList.contains('is-hovering') && svg.querySelectorAll('.is-path').length > 0);
 fire(a, 'click', { detail: 1 });
 check('click focuses', svg.classList.contains('is-focused') && a.classList.contains('is-focus'));
-check('click opens the passport', panel.classList.contains('is-open') && document.getElementById('panel-title').textContent === a.getAttribute('data-id'));
+const labelOfNode = (n) => n.querySelector('title').textContent.split('\n')[0];
+check('click opens the passport titled by the label', panel.classList.contains('is-open') && document.getElementById('panel-title').textContent === labelOfNode(a), document.getElementById('panel-title').textContent);
+check('the id chip still carries the id', Array.from(document.querySelectorAll('#panel-meta code')).some((c) => c.textContent === a.getAttribute('data-id')));
 fire(a, 'mouseout', { relatedTarget: document.body });
 fire(view.querySelector('.scroller'), 'click', { detail: 1 });
 check('background click clears every lit state',
@@ -227,12 +229,29 @@ check('after a switch it names the new current theme', /light$/.test(themeBtn.te
 themeBtn.click();
 check('the repository is labelled as one in the header', !!document.querySelector('header .repo small') && document.querySelector('header .repo small').textContent === 'repo');
 check('the explore hint names the drill gesture', /double-click/.test(tab.querySelector('.explore .hint').textContent));
+// review #21 N14: chapters and swatches are keyboard stops that answer Enter
+const firstSwatch = tab.querySelector('.legend .sw-toggle');
+check('legend swatches are focusable', firstSwatch && firstSwatch.getAttribute('tabindex') === '0');
+if (firstSwatch) {
+  firstSwatch.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+  check('Enter on a swatch mutes its kind', firstSwatch.classList.contains('off'));
+  firstSwatch.click();
+}
+const firstChapter = tab.querySelector('.guided .chapter');
+if (firstChapter) {
+  check('chapters are focusable', firstChapter.getAttribute('tabindex') === '0');
+  firstChapter.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+  check('Enter on a chapter opens it', firstChapter.classList.contains('is-active'));
+  fire(view.querySelector('.scroller'), 'click', { detail: 1 });
+}
 const groupNode = Array.from(document.querySelectorAll('.sv-node[data-members]'))[0];
 if (groupNode) {
   fire(groupNode, 'click', { detail: 1 });
   const members = groupNode.getAttribute('data-members').split('\n').filter(Boolean);
   const chips = Array.from(document.querySelectorAll('#panel-meta .chip-member')).map((c) => c.textContent);
   check('a group passport lists its members', JSON.stringify(chips) === JSON.stringify(members), JSON.stringify(chips));
+  check('a group passport is titled by the label, not the id', document.getElementById('panel-title').textContent === labelOfNode(groupNode));
+  check('a group passport says it is not a graph node', Array.from(document.querySelectorAll('#panel-meta span')).some((c) => /not a graph node/.test(c.textContent)));
   fire(groupNode.closest('.view').querySelector('.scroller'), 'click', { detail: 1 });
 } else {
   console.log('ok group members (no group in this fixture; skipped)');

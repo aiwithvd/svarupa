@@ -251,6 +251,10 @@ def test_a_group_box_has_its_own_id_and_a_name_that_reads_as_a_set(tmp_path: Pat
     group = by_id["group:src/api/views"]
     assert group.kind == "group" and group.label == "api", group
     assert group.attr("members") == "\n".join(members)
+    assert by_id["src/worker/tasks"].attr("members") is None, "a singleton lists no members"
+    inside = ds.specs[group.child_spec or ""]
+    assert inside.title == "api internals", "titled by the box opened, not its anchor"
+    assert inside.subtitle.startswith("3 modules"), inside.subtitle
     assert "src/api/views" not in by_id, "the anchor module is not a box beside its group"
     assert by_id["src/worker/tasks"].kind != "group", "a singleton is the module itself"
     edge = next(e for e in ds.root_spec.edges if e.src == "src/worker/tasks")
@@ -261,6 +265,25 @@ def test_a_group_box_has_its_own_id_and_a_name_that_reads_as_a_set(tmp_path: Pat
 
     labels = top_box_labels([("b/x", ("a/one", "b/x", "c/y")), ("d", ("d",))])
     assert labels == {"b/x": "x +2", "d": "d"}
+    # A shared directory names a group only when no other box holds a module
+    # under it: on svarupa itself the emit/layout group was `svarupa` beside
+    # the group holding the `svarupa` module (review #21 N8).
+    self_like = top_box_labels(
+        [
+            ("svarupa/emit", ("svarupa/emit", "svarupa/layout")),
+            ("svarupa", ("scripts", "svarupa", "svarupa/derive")),
+        ]
+    )
+    assert self_like == {"svarupa/emit": "emit +1", "svarupa": "svarupa +2"}, self_like
+    # The same rule with no label clash to hide behind: a singleton under the
+    # shared directory is enough to deny the group the directory's name.
+    no_clash = top_box_labels(
+        [
+            ("svarupa/emit", ("svarupa/emit", "svarupa/layout")),
+            ("svarupa/derive", ("svarupa/derive",)),
+        ]
+    )
+    assert no_clash == {"svarupa/emit": "emit +1", "svarupa/derive": "derive"}, no_clash
 
 
 def test_reclustering_does_not_invent_new_ids(tmp_path: Path) -> None:
@@ -867,13 +890,16 @@ def test_module_deps_follow_the_directory_tree_past_the_top_box_budget(tmp_path:
     root = ds.root_spec
     by_id = {n.id: n for n in root.nodes}
     assert set(by_id) == {"tree:src", "tree:tools"}, sorted(by_id)
-    assert by_id["tree:src"].sublabel == "8 modules" and by_id["tree:src"].kind == "module"
+    assert by_id["tree:src"].sublabel == "8 modules" and by_id["tree:src"].kind == "group"
     assert by_id["tree:src"].attr("members") == "\n".join(f"src/p{i}" for i in range(8))
     assert [(e.src, e.dst, e.weight) for e in root.edges] == [("tree:tools", "tree:src", 5)]
-    assert "14 modules in 2 parts of the repository" in root.subtitle
     # 8 ring imports inside src, `tools -> tools/t0` inside tools; the five
     # `tools/t* -> src/p0` imports are the one aggregated arrow between parts.
-    assert "1 dependencies between parts, 9 inside them" in root.subtitle
+    # One unit throughout (review #21 N12): module dependencies.
+    assert root.subtitle == (
+        "14 modules in 2 boxes of the repository (2 of them parts to drill into); "
+        "5 module dependencies between boxes as 1 arrows, 9 inside the parts"
+    ), root.subtitle
     tools = ds.specs[by_id["tree:tools"].child_spec or ""]
     assert tools.parent == "/spec/root" and tools.title == "tools module dependencies"
     # `tools` is a module beside its own subdirectories: its own box, a leaf.

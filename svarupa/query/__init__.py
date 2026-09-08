@@ -96,7 +96,12 @@ class GraphIndex:
         that is also another node's label is an ambiguity, not a hit."""
         hits: dict[str, str] = {}
         if label in self.nodes:
-            hits[label] = "id"
+            # Ids are unique by construction (the emitter refuses duplicates),
+            # so the text that IS an id names one node; a label elsewhere
+            # spelled the same is not a second reading of it (review #21 N11:
+            # `get_node agent` was ambiguous between the module and the
+            # compose service labelled `agent`).
+            return {label: "id"}
         for nid in self.by_qualified.get(label, []):
             hits.setdefault(nid, "qualified_name")
         for nid in self.by_label.get(label, []):

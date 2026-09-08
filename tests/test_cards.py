@@ -153,7 +153,7 @@ def test_viewer_carries_the_strip_and_the_cards_once_per_tab(tmp_path: Path) -> 
     assert '<div class="guided"' in request_tab
     assert '<div class="guided"' not in str(render_guided((), "/spec/root"))
     assert html.count('<div class="cards">') == tabs, "cards under every root view only"
-    assert 'class="chapter" data-anchor="api" data-focus="' in html
+    assert 'class="chapter"' in html and 'data-anchor="api" data-focus="' in html
     assert "Guided views " in html and "Explore this system" in html
     assert 'data-kind="fact"' in html and "SRC 2" in html
     empty = str(render_cards((Card("Nothing here", "cyan", (), 0, "nothing was found"),)))

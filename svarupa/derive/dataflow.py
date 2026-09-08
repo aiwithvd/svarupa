@@ -145,15 +145,28 @@ def _reach(
     return hops, entry
 
 
-def _cut(paths: list[str], limit: int = 40) -> str:
+# What fits a box at the label font without the layout cutting it again from
+# the head (review #21 N10: `…able-rules, /batch, /check …`, elided both ends).
+_INGRESS_CHARS = 28
+
+
+def _cut(paths: list[str], limit: int = _INGRESS_CHARS) -> str:
     """Route paths joined, cut at a path boundary rather than mid-segment:
     `/api/v1/organisations/{org_id}/billin…` says nothing a reader can use."""
     shown = ", ".join(paths[:3]) + (" …" if len(paths) > 3 else "")
     if len(shown) <= limit:
         return shown
     keep = shown[: limit - 1]
-    cut = max(keep.rfind(", "), keep.rfind("/", 1))
-    return (keep[:cut] if cut > 0 else keep) + "…"
+    at_comma = keep.rfind(", ")
+    cut = max(at_comma, keep.rfind("/", 1))
+    if cut <= 0:
+        return keep + "…"
+    stem = keep[:cut]
+    # A cut that drops whole routes ends ` …` like the untruncated list; a
+    # cut inside a route ends `…` on the segment boundary.
+    if cut == at_comma or stem.rstrip().endswith(","):
+        return stem.rstrip(" ,") + " …"
+    return stem + "…"
 
 
 def _ingress_node(graph: Graph, module: str) -> DiagramNode | None:
@@ -226,10 +239,12 @@ def _import_edge(a: str, b: str, ev: tuple[Evidence, ...], via: tuple[str, ...])
     note = f"{len(ev)} import{'s' if len(ev) != 1 else ''}"
     if via:
         note += " via " + ", ".join(via)
+    # Silent, like every structural arrow (review #21 N9: 79 `imports` labels
+    # stayed in the flow views after the architecture ones went quiet).
     return DiagramEdge(
         src=a,
         dst=b,
-        label="imports",
+        label="",
         note=note,
         evidence=ev[:MAX_EVIDENCE_PER_BOX],
         weight=len(ev),

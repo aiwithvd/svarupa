@@ -14,10 +14,11 @@ builds, so the story view and the evidence view are one navigation.
 
 from __future__ import annotations
 
-from svarupa.build import Graph, build_context_of, module_of, module_roles, modules_under
+from svarupa.build import Graph, build_context_of, module_of, module_roles, modules_shipped
 from svarupa.cluster import Clustering
 from svarupa.derive.architecture import external_nodes_and_edges
 from svarupa.derive.base import (
+    MAX_EVIDENCE_PER_BOX,
     ROOT,
     Deriver,
     DiagramEdge,
@@ -28,7 +29,7 @@ from svarupa.derive.base import (
 )
 from svarupa.diagnostics import Diagnostic
 from svarupa.extract.vocabulary import GENERIC_FAMILIES, image_label
-from svarupa.model import EdgeKind, NodeKind
+from svarupa.model import EdgeKind, Evidence, NodeKind
 
 __all__ = ["SystemDeriver"]
 
@@ -80,6 +81,7 @@ class SystemDeriver(Deriver):
         archetype = {"datastore": "database", "queue": "messagebus", "service": "service"}
         nodes: list[DiagramNode] = []
         modules_of_service: dict[str, set[str]] = {}
+        copy_line_of: dict[str, dict[str, Evidence]] = {}
         canonical: dict[str, str] = {}  # vocabulary label -> compose node id
         for nid, node in sorted(members.items()):
             label = node.label
@@ -95,9 +97,12 @@ class SystemDeriver(Deriver):
                     canonical.setdefault(store, nid)
                     sublabel = f"{store} · {image}"
             ctx = build_context_of(graph, nid)
-            if ctx is not None:
-                mods = modules_under(graph, ctx)
+            shipped = modules_shipped(graph, nid)
+            if ctx is not None and shipped is not None:
+                mods, copy_lines = shipped
                 modules_of_service[nid] = mods
+                copy_line_of[nid] = copy_lines
+                narrowed = bool(ctx) or bool(node.attr("dockerfile"))
                 held = {r for m in mods for r in roles.get(m, ())}
                 kind = "backend"
                 if "frontend" in held:
@@ -108,15 +113,16 @@ class SystemDeriver(Deriver):
                 # A root build context means "everything": two services built
                 # from `.` would each claim the whole repository's routes,
                 # which is a wrong per-service number. Counts are claimed only
-                # for a context that names a subtree.
-                if "api" in held and ctx:
+                # for a context that names a subtree, or a Dockerfile that
+                # names what the image copies.
+                if "api" in held and narrowed:
                     n_routes = sum(
                         1
                         for r in graph.routes
                         if r.file in graph.architecture_paths and module_of(r.file) in mods
                     )
                     what.append(f"{n_routes} route{'s' if n_routes != 1 else ''}")
-                if "worker" in held and ctx:
+                if "worker" in held and narrowed:
                     what.append("workers")
                 sublabel = ("built from " + (ctx + "/" if ctx else "the repository root")) + (
                     " · " + ", ".join(what) if what else ""
@@ -156,12 +162,12 @@ class SystemDeriver(Deriver):
         # family label (`sqlalchemy` says SQL, not which) attaches to a compose
         # store of that family when there is exactly one, else stays its own
         # honest box.
-        # A module stands for EVERY service whose build context holds it.
-        # Two services built from `.` each ship the whole tree, so the code
-        # that talks to MongoDB is in both images; mapping each module to
-        # one service gave the demo's `api` no database and cited `api`'s
-        # file under `agent` (review #20 M2). A wrong edge is worse than a
-        # missing one, and a missing one is worse than the two true ones.
+        # A module stands for every service whose IMAGE holds it: the
+        # Dockerfile's COPY sources when one was read, else the build context
+        # (review #20 M2 gave the demo's `api` no database; review #21 N1
+        # showed the context alone then drew `api -> Gemini API` from a file
+        # only the agent image copies). Each arrow cites the import lines and
+        # the COPY line that puts that code in the image.
         stand_in: dict[str, str | tuple[str, ...]] = {}
         holders: dict[str, list[str]] = {}
         for svc, mods in sorted(modules_of_service.items()):
@@ -170,6 +176,7 @@ class SystemDeriver(Deriver):
         for m, svcs in holders.items():
             stand_in[m] = tuple(sorted(svcs))
         ext_nodes, ext_edges = external_nodes_and_edges(graph, set(stand_in), stand_in)
+        ext_edges = [_with_copy_line(e, copy_line_of) for e in ext_edges]
         redirect: dict[str, str] = {}
         for n in ext_nodes:
             target = canonical.get(n.label)
@@ -226,3 +233,26 @@ class SystemDeriver(Deriver):
             edges=edges,
         )
         return DiagramSet(self.kind, ROOT, {ROOT: spec}, tuple(diags))
+
+
+def _with_copy_line(
+    edge: DiagramEdge, copy_line_of: dict[str, dict[str, Evidence]]
+) -> DiagramEdge:
+    """Add the Dockerfile line that ships the importing module to a store
+    arrow's evidence, so the claim "this service talks to MongoDB" cites both
+    the import and the COPY that puts the import in the image."""
+    lines = copy_line_of.get(edge.src, {})
+    extra = sorted(
+        {lines[module_of(ev.file)] for ev in edge.evidence if module_of(ev.file) in lines}
+    )
+    if not extra:
+        return edge
+    return DiagramEdge(
+        src=edge.src,
+        dst=edge.dst,
+        label=edge.label,
+        note=edge.note,
+        evidence=(*edge.evidence[: MAX_EVIDENCE_PER_BOX - len(extra)], *extra),
+        weight=edge.weight,
+        variant=edge.variant,
+    )

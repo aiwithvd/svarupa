@@ -48,6 +48,7 @@ def _css() -> Markup:
     return raw(
         """
 :root {
+  --header-h: 58px; /* measured by the script; the one-row height */
   --bg: #020617; --surface: #0f172a; --raised: #131c33; --line: #1e293b;
   --ink: #f8fafc; --dim: #94a3b8; --faint: #475569;
   --accent: #22d3ee; --group: #a78bfa; --warn: #fbbf24;
@@ -97,8 +98,12 @@ header {
   background: color-mix(in srgb, var(--surface) 94%, transparent);
   backdrop-filter: blur(8px);
   border-bottom: 1px solid var(--line); padding: 12px 20px;
-  display: flex; gap: 16px; align-items: center; flex-wrap: nowrap; min-height: 57px; box-sizing: border-box;
+  display: flex; gap: 16px; align-items: center; flex-wrap: wrap; min-height: 57px; box-sizing: border-box;
 }
+/* Review 21, N4: a scrolling nav with no scrollbar hid whole tabs. Every tab
+   is always visible: the source-base label goes first, then the input
+   narrows, and only then does the header take a second row. */
+@media (max-width: 1440px) { .controls label { display: none; } .controls input { width: 12em; } }
 h1 { font-size: 15px; margin: 0; font-weight: 700; letter-spacing: -0.01em; white-space: nowrap; }
 /* The repository the artifact describes, said as such: a bare word after the
    tool name read as part of the name. */
@@ -107,7 +112,7 @@ h1 { font-size: 15px; margin: 0; font-weight: 700; letter-spacing: -0.01em; whit
   border: 1px solid var(--line); border-radius: 7px; padding: 3px 9px;
 }
 .repo small { color: var(--faint); font-size: 9px; letter-spacing: .12em; text-transform: uppercase; margin-right: 6px; }
-nav { display: flex; gap: 6px; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; min-width: 0; }
+nav { display: flex; gap: 6px; flex-wrap: wrap; min-width: 0; }
 nav a {
   color: var(--dim); text-decoration: none; padding: 5px 12px; white-space: nowrap;
   border-radius: 7px; font-size: 13px; transition: background .12s, color .12s;
@@ -140,14 +145,15 @@ h2 { font-size: 20px; margin: 0 0 4px; font-weight: 700; letter-spacing: -0.02em
 .crumbs { margin: 0 0 12px; font-size: 13px; }
 .crumbs a { color: var(--accent); text-decoration: none; }
 .crumbs a:hover { text-decoration: underline; }
-.view { display: none; scroll-margin-top: 84px; }
+/* A drill lands below the header whatever height it has: the script writes
+   the measured header height into --header-h (review 21, N3). */
+.view { display: none; scroll-margin-top: calc(var(--header-h, 58px) + 24px); }
 .view.is-open { display: block; animation: sv-enter .18s ease; }
 /* The passport is a side panel, not an overlay: while it is open the tab
    makes room for it, so no box, chapter or title sits under the card
    (review 20, S3 measured two boxes and the whole guided strip covered). */
-.tab { transition: padding-left .16s ease; }
 body:has(aside.is-open) .tab { padding-left: 404px; }
-@media (max-width: 1100px) { body:has(aside.is-open) .tab { padding-left: 20px; } }
+
 /* Keyboard: a focused box shows the same ring as a hovered one. */
 .sv-node:focus { outline: none; }
 .sv-node:focus-visible .sv-box { stroke: var(--accent); stroke-width: 2.5; }
@@ -293,6 +299,10 @@ aside .conn.link { cursor: pointer; }
 /* Shift-click is the path gesture, and shift-click also selects text. */
 svg text { user-select: none; }
 aside .conn.link:hover { text-decoration: underline; }
+/* Narrow screens keep the side panel, narrower (review 21, N5: the overlay
+   came back below 1100px and covered three boxes and the strip). Last, so it
+   wins over the aside rule above at equal specificity. */
+@media (max-width: 1100px) { aside#panel { width: 280px; } body:has(aside.is-open) .tab { padding-left: 328px; } }
 
 /* The passport: a card over the canvas, Archify's semantic passport with
    what only we have, the verified source lines. */
@@ -426,6 +436,14 @@ def _js() -> Markup:
     localStorage.setItem(THEME, next);
     applyTheme(next);
   });
+
+  // The header may take two rows on a narrow screen; drills scroll under it.
+  function measureHeader() {
+    var hd = document.querySelector('header');
+    if (hd) document.documentElement.style.setProperty('--header-h', hd.offsetHeight + 'px');
+  }
+  measureHeader();
+  window.addEventListener('resize', measureHeader);
 
   var panel = document.getElementById('panel');
   var title = document.getElementById('panel-title');
@@ -577,6 +595,9 @@ def _js() -> Markup:
     var code = document.createElement('code');
     code.textContent = id;
     metaEl.appendChild(code);
+    // `group:` and `tree:` boxes are drawn, not graph nodes: `svarupa query`
+    // does not answer for them, and the card says so (review #21 N11).
+    if (id.indexOf('group:') === 0 || id.indexOf('tree:') === 0) chip('diagram box, not a graph node', 'chip-context');
     // The same box in other diagrams: a module is in Architecture, Data
     // flow, Module deps and a request story at once, and the graph is one
     // graph. Found by id in the plain views of every other tab.
@@ -696,7 +717,7 @@ def _js() -> Markup:
       metaEl.textContent = '';
       outEl.textContent = ''; inEl.textContent = '';
       outH.textContent = 'Outgoing'; inH.textContent = 'Incoming';
-      sumEl.textContent = node ? (node.getAttribute('data-src') + ' → ' + node.getAttribute('data-dst')) : '';
+      sumEl.textContent = node ? (labelOf(scopeOf(node), node.getAttribute('data-src')) + ' → ' + labelOf(scopeOf(node), node.getAttribute('data-dst'))) : '';
       upBtn.disabled = true; downBtn.disabled = true;
       clearFocus();
       if (node) { node.classList.add('is-path'); var svg = node.closest('svg'); if (svg) svg.classList.add('is-focused'); }
@@ -716,7 +737,7 @@ def _js() -> Markup:
       panel.classList.remove('is-open'); clearPins(); clearFocus();
       return;
     }
-    if (ev.key === 'Enter' && ev.target && ev.target.classList && ev.target.classList.contains('sv-node')) {
+    if (ev.key === 'Enter' && ev.target && ev.target.classList && (ev.target.classList.contains('sv-node') || ev.target.classList.contains('chapter') || ev.target.classList.contains('sw-toggle'))) {
       ev.preventDefault();
       ev.target.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 1 }));
     }
@@ -774,7 +795,14 @@ def _js() -> Markup:
     var refs = node.getAttribute('data-evidence').split('\\n').filter(Boolean);
     var child = node.getAttribute('data-child');
     if (child && (ev.detail === 2 || ev.target.closest('.sv-drill'))) { openView(node, child); return; }
-    show(node.getAttribute('data-id') || node.getAttribute('data-src') || (node.classList.contains('card-item') ? node.textContent.replace(/SRC \\d+$/, '').trim() : ''), refs, node);
+    // Titled by the box's label, never its id: a box labelled `agent` opened
+    // a card reading `group:agent/routers` (review #21 N2). The id stays in
+    // the chip below.
+    var shown = node.classList.contains('sv-node') ? labelOf(scopeOf(node), node.getAttribute('data-id'))
+      : node.classList.contains('sv-boundary') ? node.getAttribute('data-id')
+      : node.classList.contains('card-item') ? node.textContent.replace(/SRC \\d+$/, '').trim()
+      : (node.getAttribute('data-src') || '');
+    show(shown, refs, node);
   });
 
   // --- Explorer: search, kind toggles, clickable neighbours, a path tool.
@@ -817,7 +845,7 @@ def _js() -> Markup:
       });
     }
     if (!found) {
-      if (out) out.textContent = 'no path between ' + a + ' and ' + b + ' in this view';
+      if (out) out.textContent = 'no path between ' + labelOf(root, a) + ' and ' + labelOf(root, b) + ' in this view';
       pins = [];
       return;
     }
@@ -831,12 +859,12 @@ def _js() -> Markup:
     // The caption follows each arrow's drawn direction: the search is
     // undirected so a path exists whenever the picture connects the two
     // boxes, but "A -> B" for an arrow drawn B -> A is a wrong claim.
-    var caption = chain[0];
+    var caption = labelOf(root, chain[0]);
     for (var i = 1; chain.length > i; i++) {
       var r = byPair[chain[i - 1] + ' ' + chain[i]];
       if (r) r.classList.add('is-path');
       var forward = r && r.getAttribute('data-src') === chain[i - 1];
-      caption += (forward ? ' \\u2192 ' : ' \\u2190 ') + chain[i];
+      caption += (forward ? ' \\u2192 ' : ' \\u2190 ') + labelOf(root, chain[i]);
     }
     if (out) out.textContent = 'path (' + (chain.length - 1) + ' hops, undirected): ' + caption;
     pins = [];
@@ -1151,6 +1179,8 @@ def _legend(canvas: object) -> Markup:
                 join((raw('<span class="sw"></span>'), esc(f"{kind} {n}"))),
                 class_=f"sv-kind-{_kind_slug(kind)} sw-toggle",
                 data_kind=_kind_slug(kind),
+                tabindex="0",
+                role="button",
                 title=_KIND_HELP.get(kind, "") + "click to mute this kind",
             )
             for kind, n in sorted(counts.items())
@@ -1187,7 +1217,7 @@ def _legend(canvas: object) -> Markup:
 # One line per kind for the legend's tooltip, so "group 7" is not internal
 # vocabulary (review #20 C2). Archify's component types, in our terms.
 _KIND_HELP: dict[str, str] = {
-    "group": "modules that import each other, grouped for reading; a group is not an identity. ",
+    "group": "modules grouped for reading, by community or by directory; a group is not an identity. ",
     "module": "a directory of code with no evidenced role. ",
     "backend": "code that serves routes, runs tasks or is a declared entrypoint. ",
     "frontend": "code that imports a UI framework. ",

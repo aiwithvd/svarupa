@@ -401,7 +401,9 @@ class ArchitectureDeriver(Deriver):
         for anchor, members in groups:
             if len(members) > 1:
                 child = spec_id(anchor)
-                specs[child] = self._group_spec(graph, anchor, members, pairs, specs, diags)
+                specs[child] = self._group_spec(
+                    graph, anchor, members, pairs, specs, diags, top_labels[anchor]
+                )
             else:
                 # A singleton at the top level drills straight into its own
                 # components, the same way a leaf inside a group does. A leaf
@@ -428,8 +430,11 @@ class ArchitectureDeriver(Deriver):
                     + (
                         (("roles", ",".join(roles[members[0]])),)
                         if len(members) == 1 and members[0] in roles
-                        else (("members", "\n".join(members)),)
-                    ),
+                        else ()
+                    )
+                    # Only a group lists members; a singleton listing itself
+                    # was a chip saying nothing (review #21 N13).
+                    + ((("members", "\n".join(members)),) if len(members) > 1 else ()),
                     sublabel=(
                         module_sublabel(graph, members[0])
                         if len(members) == 1
@@ -638,6 +643,7 @@ class ArchitectureDeriver(Deriver):
         pairs: tuple[ModulePair, ...],
         specs: dict[str, DiagramSpec],
         diags: list[Diagnostic],
+        label: str,
     ) -> DiagramSpec:
         inside = set(members)
         labels = labels_for(list(members))
@@ -679,8 +685,12 @@ class ArchitectureDeriver(Deriver):
         return DiagramSpec(
             kind=self.kind,
             id=spec_id(anchor),
-            title=f"{_label(anchor)} internals",
-            subtitle=f"{len(nodes)} modules",
+            # Titled by the box the reader opened, not its anchor: `agent`
+            # opened "routers internals" (review #21 N7); externals are not
+            # modules and are not counted as such.
+            title=f"{label} internals",
+            subtitle=f"{len(module_nodes)} modules"
+            + (f", {len(ext_nodes)} external" if ext_nodes else ""),
             nodes=nodes,
             edges=edges,
             regions=regions,
@@ -691,7 +701,7 @@ class ArchitectureDeriver(Deriver):
 class ModuleDepsDeriver(Deriver):
     """Every module and every dependency, layered by depth.
 
-    Complete, and readable at every level. Up to the top-box budget this is
+    Complete, and readable at the root. Up to the top-box budget this is
     the flat picture: every module a box, every dependency an arrow. Past it
     (30 boxes and 76 arrows on the second acceptance repo, review #20 M5), the
     picture follows the directory tree the modules already have: a box per
@@ -700,7 +710,9 @@ class ModuleDepsDeriver(Deriver):
     Every dependency is drawn at exactly one level, the one where both ends
     are different boxes, so nothing is summarized away; it is placed where a
     reader can see it. No community grouping here: the tree is structural,
-    the same identity the lockfile rests on.
+    the same identity the lockfile rests on. A flat directory of many sibling
+    packages stays dense one level down (descovo's `src/`: 26 boxes); that is
+    the repository's shape, drawn rather than invented around.
     """
 
     kind = DiagramKind.MODULE_DEPS
@@ -874,7 +886,9 @@ class ModuleDepsDeriver(Deriver):
                 DiagramNode(
                     id=bid,
                     label=_label(key) if key else "(repo root)",
-                    kind="module",
+                    # A part is a group of modules (by directory, not by
+                    # community) and wears the group colour and chip.
+                    kind="group",
                     evidence=group_evidence(graph, tuple(ms), ms[0]),
                     attrs=(("modules", str(len(ms))), ("members", "\n".join(ms))),
                     sublabel=f"{len(ms)} modules",
@@ -910,15 +924,20 @@ class ModuleDepsDeriver(Deriver):
             for n in nodes
         ]
         within = sum(1 for a, b, _w, _e in pairs if box_of[a] == box_of[b])
+        between = len(pairs) - within
         where = _label(prefix) if prefix else "the repository"
+        n_parts = sum(1 for n in nodes if n.id.startswith("tree:"))
         specs[sid] = DiagramSpec(
             kind=self.kind,
             id=sid,
             title=self.title if sid == ROOT else f"{_label(prefix)} module dependencies",
+            # One unit throughout: module dependencies. An arrow between two
+            # parts stands for several of them (review #21 N12).
             subtitle=(
-                f"{len(members)} modules in {len(nodes)} parts of {where}; "
-                f"{len(edges)} dependencies between parts"
-                + (f", {within} inside them (drill into a part)" if within else "")
+                f"{len(members)} modules in {len(nodes)} boxes of {where}"
+                + (f" ({n_parts} of them parts to drill into)" if n_parts else "")
+                + f"; {between} module dependencies between boxes as {len(edges)} arrows"
+                + (f", {within} inside the parts" if within else "")
             ),
             nodes=tuple(sorted(nodes)),
             edges=edges,
@@ -986,14 +1005,22 @@ def top_box_labels(groups: list[tuple[str, tuple[str, ...]]]) -> dict[str, str]:
     """
     singles = labels_for([a for a, m in groups if len(m) == 1])
     out: dict[str, str] = {}
+    everyone = [m for _, ms in groups for m in ms]
     for anchor, members in groups:
         if len(members) == 1:
             out[anchor] = singles[anchor]
             continue
         shared = _common_dir(members)
+        # The directory name says "everything under it": it is used only
+        # when no other box holds a module under that directory. On svarupa
+        # itself the emit/layout group was named `svarupa` beside a group
+        # that held the `svarupa` module (review #21 N8).
+        others_under = any(
+            m == shared or m.startswith(shared + "/") for m in everyone if m not in members
+        )
         out[anchor] = (
             _label(shared)
-            if shared and shared not in ("", ".")
+            if shared and shared not in ("", ".") and not others_under
             else f"{_label(anchor)} +{len(members) - 1}"
         )
     # Two groups under one directory (`src` holding `src/*` twice over) share
@@ -1003,7 +1030,8 @@ def top_box_labels(groups: list[tuple[str, tuple[str, ...]]]) -> dict[str, str]:
     for _attempt in range(2):
         seen: dict[str, list[str]] = {}
         for anchor, label in out.items():
-            seen.setdefault(label, []).append(anchor)
+            # `svarupa` and `svarupa +6` read as one name; compare the stem.
+            seen.setdefault(label.split(" +", 1)[0], []).append(anchor)
         clashes = [a for anchors in seen.values() if len(anchors) > 1 for a in anchors]
         if not clashes:
             break

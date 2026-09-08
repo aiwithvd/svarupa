@@ -24,6 +24,79 @@ SUITE = [
 ]
 
 MUTATIONS: list[tuple[str, str, str, str]] = [
+    # --- review #21 -------------------------------------------------------------
+    (
+        "N1: the Dockerfile is ignored; the context decides what a service ships",
+        "svarupa/build.py",
+        "    if ships is None or dockerfile is None:\n        return modules_under(graph, ctx), {}",
+        "    if True:\n        return modules_under(graph, ctx), {}",
+    ),
+    (
+        "N1: the COPY line is not cited on the store arrow",
+        "svarupa/derive/system.py",
+        "        ext_edges = [_with_copy_line(e, copy_line_of) for e in ext_edges]",
+        "        ext_edges = list(ext_edges)",
+    ),
+    (
+        "N2: the passport title is the id again (JS)",
+        "svarupa/emit/viewer.py",
+        "    var shown = node.classList.contains('sv-node') ? labelOf(scopeOf(node), node.getAttribute('data-id'))",
+        "    var shown = node.classList.contains('sv-node') ? node.getAttribute('data-id')",
+    ),
+    (
+        "N6: every box below a cycle is in the cycle again",
+        "svarupa/layout/engines.py",
+        "            if cur == start:\n                cyclic.add(start)\n                break",
+        "            cyclic.add(start)\n            break",
+    ),
+    (
+        "N7: a group drill is titled after its anchor",
+        "svarupa/derive/architecture.py",
+        '            title=f"{label} internals",',
+        '            title=f"{_label(anchor)} internals",',
+    ),
+    (
+        "N8: a shared directory names a group even when another box holds part of it",
+        "svarupa/derive/architecture.py",
+        '            if shared and shared not in ("", ".") and not others_under',
+        '            if shared and shared not in ("", ".")',
+    ),
+    (
+        "N9: flow imports say their word again",
+        "svarupa/derive/dataflow.py",
+        '        label="",\n        note=note,',
+        '        label="imports",\n        note=note,',
+    ),
+    (
+        "N10: the ingress label is cut wider than its box",
+        "svarupa/derive/dataflow.py",
+        "_INGRESS_CHARS = 28",
+        "_INGRESS_CHARS = 40",
+    ),
+    (
+        "N11: an exact id is ambiguous with a label again",
+        "svarupa/query/__init__.py",
+        '            return {label: "id"}',
+        '            hits[label] = "id"',
+    ),
+    (
+        "N12: the subtitle counts arrows as dependencies",
+        "svarupa/derive/architecture.py",
+        '                + f"; {between} module dependencies between boxes as {len(edges)} arrows"',
+        '                + f"; {len(edges)} module dependencies between boxes as {len(edges)} arrows"',
+    ),
+    (
+        "N13: a singleton lists itself as a member",
+        "svarupa/derive/architecture.py",
+        '                    + ((("members", "\\n".join(members)),) if len(members) > 1 else ()),',
+        '                    + ((("members", "\\n".join(members)),)),',
+    ),
+    (
+        "N14: chapters are not keyboard stops",
+        "svarupa/emit/cards.py",
+        '            class_="chapter",\n            tabindex="0",',
+        '            class_="chapter",',
+    ),
     (
         "M1: lines read from the node's points again",
         "svarupa/extract/rationale.py",

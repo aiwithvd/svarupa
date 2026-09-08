@@ -299,6 +299,11 @@ def test_kinds_edges_and_counts_are_the_named_ones(tmp_path: Path) -> None:
     assert handles.variant == "emphasis"
     api_domain = next(e for e in root.edges if (e.src, e.dst) == ("api", "domain"))
     assert api_domain.note == "1 import" and api_domain.weight == 1
+    # Import arrows are silent in the flow views too (review #21 N9 found 79
+    # `imports` labels left after the architecture ones went quiet).
+    assert api_domain.label == "", api_domain.label
+    story_edges = _story_of(produced[DiagramKind.REQUEST_FLOW]).edges
+    assert all(e.label == "" for e in story_edges if e.note.startswith("1 import")), story_edges
     assert {(e.file, e.start_line) for e in api_domain.evidence} == {("api/routes.py", 2)}
     assert root.subtitle.startswith("1 ingress module, 2 domain modules, 1 external")
     assert all(r.kind == "stage" for r in root.regions)
@@ -394,9 +399,10 @@ def test_identical_ingress_labels_name_their_handler(tmp_path: Path) -> None:
 def test_ingress_labels_cut_at_a_path_boundary() -> None:
     from svarupa.derive.dataflow import _cut
 
-    assert _cut(["/api/v1/organisations/{org_id}/billing/invoices"]) == (
-        "/api/v1/organisations/{org_id}/billing…"
-    )
+    # 28 characters fit the box at the label font, so the layout never cuts
+    # the label again from the head (review #21 N10: `…able-rules, /batch …`).
+    assert _cut(["/api/v1/organisations/{org_id}/billing/invoices"]) == "/api/v1/organisations…"
+    assert _cut(["/available-rules", "/batch", "/check", "/d"]) == "/available-rules, /batch …"
     assert _cut(["/a", "/b", "/c", "/d"]) == "/a, /b, /c …"
     assert _cut(["/short"]) == "/short"
 

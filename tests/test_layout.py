@@ -764,6 +764,27 @@ def test_a_cycle_band_says_so_instead_of_claiming_a_level() -> None:
     assert set(cyclic.members) == {"p", "q"}
 
 
+def test_in_a_cycle_names_the_cycle_alone_and_never_what_hangs_below_it() -> None:
+    """Review #21 N6: "what Kahn could not drain" is the cycle plus everything
+    downstream, and labelled a leaf `schema` module "in a cycle"."""
+    s = spec(
+        node("root"),
+        node("p"),
+        node("q"),
+        node("leaf"),
+        edges=(edge("root", "p"), edge("p", "q"), edge("q", "p"), edge("q", "leaf")),
+    )
+    c = lay_out(s, STYLE, "clustered")
+    band_of = {m: b.label for b in c.bands for m in b.members}
+    assert "cycle" in band_of["p"] and band_of["p"] == band_of["q"], band_of
+    # The fallback floor holds the cycle and the leaf below it in one band:
+    # that band says a cycle is inside, never that every box is in one.
+    assert band_of["leaf"] != "in a cycle", band_of
+    if band_of["leaf"] == band_of["p"]:
+        assert band_of["p"].endswith("· cycle inside")
+    assert validate(c, STYLE) == ()
+
+
 def test_the_externals_band_is_labelled_external_never_in_a_cycle() -> None:
     """Externals sink below every level after the cycle fallback has run, so
     a band of stores read "IN A CYCLE" on both acceptance repos (review #20
