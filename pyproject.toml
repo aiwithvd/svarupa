@@ -58,6 +58,9 @@ dev = [
   "pytest-cov>=5",
   "ruff>=0.6",
   "pyright>=1.1.380",
+  # The optional MCP extra, so `uv sync && uv run pyright svarupa` (the
+  # README's loop) resolves `mcp.server.mcpserver` (review #23 F9).
+  "mcp>=2",
 ]
 
 [tool.hatch.build.targets.wheel]

@@ -246,7 +246,8 @@ def _module_nodes_and_edges(
     edges: list[dict[str, object]] = []
     drawn: set[str] = set()
     for m in sorted(graph.modules):
-        if not m or m in taken:
+        mid = m or "."  # the repository root module, spelled as in the lockfile
+        if mid in taken:
             continue
         ev = module_evidence(graph, m)
         if not ev:
@@ -255,10 +256,10 @@ def _module_nodes_and_edges(
         mod = graph.modules[m]
         nodes.append(
             {
-                "id": m,
+                "id": mid,
                 "kind": "module",
-                "label": m.rsplit("/", 1)[-1],
-                "qualified_name": m,
+                "label": m.rsplit("/", 1)[-1] if m else "(repo root)",
+                "qualified_name": mid,
                 "lang": None,
                 "evidence": _evidence(ev),
                 "attrs": {"files": str(mod.file_count), "structural": "directory"},
@@ -268,11 +269,12 @@ def _module_nodes_and_edges(
             node = graph.nodes[nid]
             if node.kind.value != "module" or not node.evidence:
                 continue
-            if nid.rsplit("/", 1)[0] != m or "/" not in nid:
+            in_root = "/" not in nid
+            if (in_root and m != "") or (not in_root and nid.rsplit("/", 1)[0] != m):
                 continue
             edges.append(
                 {
-                    "src": m,
+                    "src": mid,
                     "dst": nid,
                     "kind": "contains",
                     "context": "contain",
@@ -287,8 +289,8 @@ def _module_nodes_and_edges(
         if a in drawn and b in drawn:
             edges.append(
                 {
-                    "src": a,
-                    "dst": b,
+                    "src": a or ".",
+                    "dst": b or ".",
                     "kind": "imports",
                     "context": "import",
                     "resolution": "resolved",

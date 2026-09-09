@@ -25,6 +25,67 @@ SUITE = [
 ]
 
 MUTATIONS: list[tuple[str, str, str, str]] = [
+    # --- review #23 -------------------------------------------------------------
+    (
+        "F1: a double-click landing beside the moved box does nothing (JS)",
+        "svarupa/emit/viewer.py",
+        "    if (node.classList.contains('sv-node')) lastBoxClick = { node: node, at: Date.now() };",
+        "",
+    ),
+    (
+        "F2: a chapter titles the card by the anchor id (JS)",
+        "svarupa/emit/viewer.py",
+        "    title.textContent = labelOf(root, anchorId);",
+        "    title.textContent = anchorId;",
+    ),
+    (
+        "F3: an empty file is cited at line 1",
+        "svarupa/build.py",
+        "            and lines.get(node.id) == 0\n",
+        "            and False\n",
+    ),
+    (
+        "F3: the empty file is cited before its module's real lines",
+        "svarupa/emit/svg.py",
+        "        for e in sorted(evidence, key=lambda e: (e.start_line == 0, e))",
+        "        for e in sorted(evidence)",
+    ),
+    (
+        "F4: a long segment cannot hold a verb near its end",
+        "svarupa/layout/engines.py",
+        "            reach = MAX_VERB_DISTANCE - before - half\n",
+        "            reach = -1\n",
+    ),
+    (
+        "F5: the report counts the in-memory graph",
+        "svarupa/emit/report.py",
+        "            if graph_counts\n",
+        "            if False\n",
+    ),
+    (
+        "F6: the report counts waypoints as boxes",
+        "svarupa/emit/report.py",
+        "            boxes = sum(len(c.boxes) - len(c.waypoints) for c in lo.canvases.values())",
+        "            boxes = sum(len(c.boxes) for c in lo.canvases.values())",
+    ),
+    (
+        "F7: the root module box keeps the empty id",
+        "svarupa/derive/base.py",
+        '        if self.id == "":\n            object.__setattr__(self, "id", ".")',
+        "        pass",
+    ),
+    (
+        "C4: names are cut from the head again",
+        "svarupa/layout/engines.py",
+        'keep_tail="/" in full',
+        "keep_tail=True",
+    ),
+    (
+        "C7: contain edges are listed by default",
+        "svarupa/query/__init__.py",
+        '            return e.get("kind") != "contains"',
+        "            return True",
+    ),
     # --- review #22 (self-review) ------------------------------------------------
     (
         "keyboard drill: Shift+Enter is just a click (JS)",
@@ -54,8 +115,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     (
         "N16: a verb may sit a screen away from both of its boxes",
         "svarupa/layout/engines.py",
-        "            if n == 1:\n                return True\n            before = sum(lengths[:i]) + lengths[i] // 2",
-        "            return True\n            before = sum(lengths[:i]) + lengths[i] // 2",
+        "            reach = MAX_VERB_DISTANCE - before - half\n",
+        "            reach = 10**6\n",
     ),
     (
         "N1: the Dockerfile is ignored; the context decides what a service ships",
@@ -114,8 +175,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     (
         "N12: the subtitle counts arrows as dependencies",
         "svarupa/derive/architecture.py",
-        '                + f"; {between} module dependencies between boxes as {len(edges)} arrows"',
-        '                + f"; {len(edges)} module dependencies between boxes as {len(edges)} arrows"',
+        '                + f"; {between + within} dependencies: {between} between boxes"',
+        '                + f"; {between + within} dependencies: {len(edges)} between boxes"',
     ),
     (
         "N13: a singleton lists itself as a member",

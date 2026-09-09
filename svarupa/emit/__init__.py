@@ -117,10 +117,13 @@ def emit(
     # a rationale claim; the commit is None outside a git checkout.
     rationale = rationale_facts(root, graph.architecture_paths)
     head, dirty = git_state(root)
+    # graph.json is built once: the report quotes its counts (review #23 F5:
+    # REPORT.md said 132 nodes where graph.json held 184).
+    gj = graph_json(graph, rationale, head, dirty)
     written.append(
         (
             "graph.json",
-            write_json(directory / "graph.json", graph_json(graph, rationale, head, dirty)),
+            write_json(directory / "graph.json", gj),
         )
     )
     for kind in sorted(produced, key=lambda k: k.value):
@@ -135,7 +138,15 @@ def emit(
     html = render_viewer(shown, produced, laid_out, notes, style, __version__, graph)
     written.append(("index.html", _write_text(directory / "index.html", html)))
 
-    report = render_report(shown, graph, produced, laid_out, notes, tuple(problems))
+    report = render_report(
+        shown,
+        graph,
+        produced,
+        laid_out,
+        notes,
+        tuple(problems),
+        graph_counts=(len(gj["nodes"]), len(gj["edges"])),  # type: ignore[arg-type]
+    )
     written.append(("REPORT.md", _write_text(directory / "REPORT.md", report)))
 
     return Artifact(directory, tuple(written), laid_out, tuple(problems))
@@ -212,6 +223,9 @@ def claim(directory: Path) -> None:
                 severity=Severity.ERROR,
                 message="exists but is not a directory",
                 subject=str(directory),
+                suggested_fixes=(
+                    "Pass a directory to --out, or move the file out of the way.",
+                ),
             )
         )
     if directory.is_dir() and not (directory / MARKER).exists():

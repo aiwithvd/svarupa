@@ -25,7 +25,7 @@ from __future__ import annotations
 import json
 import posixpath
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import cast
 
@@ -166,6 +166,9 @@ def _verify_evidence(
             )
         )
     for ev in el.evidence:
+        whole_file = ev.start_line == 0 and ev.end_line == 0
+        if whole_file and (lines is None or lines.get(ev.file) == 0):
+            continue  # an empty file, cited as itself
         if not ev.file or ev.start_line < 1 or ev.end_line < ev.start_line:
             return fail(
                 Diagnostic(
@@ -651,6 +654,17 @@ def build(scan: Scan, extracted: ExtractResult, strict: bool = True) -> Graph:
 
     # --- nodes: unique ids, evidence re-verified -------------------------
     for node in extracted.nodes:
+        # The extractor cites a file's line 1 for the file's own node; the
+        # build knows the file's length, and an empty file has no line 1. It
+        # is cited as itself (0, 0), which the passport shows as the path
+        # alone and links without a line (review #23 F3: 259 citations to a
+        # line that did not exist, `api/__init__.py:1` first in the README).
+        if (
+            node.kind is NodeKind.MODULE
+            and lines.get(node.id) == 0
+            and node.evidence == (Evidence(node.id, 1, 1),)
+        ):
+            node = replace(node, evidence=(Evidence(node.id, 0, 0),))
         if not _verify_evidence(node, node.id, lines, strict, acc.diagnostics):
             continue
         existing = acc.nodes.get(node.id)

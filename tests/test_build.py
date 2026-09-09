@@ -410,8 +410,9 @@ def test_an_empty_file_still_has_line_one(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize(
     ("content", "expected"),
-    [("", 1), ("one\n", 1), ("one", 1), ("a\nb\n", 2), ("a\nb", 2), ("a\n\nb\n", 3)],
+    [("", 0), ("one\n", 1), ("one", 1), ("a\nb\n", 2), ("a\nb", 2), ("a\n\nb\n", 3)],
 )
+# An empty file has no lines (review #23 F3): it is cited as itself.
 def test_line_count(content: str, expected: int) -> None:
     from svarupa.detect import _line_count
 

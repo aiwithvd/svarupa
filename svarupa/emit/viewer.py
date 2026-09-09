@@ -467,10 +467,11 @@ def _js() -> Markup:
 
   function link(ref) {
     var parts = ref.split(':');
-    var line = parts.pop();
+    // A citation without a line is an empty file cited as itself.
+    var line = /^\\d+$/.test(parts[parts.length - 1]) ? parts.pop() : null;
     var file = parts.join(':');
     var prefix = base.value.replace(/\\/+$/, '');
-    var href = safeHref((prefix ? prefix + '/' : '') + file + '#L' + line);
+    var href = safeHref((prefix ? prefix + '/' : '') + file + (line === null ? '' : '#L' + line));
     if (href === null) {
       // Shown, not hidden. The citation is still the evidence; what is
       // withheld is only the ability to click it.
@@ -479,7 +480,7 @@ def _js() -> Markup:
       return span;
     }
     var a = document.createElement('a');
-    a.textContent = ref;
+    a.textContent = line === null ? ref + ' (empty file)' : ref;
     a.href = href;
     return a;
   }
@@ -494,7 +495,17 @@ def _js() -> Markup:
   }
 
   var lastScope = null;
+  var lastBoxClick = null;
   var pins = [];
+  document.addEventListener('dblclick', function (ev) {
+    if (!lastBoxClick || Date.now() - lastBoxClick.at > 700) return;
+    var node = lastBoxClick.node;
+    var child = node.getAttribute('data-child');
+    var tab = ev.target.closest ? ev.target.closest('.tab') : null;
+    if (!child || !tab || tab !== node.closest('.tab')) return;
+    lastBoxClick = null;
+    openView(node, child);
+  });
   var eyebrowEl = document.getElementById('panel-eyebrow');
   var subEl = document.getElementById('panel-sub');
   var metaEl = document.getElementById('panel-meta');
@@ -597,7 +608,7 @@ def _js() -> Markup:
     metaEl.appendChild(code);
     // `group:` and `tree:` boxes are drawn, not graph nodes: `svarupa query`
     // does not answer for them, and the card says so (review #21 N11).
-    if (id.indexOf('group:') === 0 || id.indexOf('tree:') === 0) chip('diagram box, not a graph node', 'chip-context');
+    if (/^(group:|tree:|in:|req:)/.test(id)) chip('diagram box, not a graph node', 'chip-context');
     // The same box in other diagrams: a module is in Architecture, Data
     // flow, Module deps and a request story at once, and the graph is one
     // graph. Found by id in the plain views of every other tab.
@@ -717,7 +728,7 @@ def _js() -> Markup:
       metaEl.textContent = '';
       outEl.textContent = ''; inEl.textContent = '';
       outH.textContent = 'Outgoing'; inH.textContent = 'Incoming';
-      sumEl.textContent = node ? (labelOf(scopeOf(node), node.getAttribute('data-src')) + ' → ' + labelOf(scopeOf(node), node.getAttribute('data-dst'))) : '';
+      sumEl.textContent = node ? ('an arrow in this view' + (node.getAttribute('data-note') ? ': ' + node.getAttribute('data-note') : '')) : '';
       upBtn.disabled = true; downBtn.disabled = true;
       clearFocus();
       if (node) { node.classList.add('is-path'); var svg = node.closest('svg'); if (svg) svg.classList.add('is-focused'); }
@@ -800,13 +811,18 @@ def _js() -> Markup:
     var refs = node.getAttribute('data-evidence').split('\\n').filter(Boolean);
     var child = node.getAttribute('data-child');
     if (child && (ev.detail === 2 || ev.target.closest('.sv-drill'))) { openView(node, child); return; }
+    // The first click of a double-click opens the side panel, which moves
+    // the canvas 154 to 192px; the second click then lands on the scroller
+    // (review #23 F1). Remember the box, so the dblclick that follows can
+    // still open it wherever its second click landed.
+    if (node.classList.contains('sv-node')) lastBoxClick = { node: node, at: Date.now() };
     // Titled by the box's label, never its id: a box labelled `agent` opened
     // a card reading `group:agent/routers` (review #21 N2). The id stays in
     // the chip below.
     var shown = node.classList.contains('sv-node') ? labelOf(scopeOf(node), node.getAttribute('data-id'))
       : node.classList.contains('sv-boundary') ? node.getAttribute('data-id')
       : node.classList.contains('card-item') ? node.textContent.replace(/SRC \\d+$/, '').trim()
-      : (node.getAttribute('data-src') || '');
+      : (labelOf(scopeOf(node), node.getAttribute('data-src') || '') + ' → ' + labelOf(scopeOf(node), node.getAttribute('data-dst') || ''));
     show(shown, refs, node);
   });
 
@@ -952,7 +968,7 @@ def _js() -> Markup:
     var ids = (li.getAttribute('data-focus') || '').split('\\n').filter(Boolean);
     clearPins();
     passport(anchor);
-    title.textContent = anchorId;
+    title.textContent = labelOf(root, anchorId);
     current = (anchor.getAttribute('data-evidence') || '').split('\\n').filter(Boolean);
     render();
     panel.classList.add('is-open');
@@ -1198,7 +1214,13 @@ def _legend(canvas: object) -> Markup:
     if "default" in variants:
         arrow_words.append("solid arrows are imports (count on hover)")
     if "dashed" in variants:
-        arrow_words.append("dashed arrows carry their verb")
+        dashed = [r for r in canvas.routes if r.variant == "dashed" and r.label]
+        # Said only when true of this canvas: a verb the settle could not
+        # place lives in the passport (review #23 F4).
+        if all(r.label_at is not None for r in dashed):
+            arrow_words.append("dashed arrows carry their verb")
+        else:
+            arrow_words.append("dashed arrows carry their verb (some only in the passport)")
     arrows = (
         tag("span", esc("; ".join(arrow_words)), class_="arrows") if arrow_words else raw("")
     )

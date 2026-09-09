@@ -104,6 +104,11 @@ class DiagramNode:
     def __post_init__(self) -> None:
         if not self.evidence:
             raise MissingEvidenceError("DiagramNode", self.id)
+        # The repository root module is "" internally and `.` in the lockfile;
+        # a box with the empty string as its id printed an empty chip and
+        # could not be queried (review #23 F7). Every diagram id spells it `.`.
+        if self.id == "":
+            object.__setattr__(self, "id", ".")
 
     def attr(self, key: str, default: str | None = None) -> str | None:
         return next((v for k, v in self.attrs if k == key), default)
@@ -132,6 +137,10 @@ class DiagramEdge:
     def __post_init__(self) -> None:
         if not self.evidence:
             raise MissingEvidenceError("DiagramEdge", f"{self.src} -> {self.dst}")
+        if self.src == "":
+            object.__setattr__(self, "src", ".")
+        if self.dst == "":
+            object.__setattr__(self, "dst", ".")
 
 
 @dataclass(frozen=True, order=True, slots=True)
@@ -150,6 +159,10 @@ class Region:
     def __post_init__(self) -> None:
         if not self.evidence:
             raise MissingEvidenceError("Region", self.id)
+        if "" in self.members:
+            object.__setattr__(
+                self, "members", tuple("." if m == "" else m for m in self.members)
+            )
 
 
 @dataclass(frozen=True, slots=True)

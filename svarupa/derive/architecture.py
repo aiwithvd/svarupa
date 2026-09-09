@@ -934,10 +934,11 @@ class ModuleDepsDeriver(Deriver):
             # One unit throughout: module dependencies. An arrow between two
             # parts stands for several of them (review #21 N12).
             subtitle=(
-                f"{len(members)} modules in {len(nodes)} boxes of {where}"
-                + (f" ({n_parts} of them parts to drill into)" if n_parts else "")
-                + f"; {between} module dependencies between boxes as {len(edges)} arrows"
-                + (f", {within} inside the parts" if within else "")
+                f"{len(members)} modules in {len(nodes)} boxes"
+                + (f", {n_parts} drillable" if n_parts else "")
+                + f"; {between + within} dependencies: {between} between boxes"
+                + (f" ({len(edges)} arrow{'s' if len(edges) != 1 else ''})" if edges else "")
+                + (f", {within} inside {where if prefix else 'the parts'}" if within else "")
             ),
             nodes=tuple(sorted(nodes)),
             edges=edges,

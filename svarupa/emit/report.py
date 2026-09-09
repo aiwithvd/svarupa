@@ -106,6 +106,7 @@ def render_report(
     laid_out: dict[DiagramKind, LaidOutDiagram],
     notes: tuple[str, ...],
     diagnostics: tuple[Diagnostic, ...],
+    graph_counts: tuple[int, int] | None = None,
 ) -> str:
     """The whole report.
 
@@ -125,7 +126,13 @@ def render_report(
         "",
         "## Graph",
         "",
-        f"- **{len(graph.nodes)}** nodes, **{len(graph.edges)}** edges",
+        (
+            f"- **{graph_counts[0]}** nodes, **{graph_counts[1]}** edges in `graph.json` "
+            f"({len(graph.nodes)} code symbols and files, {len(graph.edges)} edges between "
+            "them; the rest are modules, routes, externals and rationale)"
+            if graph_counts
+            else f"- **{len(graph.nodes)}** nodes, **{len(graph.edges)}** edges"
+        ),
         f"- **{len(graph.modules)}** modules, **{len(graph.module_deps)}** module dependencies",
         "",
         *_semantics_scope(graph),
@@ -177,7 +184,7 @@ def render_report(
         ]
         for kind in sorted(produced, key=lambda k: k.value):
             ds, lo = produced[kind], laid_out[kind]
-            boxes = sum(len(c.boxes) for c in lo.canvases.values())
+            boxes = sum(len(c.boxes) - len(c.waypoints) for c in lo.canvases.values())
             root_canvas = lo.canvases.get(ds.root)
             # The smallest of the four reference viewports the root view fits
             # without scrolling, or "scrolls": Archify's containment check,

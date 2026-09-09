@@ -125,6 +125,11 @@ class Resolution(str, Enum):
 class Evidence:
     """A pointer at real source. Lines are 1-indexed and inclusive.
 
+    `start_line == end_line == 0` means the file itself, and is legal only for
+    a file with no lines: an empty `__init__.py` is real evidence that a
+    package exists, and `api/__init__.py:1` pointed at a line that did not
+    (review #23 F3, 259 such citations on the acceptance repositories).
+
     Ordering is defined explicitly rather than via ``order=True``. A generated
     comparison would compare ``rev`` fields directly, and ``rev`` is
     ``str | None`` by design (a git blob sha "when available"). Mixing pinned
@@ -166,7 +171,8 @@ class Evidence:
     def __post_init__(self) -> None:
         if not self.file:
             raise ValueError("Evidence.file must be non-empty")
-        if self.start_line < 1:
+        # (0, 0) is a whole empty file, see the class docstring.
+        if self.start_line < 1 and not (self.start_line == 0 and self.end_line == 0):
             raise ValueError(f"Evidence.start_line must be >= 1, got {self.start_line}")
         if self.end_line < self.start_line:
             raise ValueError(

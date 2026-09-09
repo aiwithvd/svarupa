@@ -35,8 +35,14 @@ EVIDENCE_ATTR = "data-evidence"
 
 
 def evidence_ref(evidence: Iterable[Evidence]) -> str:
-    """Citations as `path:line` pairs, newline-separated, in canonical order."""
-    return "\n".join(f"{e.file}:{e.start_line}" for e in sorted(evidence))
+    """Citations as `path:line` pairs, newline-separated, in canonical order.
+    An empty file is cited as its path alone: it has no line to point at."""
+    # Real lines first, then empty files: the first citation is the one a
+    # reader clicks.
+    return "\n".join(
+        f"{e.file}:{e.start_line}" if e.start_line else e.file
+        for e in sorted(evidence, key=lambda e: (e.start_line == 0, e))
+    )
 
 
 def _arrow_defs() -> Markup:

@@ -897,8 +897,8 @@ def test_module_deps_follow_the_directory_tree_past_the_top_box_budget(tmp_path:
     # `tools/t* -> src/p0` imports are the one aggregated arrow between parts.
     # One unit throughout (review #21 N12): module dependencies.
     assert root.subtitle == (
-        "14 modules in 2 boxes of the repository (2 of them parts to drill into); "
-        "5 module dependencies between boxes as 1 arrows, 9 inside the parts"
+        "14 modules in 2 boxes, 2 drillable; 14 dependencies: 5 between boxes (1 arrow), "
+        "9 inside the parts"
     ), root.subtitle
     tools = ds.specs[by_id["tree:tools"].child_spec or ""]
     assert tools.parent == "/spec/root" and tools.title == "tools module dependencies"
@@ -940,3 +940,29 @@ def test_module_deps_stay_flat_within_the_top_box_budget(tmp_path: Path) -> None
     assert ds is not None
     assert not any(n.id.startswith("tree:") for n in ds.root_spec.nodes)
     assert all(n.sublabel for n in ds.root_spec.nodes), "flat boxes say what they are too"
+
+
+def test_the_repository_root_module_is_a_box_and_a_node_called_dot(tmp_path: Path) -> None:
+    """Review #23 F7: a root box had the empty string as its id, an empty chip
+    and no answer from `get_node`; the lockfile already spelled it `.`."""
+    write(tmp_path, "config.py", "X = 1\n")
+    write(tmp_path, "main.py", "from api import routes\nimport config\n")
+    write(tmp_path, "api/__init__.py", "")
+    write(tmp_path, "api/routes.py", "y = 1\n")
+    graph, clustering = pipeline(tmp_path)
+    ds = ModuleDepsDeriver().derive(graph, clustering)
+    assert ds is not None
+    ids = {n.id for n in ds.root_spec.nodes}
+    assert "." in ids and "" not in ids, ids
+    assert any(e.src == "." for e in ds.root_spec.edges)
+    from svarupa.emit.data import graph_json
+
+    data = graph_json(graph)
+    nodes = data["nodes"]
+    edges = data["edges"]
+    assert isinstance(nodes, list) and isinstance(edges, list)
+    root = next(n for n in nodes if n["id"] == ".")
+    assert root["label"] == "(repo root)"
+    assert any(
+        e["src"] == "." and e["kind"] == "contains" and e["dst"] == "main.py" for e in edges
+    )

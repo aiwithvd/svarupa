@@ -1402,8 +1402,44 @@ def test_a_verb_far_from_both_of_its_boxes_is_dropped_not_stranded() -> None:
         label_w=40,
     )
     settled = {r.label: r for r in _settle_labels([far, near], [a, b], STYLE, frozenset())}
-    assert settled["reads/writes"].label_at is None, (
-        "the lane is farther than the limit from both ends"
-    )
+    # The verb slides along the climb toward its box instead of sitting on the
+    # lane (review #23 F4: dropping it left deploy arrows without a verb).
+    at = settled["reads/writes"].label_at
+    assert at is not None and at[0] == 110 and 300 < at[1] < 522, at
     assert settled["calls"].label_at is not None
     assert MAX_VERB_DISTANCE >= 200
+    # With the climb blocked, the verb may take the lane only within reach of
+    # an end, or not at all.
+    # The climb is blocked from the box up to the reach limit, so the only free
+    # positions on it are farther than 240px from either end.
+    tall = box("t", 60, 522 - MAX_VERB_DISTANCE, w=100, h=MAX_VERB_DISTANCE)
+    settled2 = {r.label: r for r in _settle_labels([far], [a, b, tall], STYLE, frozenset())}
+    at2 = settled2["reads/writes"].label_at
+    # Within 240px along the route of an end: on the climb or the drop, in
+    # their lower part; never on the lane, which is 482px from either box.
+    assert at2 is None or (at2[0] in (110, 1190) and at2[1] >= 522 - MAX_VERB_DISTANCE), at2
+
+
+def test_names_truncate_from_the_tail_and_paths_from_the_head() -> None:
+    """Review #23 C4: `…rson_employment_type_changed` lost the prefix that
+    grouped the function with its siblings."""
+    s = spec(
+        DiagramNode(
+            id="f",
+            label="rule_person_employment_type_changed_again_and_again",
+            kind="function",
+            evidence=EV,
+        )
+    )
+    c = lay_out(s, STYLE, "clustered")
+    assert c.boxes[0].label.startswith("rule_person") and c.boxes[0].label.endswith("…")
+    s2 = spec(
+        DiagramNode(
+            id="p",
+            label="src/very/long/path/to/services/billing/invoices/x",
+            kind="module",
+            evidence=EV,
+        )
+    )
+    c2 = lay_out(s2, STYLE, "clustered")
+    assert c2.boxes[0].label.startswith("…") and c2.boxes[0].label.endswith("/x")

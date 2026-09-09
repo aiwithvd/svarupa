@@ -368,15 +368,17 @@ def _config_kind(rel: str, name: str) -> str | None:
 
 
 def _line_count(data: bytes) -> int:
-    """Lines in a file, floored at one.
+    """Lines in a file; zero for an empty one.
 
-    An empty file has no content, but it does have a line 1: that is where an
-    editor puts the cursor, and it is the conventional way to point at a file
-    rather than at something inside it. Module nodes are evidenced there, and
-    an empty `__init__.py` is extremely common.
+    The first version floored this at one ("an editor puts the cursor on line
+    1"), and every empty `__init__.py` was then cited as `pkg/__init__.py:1`:
+    259 citations on the acceptance repositories to a line that does not exist,
+    the first one in the README's own screenshot (review #23 F3). An empty file
+    is real evidence that a package exists; it is cited as itself, with no
+    line, and the passport links it without a line anchor.
     """
     if not data:
-        return 1
+        return 0
     return data.count(b"\n") + (0 if data.endswith(b"\n") else 1)
 
 

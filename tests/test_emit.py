@@ -25,7 +25,9 @@ from svarupa.detect import detect
 from svarupa.diagnostics import Diagnostic, DiagnosticError
 from svarupa.emit import MARKER, emit
 from svarupa.emit.markup import attrs, esc, raw, tag
+from svarupa.emit.svg import evidence_ref
 from svarupa.extract import declared_dependencies, extract
+from svarupa.layout import lay_out_set
 from svarupa.layout.geometry import Style
 
 # A directory name a POSIX filesystem accepts. `/` is the one byte it will not
@@ -240,9 +242,8 @@ def test_every_box_carries_its_citations_into_the_document(tmp_path: Path) -> No
         for canvas in lo.canvases.values():
             for box in canvas.boxes:
                 for ev in box.evidence:
-                    assert esc(f"{ev.file}:{ev.start_line}") in html, (
-                        f"{box.id} cites {ev.file}:{ev.start_line}, "
-                        "which is not in the document"
+                    assert esc(evidence_ref((ev,))) in html, (
+                        f"{box.id} cites {evidence_ref((ev,))}, which is not in the document"
                     )
                     checked += 1
     assert checked > 0, "no citations were checked, so this test proved nothing"
@@ -271,8 +272,8 @@ def test_citations_are_visible_without_javascript(tmp_path: Path) -> None:
         for canvas in lo.canvases.values():
             for box in canvas.boxes:
                 for ev in box.evidence:
-                    assert esc(f"{ev.file}:{ev.start_line}") in joined, (
-                        f"{box.id} cites {ev.file}:{ev.start_line}, which a reader "
+                    assert esc(evidence_ref((ev,))) in joined, (
+                        f"{box.id} cites {evidence_ref((ev,))}, which a reader "
                         "with JavaScript off cannot see"
                     )
                     checked += 1
@@ -1313,3 +1314,94 @@ def test_the_whole_artifact_is_byte_identical_at_clustering_scale(
         "aggregated, so this gate proves nothing about the phase that churns"
     )
     assert len(outputs) == 1, f"the artifact differed across hash seeds ({len(outputs)})"
+
+
+def test_an_empty_file_is_cited_as_itself_and_a_real_line_comes_first(tmp_path: Path) -> None:
+    """Review #23 F3: 259 citations pointed at line 1 of files with no lines,
+    `api/__init__.py:1` first in the README's own screenshot."""
+    repo = tmp_path / "repo"
+    (repo / "api").mkdir(parents=True)
+    (repo / "api" / "__init__.py").write_text("", encoding="utf8")
+    (repo / "api" / "db.py").write_text("import pymongo\n", encoding="utf8")
+    (repo / "main.py").write_text("from api import db\n", encoding="utf8")
+    out = tmp_path / "out"
+    run(repo, out)
+    graph = json.loads((out / "graph.json").read_text(encoding="utf8"))
+    init = next(n for n in graph["nodes"] if n["id"] == "api/__init__.py")
+    assert init["evidence"][0]["start_line"] == 0 and init["evidence"][0]["end_line"] == 0
+    html = (out / "index.html").read_text(encoding="utf8")
+    assert "api/__init__.py:1" not in html and "api/__init__.py:0" not in html
+    # The passport lists the real line first and the empty file after it.
+    assert "api/db.py:1&#10;api/__init__.py" in html or "api/db.py:1\napi/__init__.py" in html
+
+
+def test_a_line_one_citation_on_an_empty_file_is_refused_when_not_the_files_own_node() -> None:
+    """(0, 0) is legal only for an empty file; a real line on an empty file is
+    still the range-past-end error it always was."""
+    from svarupa.build import _verify_evidence
+    from svarupa.model import Evidence, Node, NodeKind
+
+    node = Node(
+        id="pkg/__init__.py",
+        kind=NodeKind.MODULE,
+        label="__init__.py",
+        qualified_name="pkg/__init__.py",
+        evidence=(Evidence("pkg/__init__.py", 0, 0),),
+    )
+    sink: list[object] = []
+    assert _verify_evidence(node, node.id, {"pkg/__init__.py": 0}, False, sink) and not sink  # type: ignore[arg-type]
+    bad = Node(
+        id="pkg/x.py",
+        kind=NodeKind.MODULE,
+        label="x.py",
+        qualified_name="pkg/x.py",
+        evidence=(Evidence("pkg/x.py", 0, 0),),
+    )
+    assert not _verify_evidence(bad, bad.id, {"pkg/x.py": 3}, False, sink)  # type: ignore[arg-type]
+    assert sink and getattr(sink[0], "code", "") == "SVA-B-002"
+
+
+def test_report_counts_the_graph_json_and_the_drawn_boxes(tmp_path: Path) -> None:
+    """Review #23 F5 and F6: REPORT.md said 132 nodes where graph.json held
+    184, and counted invisible routing waypoints as boxes."""
+    repo = tmp_path / "repo"
+    for rel, text in (
+        ("a/__init__.py", ""),
+        ("a/m.py", "from b import m as bm\nfrom c import m as cm\n"),  # a -> c skips b's row
+        ("b/__init__.py", ""),
+        ("b/m.py", "from c import m\n"),
+        ("c/__init__.py", ""),
+        ("c/m.py", "x = 1\n"),
+    ):
+        (repo / rel).parent.mkdir(parents=True, exist_ok=True)
+        (repo / rel).write_text(text, encoding="utf8")
+    out = tmp_path / "out"
+    run(repo, out)
+    report = (out / "REPORT.md").read_text(encoding="utf8")
+    graph = json.loads((out / "graph.json").read_text(encoding="utf8"))
+    assert (
+        f"**{len(graph['nodes'])}** nodes, **{len(graph['edges'])}** edges in `graph.json`"
+        in report
+    )
+    scan = detect(repo)
+    g = build(scan, extract(scan, declared_dependencies(scan)), strict=False)
+    produced, _notes = derive_all(g, cluster(g))
+    lo = lay_out_set(produced[DiagramKind.MODULE_DEPS], Style())
+    assert any(c.waypoints for c in lo.canvases.values()), (
+        "the fixture must lay out a waypoint, or this test cannot fail"
+    )
+    row = next(ln for ln in report.splitlines() if ln.startswith("| module-deps |"))
+    boxes = int(row.split("|")[3])
+    assert boxes == sum(len(c.boxes) - len(c.waypoints) for c in lo.canvases.values())
+    html = (out / "index.html").read_text(encoding="utf8")
+    tab = html.split('id="d-module-deps"')[1].split('class="tab"')[0]
+    assert boxes == len(re.findall(r'class="sv-node ', tab))
+
+
+def test_the_cli_requires_a_path(capsys: pytest.CaptureFixture[str]) -> None:
+    """Review #23 F8: a bare `svarupa` scanned the current directory and wrote
+    `.svarupa/` into it."""
+    with pytest.raises(SystemExit) as exc:
+        main([])
+    assert exc.value.code == 2
+    assert "path" in capsys.readouterr().err

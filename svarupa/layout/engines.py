@@ -75,7 +75,11 @@ def _boxes(
         # reserved on both sides or the chevron sits on the last glyph (5px
         # of overlap on 64 boxes, review #20 C5).
         reserve = 2 * DRILL_RESERVE if n.child_spec else 0
-        label = truncate(full, style.font_size, style.text_budget - reserve)
+        # A path keeps its tail (`src/services/billing/invoice`); a name keeps
+        # its head (`rule_person_employment…`, review #23 C4).
+        label = truncate(
+            full, style.font_size, style.text_budget - reserve, keep_tail="/" in full
+        )
         sub = truncate(
             sanitize(n.sublabel), style.sublabel_font_size, style.text_budget, keep_tail=False
         )
@@ -287,33 +291,74 @@ def _settle_labels(
         ]
         horizontal = [pts[i][1] == pts[i + 1][1] for i in range(n)]
 
-        def near_an_end(i: int, lengths: list[int] = lengths, n: int = n) -> bool:
-            # A verb a screen away from both of its boxes says nothing about
-            # either (review #21 N16: `reads/writes` on the lane of a
-            # 1000px corridor detour). Measured along the polyline from the
-            # segment's midpoint to the nearer end. A straight arrow is exempt:
-            # its midpoint sits between its two boxes and reads as theirs.
+        def spots(
+            i: int,
+            lengths: list[int] = lengths,
+            n: int = n,
+            pts: tuple[tuple[int, int], ...] = pts,
+            horizontal: list[bool] = horizontal,
+            r: Route = r,
+        ) -> list[tuple[int, int]]:
+            """Where on segment i the verb may sit, best first: within
+            MAX_VERB_DISTANCE along the route of one of its boxes, or nowhere.
+
+            A verb a screen away from both of its boxes says nothing about
+            either (review #21 N16: `reads/writes` on the lane of a 1000px
+            corridor detour). A long segment is not skipped for that: the verb
+            slides along it toward the nearer box, and several positions are
+            tried because the nearest one is often taken by a neighbour's verb
+            (review #23 F4: the deploy arrows lost their verbs when only their
+            long segment could hold one). A straight arrow's midpoint sits
+            between its two boxes.
+            """
+            (x0, y0), (x1, y1) = pts[i], pts[i + 1]
+            length = lengths[i]
+            half = (r.label_w if horizontal[i] else h) // 2
+            if length < 2 * half:
+                return []
             if n == 1:
-                return True
-            before = sum(lengths[:i]) + lengths[i] // 2
-            after = sum(lengths[i + 1 :]) + lengths[i] // 2
-            return min(before, after) <= MAX_VERB_DISTANCE
+                return [((x0 + x1) // 2, (y0 + y1) // 2)]
+            before = sum(lengths[:i])
+            after = sum(lengths[i + 1 :])
+            offsets: list[int] = []
+            if min(before, after) + length // 2 <= MAX_VERB_DISTANCE:
+                offsets.append(length // 2)
+            # From the segment's start (the route's source side) outward, then
+            # from its end (the sink side) inward, each while within reach.
+            step = 24
+            reach = MAX_VERB_DISTANCE - before - half
+            off = half
+            while reach >= 0 and off <= min(length - half, half + reach):
+                offsets.append(off)
+                off += step
+            reach = MAX_VERB_DISTANCE - after - half
+            off = length - half
+            while reach >= 0 and off >= max(half, length - half - reach):
+                offsets.append(off)
+                off -= step
+            sx = 0 if x1 == x0 else (1 if x1 > x0 else -1)
+            sy = 0 if y1 == y0 else (1 if y1 > y0 else -1)
+            seen: set[int] = set()
+            out: list[tuple[int, int]] = []
+            for o in offsets:
+                if o in seen:
+                    continue
+                seen.add(o)
+                out.append((x0 + sx * o, y0 + sy * o))
+            return out
 
         preferred = sorted(
-            (
-                i
-                for i in range(n)
-                if lengths[i] >= (r.label_w if horizontal[i] else h) and near_an_end(i)
-            ),
+            (i for i in range(n) if lengths[i] >= (r.label_w if horizontal[i] else h)),
             key=lambda i: (min(i, n - 1 - i), not horizontal[i], i),
         )
-        longest = [i for i in sorted(range(n), key=lambda i: -lengths[i]) if near_an_end(i)]
+        longest = sorted(range(n), key=lambda i: -lengths[i])
         chosen: tuple[int, int] | None = None
         for i in [*preferred, *longest]:
-            (x0, y0), (x1, y1) = r.points[i], r.points[i + 1]
-            cx, cy = (x0 + x1) // 2, (y0 + y1) // 2
-            if clear(cx, cy, r.label_w, r):
-                chosen = (cx, cy)
+            for at in spots(i):
+                if clear(at[0], at[1], r.label_w, r):
+                    chosen = at
+                    break
+            if chosen is not None:
                 break
         if chosen is None:
             out.append(replace(r, label_at=None, label_w=0))

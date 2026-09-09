@@ -187,7 +187,12 @@ def get_neighbors(
         return err
 
     def keep(e: Edge) -> bool:
-        return relation is None or relation in (e.get("kind"), e.get("context"))
+        if relation is None:
+            # A module's `contains` edges to each of its files read as noise
+            # to someone asking who depends on what (review #23 C7); they are
+            # there for the asking with --relation contain.
+            return e.get("kind") != "contains"
+        return relation in (e.get("kind"), e.get("context"))
 
     outgoing = [e for e in index.out.get(nid, []) if keep(e)] if direction != "in" else []
     incoming = [e for e in index.inc.get(nid, []) if keep(e)] if direction != "out" else []
@@ -196,6 +201,7 @@ def get_neighbors(
         "matched_by": by,
         "node": _brief(index.nodes[nid]),
         "relation": relation,
+        "hidden": None if relation else "contain edges (ask with --relation contain)",
         "outgoing": [
             {"edge": _edge_brief(e), "node": _brief(index.nodes[e["dst"]])}
             for e in sorted(outgoing, key=lambda e: (e["dst"], str(e.get("kind"))))

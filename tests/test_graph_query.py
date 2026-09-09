@@ -593,3 +593,19 @@ def test_directory_modules_are_graph_nodes_the_diagrams_ids_resolve_to(artifact)
     )
     if importer is not None:
         assert get_neighbors(index, importer, relation="import")["outgoing"]
+
+
+def test_get_neighbors_hides_contain_edges_unless_asked(artifact) -> None:  # type: ignore[no-untyped-def]
+    """Review #23 C7: a module's edges to each of its files read as noise to
+    someone asking who depends on what."""
+    out, data = artifact
+    index = GraphIndex.load(out)
+    ids = {n["id"] for n in data["nodes"]}
+    m = next(mm for mm in data["modules"] if mm and mm in ids)
+    plain = get_neighbors(index, m)
+    assert plain["hidden"] and not any(
+        r["edge"]["kind"] == "contains" for r in plain["outgoing"]
+    )
+    asked = get_neighbors(index, m, relation="contain")
+    assert asked["hidden"] is None and asked["outgoing"]
+    assert all(r["edge"]["kind"] == "contains" for r in asked["outgoing"])

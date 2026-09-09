@@ -93,7 +93,7 @@ def _scan(
     print()
     graph = build(scan, extract(scan, declared_dependencies(scan)), strict=False)
     print(
-        f"  graph: {len(graph.nodes)} nodes, {len(graph.edges)} edges, "
+        f"  code graph: {len(graph.nodes)} symbol and file nodes, {len(graph.edges)} edges, "
         f"{len(graph.modules)} modules, {len(graph.module_deps)} module deps"
     )
     print()
@@ -349,7 +349,9 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     parser.add_argument("--version", action="version", version=f"svarupa {__version__}")
-    parser.add_argument("path", nargs="?", default=".", help="repository root to analyze")
+    # Required: a bare `svarupa` scanned the current directory and wrote
+    # `.svarupa/` into it, wherever that was (review #23 F8).
+    parser.add_argument("path", help="repository root to analyze")
     parser.add_argument(
         "--max-files", type=int, default=200_000, help="stop scanning after this many files"
     )

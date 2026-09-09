@@ -114,4 +114,6 @@ class CiGithubTarget(Target):
         return (
             "Run `svarupa . --lock` and commit .svarupa/architecture.lock as the base.",
             "Commit .github/workflows/svarupa.yml.",
+            "The workflow installs svarupa from PyPI; until the package is published "
+            "there, point its `uv tool install` line at a checkout of svarupa.",
         )

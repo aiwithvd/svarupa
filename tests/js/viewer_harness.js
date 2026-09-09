@@ -264,6 +264,47 @@ if (groupNode) {
   console.log('ok group members (no group in this fixture; skipped)');
 }
 
+// 7c. review #23 F1: a real double-click is two clicks, and the first one opens the
+// side panel and moves the canvas; the second lands on the scroller. The pair must
+// still open the box.
+if (drillable) {
+  fire(view.querySelector('.scroller'), 'click', { detail: 1 });
+  fire(drillable, 'click', { detail: 1 });
+  const scroller = view.querySelector('.scroller');
+  fire(scroller, 'click', { detail: 2 });
+  scroller.dispatchEvent(new window.MouseEvent('dblclick', { bubbles: true, cancelable: true, view: window, detail: 2 }));
+  const afterDbl = tab.querySelector('.view.is-open');
+  check('a double-click whose second click lands beside the moved box still opens it',
+    afterDbl && afterDbl.getAttribute('data-view') === view.getAttribute('data-view') + '//' + drillable.getAttribute('data-id') + '//expanded', afterDbl && afterDbl.getAttribute('data-view'));
+  const c2 = afterDbl && afterDbl.querySelector('[data-up]'); if (c2) fire(c2, 'click', { detail: 1 });
+}
+// review #23 F2: every path that opens the card titles it by label
+const route0 = svg.querySelector('.sv-route');
+if (route0) {
+  fire(route0, 'click', { detail: 1 });
+  const want = labelOfNode(Array.from(svg.querySelectorAll('.sv-node')).find((n) => n.getAttribute('data-id') === route0.getAttribute('data-src')) || svg.querySelector('.sv-node')) + ' \u2192 ' + labelOfNode(Array.from(svg.querySelectorAll('.sv-node')).find((n) => n.getAttribute('data-id') === route0.getAttribute('data-dst')) || svg.querySelector('.sv-node'));
+  check('a connection card is titled by the two labels', document.getElementById('panel-title').textContent === want, document.getElementById('panel-title').textContent + ' vs ' + want);
+  fire(view.querySelector('.scroller'), 'click', { detail: 1 });
+}
+if (chapter) {
+  chapter.click();
+  const anchorNode = Array.from(svg.querySelectorAll('.sv-node')).find((n) => n.getAttribute('data-id') === chapter.getAttribute('data-anchor'));
+  check('a chapter titles the card by the anchor label', anchorNode && document.getElementById('panel-title').textContent === labelOfNode(anchorNode), document.getElementById('panel-title').textContent);
+  fire(view.querySelector('.scroller'), 'click', { detail: 1 });
+}
+// review #23 F3: a citation without a line is an empty file, linked without an anchor
+{
+  const probe = document.createElement('div');
+  const emptyRef = 'pkg/__init__.py';
+  const ids = Array.from(document.querySelectorAll('.sv-node[data-evidence]')).map((n) => n.getAttribute('data-evidence')).join('\n').split('\n');
+  const noLine = ids.filter((r) => r && !/:\d+$/.test(r));
+  fire(a, 'click', { detail: 1 });
+  const rows = Array.from(document.querySelectorAll('#panel-list li a'));
+  const emptyRows = rows.filter((x) => / \(empty file\)$/.test(x.textContent));
+  check('empty-file citations show as the path with no line anchor', emptyRows.every((x) => !/#L/.test(x.getAttribute('href'))) && emptyRows.length === rows.filter((x) => !/:\d+$/.test(x.textContent.replace(/ \(empty file\)$/, ''))).length, emptyRows.length + ' empty of ' + rows.length + '; refs without line in artifact: ' + noLine.length);
+  fire(view.querySelector('.scroller'), 'click', { detail: 1 });
+}
+
 // 7b. the same box in another tab: the passport offers the jump and it lands focused there
 fire(a, 'click', { detail: 1 });
 const alsoLinks = Array.from(document.querySelectorAll('#panel-also span'));
