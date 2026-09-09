@@ -511,3 +511,16 @@ def test_external_boxes_sit_below_every_module(tmp_path: Path) -> None:
             assert min(b.y for b in ext) > max(b.bottom for b in mods), c.spec_id
             checked += 1
     assert checked, "no canvas held both modules and externals"
+
+
+def test_a_one_service_topology_explains_its_single_box(tmp_path: Path) -> None:
+    """Review #22 A5: mcp-finnhub's deploy topology was one box with no arrow
+    and nothing saying why."""
+    write(tmp_path, "svc/__init__.py", "")
+    write(tmp_path, "svc/main.py", "import httpx\n")
+    write(tmp_path, "docker-compose.yml", "services:\n  svc:\n    build: ./svc\n")
+    g = graph_of(tmp_path)
+    produced, _ = derive_all(g, cluster(g))
+    spec = produced[DiagramKind.DEPLOY_TOPOLOGY].root_spec
+    assert len(spec.nodes) == 1 and not spec.edges
+    assert spec.subtitle.startswith("1 backend; it declares no dependency"), spec.subtitle

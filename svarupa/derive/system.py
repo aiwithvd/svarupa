@@ -243,6 +243,15 @@ class SystemDeriver(Deriver):
             for kind, count in tally.items()
             if count
         )
+        if len(nodes) == 1 and not edges:
+            # One box and no arrow is the honest picture of a one-service
+            # compose file whose code imports no store or SDK the vocabulary
+            # knows; the subtitle says so instead of leaving a lonely box
+            # unexplained (review #22 A5).
+            subtitle += (
+                "; it declares no dependency on another service, and its code imports "
+                "no store, bus or SDK the vocabulary knows"
+            )
         spec = DiagramSpec(
             kind=self.kind,
             id=ROOT,

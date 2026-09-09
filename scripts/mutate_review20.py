@@ -27,6 +27,18 @@ SUITE = [
 MUTATIONS: list[tuple[str, str, str, str]] = [
     # --- review #22 (self-review) ------------------------------------------------
     (
+        "keyboard drill: Shift+Enter is just a click (JS)",
+        "svarupa/emit/viewer.py",
+        "      if (ev.shiftKey && kid && ev.target.classList.contains('sv-node')) { openView(ev.target, kid); return; }",
+        "",
+    ),
+    (
+        "a one-box topology says nothing about why",
+        "svarupa/derive/system.py",
+        "        if len(nodes) == 1 and not edges:",
+        "        if False:",
+    ),
+    (
         "tooling under a hidden directory shapes the architecture again",
         "svarupa/detect.py",
         '    if dirs and dirs[0].startswith("."):\n        return FileRole.TOOLING',

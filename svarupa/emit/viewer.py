@@ -739,6 +739,11 @@ def _js() -> Markup:
     }
     if (ev.key === 'Enter' && ev.target && ev.target.classList && (ev.target.classList.contains('sv-node') || ev.target.classList.contains('chapter') || ev.target.classList.contains('sw-toggle'))) {
       ev.preventDefault();
+      // Shift+Enter on a drillable box is the keyboard drill (review #21
+      // N14: the chevron is not focusable, so Enter alone left a keyboard
+      // reader with the passport and 5 to 19 Tabs to the Open button).
+      var kid = ev.target.getAttribute('data-child');
+      if (ev.shiftKey && kid && ev.target.classList.contains('sv-node')) { openView(ev.target, kid); return; }
       ev.target.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 1 }));
     }
   });
@@ -1302,7 +1307,8 @@ def _explore_bar() -> Markup:
                     "span",
                     esc(
                         "click a box for its passport; double-click it, or its \u203a, to open "
-                        "it in place; shift-click two boxes for a path; a legend swatch mutes a kind"
+                        "it in place (keyboard: Enter, Shift+Enter); shift-click two boxes for a "
+                        "path; a legend swatch mutes a kind"
                     ),
                     class_="hint",
                 ),

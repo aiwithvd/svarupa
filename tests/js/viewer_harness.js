@@ -220,6 +220,13 @@ check('Enter on a box opens its passport and focus', panel.classList.contains('i
 document.body.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
 check('Escape closes the passport and clears every lit state',
   !panel.classList.contains('is-open') && !svg.classList.contains('is-focused') && svg.querySelectorAll('.is-path').length === 0);
+const kbDrill = Array.from(svg.querySelectorAll('.sv-node.sv-drillable[data-child]')).find((n) => tab.querySelector('[data-view="' + view.getAttribute('data-view') + '//' + n.getAttribute('data-id') + '//expanded"]'));
+if (kbDrill) {
+  kbDrill.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', shiftKey: true, bubbles: true, cancelable: true }));
+  const openedByKey = tab.querySelector('.view.is-open');
+  check('Shift+Enter on a drillable box opens its drill', openedByKey && openedByKey.getAttribute('data-view') === view.getAttribute('data-view') + '//' + kbDrill.getAttribute('data-id') + '//expanded', openedByKey && openedByKey.getAttribute('data-view'));
+  const c = openedByKey && openedByKey.querySelector('[data-up]'); if (c) fire(c, 'click', { detail: 1 });
+}
 
 // 7a'. chrome that states rather than implies (review #20 C1, S11, C2)
 const themeBtn = document.getElementById('theme');
