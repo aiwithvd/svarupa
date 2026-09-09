@@ -356,6 +356,9 @@ def test_a_dockerfile_says_which_code_a_service_ships(tmp_path: Path) -> None:
     g = graph_of(tmp_path)
     api = g.nodes["docker-compose.yml#service.api"]
     assert api.attr("dockerfile") == "Dockerfile.api"
+    boxes = {n.label: n for n in boxes_of(tmp_path, DiagramKind.DEPLOY_TOPOLOGY)}
+    assert boxes["api"].sublabel.startswith("ships api/"), boxes["api"].sublabel
+    assert boxes["all"].sublabel.startswith("ships the repository"), boxes["all"].sublabel
     assert api.attr("ships") == "requirements.txt:2\napi:3", (
         "every copied source, with its line"
     )

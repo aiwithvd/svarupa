@@ -26,6 +26,12 @@ SUITE = [
 MUTATIONS: list[tuple[str, str, str, str]] = [
     # --- review #21 -------------------------------------------------------------
     (
+        "polish: a service's sublabel names the context, not what it ships",
+        "svarupa/derive/system.py",
+        '                if node.attr("dockerfile") and shipped_dirs:',
+        "                if False:",
+    ),
+    (
         "N16: a verb may sit a screen away from both of its boxes",
         "svarupa/layout/engines.py",
         "            if n == 1:\n                return True\n            before = sum(lengths[:i]) + lengths[i] // 2",

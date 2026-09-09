@@ -124,9 +124,28 @@ class SystemDeriver(Deriver):
                     what.append(f"{n_routes} route{'s' if n_routes != 1 else ''}")
                 if "worker" in held and narrowed:
                     what.append("workers")
-                sublabel = ("built from " + (ctx + "/" if ctx else "the repository root")) + (
-                    " · " + ", ".join(what) if what else ""
+                # What the image holds, from its Dockerfile when one was read
+                # (`ships src/`), else where the build may read from.
+                shipped_dirs = sorted(
+                    {
+                        (entry.rpartition(":")[0] or ".")
+                        for entry in (node.attr("ships") or "").split("\n")
+                        if (entry and entry.rpartition(":")[0] in mods)
+                        or any(m.startswith(entry.rpartition(":")[0] + "/") for m in mods)
+                    }
                 )
+                if node.attr("dockerfile") and shipped_dirs:
+                    where = (
+                        "ships "
+                        + ", ".join(
+                            (d + "/" if d != "." else "the repository")
+                            for d in shipped_dirs[:3]
+                        )
+                        + (" …" if len(shipped_dirs) > 3 else "")
+                    )
+                else:
+                    where = "built from " + (ctx + "/" if ctx else "the repository root")
+                sublabel = where + (" · " + ", ".join(what) if what else "")
             elif node.attr("build_context"):
                 # A build context that escapes the repository builds nothing
                 # in the tree; say so rather than claim a subtree.
