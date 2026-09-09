@@ -21,9 +21,17 @@ SUITE = [
     "tests/test_layout.py",
     "tests/test_emit.py",
     "tests/test_viewer_js.py",
+    "tests/test_detect.py",
 ]
 
 MUTATIONS: list[tuple[str, str, str, str]] = [
+    # --- review #22 (self-review) ------------------------------------------------
+    (
+        "tooling under a hidden directory shapes the architecture again",
+        "svarupa/detect.py",
+        '    if dirs and dirs[0].startswith("."):\n        return FileRole.TOOLING',
+        "    if False:\n        return FileRole.TOOLING",
+    ),
     # --- review #21 -------------------------------------------------------------
     (
         "polish: a service's sublabel names the context, not what it ships",

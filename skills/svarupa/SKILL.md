@@ -121,6 +121,10 @@ three per pull request.
   report the difference as an architecture change.
 - Communities and visual grouping never define identity; the lockfile's
   modules come from directories, packages, and workspace members only.
+- Test, generated and vendored files, and anything under a top-level hidden
+  directory (`.claude/`, `.agent/`, `.github/`: tooling for the people and
+  agents working on the repository), stay in the graph but shape neither the
+  diagrams nor the lockfile.
 - Partial failure degrades: one hostile or broken file becomes a diagnostic,
   and the rest of the repository is still analyzed.
 - Routes, tasks and roles come from framework detection: FastAPI, Flask and

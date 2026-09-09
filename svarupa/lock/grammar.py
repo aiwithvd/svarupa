@@ -58,7 +58,11 @@ SCHEMA_MAJOR = 1
 # minor is what lets SVA-L-013 say that pair is the upgrade, not the PR.
 # Minor 5: `role` gains `auth` and `frontend` (from imports the vocabulary
 # knows); same kind, new values this build emits.
-SCHEMA_MINOR = 5
+# Minor 6: files under a top-level hidden directory (`.claude/`, `.agent/`,
+# `.github/`) are tooling and leave every record. Fewer facts for the same
+# code is still a change in what the build emits, and SVA-L-013 must say the
+# upgrade removed them, not the PR that bumped svarupa.
+SCHEMA_MINOR = 6
 
 _SEP = "\t"
 _COMMENT = "#"

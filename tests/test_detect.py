@@ -113,6 +113,35 @@ def test_only_source_and_config_reach_architecture(repo: Path) -> None:
         assert excluded not in arch, excluded
 
 
+def test_tooling_under_a_top_level_hidden_directory_is_not_architecture(repo: Path) -> None:
+    """Review #22: on a Next.js app nine of twelve top-level architecture
+    boxes were `.agent/skills/*/scripts` and `.claude/skills/*/scripts`, and
+    the app sat in the second row. Tooling for the people and agents who work
+    on a repository is not the system it builds. Only a hidden directory at
+    the root counts: a root dotfile and a hidden directory deeper down do not."""
+    for rel, text in (
+        (".claude/skills/reviewer/scripts/check.py", "import os\n"),
+        (".agent/skills/architect/scripts/plan.py", "import os\n"),
+        (".github/workflows/ci.yml", "on: push\n"),
+        (".env", "X=1\n"),
+        ("src/.hidden/inner.py", "x = 1\n"),
+    ):
+        p = repo / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(text, encoding="utf8")
+    scan = detect(repo)
+    role = {f.path: f.role for f in scan.files}
+    assert role[".claude/skills/reviewer/scripts/check.py"] is FileRole.TOOLING
+    assert role[".agent/skills/architect/scripts/plan.py"] is FileRole.TOOLING
+    assert role[".github/workflows/ci.yml"] is FileRole.TOOLING
+    assert role["src/.hidden/inner.py"] is FileRole.SOURCE
+    assert not FileRole.TOOLING.in_architecture
+    arch = {f.path for f in scan.architecture_files}
+    assert "src/.hidden/inner.py" in arch and not any(
+        p.startswith((".claude/", ".agent/")) for p in arch
+    )
+
+
 def test_language_detection(repo: Path) -> None:
     langs = dict(detect(repo).languages())
     assert langs["python"] >= 4

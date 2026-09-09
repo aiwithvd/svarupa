@@ -14,7 +14,7 @@ Three properties this stage must hold:
 3. **Explicit ordering.** Directory entries are sorted by codepoint before
    recursion. ``os.scandir`` order is filesystem-dependent and is never trusted.
 
-Test, generated, and vendored code is classified but **excluded from
+Test, generated, vendored and tooling code is classified but **excluded from
 architecture derivation and the lockfile**. On a typical repository it is
 30-50% of files and imports everything, which would wreck module layering and
 bury the real structure.
@@ -193,13 +193,20 @@ class FileRole(str, Enum):
     GENERATED = "generated"
     VENDORED = "vendored"
     CONFIG = "config"
+    # Under a top-level hidden directory: `.claude/skills/*/scripts`,
+    # `.agent/`, `.cursor/`, `.github/workflows`. Tooling for the people and
+    # agents who work on the repository, not the system it builds. On a
+    # Next.js app nine of twelve top-level architecture boxes were agent
+    # skill scripts and the app sat in the second row (review #22).
+    TOOLING = "tooling"
 
     @property
     def in_architecture(self) -> bool:
         """Whether this role feeds architecture derivation and the lockfile.
 
-        Test, generated, and vendored files stay in the graph so a user can
-        still ask about them, but they never shape the architecture picture.
+        Test, generated, vendored and tooling files stay in the graph so a
+        user can still ask about them, but they never shape the architecture
+        picture.
         """
         return self in (FileRole.SOURCE, FileRole.CONFIG)
 
@@ -388,6 +395,10 @@ def classify(rel: str, data: bytes, lang: str | None, config_kind: str | None) -
     parts = rel.split("/")
     dirs, name = parts[:-1], parts[-1]
 
+    # Only a hidden directory at the repository root: a dotfile at the root
+    # (`.env`) and a hidden directory deeper down are not tooling by that rule.
+    if dirs and dirs[0].startswith("."):
+        return FileRole.TOOLING
     if any(d in _VENDOR_DIRS for d in dirs):
         return FileRole.VENDORED
 
