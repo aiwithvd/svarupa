@@ -26,10 +26,11 @@ from svarupa.derive.base import (
     DiagramNode,
     DiagramSet,
     DiagramSpec,
+    Region,
 )
 from svarupa.diagnostics import Diagnostic
 from svarupa.extract.vocabulary import GENERIC_FAMILIES, image_label
-from svarupa.model import EdgeKind, Evidence, NodeKind
+from svarupa.model import EdgeKind, Evidence, Node, NodeKind
 
 __all__ = ["SystemDeriver"]
 
@@ -219,6 +220,8 @@ class SystemDeriver(Deriver):
             for e in ext_edges
         ]
         ext_edges = [e for e in ext_edges if e.src != e.dst]
+        env_nodes, env_edges, env_regions = _environment_overlays(graph, members)
+        nodes.extend(env_nodes)
         edges = tuple(
             sorted(
                 [
@@ -233,6 +236,7 @@ class SystemDeriver(Deriver):
                     if e.kind is EdgeKind.DEPENDS_ON and e.src in members and e.dst in members
                 ]
                 + ext_edges
+                + env_edges
             )
         )
         tally: dict[str, int] = {}
@@ -259,8 +263,113 @@ class SystemDeriver(Deriver):
             subtitle=subtitle,
             nodes=tuple(sorted(nodes)),
             edges=edges,
+            regions=env_regions,
         )
         return DiagramSet(self.kind, ROOT, {ROOT: spec}, tuple(diags))
+
+
+def _environment_overlays(
+    graph: Graph, members: dict[str, Node]
+) -> tuple[list[DiagramNode], list[DiagramEdge], tuple[Region, ...]]:
+    """Environment badges, deploy edges, and frames for declared environments.
+
+    Every declared environment becomes one badge box (kind `environment`,
+    which the palette falls back to grey for) carrying every citation of the
+    declaration, so an environment with no service-level link is still
+    distinguishable -- production next to staging next to qa, each clickable
+    through to the line that declares it. The badges are framed together as
+    "declared environments".
+
+    A service is linked to an environment ONLY where evidence joins them:
+
+    * a filename declaration whose file IS a compose variant
+      (`docker-compose.prod.yml`) links every service that file defines --
+      the service key's own line is in the same file;
+    * a Dockerfile `ENV NODE_ENV=...` declaration links the service whose
+      compose `dockerfile:` attr names that file.
+
+    Workflow `environment:` keys and eas.json profiles declare the
+    environment but name no service, so they contribute badges and never
+    links: a service drawn inside a frame it does not belong to is the lie
+    this function exists to avoid. Links draw as a dashed `deploys` edge and
+    wrap the service in the environment's frame; two environments claiming
+    one service produce two frames, and if geometry cannot draw both the
+    layout stage says so rather than choosing.
+    """
+    facts = graph.environments
+    if not facts:
+        return [], [], ()
+
+    by_name: dict[str, list[tuple[str, tuple[Evidence, ...]]]] = {}
+    for f in facts:
+        by_name.setdefault(f.name, []).append((f.source, f.evidence))
+
+    # env name -> service box id -> the evidence that links them
+    linked: dict[str, dict[str, list[Evidence]]] = {}
+    for name in sorted(by_name):
+        for source, evs in by_name[name]:
+            for ev in evs:
+                for nid, node in sorted(members.items()):
+                    joins = (source == "filename" and nid.startswith(ev.file + "#service.")) or (
+                        source == "dockerfile" and node.attr("dockerfile") == ev.file
+                    )
+                    if joins:
+                        link = linked.setdefault(name, {}).setdefault(nid, [])
+                        link.extend([ev, *node.evidence[:1]])
+
+    nodes: list[DiagramNode] = []
+    edges: list[DiagramEdge] = []
+    regions: list[Region] = []
+    names = sorted(by_name)
+    for name in names:
+        evs = sorted({ev for _, e in by_name[name] for ev in e})
+        sources = sorted({s for s, _ in by_name[name]})
+        nodes.append(
+            DiagramNode(
+                id=f"env:{name}",
+                label=name,
+                kind="environment",
+                evidence=tuple(evs[:MAX_EVIDENCE_PER_BOX]),
+                attrs=(("sources", ", ".join(sources)),),
+                sublabel="declared by " + ", ".join(sources),
+            )
+        )
+        if name in linked:
+            link_evs = sorted(
+                {ev for evs_per_svc in linked[name].values() for ev in evs_per_svc}
+            )
+            regions.append(
+                Region(
+                    id=f"env-frame:{name}",
+                    label=name,
+                    members=tuple(sorted(linked[name])),
+                    evidence=tuple(link_evs[:MAX_EVIDENCE_PER_BOX]),
+                    kind="environment",
+                )
+            )
+            for nid in sorted(linked[name]):
+                edges.append(
+                    DiagramEdge(
+                        src=f"env:{name}",
+                        dst=nid,
+                        label="deploys",
+                        evidence=tuple(
+                            sorted(set(linked[name][nid]))[:MAX_EVIDENCE_PER_BOX]
+                        ),
+                        variant="dashed",
+                    )
+                )
+    all_evs = sorted({ev for f in facts for ev in f.evidence})
+    regions.append(
+        Region(
+            id="env:declared",
+            label="declared environments",
+            members=tuple(f"env:{name}" for name in names),
+            evidence=tuple(all_evs[:MAX_EVIDENCE_PER_BOX]),
+            kind="environment",
+        )
+    )
+    return nodes, edges, tuple(regions)
 
 
 def _with_copy_line(
