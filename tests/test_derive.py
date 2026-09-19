@@ -966,3 +966,45 @@ def test_the_repository_root_module_is_a_box_and_a_node_called_dot(tmp_path: Pat
     assert any(
         e["src"] == "." and e["kind"] == "contains" and e["dst"] == "main.py" for e in edges
     )
+
+
+# --- drill headings are human -------------------------------------------------
+
+
+def test_a_migration_file_drill_heading_uses_the_module_label_not_the_stem(
+    tmp_path: Path,
+) -> None:
+    """`2026-02-25_27e1f5b5ebc0_initial_schema code` was the heading a reader
+    got for opening `versions`: a date and a hash are versioning, not a name.
+    The code view of a one-component module is titled by the box clicked."""
+    from svarupa.derive.architecture import ArchitectureDeriver
+
+    write(tmp_path, "alembic/__init__.py", "")
+    write(
+        tmp_path,
+        "alembic/versions/2026-02-25_27e1f5b5ebc0_initial_schema.py",
+        "def upgrade():\n    pass\n\n\ndef downgrade():\n    pass\n\n\nclass Revision:\n    pass\n",
+    )
+    graph, clustering = pipeline(tmp_path)
+    ds = ArchitectureDeriver().derive(graph, clustering)
+    assert ds is not None
+    code_specs = [s for s in ds.specs.values() if s.id.endswith("//code")]
+    assert len(code_specs) == 1
+    spec = code_specs[0]
+    assert spec.title == "versions code", spec.title
+    # The id still names the real file: pretty is for headings, exact is for keys.
+    assert "2026-02-25_27e1f5b5ebc0_initial_schema.py" in spec.id
+
+
+def test_component_labels_strip_migration_prefixes() -> None:
+    from svarupa.derive.components import _component_label
+
+    assert (
+        _component_label("alembic/versions/2026-02-25_27e1f5b5ebc0_initial_schema.py")
+        == "initial_schema"
+    )
+    assert _component_label("alembic/versions/27e1f5b5ebc0_add_index.py") == "add_index"
+    assert _component_label("src/api/routes.py") == "routes"
+    # A stem that is nothing but prefixes keeps itself: an empty label says
+    # nothing.
+    assert _component_label("m/2026-02-25.py") == "2026-02-25"

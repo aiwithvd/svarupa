@@ -23,6 +23,8 @@ wrong claim at the exact zoom where a reader would act on it.
 
 from __future__ import annotations
 
+import re
+
 from svarupa.build import Graph
 from svarupa.derive.base import (
     DiagramEdge,
@@ -56,6 +58,12 @@ MAX_COMPONENT_BOXES = 24
 _CODE_KINDS = (NodeKind.CLASS, NodeKind.FUNCTION, NodeKind.INTERFACE)
 _CODE_EDGES = (EdgeKind.CALLS, EdgeKind.INHERITS, EdgeKind.IMPLEMENTS)
 
+# Migration-style filename prefixes: a leading date and/or revision hash is
+# versioning, not a name. `2026-02-25_27e1f5b5ebc0_initial_schema` is
+# presented as `initial_schema`. A hash token is 8+ hex chars; a stem that is
+# nothing but prefixes keeps itself, because an empty label says nothing.
+_MIGRATION_PREFIX = re.compile(r"^(?:\d{4}-\d{2}-\d{2}[_-]|[0-9a-f]{8,}[_-])+")
+
 
 def _module_of(node_id: str) -> str:
     path = node_id.split("#", 1)[0]
@@ -67,10 +75,15 @@ def _component_label(path: str) -> str:
 
     `resolver`, not `resolve.py`. The path stays one click away in the
     citation, which is also the only place it is exact rather than pretty.
+    Migration prefixes are stripped (`2026-02-25_27e1f5b5ebc0_initial_schema`
+    reads as `initial_schema`): the date and hash are versioning, and a
+    heading or box that leads with them hides the name behind them.
     """
     leaf = path.rsplit("/", 1)[-1]
     stem = leaf.rsplit(".", 1)[0]
-    return stem or leaf
+    if not stem:
+        return leaf
+    return _MIGRATION_PREFIX.sub("", stem) or stem
 
 
 def flow_spec(
@@ -116,7 +129,9 @@ def flow_spec(
     nodes: list[DiagramNode] = []
     for path in files:
         node = graph.nodes[path]
-        child = code_spec(graph, path, spec_id(module_id) + FLOW_SUFFIX, kind)
+        child = code_spec(
+            graph, path, spec_id(module_id) + FLOW_SUFFIX, kind, _component_label(path)
+        )
         child_id: str | None = None
         if child is not None:
             spec, extra = child
@@ -173,12 +188,17 @@ def code_spec(
     file_path: str,
     parent: str,
     kind: DiagramKind,
+    label: str,
 ) -> tuple[DiagramSpec, tuple[Diagnostic, ...]] | None:
     """The classes and functions defined in one component, with their edges.
 
     Scoped to a single file on purpose: this is the pinpoint level, reached
     after the reader has chosen a part, so it shows that part completely
     rather than a whole module's symbols at once.
+
+    `label` is the text of the box the reader clicked to get here, and the
+    title is that label plus the qualifier: a heading reads `versions code`,
+    never a raw filename with its date and revision hash.
     """
     members = {
         nid: node
@@ -264,7 +284,7 @@ def code_spec(
         DiagramSpec(
             kind=kind,
             id=spec_id(file_path) + COMPONENT_SUFFIX,
-            title=f"{_component_label(file_path)} code",
+            title=f"{label} code",
             subtitle=" and ".join(parts),
             nodes=nodes,
             edges=spec_edges,

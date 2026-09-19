@@ -627,7 +627,10 @@ class ArchitectureDeriver(Deriver):
             if _file_module(path) == module_id and path in graph.nodes
         )
         if len(files) == 1:
-            direct = code_spec(graph, files[0], parent, self.kind)
+            # The box the reader clicked is the module's own, so the code
+            # view is titled by it (`versions code`), not by the file's raw
+            # stem — migration filenames lead with a date and a hash.
+            direct = code_spec(graph, files[0], parent, self.kind, _label(module_id))
             if direct is not None:
                 spec, extra = direct
                 specs[spec.id] = spec
