@@ -936,7 +936,7 @@ class ModuleDepsDeriver(Deriver):
             subtitle=(
                 f"{len(members)} modules in {len(nodes)} boxes"
                 + (f", {n_parts} drillable" if n_parts else "")
-                + f"; {between + within} dependencies: {between} between boxes"
+                + f"; {between + within} dependenc{'y' if between + within == 1 else 'ies'}: {between} between boxes"
                 + (f" ({len(edges)} arrow{'s' if len(edges) != 1 else ''})" if edges else "")
                 + (f", {within} inside {where if prefix else 'the parts'}" if within else "")
             ),

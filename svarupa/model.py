@@ -121,6 +121,13 @@ class Resolution(str, Enum):
     UNRESOLVED = "unresolved"
 
 
+def evidence_order(e: Evidence) -> tuple[bool, Evidence]:
+    """The one order citations are shown in: real lines first, then empty
+    files cited as themselves (review #24 N3: the viewer reordered while the
+    diagram JSON and the CLI kept `api/__init__.py:0` first)."""
+    return (e.start_line == 0, e)
+
+
 @dataclass(frozen=True, slots=True)
 class Evidence:
     """A pointer at real source. Lines are 1-indexed and inclusive.

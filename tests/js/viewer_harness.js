@@ -242,6 +242,7 @@ check('legend swatches are focusable', firstSwatch && firstSwatch.getAttribute('
 if (firstSwatch) {
   firstSwatch.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
   check('Enter on a swatch mutes its kind', firstSwatch.classList.contains('off'));
+  check('a muted swatch says so to assistive tech', firstSwatch.getAttribute('aria-pressed') === 'true');
   firstSwatch.click();
 }
 const firstChapter = tab.querySelector('.guided .chapter');
@@ -277,6 +278,19 @@ if (drillable) {
   check('a double-click whose second click lands beside the moved box still opens it',
     afterDbl && afterDbl.getAttribute('data-view') === view.getAttribute('data-view') + '//' + drillable.getAttribute('data-id') + '//expanded', afterDbl && afterDbl.getAttribute('data-view'));
   const c2 = afterDbl && afterDbl.querySelector('[data-up]'); if (c2) fire(c2, 'click', { detail: 1 });
+  // review #24 N1: the second click lands on a neighbouring box that is not drillable
+  const other = Array.from(svg.querySelectorAll('.sv-node[data-id]')).find((n) => n !== drillable && !n.hasAttribute('data-child')) || Array.from(svg.querySelectorAll('.sv-node[data-id]')).find((n) => n !== drillable);
+  if (other) {
+    fire(view.querySelector('.scroller'), 'click', { detail: 1 });
+    fire(drillable, 'click', { detail: 1 });
+    fire(other, 'click', { detail: 2 });
+    other.dispatchEvent(new window.MouseEvent('dblclick', { bubbles: true, cancelable: true, view: window, detail: 2 }));
+    const afterDbl2 = tab.querySelector('.view.is-open');
+    check('a double-click whose second click lands on a neighbouring box opens the first box',
+      afterDbl2 && afterDbl2.getAttribute('data-view') === view.getAttribute('data-view') + '//' + drillable.getAttribute('data-id') + '//expanded', afterDbl2 && afterDbl2.getAttribute('data-view'));
+    check('focus follows the drill to the crumb', document.activeElement && document.activeElement.hasAttribute('data-up'), document.activeElement && document.activeElement.tagName);
+    const c3 = afterDbl2 && afterDbl2.querySelector('[data-up]'); if (c3) fire(c3, 'click', { detail: 1 });
+  }
 }
 // review #23 F2: every path that opens the card titles it by label
 const route0 = svg.querySelector('.sv-route');

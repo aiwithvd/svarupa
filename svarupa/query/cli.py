@@ -86,7 +86,14 @@ def _text(value: Any, indent: int = 0) -> list[str]:
         d = cast(dict[str, Any], value)
         if "id" in d and "evidence" in d and isinstance(d.get("evidence"), list):
             ev: list[dict[str, Any]] = d["evidence"]
-            where = ", ".join(f"{e['file']}:{e['start_line']}" for e in ev[:3])
+            where = ", ".join(
+                (
+                    f"{e['file']}:{e['start_line']}"
+                    if e["start_line"]
+                    else f"{e['file']} (empty file)"
+                )
+                for e in ev[:3]
+            )
             extra = {
                 k: v
                 for k, v in d.items()
@@ -98,7 +105,14 @@ def _text(value: Any, indent: int = 0) -> list[str]:
             return out
         if "src" in d and "dst" in d and "evidence" in d:
             ev2: list[dict[str, Any]] = d["evidence"]
-            where = ", ".join(f"{e['file']}:{e['start_line']}" for e in ev2[:3])
+            where = ", ".join(
+                (
+                    f"{e['file']}:{e['start_line']}"
+                    if e["start_line"]
+                    else f"{e['file']} (empty file)"
+                )
+                for e in ev2[:3]
+            )
             out.append(
                 f"{pad}{d['src']} -> {d['dst']}  ({d.get('context') or d.get('kind')})  [{where}]"
             )

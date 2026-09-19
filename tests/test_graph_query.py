@@ -609,3 +609,19 @@ def test_get_neighbors_hides_contain_edges_unless_asked(artifact) -> None:  # ty
     asked = get_neighbors(index, m, relation="contain")
     assert asked["hidden"] is None and asked["outgoing"]
     assert all(r["edge"]["kind"] == "contains" for r in asked["outgoing"])
+
+
+def test_the_cli_brief_spells_an_empty_file_without_a_line(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Review #24 N3: `api/__init__.py:0` read as line 0 to an agent."""
+    (tmp_path / "pkg").mkdir()
+    (tmp_path / "pkg" / "__init__.py").write_text("", encoding="utf8")
+    (tmp_path / "pkg" / "m.py").write_text("x = 1\n", encoding="utf8")
+    out = tmp_path / "out"
+    assert main([str(tmp_path), "--out", str(out)]) == 0
+    capsys.readouterr()
+    assert query_main([str(out), "get_node", "pkg"]) == 0
+    text = capsys.readouterr().out
+    assert "pkg/m.py:1" in text and "pkg/__init__.py (empty file)" in text and ":0" not in text
+    assert text.index("pkg/m.py:1") < text.index("pkg/__init__.py (empty file)")

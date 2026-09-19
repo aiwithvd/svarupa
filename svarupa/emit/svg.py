@@ -23,7 +23,7 @@ from collections.abc import Iterable
 from svarupa.emit.markup import EMPTY, Markup, esc, join, raw, tag
 from svarupa.layout.geometry import Box, Canvas, RegionBox, Route, Style
 from svarupa.layout.text import advance
-from svarupa.model import Evidence, Resolution
+from svarupa.model import Evidence, Resolution, evidence_order
 
 __all__ = ["EVIDENCE_ATTR", "canvas_body", "canvas_svg", "evidence_ref", "svg_document"]
 
@@ -41,7 +41,7 @@ def evidence_ref(evidence: Iterable[Evidence]) -> str:
     # reader clicks.
     return "\n".join(
         f"{e.file}:{e.start_line}" if e.start_line else e.file
-        for e in sorted(evidence, key=lambda e: (e.start_line == 0, e))
+        for e in sorted(evidence, key=evidence_order)
     )
 
 

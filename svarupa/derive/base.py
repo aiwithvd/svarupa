@@ -29,7 +29,7 @@ from enum import Enum
 from svarupa.build import Graph
 from svarupa.cluster import Clustering
 from svarupa.diagnostics import Diagnostic, Severity
-from svarupa.model import Evidence, MissingEvidenceError, NodeKind, Resolution
+from svarupa.model import Evidence, MissingEvidenceError, NodeKind, Resolution, evidence_order
 
 __all__ = [
     "MAX_EVIDENCE_PER_BOX",
@@ -395,7 +395,7 @@ def module_evidence(graph: Graph, module_id: str) -> tuple[Evidence, ...]:
         hits.extend(node.evidence)
         if len(hits) >= MAX_EVIDENCE_PER_BOX:
             break
-    return tuple(sorted(set(hits))[:MAX_EVIDENCE_PER_BOX])
+    return tuple(sorted(set(hits), key=evidence_order)[:MAX_EVIDENCE_PER_BOX])
 
 
 def group_evidence(

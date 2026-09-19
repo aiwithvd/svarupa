@@ -20,7 +20,7 @@ from svarupa.build import Graph
 from svarupa.derive.base import DiagramSet
 from svarupa.extract.rationale import RationaleFact
 from svarupa.layout.geometry import Canvas
-from svarupa.model import Evidence
+from svarupa.model import Evidence, evidence_order
 
 __all__ = ["JSON_INDENT", "canvas_json", "diagram_json", "graph_json", "write_json"]
 
@@ -47,7 +47,7 @@ def write_json(path: Path, data: object) -> int:
 
 def _evidence(items: tuple[Evidence, ...]) -> list[dict[str, object]]:
     out: list[dict[str, object]] = []
-    for e in sorted(items):
+    for e in sorted(items, key=evidence_order):
         item: dict[str, object] = {
             "file": e.file,
             "start_line": e.start_line,

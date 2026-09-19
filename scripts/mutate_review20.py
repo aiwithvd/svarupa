@@ -45,10 +45,16 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
         "            and False\n",
     ),
     (
-        "F3: the empty file is cited before its module's real lines",
-        "svarupa/emit/svg.py",
-        "        for e in sorted(evidence, key=lambda e: (e.start_line == 0, e))",
-        "        for e in sorted(evidence)",
+        "F3/N3: the empty file is cited before its module's real lines",
+        "svarupa/model.py",
+        "    return (e.start_line == 0, e)",
+        "    return (False, e)",
+    ),
+    (
+        "N1: the click that completes a double-click overwrites the pending box (JS)",
+        "svarupa/emit/viewer.py",
+        "    if (node.classList.contains('sv-node') && !(pending && !child)) lastBoxClick = { node: node, at: Date.now() };",
+        "    if (node.classList.contains('sv-node')) lastBoxClick = { node: node, at: Date.now() };",
     ),
     (
         "F4: a long segment cannot hold a verb near its end",

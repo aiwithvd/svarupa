@@ -1329,6 +1329,10 @@ def test_an_empty_file_is_cited_as_itself_and_a_real_line_comes_first(tmp_path: 
     graph = json.loads((out / "graph.json").read_text(encoding="utf8"))
     init = next(n for n in graph["nodes"] if n["id"] == "api/__init__.py")
     assert init["evidence"][0]["start_line"] == 0 and init["evidence"][0]["end_line"] == 0
+    api = next(n for n in graph["nodes"] if n["id"] == "api")
+    assert [e["file"] for e in api["evidence"]] == ["api/db.py", "api/__init__.py"], (
+        "one order everywhere: the real line first, in graph.json too (review #24 N3)"
+    )
     html = (out / "index.html").read_text(encoding="utf8")
     assert "api/__init__.py:1" not in html and "api/__init__.py:0" not in html
     # The passport lists the real line first and the empty file after it.

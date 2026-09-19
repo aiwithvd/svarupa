@@ -728,7 +728,8 @@ def _js() -> Markup:
       metaEl.textContent = '';
       outEl.textContent = ''; inEl.textContent = '';
       outH.textContent = 'Outgoing'; inH.textContent = 'Incoming';
-      sumEl.textContent = node ? ('an arrow in this view' + (node.getAttribute('data-note') ? ': ' + node.getAttribute('data-note') : '')) : '';
+      var noteText = node ? (node.getAttribute('data-note') || '') : '';
+      sumEl.textContent = noteText && noteText !== subEl.textContent ? noteText : '';
       upBtn.disabled = true; downBtn.disabled = true;
       clearFocus();
       if (node) { node.classList.add('is-path'); var svg = node.closest('svg'); if (svg) svg.classList.add('is-focused'); }
@@ -815,7 +816,12 @@ def _js() -> Markup:
     // the canvas 154 to 192px; the second click then lands on the scroller
     // (review #23 F1). Remember the box, so the dblclick that follows can
     // still open it wherever its second click landed.
-    if (node.classList.contains('sv-node')) lastBoxClick = { node: node, at: Date.now() };
+    // The second click of the pair may land on a neighbouring box the shift
+    // moved under the cursor (review #24 N1: a non-drillable ingress box took
+    // the pending drillable one's place); a pending drillable click survives
+    // its window.
+    var pending = lastBoxClick && lastBoxClick.node.getAttribute('data-child') && 700 > Date.now() - lastBoxClick.at;
+    if (node.classList.contains('sv-node') && !(pending && !child)) lastBoxClick = { node: node, at: Date.now() };
     // Titled by the box's label, never its id: a box labelled `agent` opened
     // a card reading `group:agent/routers` (review #21 N2). The id stays in
     // the chip below.
@@ -923,6 +929,7 @@ def _js() -> Markup:
     if (!svg) return;
     sw.classList.toggle('off');
     var off = sw.classList.contains('off');
+    sw.setAttribute('aria-pressed', off ? 'true' : 'false');
     svg.querySelectorAll('.sv-node.sv-kind-' + sw.getAttribute('data-kind')).forEach(function (nd) {
       nd.classList.toggle('is-off', off);
     });
@@ -1116,6 +1123,10 @@ def _js() -> Markup:
     });
     target.classList.add('is-open');
     target.scrollIntoView({ block: 'start' });
+    // Focus follows the drill (review #24 N6: after Shift+Enter it sat on
+    // the body and a keyboard reader tabbed from the page top).
+    var crumbLink = target.querySelector('[data-up]');
+    if (crumbLink && crumbLink.focus) crumbLink.focus();
   }
 
   document.addEventListener('click', function (ev) {
@@ -1178,7 +1189,7 @@ def _view(
     )
 
 
-def _legend(canvas: object) -> Markup:
+def _legend(canvas: object, expanded: bool = False) -> Markup:
     """Kind swatches with real counts, plus the product's one-line promise.
 
     The counts are computed from the canvas being drawn, never typed in, so
@@ -1202,6 +1213,7 @@ def _legend(canvas: object) -> Markup:
                 data_kind=_kind_slug(kind),
                 tabindex="0",
                 role="button",
+                aria_pressed="false",
                 title=_KIND_HELP.get(kind, "") + "click to mute this kind",
             )
             for kind, n in sorted(counts.items())
@@ -1217,7 +1229,9 @@ def _legend(canvas: object) -> Markup:
         dashed = [r for r in canvas.routes if r.variant == "dashed" and r.label]
         # Said only when true of this canvas: a verb the settle could not
         # place lives in the passport (review #23 F4).
-        if all(r.label_at is not None for r in dashed):
+        # An expansion also draws the parent's arrows, ghosted and without
+        # their verbs (review #24 N4), so its legend hedges.
+        if not expanded and all(r.label_at is not None for r in dashed):
             arrow_words.append("dashed arrows carry their verb")
         else:
             arrow_words.append("dashed arrows carry their verb (some only in the passport)")
@@ -1390,7 +1404,7 @@ def _expanded_views(ds: DiagramSet, lo: LaidOutDiagram, style: Style) -> list[Ma
                             tag("h2", esc(lo.canvases[child_id].title)),
                             tag("p", esc(lo.canvases[child_id].subtitle), class_="meta"),
                             tag("div", expanded_svg(exp, style), class_="scroller"),
-                            _legend(lo.canvases[child_id]),
+                            _legend(lo.canvases[child_id], expanded=True),
                         )
                     ),
                     class_="view",
