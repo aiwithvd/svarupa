@@ -25,13 +25,14 @@ from enum import Enum
 from pathlib import Path
 
 from svarupa.diagnostics import Diagnostic, Severity
-from svarupa.model import Edge, EdgeKind, Evidence, Node, Resolution
+from svarupa.model import Edge, EdgeKind, Evidence, MissingEvidenceError, Node, Resolution
 
 __all__ = [
     "MAX_AST_DEPTH",
     "CallSite",
     "DecoratorRef",
     "EntrypointFact",
+    "EnvironmentFact",
     "ExternalFact",
     "Extractor",
     "FieldType",
@@ -399,6 +400,31 @@ class ExternalFact:
     evidence: Evidence
 
 
+@dataclass(frozen=True, order=True, slots=True)
+class EnvironmentFact:
+    """A declared deploy environment, claimed only where a file declares it.
+
+    `name` is canonical (aliases fold: dev->development, prod->production,
+    uat->staging, ...) or the verbatim token when nothing folds. `source` says
+    which declaration channel spoke. Evidence is non-empty by construction:
+    an environment nobody can point at does not exist.
+    """
+
+    name: str  # canonical or verbatim token
+    source: str  # filename | profile | workflow | dockerfile
+    evidence: tuple[Evidence, ...]
+    # e.g. ("path", ...) on a filename claim, ("ref", "main") on a workflow,
+    # ("profile", ...) on a manifest key, ("variable", "NODE_ENV") on a
+    # Dockerfile.
+    attrs: tuple[tuple[str, str], ...] = ()
+
+    def __post_init__(self) -> None:
+        if not self.evidence:
+            raise MissingEvidenceError("EnvironmentFact", self.name)
+        object.__setattr__(self, "evidence", tuple(sorted(self.evidence)))
+        object.__setattr__(self, "attrs", tuple(sorted(set(self.attrs))))
+
+
 @dataclass(frozen=True, slots=True)
 class ExtractResult:
     nodes: tuple[Node, ...]
@@ -409,6 +435,7 @@ class ExtractResult:
     tasks: tuple[TaskFact, ...] = ()
     entrypoints: tuple[EntrypointFact, ...] = ()
     externals: tuple[ExternalFact, ...] = ()
+    environments: tuple[EnvironmentFact, ...] = ()
 
 
 # A syntax tree deeper than this is walked no further. Minified bundles nest

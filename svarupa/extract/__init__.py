@@ -13,6 +13,7 @@ from svarupa.diagnostics import Diagnostic, Severity
 from svarupa.extract.base import (
     CallShape,
     CallSite,
+    EnvironmentFact,
     Extractor,
     ExtractResult,
     FileFacts,
@@ -22,6 +23,7 @@ from svarupa.extract.base import (
     node_id,
 )
 from svarupa.extract.compose import extract_compose
+from svarupa.extract.environments import extract_environments
 from svarupa.extract.python import PythonExtractor
 from svarupa.extract.resolve import Resolver, resolve
 from svarupa.extract.semantics import semantics
@@ -31,6 +33,7 @@ from svarupa.tsconfig import load_aliases
 __all__ = [
     "CallShape",
     "CallSite",
+    "EnvironmentFact",
     "ExtractResult",
     "Extractor",
     "FileFacts",
@@ -114,15 +117,26 @@ def extract(scan: Scan, declared_deps: frozenset[str] = frozenset()) -> ExtractR
     # Semantic facts: routes, tasks, declared entrypoints. Import-gated and
     # line-cited, the same rule as everything above.
     sem = semantics(scan, facts, resolver.resolve_module)
+
+    # Environments: declared deploy targets from config filenames, profile
+    # manifests, CI workflows and Dockerfiles. No evidence, no environment.
+    env = extract_environments(scan)
     return replace(
         result,
         nodes=result.nodes + compose.nodes,
         edges=result.edges + compose.edges,
-        diagnostics=result.diagnostics + compose.diagnostics + sem.diagnostics + tuple(crashes),
+        diagnostics=(
+            result.diagnostics
+            + compose.diagnostics
+            + sem.diagnostics
+            + env.diagnostics
+            + tuple(crashes)
+        ),
         routes=sem.routes,
         tasks=sem.tasks,
         entrypoints=sem.entrypoints,
         externals=sem.externals,
+        environments=env.facts,
     )
 
 
