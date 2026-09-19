@@ -23,6 +23,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from svarupa.detect import detect
 from svarupa.extract import declared_dependencies, extract
 from svarupa.extract.base import EnvironmentFact
@@ -329,3 +331,161 @@ def test_facts_land_on_the_extract_result(tmp_path: Path) -> None:
     assert {(f.name, f.source) for f in result.environments} == {
         ("production", "filename")
     }
+
+
+# --------------------------------------------------------------------------
+# Surfacing: graph.json, REPORT.md, the CLI, and the lockfile boundary
+# --------------------------------------------------------------------------
+
+
+def graph_of(root: Path):
+    from svarupa.build import build
+
+    scan = detect(root)
+    return build(scan, extract(scan, declared_dependencies(scan)), strict=False)
+
+
+def _env_repo(root: Path) -> None:
+    write(root, "src/app.py", "x = 1\n")
+    write(root, "deploy/values-prod.yaml", "replicas: 3\n")
+    write(root, "Dockerfile", "FROM node:20\nENV NODE_ENV=staging\n")
+    write(root, ".github/workflows/deploy.yml", WORKFLOW)
+
+
+def test_environments_flow_from_extract_result_into_the_graph(tmp_path: Path) -> None:
+    _env_repo(tmp_path)
+    g = graph_of(tmp_path)
+    assert sorted({e.name for e in g.environments}) == ["production", "qa", "staging"]
+    # The graph never grows environment NODES: derivers walk graph.nodes, and
+    # an unknown kind there would reach diagrams that do not expect it.
+    assert not any(n.kind.value == "environment" for n in g.nodes.values())
+
+
+def test_environment_nodes_in_graph_json_carry_their_evidence(tmp_path: Path) -> None:
+    from svarupa.emit.data import graph_json
+
+    _env_repo(tmp_path)
+    doc = graph_json(graph_of(tmp_path))
+    nodes = {n["id"]: n for n in doc["nodes"] if n["kind"] == "environment"}
+    assert set(nodes) == {"env:production", "env:qa", "env:staging"}
+    prod = nodes["env:production"]
+    files = {e["file"] for e in prod["evidence"]}
+    assert {"deploy/values-prod.yaml", ".github/workflows/deploy.yml"} <= files
+    assert prod["attrs"]["sources"] == "filename, workflow"
+    assert prod["attrs"]["refs"] == "main"
+    # One edge per declaring file, and every citation is a real location.
+    edges = [e for e in doc["edges"] if e["dst"] == "env:production"]
+    assert {(e["src"], e["kind"], e["context"]) for e in edges} == {
+        ("deploy/values-prod.yaml", "deploys", "deploy"),
+        (".github/workflows/deploy.yml", "deploys", "deploy"),
+    }
+    for e in edges:
+        assert all(x["start_line"] >= 1 for x in e["evidence"])
+    # A staging claim from the Dockerfile alone cites the ENV line.
+    stage = nodes["env:staging"]
+    assert [(e["file"], e["start_line"]) for e in stage["evidence"]] == [("Dockerfile", 2)]
+    assert stage["attrs"]["sources"] == "dockerfile"
+
+
+def test_graph_json_is_byte_stable_with_environments(tmp_path: Path) -> None:
+    import json
+
+    from svarupa.emit.data import graph_json
+
+    _env_repo(tmp_path)
+    g = graph_of(tmp_path)
+
+    def render() -> str:
+        return json.dumps(graph_json(g), indent=2, sort_keys=True)
+
+    assert render() == render()
+
+
+def test_the_report_lists_environments_with_citations(tmp_path: Path) -> None:
+    from svarupa.emit.report import render_report
+
+    _env_repo(tmp_path)
+    text = render_report("repo", graph_of(tmp_path), {}, {}, (), ())
+    assert "## Environments" in text
+    assert "**production**" in text
+    assert "`deploy/values-prod.yaml:1`" in text
+    assert "`Dockerfile:2`" in text
+    assert "No environment declarations" not in text
+
+
+def test_the_report_states_an_honest_absence(tmp_path: Path) -> None:
+    from svarupa.emit.report import render_report
+
+    write(tmp_path, "src/app.py", "x = 1\n")
+    text = render_report("repo", graph_of(tmp_path), {}, {}, (), ())
+    assert "## Environments" in text
+    assert "No environment declarations were found" in text
+
+
+def test_the_cli_summary_names_environments_or_their_absence(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from svarupa.cli import main
+
+    with_env = tmp_path / "with"
+    _env_repo(with_env)
+    assert main([str(with_env), "--out", str(tmp_path / "out1")]) == 0
+    out = capsys.readouterr().out
+    assert "  environments: production, qa, staging (4 declaration(s))\n" in out
+
+    without = tmp_path / "without"
+    write(without, "src/app.py", "x = 1\n")
+    assert main([str(without), "--out", str(tmp_path / "out2")]) == 0
+    out = capsys.readouterr().out
+    assert "  environments: none declared\n" in out
+
+
+def test_environment_facts_add_no_lockfile_records(tmp_path: Path) -> None:
+    """The lockfile is a committed file; this slice must not churn it. The
+    same repository with and without environment declarations produces
+    byte-identical lockfiles."""
+    from svarupa import __version__
+    from svarupa.lock import build_lock
+
+    write(tmp_path, "src/app.py", "x = 1\n")
+    before = build_lock(graph_of(tmp_path), __version__).lockfile.render()
+    _env_repo(tmp_path)
+    after = build_lock(graph_of(tmp_path), __version__).lockfile.render()
+    assert before == after
+    assert "environment" not in after and "env:" not in after
+
+
+def test_build_drops_an_environment_fact_with_invented_evidence(
+    tmp_path: Path,
+) -> None:
+    """The independent re-check applies to environment facts too, including
+    ones citing files the scan never recorded: the line count is read from
+    disk, and a citation past the end of the file is a dropped fact."""
+    from dataclasses import replace as dc_replace
+
+    from svarupa.model import Evidence
+
+    write(tmp_path, "src/app.py", "x = 1\n")
+    write(tmp_path, "deploy/values-prod.yaml", "replicas: 3\n")
+    scan = detect(tmp_path)
+    extracted = extract(scan, declared_dependencies(scan))
+    bogus = EnvironmentFact(
+        name="production",
+        source="filename",
+        evidence=(Evidence("deploy/values-prod.yaml", 99, 99),),
+    )
+    from svarupa.build import build
+
+    g = build(scan, dc_replace(extracted, environments=(bogus,)), strict=False)
+    assert g.environments == ()
+    assert any(d.code == "SVA-B-002" for d in g.diagnostics)
+
+
+def test_an_empty_config_file_survives_the_build_recheck(tmp_path: Path) -> None:
+    """An empty `config/prod.yaml` is cited as itself, `(0, 0)`: the one
+    whole-file citation the evidence contract allows."""
+    write(tmp_path, "src/app.py", "x = 1\n")
+    write(tmp_path, "config/prod.yaml", "")
+    g = graph_of(tmp_path)
+    assert [f.name for f in g.environments] == ["production"]
+    assert (g.environments[0].evidence[0].start_line) == 0

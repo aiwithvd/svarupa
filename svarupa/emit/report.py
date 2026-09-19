@@ -99,6 +99,40 @@ def _semantics_scope(graph: Graph) -> list[str]:
     return lines
 
 
+def _environments_section(graph: Graph) -> list[str]:
+    """Declared deploy environments, or an honest absence.
+
+    Environments are heavily implicit in real repositories (a manual dispatch
+    and a secret ARN define production, and no file says so), so the empty
+    case is a statement about the repository, not a failure of the tool.
+    """
+    if not graph.environments:
+        return [
+            "## Environments",
+            "",
+            "No environment declarations were found. Deploy targets that exist "
+            "only in a CI dashboard or a hosting provider's settings are "
+            "invisible to static analysis, and are not claimed.",
+            "",
+        ]
+    lines = ["## Environments", ""]
+    by_name: dict[str, list[str]] = {}
+    sources: dict[str, set[str]] = {}
+    for f in graph.environments:
+        by_name.setdefault(f.name, []).extend(str(ev) for ev in f.evidence)
+        sources.setdefault(f.name, set()).add(f.source)
+    for name in sorted(by_name):
+        cites = sorted(set(by_name[name]))
+        shown = ", ".join(f"`{c}`" for c in cites[:8])
+        if len(cites) > 8:
+            shown += f", *... and {len(cites) - 8} more*"
+        lines.append(
+            f"- **{name}** (declared by: {', '.join(sorted(sources[name]))}) — {shown}"
+        )
+    lines += ["", "Each citation is the line that declares the environment.", ""]
+    return lines
+
+
 def render_report(
     root: str,
     graph: Graph,
@@ -136,6 +170,7 @@ def render_report(
         f"- **{len(graph.modules)}** modules, **{len(graph.module_deps)}** module dependencies",
         "",
         *_semantics_scope(graph),
+        *_environments_section(graph),
         "## Resolution",
         "",
         "This table measures **pinning, not correctness.** A confidently wrong "

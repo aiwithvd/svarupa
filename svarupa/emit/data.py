@@ -302,6 +302,63 @@ def _module_nodes_and_edges(
     return nodes, edges
 
 
+def _environment_nodes_and_edges(
+    graph: Graph,
+) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+    """Declared environments as graph nodes, one per canonical name, so
+    "what deploys to production" is a graph query.
+
+    The kind is the free-form string `environment`, like `rationale`: these
+    nodes live only in graph.json, never in `graph.nodes`, so no diagram
+    deriver, viewer kind list, or lockfile record can see them. Not gated on
+    `architecture_paths`: CI workflows carry the TOOLING role precisely
+    because environments are declared there, and the extractor already gates
+    out test, generated and vendored declarations. Each fact contributes an
+    edge from the file that declares it; a declaration file is not
+    necessarily a graph node itself (a `values-prod.yaml` is not scanned),
+    the same shape as externals' edges from importing files.
+    """
+    by_name: dict[str, list[Evidence]] = {}
+    sources: dict[str, set[str]] = {}
+    refs: dict[str, set[str]] = {}
+    edges: dict[tuple[str, str], list[Evidence]] = {}
+    for f in graph.environments:
+        by_name.setdefault(f.name, []).extend(f.evidence)
+        sources.setdefault(f.name, set()).add(f.source)
+        refs.setdefault(f.name, set()).update(v for k, v in f.attrs if k == "ref")
+        for ev in f.evidence:
+            edges.setdefault((ev.file, f.name), []).append(ev)
+    nodes: list[dict[str, object]] = []
+    for name in sorted(by_name):
+        attrs: dict[str, str] = {"sources": ", ".join(sorted(sources[name]))}
+        if refs[name]:
+            attrs["refs"] = ", ".join(sorted(refs[name]))
+        nodes.append(
+            {
+                "id": f"env:{name}",
+                "kind": "environment",
+                "label": name,
+                "qualified_name": f"env:{name}",
+                "lang": None,
+                "evidence": _evidence(tuple(sorted(set(by_name[name])))),
+                "attrs": attrs,
+            }
+        )
+    return nodes, [
+        {
+            "src": file,
+            "dst": f"env:{name}",
+            "kind": "deploys",
+            "context": "deploy",
+            "resolution": "resolved",
+            "arity": 1,
+            "evidence": _evidence(tuple(sorted(set(ev)))),
+            "attrs": {},
+        }
+        for (file, name), ev in sorted(edges.items())
+    ]
+
+
 def graph_json(
     graph: Graph,
     rationale: tuple[RationaleFact, ...] = (),
@@ -315,18 +372,19 @@ def graph_json(
     delta against a fresh graph and show a reviewer the exact lines.
 
     Schema 2 (design section 4, Graphify-class): every edge carries a typed
-    `context`; routes and externals are nodes; docstrings and marker comments
-    are `rationale` nodes; `built_at_commit` names the checkout; `hyperedges`
-    is reserved and empty. Communities are deliberately absent from nodes:
+    `context`; routes, externals and declared environments are nodes;
+    docstrings and marker comments are `rationale` nodes; `built_at_commit`
+    names the checkout; `hyperedges` is reserved and empty. Communities are deliberately absent from nodes:
     they are presentation and would churn every node on one added import.
     """
     fact_nodes, fact_edges = _fact_nodes_and_edges(graph)
+    env_nodes, env_edges = _environment_nodes_and_edges(graph)
     why_nodes, why_edges = _rationale_nodes_and_edges(graph, rationale)
     mod_nodes, mod_edges = _module_nodes_and_edges(
-        graph, set(graph.nodes) | {str(n["id"]) for n in fact_nodes + why_nodes}
+        graph, set(graph.nodes) | {str(n["id"]) for n in fact_nodes + env_nodes + why_nodes}
     )
     ids = [n.id for n in graph.nodes.values()] + [
-        str(n["id"]) for n in fact_nodes + why_nodes + mod_nodes
+        str(n["id"]) for n in fact_nodes + env_nodes + why_nodes + mod_nodes
     ]
     if len(set(ids)) != len(ids):  # pragma: no cover - guarded by _fresh; a defect if reached
         dup = sorted({i for i in ids if ids.count(i) > 1})
@@ -352,6 +410,7 @@ def graph_json(
             for n in sorted(graph.nodes.values(), key=lambda n: n.id)
         ]
         + fact_nodes
+        + env_nodes
         + why_nodes
         + mod_nodes,
         "edges": [
@@ -368,6 +427,7 @@ def graph_json(
             for e in sorted(graph.edges, key=lambda e: (e.src, e.dst, e.kind.value))
         ]
         + fact_edges
+        + env_edges
         + why_edges
         + mod_edges,
         "hyperedges": [],

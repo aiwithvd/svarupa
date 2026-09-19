@@ -96,6 +96,16 @@ def _scan(
         f"  code graph: {len(graph.nodes)} symbol and file nodes, {len(graph.edges)} edges, "
         f"{len(graph.modules)} modules, {len(graph.module_deps)} module deps"
     )
+    env_names = sorted({e.name for e in graph.environments})
+    if env_names:
+        print(
+            f"  environments: {', '.join(env_names)} "
+            f"({len(graph.environments)} declaration(s))"
+        )
+    else:
+        # An honest absence: environments are often implicit, and inventing
+        # none-found into a claim is the failure this line exists to avoid.
+        print("  environments: none declared")
     print()
     print(graph.scorecard.render())
     for (lang, kind), samples in sorted(graph.scorecard.samples.items()):

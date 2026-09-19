@@ -35,6 +35,7 @@ from svarupa.detect import Scan, load_toml
 from svarupa.diagnostics import Diagnostic, DiagnosticError, Severity
 from svarupa.extract.base import (
     EntrypointFact,
+    EnvironmentFact,
     ExternalFact,
     ExtractResult,
     RouteFact,
@@ -92,12 +93,13 @@ class Graph:
     # with no extractor, no nodes exist either way, and those are different
     # facts -- only one of them is about the user's codebase.
     file_languages: tuple[tuple[str, int], ...] = ()
-    # Semantic facts (routes, tasks, declared entrypoints), evidence
-    # re-verified on the way in like every node and edge.
+    # Semantic facts (routes, tasks, declared entrypoints, environments),
+    # evidence re-verified on the way in like every node and edge.
     routes: tuple[RouteFact, ...] = ()
     tasks: tuple[TaskFact, ...] = ()
     entrypoints: tuple[EntrypointFact, ...] = ()
     externals: tuple[ExternalFact, ...] = ()
+    environments: tuple[EnvironmentFact, ...] = ()
 
     def nx(self, directed: bool = True) -> nx.DiGraph[str] | nx.Graph[str]:
         """A NetworkX view for the algorithms later stages need.
@@ -772,6 +774,50 @@ def build(scan: Scan, extracted: ExtractResult, strict: bool = True) -> Graph:
     entrypoints = tuple(e for e in extracted.entrypoints if fact_ok(e.evidence, e.name))
     externals = tuple(x for x in extracted.externals if fact_ok(x.evidence, x.label))
 
+    # Environment facts cite files stage 1 never records (`values-prod.yaml`,
+    # `Dockerfile`, `eas.json`), so the scan's line table cannot vouch for
+    # them; the line count is read from disk instead, cached per file. `(0,0)`
+    # is legal here too: an empty `config/prod.yaml` is cited as itself.
+    disk_lines: dict[str, int] = {}
+
+    def env_fact_ok(ev: Evidence, subject: str) -> bool:
+        count = lines.get(ev.file)
+        if count is None:
+            count = disk_lines.get(ev.file)
+        if count is None:
+            try:
+                data = (scan.root / ev.file).read_bytes()
+            except OSError:
+                count = -1
+            else:
+                count = 0 if not data else data.count(b"\n") + (
+                    0 if data.endswith(b"\n") else 1
+                )
+            disk_lines[ev.file] = count
+        whole_file = ev.start_line == 0 and ev.end_line == 0
+        ok = (whole_file and count == 0) or (
+            not whole_file and 1 <= ev.start_line <= ev.end_line <= count
+        )
+        if not ok:
+            acc.diagnostics.append(
+                Diagnostic(
+                    code="SVA-B-002",
+                    severity=Severity.WARNING,
+                    message=(
+                        "a semantic fact cites an invalid source location and was dropped"
+                    ),
+                    subject=subject,
+                    location=str(ev),
+                )
+            )
+        return ok
+
+    environments = tuple(
+        f
+        for f in extracted.environments
+        if all(env_fact_ok(ev, f"{f.source}:{f.name}") for ev in f.evidence)
+    )
+
     return Graph(
         nodes=dict(sorted(acc.nodes.items())),
         edges=merged,
@@ -785,6 +831,7 @@ def build(scan: Scan, extracted: ExtractResult, strict: bool = True) -> Graph:
         tasks=tasks,
         entrypoints=entrypoints,
         externals=externals,
+        environments=environments,
     )
 
 
