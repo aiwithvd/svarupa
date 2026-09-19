@@ -5,4 +5,4 @@ does not render. Not a heuristic guess, not a model's plausible story: a claim
 you can click through to the source line that proves it.
 """
 
-__version__ = "0.1.0.dev0"
+__version__ = "0.1.0"

@@ -672,7 +672,7 @@ where two are mediocre.** Revisit post-v1 if users ask.
 
 | Item | Status |
 |---|---|
-| **License** | AGPL-3.0 provisionally. Revisit before public release. Many companies ban AGPL by policy, and that ban typically extends to build tooling, which is in tension with CI being the central pillar |
+| **License** | **Resolved 2026-09-19: MIT.** The revisit happened before public release as planned; the CI-pillar argument (platform teams ban AGPL) won. See `2026-09-19-distribution-onboarding-design.md` |
 | **GitHub org** | Deferred. `svarupa` user handle is taken; an org name is needed |
 | **Name variants** | Register `swarupa` on PyPI as an alias and secure both `.dev` domains, to mitigate the `sv-`/`sw-` spelling split |
 | **Trademark** | Web-evidence clearance only. Run a formal USPTO/TESS search before public launch |

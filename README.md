@@ -132,6 +132,5 @@ Design and review history:
 
 ## License
 
-AGPL-3.0-or-later, **provisionally**. This is under active reconsideration: the
-CI use case targets platform teams at companies, which is the demographic most
-likely to ban AGPL outright. See the design's open items.
+MIT. See `LICENSE`.
+
