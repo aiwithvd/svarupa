@@ -1,0 +1,61 @@
+name: architecture
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  diff:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The base branch's tree and its committed lockfile are both needed,
+          # so the fetch cannot be depth 1.
+          fetch-depth: 0
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: install svarupa
+        run: uv tool install 'svarupa==0.1.0'
+
+      - name: regenerate the base lockfile from base-branch code
+        shell: bash
+        run: |
+          git worktree add /tmp/base-src "${{ github.event.pull_request.base.sha }}"
+          svarupa /tmp/base-src --lock --out /tmp/base-artifact
+
+      # `shell: bash` turns pipefail on, so nothing here hides a failure.
+      # The delta is written to the job summary before the exit code is
+      # re-raised: a failing run is the one whose delta must be readable.
+      - name: architecture delta
+        shell: bash
+        run: |
+          BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          # A base commit git cannot read is a job failure, never a silent
+          # fallback: falling back would drop the drift guard exactly when
+          # the checkout is wrong.
+          git cat-file -e "$BASE_SHA^{commit}"
+          if git cat-file -e "$BASE_SHA:.svarupa/architecture.lock" 2>/dev/null; then
+            git show "$BASE_SHA:.svarupa/architecture.lock" > /tmp/committed-base.lock
+            svarupa . --lock \
+              --diff /tmp/committed-base.lock \
+              --drift-base /tmp/base-artifact/architecture.lock \
+              > /tmp/delta.txt 2>&1 && code=0 || code=$?
+          else
+            # First adoption: the base branch has no committed lockfile yet, so
+            # the delta is taken against the regenerated base directly.
+            svarupa . --lock \
+              --diff /tmp/base-artifact/architecture.lock \
+              > /tmp/delta.txt 2>&1 && code=0 || code=$?
+          fi
+          cat /tmp/delta.txt
+          {
+            echo '## Architecture delta'
+            echo '````'
+            cat /tmp/delta.txt
+            echo '````'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$code"

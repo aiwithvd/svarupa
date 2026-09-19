@@ -1,0 +1,38 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  # id-token is what PyPI trusted publishing (OIDC) exchanges for a short-lived
+  # upload credential; no API token is stored anywhere.
+  id-token: write
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: pypi
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: check the tag matches the package version
+        shell: bash
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          PKG=$(python3 -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          test "$TAG" = "$PKG" || { echo "tag v$TAG != pyproject version $PKG"; exit 1; }
+
+      - name: run the test suite
+        run: |
+          uv sync --frozen
+          uv run pytest
+
+      - name: build
+        run: uv build
+
+      - name: publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1

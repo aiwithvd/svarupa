@@ -1,0 +1,37 @@
+# svarupa 0.1.0
+# schema 1.6
+# grammars python@0.25.0
+dep	scripts	svarupa
+dep	scripts	svarupa/extract
+dep	scripts	svarupa/lock
+dep	svarupa	svarupa/derive
+dep	svarupa	svarupa/emit
+dep	svarupa	svarupa/extract
+dep	svarupa	svarupa/lock
+dep	svarupa	svarupa/query
+dep	svarupa	svarupa/setup
+dep	svarupa/derive	svarupa
+dep	svarupa/derive	svarupa/extract
+dep	svarupa/emit	svarupa
+dep	svarupa/emit	svarupa/derive
+dep	svarupa/emit	svarupa/extract
+dep	svarupa/emit	svarupa/layout
+dep	svarupa/emit	svarupa/lock
+dep	svarupa/extract	svarupa
+dep	svarupa/layout	svarupa
+dep	svarupa/layout	svarupa/derive
+dep	svarupa/lock	svarupa
+dep	svarupa/lock	svarupa/extract
+dep	svarupa/query	svarupa
+dep	svarupa/setup	svarupa
+entrypoint	svarupa	svarupa
+module	scripts
+module	svarupa
+module	svarupa/derive
+module	svarupa/emit
+module	svarupa/extract
+module	svarupa/layout
+module	svarupa/lock
+module	svarupa/query
+module	svarupa/setup
+role	svarupa	cli
