@@ -43,11 +43,19 @@ somewhere other than `<repo>/.svarupa/`. The artifact holds:
   `get_neighbors`, `shortest_path`, `affected`, `god_nodes`, `graph_stats`,
   `query_graph`; `svarupa mcp <dir>` serves the same over MCP.
 - `REPORT.md`: the resolution scorecard and every finding, with its code.
+- Declared environments (production, staging, qa, development) are extracted
+  with `file:line` evidence and surface in the CLI summary, a REPORT.md
+  section, `graph.json` nodes, and a cited strip on the deploy topology.
 - `--lock` writes the committed architecture lockfile; `--diff` prints the
   architecture delta against a base lockfile. `svarupa setup ci_github`
   installs the per-pull-request workflow.
 
 ![The architecture tab of the demo repository](docs/images/demo-architecture.png)
+
+![The deploy topology tab, with the declared-environments strip on top](docs/images/demo-deploy-topology.png)
+
+Declared environments — production, staging, qa, development — are extracted
+with `file:line` evidence and shown as a cited strip above the topology.
 
 ---
 
