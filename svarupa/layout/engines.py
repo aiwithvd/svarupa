@@ -53,6 +53,11 @@ FLOW_CENTRE_MAX_H = 600
 # A route verb is drawn only within this distance (along the route) of one of
 # its boxes; farther than that it is dropped and lives in the passport.
 MAX_VERB_DISTANCE = 240
+# A verb may sit on a segment only when the line visibly enters and exits the
+# mask: the segment must exceed the mask by this much on each side. Without
+# the margin a 79px mask on an 89px stub hides every pixel of the line and
+# the verb reads as floating text (the e-kisanmitra deploy-topology review).
+_LABEL_LINE_MARGIN = 10
 
 
 def _boxes(
@@ -318,6 +323,13 @@ def _settle_labels(
                 return []
             if n == 1:
                 return [((x0 + x1) // 2, (y0 + y1) // 2)]
+            # On a segment long enough to show line on both sides of the
+            # mask, the mask keeps that margin: a mask that swallows the whole
+            # visible run reads as floating text, not as a label on a line.
+            margin = (
+                _LABEL_LINE_MARGIN if length >= 2 * (half + _LABEL_LINE_MARGIN) else 0
+            )
+            lo = half + margin
             before = sum(lengths[:i])
             after = sum(lengths[i + 1 :])
             offsets: list[int] = []
@@ -326,16 +338,34 @@ def _settle_labels(
             # From the segment's start (the route's source side) outward, then
             # from its end (the sink side) inward, each while within reach.
             step = 24
-            reach = MAX_VERB_DISTANCE - before - half
-            off = half
-            while reach >= 0 and off <= min(length - half, half + reach):
+            reach = MAX_VERB_DISTANCE - before
+            off = lo
+            while off <= min(length - lo, reach):
                 offsets.append(off)
                 off += step
-            reach = MAX_VERB_DISTANCE - after - half
-            off = length - half
-            while reach >= 0 and off >= max(half, length - half - reach):
+            reach = MAX_VERB_DISTANCE - after
+            off = length - lo
+            while off >= max(lo, length - reach):
                 offsets.append(off)
                 off -= step
+            # The margin is a preference, not a veto: a verb on the right
+            # segment with the line barely clearing the mask beats the verb
+            # dropped, so the unmargined positions are the last resort within
+            # the segment (a mask at a segment's very start still touches the
+            # line at the corner it bends from).
+            if margin:
+                extra: list[int] = []
+                reach = MAX_VERB_DISTANCE - before
+                off = half
+                while off < lo and off <= reach:
+                    extra.append(off)
+                    off += step
+                reach = MAX_VERB_DISTANCE - after
+                off = length - half
+                while off > length - lo and off >= length - reach:
+                    extra.append(off)
+                    off -= step
+                offsets.extend(extra)
             sx = 0 if x1 == x0 else (1 if x1 > x0 else -1)
             sy = 0 if y1 == y0 else (1 if y1 > y0 else -1)
             seen: set[int] = set()
@@ -352,8 +382,36 @@ def _settle_labels(
             key=lambda i: (min(i, n - 1 - i), not horizontal[i], i),
         )
         longest = sorted(range(n), key=lambda i: -lengths[i])
+        # Segments the verb can sit on WITH the line visible beyond the mask,
+        # and with some position still within reach of a box, longest first:
+        # the visually longest straight segment of the route is where a verb
+        # reads as attached. The corridor lane is excluded: a horizontal run
+        # above every flow box is the corridor, and a verb there reads as
+        # detached from both ends no matter how visible the line (review #21
+        # N16). Environment badges are ignored for that test: the strip sits
+        # above the corridor by design, so measuring "above everything"
+        # against it would never call a lane a lane.
+        # The near-end and longest orders below remain as the fallback for
+        # routes whose every other segment is short.
+        top_edge = min((b.y for b in solid if b.kind != "environment"), default=0)
+        qualified = sorted(
+            (
+                i
+                for i in range(n)
+                if lengths[i]
+                >= (r.label_w if horizontal[i] else h) + 2 * _LABEL_LINE_MARGIN
+                and not (
+                    horizontal[i] and pts[i][1] < top_edge and pts[i + 1][1] < top_edge
+                )
+                and min(sum(lengths[:i]), sum(lengths[i + 1 :]))
+                + (r.label_w if horizontal[i] else h) // 2
+                <= MAX_VERB_DISTANCE
+            ),
+            key=lambda i: (-lengths[i], i),
+        )
         chosen: tuple[int, int] | None = None
-        for i in [*preferred, *longest]:
+        order = qualified + [i for i in [*preferred, *longest] if i not in qualified]
+        for i in order:
             for at in spots(i):
                 if clear(at[0], at[1], r.label_w, r):
                     chosen = at
@@ -1218,7 +1276,13 @@ def flow(
     corridor above every box, which is box-free by construction and checked by
     the same crossing validation as everything else.
     """
-    boxes = _boxes(spec, style, sizes)
+    all_boxes = _boxes(spec, style, sizes)
+    # Environment badges are chrome, not flow participants: they carry
+    # declarations, not dependencies. Laid out as a horizontal strip across
+    # the top of the canvas (inside their `declared environments` frame), so
+    # a service lane's column, width or route is never shaped by a badge.
+    env_boxes = sorted((b for b in all_boxes if b.kind == "environment"), key=lambda b: b.id)
+    boxes = [b for b in all_boxes if b.kind != "environment"]
     # No external sinking here: in columns, one trailing column stacks the
     # externals and a corridor drop into a lower one crosses the ones above
     # it, which withheld the System view on the acceptance repo.
@@ -1262,9 +1326,22 @@ def flow(
         if spec.regions
         else style.gap_x * 3
     )
-    top = style.margin + pad + corridor_h
 
+    # The environment strip: one row above the corridor, padded so its frame
+    # clears both the canvas edge and the routes below.
     placed: dict[str, Box] = {}
+    strip_h = 0
+    strip_right = 0
+    if env_boxes:
+        sx = style.margin + pad
+        sy = style.margin + pad
+        for b in env_boxes:
+            placed[b.id] = replace(b, x=sx, y=sy)
+            sx += b.w + style.gap_x
+        strip_h = max(b.h for b in env_boxes) + 2 * pad + style.gap_y
+        strip_right = sx - style.gap_x + style.margin + pad
+    top = style.margin + strip_h + pad + corridor_h
+
     gaps: list[tuple[int, int]] = []  # x-extent of the gap after each column
     x = style.margin + pad
     tallest = 0
@@ -1293,7 +1370,7 @@ def flow(
             for b in col:
                 placed[b.id] = replace(placed[b.id], y=placed[b.id].y + shift)
 
-    width = x - col_gap + style.margin + pad + style.lane_gutter
+    width = max(x - col_gap + style.margin + pad + style.lane_gutter, strip_right)
     height = top + tallest + style.margin + pad
 
     # Routes. Adjacent columns cross their shared gap on a per-edge track.
@@ -1424,6 +1501,8 @@ def flow(
     if straight:
         delta = 12 * len(straight)
         for bid, pb in placed.items():
+            if pb.kind == "environment":
+                continue  # the strip stays put; only the lanes reclaim the space
             placed[bid] = replace(pb, y=pb.y - delta)
         height -= delta
 
@@ -1459,8 +1538,10 @@ def flow(
             in_x = col_left[lb] - 10 - 4 * drop_k[(src, dst)]
             points = ((a.right, ay), (in_x, ay), (in_x, by), (b.x, by))
         else:
-            # Through the corridor above everything, one lane per edge.
-            lane_y = style.margin + 6 + 12 * corridor_edges.index((src, dst))
+            # Through the corridor above everything, one lane per edge. The
+            # corridor sits below the environment strip: a lane pinned to the
+            # canvas top would send every climb through the strip's frame.
+            lane_y = style.margin + strip_h + 6 + 12 * corridor_edges.index((src, dst))
             out_x = col_right[la] + 10 + 4 * climb_k[(src, dst)]
             backward = lb <= la
             # A backward edge enters its target from the right, so the
@@ -1515,7 +1596,7 @@ def flow(
         subtitle=spec.subtitle,
         width=width,
         height=height,
-        boxes=tuple(placed[b.id] for b in sorted(boxes, key=lambda b: b.id)),
+        boxes=tuple(placed[b.id] for b in sorted(all_boxes, key=lambda b: b.id)),
         routes=tuple(routes),
         regions=regions,
         parent=spec.parent,

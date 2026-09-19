@@ -220,7 +220,7 @@ class SystemDeriver(Deriver):
             for e in ext_edges
         ]
         ext_edges = [e for e in ext_edges if e.src != e.dst]
-        env_nodes, env_edges, env_regions = _environment_overlays(graph, members)
+        env_nodes, env_regions = _environment_overlays(graph, members)
         nodes.extend(env_nodes)
         edges = tuple(
             sorted(
@@ -236,7 +236,6 @@ class SystemDeriver(Deriver):
                     if e.kind is EdgeKind.DEPENDS_ON and e.src in members and e.dst in members
                 ]
                 + ext_edges
-                + env_edges
             )
         )
         tally: dict[str, int] = {}
@@ -270,15 +269,16 @@ class SystemDeriver(Deriver):
 
 def _environment_overlays(
     graph: Graph, members: dict[str, Node]
-) -> tuple[list[DiagramNode], list[DiagramEdge], tuple[Region, ...]]:
-    """Environment badges, deploy edges, and frames for declared environments.
+) -> tuple[list[DiagramNode], tuple[Region, ...]]:
+    """Environment badges and frames for declared environments.
 
     Every declared environment becomes one badge box (kind `environment`,
     which the palette falls back to grey for) carrying every citation of the
     declaration, so an environment with no service-level link is still
     distinguishable -- production next to staging next to qa, each clickable
     through to the line that declares it. The badges are framed together as
-    "declared environments".
+    "declared environments" and the flow engine lays them out as a strip
+    above the topology, so they never shape the service lanes.
 
     A service is linked to an environment ONLY where evidence joins them:
 
@@ -291,14 +291,14 @@ def _environment_overlays(
     Workflow `environment:` keys and eas.json profiles declare the
     environment but name no service, so they contribute badges and never
     links: a service drawn inside a frame it does not belong to is the lie
-    this function exists to avoid. Links draw as a dashed `deploys` edge and
-    wrap the service in the environment's frame; two environments claiming
-    one service produce two frames, and if geometry cannot draw both the
-    layout stage says so rather than choosing.
+    this function exists to avoid. The link is drawn as the environment's
+    frame around its services; two environments claiming one service produce
+    two frames, and if geometry cannot draw both the layout stage says so
+    rather than choosing.
     """
     facts = graph.environments
     if not facts:
-        return [], [], ()
+        return [], ()
 
     by_name: dict[str, list[tuple[str, tuple[Evidence, ...]]]] = {}
     for f in facts:
@@ -318,7 +318,6 @@ def _environment_overlays(
                         link.extend([ev, *node.evidence[:1]])
 
     nodes: list[DiagramNode] = []
-    edges: list[DiagramEdge] = []
     regions: list[Region] = []
     names = sorted(by_name)
     for name in names:
@@ -347,18 +346,6 @@ def _environment_overlays(
                     kind="environment",
                 )
             )
-            for nid in sorted(linked[name]):
-                edges.append(
-                    DiagramEdge(
-                        src=f"env:{name}",
-                        dst=nid,
-                        label="deploys",
-                        evidence=tuple(
-                            sorted(set(linked[name][nid]))[:MAX_EVIDENCE_PER_BOX]
-                        ),
-                        variant="dashed",
-                    )
-                )
     all_evs = sorted({ev for f in facts for ev in f.evidence})
     regions.append(
         Region(
@@ -369,7 +356,7 @@ def _environment_overlays(
             kind="environment",
         )
     )
-    return nodes, edges, tuple(regions)
+    return nodes, tuple(regions)
 
 
 def _with_copy_line(

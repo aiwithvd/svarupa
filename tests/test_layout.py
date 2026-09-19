@@ -1420,6 +1420,55 @@ def test_a_verb_far_from_both_of_its_boxes_is_dropped_not_stranded() -> None:
     assert at2 is None or (at2[0] in (110, 1190) and at2[1] >= 522 - MAX_VERB_DISTANCE), at2
 
 
+def test_a_verb_moves_off_a_stub_onto_a_segment_with_visible_line() -> None:
+    """The e-kisanmitra visual review: an 89px stub holding a 79px mask hid
+    every pixel of the line under it, so the verb read as floating text. A
+    segment must show line on both sides of the mask; the long climb within
+    reach of the box takes the verb instead, with the margin kept."""
+    from svarupa.layout.engines import _LABEL_LINE_MARGIN, _settle_labels
+
+    a, b = box("a", 0, 480), box("b", 300, 100)
+    r = Route(
+        src="a",
+        dst="b",
+        label="depends on",
+        # The sip -> livekit shape: short stub right, long climb, short entry.
+        points=((96, 502), (185, 502), (185, 122), (300, 122)),
+        evidence=EV,
+        label_at=(140, 502),
+        label_w=79,
+    )
+    (out,) = _settle_labels([r], [a, b], STYLE, frozenset())
+    assert out.label_at is not None
+    assert out.label_at[0] == 185, "the verb sits on the climb, not the stub"
+    # The mask keeps the margin: the corner is clear of it by exactly the
+    # line margin, so the line visibly enters the mask from below.
+    h = STYLE.label_font_size + STYLE.label_pad
+    assert 502 - (out.label_at[1] + h // 2) == _LABEL_LINE_MARGIN
+
+
+def test_the_corridor_lane_still_does_not_take_the_verb() -> None:
+    """The two rules compose: the longest visible segment takes the verb,
+    UNLESS that segment is the corridor lane above every box (review #21
+    N16), in which case the climb or drop keeps it."""
+    from svarupa.layout.engines import _settle_labels
+
+    a, b = box("a", 0, 500), box("b", 1200, 500)
+    r = Route(
+        src="a",
+        dst="b",
+        label="reads/writes",
+        points=((96, 522), (110, 522), (110, 40), (1190, 40), (1190, 522), (1200, 522)),
+        evidence=EV,
+        label_at=(650, 40),
+        label_w=80,
+    )
+    (out,) = _settle_labels([r], [a, b], STYLE, frozenset())
+    assert out.label_at is not None
+    assert out.label_at[1] != 40, "not on the lane"
+    assert out.label_at[0] in (110, 1190), "on the climb or the drop"
+
+
 def test_names_truncate_from_the_tail_and_paths_from_the_head() -> None:
     """Review #23 C4: `…rson_employment_type_changed` lost the prefix that
     grouped the function with its siblings."""

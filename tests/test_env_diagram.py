@@ -72,13 +72,6 @@ def test_a_compose_variant_frames_its_own_services(tmp_path: Path) -> None:
     assert [str(ev) for ev in badge.evidence] == ["docker-compose.prod.yml:1"]
     assert badge.attr("sources") == "filename"
 
-    edges = {(e.src, e.dst): e for e in spec.edges if e.label == "deploys"}
-    edge = edges.get(("env:production", web))
-    assert edge is not None
-    files = {ev.file for ev in edge.evidence}
-    assert files == {"docker-compose.prod.yml"}
-    assert all(e.variant == "dashed" for e in edges.values())
-
     frames = {r.id: r for r in spec.regions}
     assert set(frames["env-frame:production"].members) == {
         "docker-compose.prod.yml#service.web",
@@ -108,13 +101,10 @@ def test_a_dockerfile_env_links_the_service_built_from_it(tmp_path: Path) -> Non
     write(tmp_path, "api/__init__.py", "")
     spec = deploy_spec(tmp_path).root_spec
     api = "docker-compose.yml#service.api"
-    assert any(
-        e.src == "env:production" and e.dst == api and e.variant == "dashed"
-        for e in spec.edges
-    ), "the ENV line plus the compose dockerfile: line join api to production"
     frame = next(r for r in spec.regions if r.id == "env-frame:production")
     assert frame.members == (api,)
     assert any(ev.file == "Dockerfile.api" and ev.start_line == 2 for ev in frame.evidence)
+    assert any(ev.file.startswith("docker-compose.yml") for ev in frame.evidence)
 
 
 def test_a_dockerfile_env_does_not_leak_to_other_services(tmp_path: Path) -> None:
@@ -181,6 +171,33 @@ def test_layout_draws_the_frames_and_passes_geometry(tmp_path: Path) -> None:
         assert frame.x <= b.x and b.right <= frame.right
         assert frame.y <= b.y and b.bottom <= frame.bottom
     assert "env:declared" in drawn
+
+
+def test_the_environment_strip_sits_above_the_service_lanes(tmp_path: Path) -> None:
+    """The review defect: badges used to occupy a flow column and the
+    corridor looped around their frame. Now they form one row at the top,
+    inside their frame, and no service lane is shaped by them."""
+    _compose_variant_repo(tmp_path)
+    ds = deploy_spec(tmp_path)
+    lo = lay_out_set(ds)
+    canvas = lo.canvases[ds.root]
+    badges = [b for b in canvas.boxes if b.kind == "environment"]
+    services = [b for b in canvas.boxes if b.kind != "environment"]
+    assert len(badges) == 2
+    assert len({b.y for b in badges}) == 1, "the strip is one horizontal row"
+    top_lane = min(b.y for b in services)
+    assert max(b.bottom for b in badges) < top_lane, "badges are above every lane"
+    frame = next(r for r in canvas.regions if r.id == "env:declared")
+    for b in badges:
+        assert frame.x <= b.x and b.right <= frame.right
+        assert frame.y <= b.y and b.bottom <= frame.bottom
+    assert frame.bottom < top_lane, "the frame itself clears the service lanes"
+    # And no route is pushed through the strip.
+    for r in canvas.routes:
+        for x, y in r.points:
+            assert y > frame.bottom or not (frame.x < x < frame.right), (
+                f"route {r.src}->{r.dst} enters the strip"
+            )
 
 
 def test_two_environments_claiming_one_service_is_reported_not_resolved(
