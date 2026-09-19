@@ -17,20 +17,24 @@ The name states the thesis. Svarupa is a thing's actual form, not its intended
 one. Architecture documents describe what someone meant to build. Svarupa
 renders what exists.
 
-> **Status: pre-alpha, under active development.** Nothing here is stable yet.
+> **Status: alpha (v0.1.0).** The evidence contract is stable; flags and output
+> formats may still change between minor versions.
 
 ---
 
-## Usage
+## Quickstart
 
 ```bash
-uv tool install <path to this checkout>   # `uv tool install svarupa` once published
-svarupa <path to a repository>            # writes <path>/.svarupa/
-svarupa <path> --out ./map                # or anywhere else
-open ./map/index.html
+uv tool install svarupa     # or: pipx install svarupa / pip install svarupa
+svarupa .                   # scans the repo, writes .svarupa/
+open .svarupa/index.html
 ```
 
-`python -m svarupa` is the same command. The artifact holds:
+That is the whole setup — no configuration file, no daemon, no account. The
+first run of a typical repository takes seconds.
+
+`python -m svarupa` is the same command; `--out ./map` writes the artifact
+somewhere other than `<repo>/.svarupa/`. The artifact holds:
 
 - `index.html`: every diagram type as a tab. Click a box for its passport
   (kind, connections, reach, cited source lines); double-click a drillable box,
