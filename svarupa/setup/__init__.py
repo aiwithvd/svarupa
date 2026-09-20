@@ -30,6 +30,7 @@ from pathlib import Path
 from svarupa.diagnostics import Diagnostic, DiagnosticError, Severity
 from svarupa.setup.base import Target
 from svarupa.setup.ci_github import CiGithubTarget
+from svarupa.setup.ci_gitlab import CiGitlabTarget
 from svarupa.setup.skill import SkillTarget
 
 __all__ = ["TARGETS", "Installed", "Target", "install"]
@@ -40,6 +41,7 @@ __all__ = ["TARGETS", "Installed", "Target", "install"]
 TARGETS: dict[str, type[Target]] = {
     SkillTarget.name: SkillTarget,
     CiGithubTarget.name: CiGithubTarget,
+    CiGitlabTarget.name: CiGitlabTarget,
 }
 
 
@@ -126,6 +128,7 @@ def install(target: Target, dest: Path, force: bool) -> Installed:
                 suggested_fixes=(
                     "Re-run with --force to overwrite it.",
                     "Or move the existing file aside if it is yours.",
+                    *target.collision_note(),
                 ),
             )
         )

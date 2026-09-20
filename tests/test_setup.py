@@ -26,6 +26,7 @@ from svarupa.diagnostics import DiagnosticError
 from svarupa.lock import LOCK_NAME
 from svarupa.setup import TARGETS, Target, install
 from svarupa.setup.ci_github import WORKFLOW, CiGithubTarget
+from svarupa.setup.ci_gitlab import GITLAB_CI, CiGitlabTarget
 from svarupa.setup.skill import SKILL_MD, SkillTarget
 
 REPO = Path(__file__).resolve().parents[1]
@@ -48,12 +49,38 @@ def test_ci_target_writes_the_workflow_byte_exactly(tmp_path: Path) -> None:
     assert path.read_bytes() == WORKFLOW.encode("utf8")
 
 
+def test_ci_gitlab_target_writes_the_file_byte_exactly(tmp_path: Path) -> None:
+    result = install(CiGitlabTarget(), tmp_path, force=False)
+    path = tmp_path / ".gitlab-ci.yml"
+    assert result.written == (path,)
+    assert path.read_bytes() == GITLAB_CI.encode("utf8")
+
+
+def test_ci_gitlab_refusal_carries_the_merge_snippet(tmp_path: Path) -> None:
+    """GitLab users commonly already have a .gitlab-ci.yml, so the refusal —
+    not just a doc — must hand them the job to paste in."""
+    path = tmp_path / ".gitlab-ci.yml"
+    path.write_text("the user's own pipeline\n", encoding="utf8")
+    with pytest.raises(DiagnosticError) as exc:
+        install(CiGitlabTarget(), tmp_path, force=False)
+    assert exc.value.diagnostic.code == "SVA-S-001"
+    assert GITLAB_CI in exc.value.diagnostic.render()
+    assert path.read_text(encoding="utf8") == "the user's own pipeline\n", "it was overwritten"
+
+
+def test_ci_gitlab_force_overwrites_a_differing_file(tmp_path: Path) -> None:
+    path = tmp_path / ".gitlab-ci.yml"
+    path.write_text("old\n", encoding="utf8")
+    result = install(CiGitlabTarget(), tmp_path, force=True)
+    assert result.written == (path,)
+    assert path.read_bytes() == GITLAB_CI.encode("utf8")
+
+
 def test_rerun_is_a_no_op_reported_as_unchanged(tmp_path: Path) -> None:
     install(SkillTarget(), tmp_path, force=False)
     result = install(SkillTarget(), tmp_path, force=False)
     assert result.written == ()
     assert len(result.unchanged) == 1
-
 
 def test_an_existing_differing_file_refuses_with_sva_s_001(tmp_path: Path) -> None:
     path = tmp_path / ".claude/skills/svarupa/SKILL.md"
@@ -225,6 +252,14 @@ def test_cli_setup_refusal_is_a_structured_diagnostic_and_exit_1(
     assert "Traceback" not in err
 
 
+def test_cli_setup_installs_ci_gitlab(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(["setup", "ci_gitlab", "--dest", str(tmp_path)]) == 0
+    out = capsys.readouterr().out
+    assert "wrote" in out
+    assert "next:" in out
+    assert (tmp_path / ".gitlab-ci.yml").read_bytes() == GITLAB_CI.encode("utf8")
+
+
 def test_registry_keys_match_their_classes_names() -> None:
     for key, cls in TARGETS.items():
         assert key == cls.name, f"TARGETS[{key!r}] is {cls.name!r}"
@@ -326,7 +361,11 @@ def test_every_flag_the_documents_name_exists() -> None:
     the drift check that catches it. `--json` and `--update` are planned and
     absent, so a document naming them fails here today."""
     real = _real_flags()
-    for name, text in (("SKILL.md", SKILL_MD), ("workflow", WORKFLOW)):
+    for name, text in (
+        ("SKILL.md", SKILL_MD),
+        ("workflow", WORKFLOW),
+        ("gitlab-ci", GITLAB_CI),
+    ):
         named = set(re.findall(r"--[a-z][a-z-]*", text))
         assert named, f"{name} names no flags; the scan is broken"
         assert named <= real, (
@@ -371,6 +410,33 @@ def test_the_workflow_parses_as_yaml_and_names_the_real_lockfile() -> None:
         "the base commit is not verified before the first-adoption fallback"
     )
     assert "````" in WORKFLOW, "the summary fence is terminable by repo-derived ```"
+
+
+def test_the_gitlab_job_parses_as_yaml_and_names_the_real_lockfile() -> None:
+    """The GitLab mirror of the workflow test above: same pinning rule, same
+    drift guard, same verified base commit, GitLab idioms where the platform
+    differs (shallow clones, no job summary)."""
+    doc = yaml.safe_load(GITLAB_CI)
+    job = doc["architecture_diff"]
+    assert job["variables"]["GIT_DEPTH"] == 0, "runners clone shallow by default"
+    assert job["rules"] == [{"if": "$CI_PIPELINE_SOURCE == \"merge_request_event\""}], (
+        "the job is not limited to merge-request pipelines"
+    )
+    from svarupa import __version__
+
+    assert f"svarupa=={__version__}" in GITLAB_CI, "the install is not pinned"
+    lock_paths = re.findall(r"[\w./-]+\.lock\b", GITLAB_CI)
+    assert f":.svarupa/{LOCK_NAME}" in GITLAB_CI, "the committed-base path is not LOCK_NAME"
+    for token in lock_paths:
+        base = token.rsplit("/", 1)[-1]
+        assert base in {LOCK_NAME, "committed-base.lock"}, (
+            f"the job names a lockfile that is not {LOCK_NAME}: {token}"
+        )
+    assert 'git cat-file -e "$BASE_SHA^{commit}"' in GITLAB_CI, (
+        "the base commit is not verified before the first-adoption fallback"
+    )
+    assert 'exit "$code"' in GITLAB_CI, "the exit code is not re-raised after the print"
+    assert GITLAB_CI.index("cat /tmp/delta.txt") < GITLAB_CI.index('exit "$code"')
 
 
 def test_the_skill_names_the_artifact_files_that_actually_exist() -> None:

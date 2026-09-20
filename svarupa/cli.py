@@ -350,7 +350,8 @@ def main(argv: list[str] | None = None) -> int:
             "derived from your codebase. Every box points at a line of code."
         ),
         epilog=(
-            'Also: "svarupa setup skill" and "svarupa setup ci_github" install '
+            'Also: "svarupa setup skill", "svarupa setup ci_github" and '
+            '"svarupa setup ci_gitlab" install '
             'integration files (see: svarupa setup --help), and "svarupa query '
             '<artifact> <function> ..." answers questions from graph.json (see: '
             'svarupa query --help); "svarupa mcp <artifact>" serves the same '

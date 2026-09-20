@@ -130,7 +130,9 @@ exactly the lines that changed.
    delta is taken against the regenerated base so it shows this change alone.
 
 `svarupa setup ci_github` installs a GitHub Actions workflow that does all
-three per pull request.
+three per pull request; `svarupa setup ci_gitlab` installs the same job for
+GitLab merge requests (it refuses to overwrite an existing `.gitlab-ci.yml`
+and prints the job to merge in by hand instead).
 
 ## Rules the tool holds itself to, which you can rely on
 

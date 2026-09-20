@@ -18,6 +18,11 @@ class Target(ABC):
     def files(self) -> tuple[tuple[str, str], ...]:
         """(repository-relative POSIX path, exact file content) pairs."""
 
+    def collision_note(self) -> tuple[str, ...]:
+        """Extra fix lines for the SVA-S-001 refusal, e.g. a snippet to merge
+        into a file the user already has. Empty for most targets."""
+        return ()
+
     @abstractmethod
     def next_steps(self) -> tuple[str, ...]:
         """What the user does after the files exist, e.g. what to commit."""
