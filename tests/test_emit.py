@@ -80,6 +80,19 @@ def test_esc_does_not_double_escape_its_own_output() -> None:
     assert esc("&lt;") == "&amp;lt;"
 
 
+def test_the_passport_carries_the_copy_link_affordance(tmp_path: Path) -> None:
+    """The markup half of deep links: the button ships in the panel, hidden
+    until a box's passport opens; the behaviour half (fragment parse, focus,
+    clipboard) is covered by the jsdom harness in tests/js."""
+    build_repo(tmp_path)
+    out = tmp_path / "out"
+    run(tmp_path, out)
+    html = (out / "index.html").read_text(encoding="utf8")
+    assert '<button id="panel-link" class="open" type="button" hidden>' in html
+    assert "copy link" in html
+    # The fragment is built client-side from percent-encoded box ids.
+    assert "encodeURIComponent" in html
+
 def test_attrs_drops_none_instead_of_writing_the_word() -> None:
     """`class="None"` is a silent bug that renders as a real class name."""
     assert str(attrs(a=None, b=False, c=True, d="x")) == ' c d="x"'

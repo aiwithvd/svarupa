@@ -357,7 +357,7 @@ aside .close:hover { color: var(--ink); }
 .hint { color: var(--dim); font-size: 13px; }
 /* Guided views: Archify's strip above the canvas, computed. A chapter is a
    box and what the drawn arrows connect it to; clicking one focuses it. */
-.guided { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; margin: 0 0 12px; background: color-mix(in srgb, var(--surface) 70%, transparent); }
+.guided { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; margin: 0 0 12px; background: var(--surface); position: sticky; top: calc(var(--header-h, 58px) + 8px); z-index: 4; }
 .guided-head { display: flex; flex-direction: column; gap: 2px; min-width: 190px; font-family: var(--mono); }
 .guided-head .eyebrow { font-size: 9px; letter-spacing: .16em; text-transform: uppercase; color: var(--accent); font-weight: 700; }
 .guided-head .eyebrow .progress { color: var(--dim); margin-left: 6px; }
@@ -518,6 +518,10 @@ def _js() -> Markup:
   var upBtn = document.getElementById('reach-up');
   var downBtn = document.getElementById('reach-down');
   var openBtn = document.getElementById('panel-open');
+  var linkBtn = document.getElementById('panel-link');
+  // The box the passport currently shows, for the deep link. A box id is
+  // repo-derived text; it enters the URL only percent-encoded.
+  var linkTarget = null;
 
   // A box's full label, from the title the renderer wrote for it: the OUT
   // and IN lists showed raw ids (`ext:database:SQL database`) where the box
@@ -633,6 +637,10 @@ def _js() -> Markup:
         alsoEl.appendChild(s);
       });
     }
+    // A deep link names a box, never a frame: only graph-node passports
+    // offer it.
+    linkBtn.hidden = isFrame;
+    linkTarget = isFrame ? null : { tab: hereTab && hereTab.id, box: id };
     outEl.textContent = '';
     inEl.textContent = '';
     var nOut = 0, nIn = 0;
@@ -713,6 +721,8 @@ def _js() -> Markup:
       if (node.classList.contains('sv-node')) focus(node); else clearFocus();
     } else if (node && node.classList.contains('card-item')) {
       openBtn.hidden = true;
+      linkBtn.hidden = true;
+      linkTarget = null;
       eyebrowEl.textContent = 'Fact';
       subEl.textContent = '';
       metaEl.textContent = '';
@@ -723,6 +733,8 @@ def _js() -> Markup:
       clearFocus();
     } else {
       openBtn.hidden = true;
+      linkBtn.hidden = true;
+      linkTarget = null;
       eyebrowEl.textContent = 'Connection';
       subEl.textContent = node ? (node.getAttribute('data-note') || node.getAttribute('data-label') || '') : '';
       metaEl.textContent = '';
@@ -742,6 +754,67 @@ def _js() -> Markup:
     panel.classList.remove('is-open');
     clearFocus();
   });
+
+  // Deep links: `#d-<tab>/<box id>` opens the tab and the box's passport.
+  // The plain `#d-<tab>` form stays pure CSS (`:target`); the box suffix is
+  // read here, and the address bar is then set to the plain form so the CSS
+  // switch sees it. The box id is repo-derived text and travels only
+  // percent-encoded; the base keeps whatever scheme the page was opened
+  // over, file: and http(s): alike. With JS off the link degrades to the
+  // default tab — the no-JS story already is "the diagrams, static".
+  linkBtn.addEventListener('click', function () {
+    if (!linkTarget || !linkTarget.tab) return;
+    var url = location.href.split('#')[0] + '#' + linkTarget.tab + '/' + encodeURIComponent(linkTarget.box);
+    function done() {
+      linkBtn.textContent = 'copied';
+      setTimeout(function () { linkBtn.textContent = 'copy link'; }, 1200);
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(url).then(done, done);
+      return;
+    }
+    var ta = document.createElement('textarea');
+    ta.value = url;
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); } catch (e) { /* the textarea stays selected */ }
+    ta.remove();
+    done();
+  });
+
+  function openFromHash() {
+    // Split at the first '/', no regex: the JS here is embedded in a Python
+    // string, where every backslash is two.
+    var h = location.hash;
+    var slash = h.indexOf('/');
+    // indexOf answers -1 for "absent"; a less-than sign in this script fails
+    // the escaped-markup check the emit suite runs on the whole document.
+    if (slash === -1) return;
+    var tab = document.getElementById(h.slice(1, slash));
+    if (!tab) return;
+    var id;
+    try { id = decodeURIComponent(h.slice(slash + 1)); } catch (e) { return; }
+    if (history.replaceState) history.replaceState(null, '', '#' + tab.id);
+    var node = null;
+    tab.querySelectorAll('.sv-node').forEach(function (nd) {
+      if (!node && nd.getAttribute('data-id') === id) node = nd;
+    });
+    if (!node) return;
+    // The box may live in a sibling view of the tab (a drill level down);
+    // open that view, the way a click path to it would have.
+    var view = node.closest('.view');
+    if (view && !view.classList.contains('is-open')) {
+      tab.querySelectorAll('.view').forEach(function (v) { v.classList.remove('is-open'); });
+      view.classList.add('is-open');
+    }
+    // The same card a click produces, on the view the box was found in.
+    var root = scopeOf(node);
+    var refs = (node.getAttribute('data-evidence') || '').split('\\n').filter(Boolean);
+    show(labelOf(root, id), refs, node);
+    node.scrollIntoView({ block: 'center', inline: 'center' });
+  }
+  window.addEventListener('hashchange', openFromHash);
+  openFromHash();
   // Keyboard (review #20 S9): Escape closes the passport and clears every lit
   // state; Enter on a focused box is its click. Boxes carry tabindex="0".
   document.addEventListener('keydown', function (ev) {
@@ -1527,6 +1600,10 @@ def render_viewer(
                         raw(
                             '<button id="panel-open" class="open" type="button" hidden>'
                             "Open in place \u203a</button>"
+                        ),
+                        raw(
+                            '<button id="panel-link" class="open" type="button" hidden>'
+                            "copy link</button>"
                         ),
                         tag("h3", esc("Reach in this view"), class_="section"),
                         tag(

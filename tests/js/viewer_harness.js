@@ -351,5 +351,30 @@ check('export inlines the stylesheet and theme', exported && exported.text.inclu
 check('export carries no interaction state', exported && !/class="[^"]*\bis-(path|focus|focused|hovering|pinned|searching|hit|off)\b/.test(exported.text));
 fire(view.querySelector('.scroller'), 'click', { detail: 1 });
 
+
+// 9. deep links: #d-<tab>/<box id> opens the tab on the box's passport,
+// and the passport's copy link produces exactly that fragment.
+{
+  fire(view.querySelector('.scroller'), 'click', { detail: 1 });  // settle
+  const linkId = b.getAttribute('data-id');
+  window.location.hash = '#' + tab.id + '/' + encodeURIComponent(linkId);
+  window.dispatchEvent(new window.Event('hashchange'));
+  check('a deep link opens the passport on the linked box',
+    panel.classList.contains('is-open') && document.getElementById('panel-title').textContent === labelOfNode(b),
+    document.getElementById('panel-title').textContent);
+  check('the deep link focuses the linked box', b.classList.contains('is-focus'));
+  check('the address bar settles on the plain tab form', window.location.hash === '#' + tab.id, window.location.hash);
+  const linkBtn = document.getElementById('panel-link');
+  check('a box passport offers copy link', linkBtn && !linkBtn.hidden);
+  linkBtn.click();
+  check('copy link acknowledges the copy', linkBtn.textContent === 'copied', linkBtn.textContent);
+  // A bogus box id opens nothing and keeps the page stable.
+  fire(view.querySelector('.scroller'), 'click', { detail: 1 });
+  window.location.hash = '#' + tab.id + '/no%2Fsuch%2Fbox';
+  window.dispatchEvent(new window.Event('hashchange'));
+  check('a deep link naming no box opens nothing', !panel.classList.contains('is-open'));
+  fire(view.querySelector('.scroller'), 'click', { detail: 1 });
+}
+
 console.log(failures === 0 ? 'ALL OK' : failures + ' FAILED');
 process.exit(failures === 0 ? 0 : 1);
