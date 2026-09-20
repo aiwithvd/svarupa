@@ -119,7 +119,11 @@ never reaches anything committed.
 
 **Measured, not assumed.** Function-level sequence diagrams were cut after
 measurement showed call resolution at ~20% on service code with median chain
-depth 0-1. See `docs/reviews/` for the numbers and the reasoning.
+depth 0-1. Replaying this repository's own real history (15 commits of actual
+development: license swaps, viewer work, layout fixes) produced a median of
+**0 lockfile lines per commit** — the diff moves only when the architecture
+moves, not when code churns. See `docs/reviews/` for the numbers and the
+reasoning.
 
 ---
 
