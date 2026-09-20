@@ -245,7 +245,7 @@ def test_lockfile_carries_endpoint_entrypoint_and_role_records(tmp_path: Path) -
     assert "role\tapi\tapi" in text
     assert "role\tjobs\tworker" in text
     assert "role\tpkg\tcli" in text
-    assert "# schema 1.6" in text
+    assert "# schema 1.7" in text
 
 
 def test_renaming_a_handler_churns_zero_lines(tmp_path: Path) -> None:

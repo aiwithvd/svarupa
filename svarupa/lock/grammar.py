@@ -62,7 +62,10 @@ SCHEMA_MAJOR = 1
 # `.github/`) are tooling and leave every record. Fewer facts for the same
 # code is still a change in what the build emits, and SVA-L-013 must say the
 # upgrade removed them, not the PR that bumped svarupa.
-SCHEMA_MINOR = 6
+# Minor 7: `environment` records are emitted, one per declared canonical
+# environment (name only — sources and refs are evidence, and evidence lives
+# in graph.json, because a workflow rename must not churn a committed file).
+SCHEMA_MINOR = 7
 
 _SEP = "\t"
 _COMMENT = "#"
@@ -84,6 +87,7 @@ KNOWN_KINDS: dict[str, int] = {
     "surface": 2,  # surface <module> <exported-symbol>            (P2)
     "entrypoint": 2,  # entrypoint <name> <module>                 (1.2)
     "role": 2,  # role <module> <api|worker|cli|auth|frontend>     (1.2, 1.5)
+    "environment": 1,  # environment <canonical-name>              (1.7)
 }
 
 # The grammar publishes `kind := [a-z_]+`. Enforcing it is what stops an

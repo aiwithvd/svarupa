@@ -74,8 +74,10 @@ def lock_records(graph: Graph) -> tuple[Record, ...]:
     in the grammar from the start, so emitting them now is the additive
     evolution the schema policy was designed for: an older build diffs the new
     lines as opaque adds, never as a flag day. A new service appearing in a
-    pull request is exactly the green line a reviewer wants. `endpoint` and
-    `surface` stay published-but-unemitted until routes are extracted.
+    pull request is exactly the green line a reviewer wants. The same holds
+    for the semantic kinds added since — `endpoint`, `entrypoint`, `role`, and
+    `environment` (the declared deploy targets, names only). `surface` stays
+    published-but-unemitted.
 
     `module_deps` is used rather than the file-level edges: it is already the
     deduplicated module-to-module relation, which is exactly the granularity a
@@ -130,6 +132,14 @@ def lock_records(graph: Graph) -> tuple[Record, ...]:
             if m in modules
             for role in role_names
         )
+    )
+    # One record per declared canonical environment: the name only. Sources,
+    # refs and paths are evidence, and evidence lives in graph.json — a
+    # workflow renamed or a values file moved is not an architecture change
+    # and must not read as one. Unmatched tokens are recorded verbatim, the
+    # same keep-don't-invent rule the extractor follows.
+    records.extend(
+        sorted({Record("environment", (f.name,)) for f in graph.environments})
     )
     return tuple(records)
 

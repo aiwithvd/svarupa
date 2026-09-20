@@ -494,19 +494,71 @@ def test_the_cli_summary_names_environments_or_their_absence(
     assert "  environments: none declared\n" in out
 
 
-def test_environment_facts_add_no_lockfile_records(tmp_path: Path) -> None:
-    """The lockfile is a committed file; this slice must not churn it. The
-    same repository with and without environment declarations produces
-    byte-identical lockfiles."""
+def test_environment_facts_add_only_environment_records(tmp_path: Path) -> None:
+    """The lockfile is a committed file: environment declarations add their
+    own record lines and churn nothing else — no paths, no sources, no refs,
+    because a workflow rename is not an architecture change."""
     from svarupa import __version__
     from svarupa.lock import build_lock
 
     write(tmp_path, "src/app.py", "x = 1\n")
     before = build_lock(graph_of(tmp_path), __version__).lockfile.render()
+    assert "environment" not in before, "no declarations, no records, honest absence"
     _env_repo(tmp_path)
     after = build_lock(graph_of(tmp_path), __version__).lockfile.render()
-    assert before == after
-    assert "environment" not in after and "env:" not in after
+    added = set(after.splitlines()) - set(before.splitlines())
+    assert added == {
+        "environment\tproduction",
+        "environment\tqa",
+        "environment\tstaging",
+    }, added
+    assert set(before.splitlines()) <= set(after.splitlines()), "nothing removed"
+    # The records are names only: the evidence stays in graph.json.
+    assert all("\t" not in line[len("environment\t") :] for line in added)
+
+
+def test_environment_records_are_sorted_and_byte_stable(tmp_path: Path) -> None:
+    from svarupa import __version__
+    from svarupa.lock import build_lock
+
+    _env_repo(tmp_path)
+    first = build_lock(graph_of(tmp_path), __version__).lockfile.render()
+    second = build_lock(graph_of(tmp_path), __version__).lockfile.render()
+    assert first == second
+    env_lines = [ln for ln in first.splitlines() if ln.startswith("environment\t")]
+    assert env_lines == sorted(env_lines)
+
+
+def test_a_gained_environment_shows_as_one_green_line(tmp_path: Path) -> None:
+    """The pull-request reading the kind exists for."""
+    from svarupa import __version__
+    from svarupa.lock import build_lock, diff
+
+    write(tmp_path, "src/app.py", "x = 1\n")
+    base = build_lock(graph_of(tmp_path), __version__).lockfile
+    write(tmp_path, "deploy/values-stage.yaml", "x: 1\n")
+    head = build_lock(graph_of(tmp_path), __version__).lockfile
+    rendered = diff(base, head).render()
+    assert "+ environment\tstaging" in rendered
+    assert "- environment" not in rendered
+
+
+def test_a_schema_16_base_diffs_the_new_records_as_opaque_adds(tmp_path: Path) -> None:
+    """The additive path: a 1.6-stamped base predates `environment`, so the
+    diff attributes the new lines to the tool upgrade (SVA-L-013), never to
+    the PR."""
+    from svarupa import __version__
+    from svarupa.lock import Lockfile, build_lock, diff
+
+    write(tmp_path, "src/app.py", "x = 1\n")
+    write(tmp_path, "deploy/values-prod.yaml", "x: 1\n")
+    head = build_lock(graph_of(tmp_path), __version__).lockfile
+    old_base = Lockfile.parse(
+        "# svarupa 0.1.0\n# schema 1.6\n# grammars python@0.25.0\nmodule\tsrc\n"
+    )
+    delta = diff(old_base, head)
+    assert "+ environment\tproduction" in delta.render()
+    assert "SVA-L-013" in [d.code for d in delta.diagnostics]
 
 
 def test_build_drops_an_environment_fact_with_invented_evidence(

@@ -1,6 +1,6 @@
 # Architecture Lockfile Grammar
 
-**Schema 1.0** · `.svarupa/architecture.lock` · committed to your repository
+**Schema 1.7** · `.svarupa/architecture.lock` · committed to your repository
 
 This file is the deterministic fingerprint of your system's architecture. It is
 designed to be **read and diffed by humans in a pull request**, before CI even
@@ -126,14 +126,27 @@ Schema 1.0 defines:
 | `module` | `<id>` | A structural module: a directory, package, or workspace member |
 | `dep` | `<from>` `<to>` | Module `from` depends on module `to` |
 
+Added by later minor versions, and emitted by this build:
+
+| Kind | Fields | Since |
+|---|---|---|
+| `service` | `<name>` | 1.1 |
+| `datastore` | `<name>` | 1.1 |
+| `queue` | `<name>` | 1.1 |
+| `endpoint` | `<method-and-path>` `<handler-module>` | 1.2 |
+| `entrypoint` | `<name>` `<module>` | 1.2 |
+| `role` | `<module>` `<api\|worker\|cli\|auth\|frontend>` | 1.2 |
+| `environment` | `<canonical-name>` | 1.7 |
+
+`environment` carries the canonical name only (`environment\tproduction`).
+Sources, branch refs and declaring paths are evidence; evidence lives in
+`graph.json`, never here, because renaming a workflow must not churn a
+committed file.
+
 Reserved for later minor versions (parsers must already tolerate them):
 
 | Kind | Fields |
 |---|---|
-| `endpoint` | `<method-and-path>` `<handler-module>` |
-| `datastore` | `<name>` |
-| `service` | `<name>` |
-| `queue` | `<name>` |
 | `surface` | `<module>` `<exported-symbol>` |
 
 ---
