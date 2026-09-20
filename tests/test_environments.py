@@ -111,6 +111,60 @@ def test_test_and_vendored_configs_declare_no_environments(tmp_path: Path) -> No
     assert facts(tmp_path) == ()
 
 
+def test_a_profile_value_mentioning_a_later_profile_is_not_cited(tmp_path: Path) -> None:
+    """Review #25 F1: `"channel": "production"` inside the `preview` profile
+    contains the quoted name; citing that value line for the `production`
+    profile points the evidence at a line that does not make the claim."""
+    write(
+        tmp_path,
+        "eas.json",
+        "{\n"
+        '  "build": {\n'
+        '    "preview": { "channel": "production" },\n'  # line 3: the decoy
+        '    "production": {}\n'  # line 4: the real key
+        "  }\n"
+        "}\n",
+    )
+    got = {f.name: f for f in facts(tmp_path)}
+    assert got["production"].evidence[0].start_line == 4
+    assert got["staging"].evidence[0].start_line == 3  # preview folds, its own key line
+
+
+def test_live_and_local_directory_segments_claim_nothing(tmp_path: Path) -> None:
+    """Review #25 F2: as bare path segments the weak aliases are ordinary
+    words — `deploy/live/` is live-reload, `config/local/` is local
+    overrides; neither is a deploy environment."""
+    write(tmp_path, "deploy/live/reload.yaml", "x: 1\n")
+    write(tmp_path, "config/local/overrides.yaml", "x: 1\n")
+    write(tmp_path, "deploy/liveness.yaml", "x: 1\n")
+    assert facts(tmp_path) == ()
+
+
+def test_weak_aliases_claim_as_stem_affixes_and_as_values(tmp_path: Path) -> None:
+    """The same tokens are strong where they were written to NAME an
+    environment: the stem's final affix (`values-live.yaml`) and a workflow's
+    `environment:` value."""
+    write(tmp_path, "deploy/values-live.yaml", "x: 1\n")
+    write(tmp_path, "settings/local.py", "DEBUG = True\n")
+    write(
+        tmp_path,
+        ".github/workflows/deploy.yml",
+        "on: push\njobs:\n  ship:\n    environment: live\n",
+    )
+    got = facts(tmp_path)
+    assert {(f.name, f.source) for f in got} == {
+        ("production", "filename"),
+        ("development", "filename"),
+        ("production", "workflow"),
+    }
+
+
+def test_a_value_like_stem_does_not_overreach(tmp_path: Path) -> None:
+    """`live-reload.yaml` has the token as a prefix, not the final affix."""
+    write(tmp_path, "deploy/live-reload.yaml", "x: 1\n")
+    assert facts(tmp_path) == ()
+
+
 # --------------------------------------------------------------------------
 # Source 2: profile manifests (eas.json)
 # --------------------------------------------------------------------------

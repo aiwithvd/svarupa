@@ -9,7 +9,14 @@ Four declaration sources are read, each citing its own line:
   The filename IS the env label, so this is the highest-precision signal. It is
   gated twice: the token must appear as a full path segment or a clearly
   delimited affix (so `prod_utils.py` is not a claim), and the file must look
-  like configuration (so `development-notes.md` is not either).
+  like configuration (so `development-notes.md` is not either). The weak
+  aliases `live` and `local` are accepted here only as the stem's final affix
+  (`values-live.yaml`, `settings/local.py`): as bare path segments they are
+  ordinary words (`deploy/live/reload.yaml` is live-reload, not production).
+  As *values* — a workflow's `environment:`, an eas.json key, `ENV NODE_ENV=` —
+  the same tokens are strong and fold normally. The asymmetry is deliberate:
+  a value was written to name an environment; a path segment was not
+  necessarily.
 * **Profile manifests** — each top-level key under `build` in an `eas.json` is
   literally an environment name. JSON discards positions, so the key's line is
   found by a scanner cross-checked against the parse, the same rule the
@@ -75,10 +82,18 @@ _ALIASES = {
 # and `settings/production.py` match, `prod_utils.py`'s `prod`... also matches
 # the token rule; the config-looking gate below is what keeps such helpers
 # out. The two gates work as a pair, and decoys fail at least one.
-_ENV_TOKEN = (
-    "dev|development|local|qa|staging|stage|uat|preprod|preview|prod|production|live"
-)
+#
+# `live` and `local` are deliberately absent here (review #25 F2). As VALUES
+# they are strong aliases — a workflow's `environment: live` says production —
+# but as bare path segments they are ordinary words: `deploy/live/reload.yaml`
+# is a live-reload config, not a production claim. The filename source accepts
+# them only as the whole stem or the last affix of it (`values-live.yaml`,
+# `settings/local.py`), never as a directory segment or a prefix.
+_ENV_TOKEN = "dev|development|qa|staging|stage|uat|preprod|preview|prod|production"
 _ENV_RE = re.compile(rf"(?:^|[./_-])({_ENV_TOKEN})(?:[./_-]|$)", re.IGNORECASE)
+# Weak tokens, matched against the file's stem only: entire stem (`live.yaml`)
+# or final affix (`values-live.yaml`); `live-reload.yaml` and `local/` never.
+_WEAK_ENV_STEM_RE = re.compile(r"^(?:.+[._-])?(live|local)$", re.IGNORECASE)
 
 _CONFIG_EXTS = frozenset({".yaml", ".yml", ".json", ".toml"})
 # A `.py` file only claims an env by name when it sits where settings live.
@@ -235,11 +250,22 @@ def _walk_candidates(root: Path) -> list[tuple[str, bytes]]:
     return out
 
 
+def _filename_matches(rel: str) -> bool:
+    """Whether a path can claim an environment by name: a strong token
+    anywhere delimited, or a weak one as the stem's final affix — and the
+    file must look like configuration on either count."""
+    if not _is_config_looking(rel):
+        return False
+    if _ENV_RE.search(rel) is not None:
+        return True
+    return _WEAK_ENV_STEM_RE.match(Path(rel).stem) is not None
+
+
 def _wanted(name: str, rel: str) -> bool:
     return (
         name == "eas.json"
         or _DOCKERFILE_RE.match(name) is not None
-        or (_ENV_RE.search(rel) is not None and _is_config_looking(rel))
+        or _filename_matches(rel)
     )
 
 
@@ -277,14 +303,21 @@ def _unparseable(path: str, what: str, exc: Exception | None = None) -> Diagnost
 def _filename_facts(rel: str, data: bytes) -> list[EnvironmentFact]:
     out: list[EnvironmentFact] = []
     seen: set[str] = set()
-    for m in _ENV_RE.finditer(rel):
-        token = m.group(1).lower()
+    matches = [m.group(1) for m in _ENV_RE.finditer(rel)]
+    # Weak tokens join only from the stem's final-affix position (see the
+    # token table above); a `live/` directory segment claims nothing.
+    stem = Path(rel).stem
+    weak = _WEAK_ENV_STEM_RE.match(stem)
+    if weak:
+        matches.append(weak.group(1))
+    for token_raw in matches:
+        token = token_raw.lower()
         if token in seen:
             continue
         seen.add(token)
         out.append(
             EnvironmentFact(
-                name=canonical_env(m.group(1)),
+                name=canonical_env(token_raw),
                 source="filename",
                 evidence=(_file_evidence(rel, data),),
                 attrs=(("path", rel),),
@@ -318,8 +351,12 @@ def _locate_profile_line(lines: list[str], name: str) -> int | None:
         if depth <= 0:
             end = i
             break
-    needle = f'"{name}"'
-    return next((i for i in range(start, end + 1) if needle in lines[i - 1]), None)
+    # Key shape, not substring: `"channel": "production"` inside an earlier
+    # profile CONTAINS the quoted name, and citing that value line for the
+    # `production` profile points the evidence at a line that does not make
+    # the claim (review #25 F1).
+    key = re.compile(rf'"{re.escape(name)}"\s*:')
+    return next((i for i in range(start, end + 1) if key.search(lines[i - 1])), None)
 
 
 def _profile_facts(path: str, text: str, diags: list[Diagnostic]) -> list[EnvironmentFact]:
@@ -521,7 +558,7 @@ def extract_environments(scan: Scan) -> EnvironmentFacts:
             facts.extend(_profile_facts(rel, text, diags))
         elif _DOCKERFILE_RE.match(name) is not None:
             facts.extend(_dockerfile_facts(rel, text))
-        if _ENV_RE.search(rel) is not None and _is_config_looking(rel):
+        if _filename_matches(rel):
             facts.extend(_filename_facts(rel, data))
 
     return EnvironmentFacts(
