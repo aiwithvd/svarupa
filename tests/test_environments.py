@@ -159,6 +159,15 @@ def test_weak_aliases_claim_as_stem_affixes_and_as_values(tmp_path: Path) -> Non
     }
 
 
+def test_a_config_name_containing_a_token_substring_claims_nothing(tmp_path: Path) -> None:
+    """The token must be delimited: `stagecoach` contains `stage` and
+    `productionize` contains `production`, and neither is a deployment
+    environment. This is what the closing boundary of the token regex is for."""
+    write(tmp_path, "deploy/stagecoach.yaml", "x: 1\n")
+    write(tmp_path, "deploy/productionize.yaml", "x: 1\n")
+    assert facts(tmp_path) == ()
+
+
 def test_a_value_like_stem_does_not_overreach(tmp_path: Path) -> None:
     """`live-reload.yaml` has the token as a prefix, not the final affix."""
     write(tmp_path, "deploy/live-reload.yaml", "x: 1\n")
