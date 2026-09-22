@@ -815,16 +815,30 @@ def _routes(
     # crossing in that gap no track order could keep them apart (review #19's
     # lattice); distinct residues remove the coincidence before the ordering
     # has to. A residue shift moves a port by at most three pixels.
+    #
+    # The alignment presumes a fan step of at least 4. Below that (a hub with
+    # more ports than its width can space four apart) rounding to the residue
+    # grid collapses four adjacent ports onto one x, and the stubs those ports
+    # belong to overlap exactly (SVA-G-015 on a 64-pair mutual hub). Raw fan
+    # positions stay distinct, and cross-class coincidence is left to the
+    # channel constraints below, which is what orders same-column terminals.
+    def aligned(box: Box, nth: int, degree: int, residue: int) -> int:
+        step = box.w // (max(1, degree) + 1)
+        x = _fan(box, nth, degree)
+        if step < 4:
+            return x
+        return (x & ~3) | residue
+
     def exit_x(head: str, tail: str) -> int:
         ports = bottom_ports[head]
-        return _fan(by_id[head], ports.index(("out", tail)) + 1, len(ports)) & ~3
+        return aligned(by_id[head], ports.index(("out", tail)) + 1, len(ports), 0)
 
     def entry_x(head: str, tail: str) -> int:
         if row_index(by_id[head]) >= row_index(by_id[tail]):
             ports = bottom_ports[tail]
-            return _fan(by_id[tail], ports.index(("in", head)) + 1, len(ports)) & ~3
+            return aligned(by_id[tail], ports.index(("in", head)) + 1, len(ports), 0)
         top = top_ports[tail]
-        return (_fan(by_id[tail], top.index(head) + 1, len(top)) & ~3) | 2
+        return aligned(by_id[tail], top.index(head) + 1, len(top), 2)
 
     # Every horizontal run through a gap gets its own y inside it, whatever
     # kind of edge it belongs to. Only same-row edges had tracks; every
@@ -1392,7 +1406,12 @@ def flow(
     def fan_y(b: Box, nth: int, total: int) -> int:
         slots = max(1, total)
         step = b.h // (slots + 1)
-        return b.y + max(1, step) * (1 + (nth - 1) % slots)
+        # More ports than the box is tall: step collapses to 1 and an
+        # unwrapped fan walks off the bottom edge (SVA-G-005 on a module
+        # with 70+ connections). Wrap within the box; while the ports fit
+        # the box the wrap is the identity and the old geometry is kept.
+        cycle = max(1, (b.h - 1) // max(1, step))
+        return b.y + max(1, step) * (1 + (nth - 1) % cycle)
 
     # Ports are per SIDE of a box, not per direction. Every exit leaves on
     # the right, and a backward edge also ENTERS on the right, so an exit and
@@ -1516,6 +1535,45 @@ def flow(
         if src in placed and dst in placed and not takes_corridor(src, dst):
             gap_budget[levels.get(src, 0)] = gap_budget.get(levels.get(src, 0), 0) + 1
     track_use: dict[int, int] = {}
+
+    # Demand-driven column gaps. col_gap suffices while a gap holds few
+    # corridor climbs, backward drops and adjacent tracks; past that the
+    # per-edge x offsets (col_right + 10 + 4k, col_left - 10 - 4k) and the
+    # compressed track x ran into the neighbouring column or off the canvas
+    # (SVA-G-005/011/015 on the 4,434-edge acceptance repo). Widening shifts
+    # columns in x only, so every y-based decision above — fan heights,
+    # straight runs, the reclaim — still holds, and a gap whose demand fits
+    # col_gap keeps the exact old geometry.
+    gap_w = [
+        max(
+            col_gap,
+            (8 + (4 * right_k[g] + 8 if right_k.get(g) else 0))
+            + 4 * gap_budget.get(level, 0)
+            + (8 + (4 * fwd_drops[g] + 8 if fwd_drops.get(g) else 0)),
+        )
+        for g, level in enumerate(order)
+    ]
+    if any(w != col_gap for w in gap_w):
+        x = style.margin + pad
+        gaps = []
+        for g, level in enumerate(order):
+            col = columns[level]
+            col_w = max(b.w for b in col)
+            for b in col:
+                placed[b.id] = replace(placed[b.id], x=x + (col_w - b.w) // 2)
+            gaps.append((x + col_w, x + col_w + gap_w[g]))
+            x += col_w + gap_w[g]
+        col_left = {
+            level: min(placed[b.id].x for b in col) for level, col in columns.items() if col
+        }
+        col_right = {
+            level: max(placed[b.id].right for b in col) for level, col in columns.items() if col
+        }
+        width = x - gap_w[-1] + style.margin + pad + style.lane_gutter
+    # The lane right of the LAST column must hold that column's own climbs
+    # and backward drops too, not just the reserved gutter.
+    if order and right_k.get(len(order) - 1):
+        width = max(width, col_right[order[-1]] + 6 + 4 * right_k[len(order) - 1] + 8)
 
     for i, ((src, dst), edge) in enumerate(sorted(edge_map.items())):
         if src not in placed or dst not in placed:

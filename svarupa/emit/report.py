@@ -324,9 +324,14 @@ def _first_problem(lo: LaidOutDiagram, spec_id: str) -> str:
     empty result means the message is elsewhere rather than that nothing was
     wrong. Saying so beats printing nothing and letting a reader conclude the
     view was withheld for no reason.
+
+    SVA-R-005 is never the reason: "a drawn box drills into a view that was
+    withheld" names this view as the *target* of a dangling drill, a
+    consequence of its own geometry failure, which is what the fallback's
+    code list is for.
     """
     for d in lo.problems:
-        if d.subject == spec_id:
+        if d.subject == spec_id and d.code != "SVA-R-005":
             return f"`{d.code}` {d.message}"
-    codes = sorted({d.code for d in lo.problems})
+    codes = sorted({d.code for d in lo.problems if d.code != "SVA-R-005"})
     return f"failed geometry validation ({', '.join(codes) or 'no code recorded'})"

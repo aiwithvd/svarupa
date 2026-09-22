@@ -1364,6 +1364,57 @@ def test_flow_columns_align_at_the_top_once_the_tallest_exceeds_a_screen() -> No
     assert by2["b1"].y < by2["a"].y < by2["b2"].bottom, "a short flow centres its columns"
 
 
+def test_flow_widens_a_gap_whose_corridor_climbs_would_leave_it() -> None:
+    """Each corridor climb out of a column sits at col_right + 10 + 4k, and
+    the gap was a fixed 84px: climb 19 ran through the next column's boxes.
+    This is the SVA-G-011 shape that withheld the 4,434-edge acceptance
+    repo's data-flow root."""
+    layers = {"src": "0", **{f"m{i}": "1" for i in range(25)}, **{f"t{i}": "2" for i in range(25)}}
+    s = flow_spec_of(*[("src", f"t{i}") for i in range(25)], layers=layers)
+    c = lay_out(s, STYLE, "flow")
+    assert validate(c, STYLE) == (), [d.render() for d in validate(c, STYLE)]
+
+
+def test_flow_extends_the_trailing_lane_past_the_last_column() -> None:
+    """Climbs and backward drops around the LAST column ran off the canvas
+    (SVA-G-005): the width reserved one fixed gutter no matter how many
+    edges rounded that side."""
+    layers = {"hub": "0", **{f"a{i}": "1" for i in range(30)}}
+    s = flow_spec_of(*[(f"a{i}", "hub") for i in range(30)], layers=layers)
+    c = lay_out(s, STYLE, "flow")
+    assert validate(c, STYLE) == (), [d.render() for d in validate(c, STYLE)]
+
+
+def test_flow_fan_heights_wrap_inside_a_box_with_more_ports_than_pixels() -> None:
+    """With more exits than the box is tall the fan step collapses to 1px
+    and an unwrapped fan walks off the bottom edge (SVA-G-005 on a module
+    with 70+ outgoing connections)."""
+    layers = {"hub": "0", **{f"s{i}": "1" for i in range(70)}}
+    s = flow_spec_of(*[("hub", f"s{i}") for i in range(70)], layers=layers)
+    c = lay_out(s, STYLE, "flow")
+    assert validate(c, STYLE) == (), [d.render() for d in validate(c, STYLE)]
+    hub = c.box("hub")
+    assert hub is not None
+    for r in c.routes:
+        assert hub.y - 4 <= r.points[0][1] <= hub.bottom + 4, r.points[0]
+
+
+def test_layered_ports_stay_distinct_when_the_residue_grid_is_too_coarse() -> None:
+    """A hub in a mutual dependency with every child carries both directions
+    on one side. The residue alignment (& ~3, | 2) keeps exits, entries and
+    waypoint centres apart, but below a 4px fan step it collapsed four
+    adjacent ports onto one x and their stubs overlapped exactly
+    (SVA-G-015 on the acceptance repo's module-deps tree of its job
+    framework)."""
+    children = [node(f"c{i:02d}", layer="1") for i in range(40)]
+    edges = tuple(
+        e for t in children for e in (edge("hub", t.id), edge(t.id, "hub"))
+    )
+    s = spec(node("hub", layer="0"), *children, edges=edges)
+    c = lay_out(s, STYLE, "layered")
+    assert validate(c, STYLE) == (), [d.render() for d in validate(c, STYLE)]
+
+
 def test_sublabels_truncate_from_the_tail_and_paths_from_the_head() -> None:
     """Review #20 C4: `…r · FastAPI · 2 routes` on a story box, the ellipsis
     having eaten the word a reader needed."""

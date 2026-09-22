@@ -932,6 +932,33 @@ def test_a_withheld_reason_is_not_taken_from_a_sibling_view() -> None:
     assert "SVA-G-001" in parent, "the fallback should still name what went wrong"
 
 
+def test_a_cascade_is_not_reported_as_the_reason_a_view_was_withheld() -> None:
+    """SVA-R-005 names the withheld view as the *target* of a dangling drill —
+    a consequence. Reporting it as the reason hid the geometry failure behind
+    its own knock-on effect (module-deps `tree:.../lib` on the acceptance
+    repo read as a navigability problem while its cause was SVA-G-015)."""
+    from svarupa.diagnostics import Severity
+    from svarupa.emit.report import _first_problem
+    from svarupa.layout import LaidOutDiagram
+
+    cascade = Diagnostic(
+        code="SVA-R-005",
+        severity=Severity.ERROR,
+        message="a drawn box drills into a view that was withheld",
+        subject="/spec/root/lib",
+    )
+    cause = Diagnostic(
+        code="SVA-G-015",
+        severity=Severity.ERROR,
+        message="is drawn on top of the different edge a -> b",
+        subject="x -> y",
+    )
+    lo = LaidOutDiagram(DiagramKind.MODULE_DEPS, "layered", {}, {}, (cascade, cause))
+    reason = _first_problem(lo, "/spec/root/lib")
+    assert "drills into" not in reason
+    assert "SVA-G-015" in reason
+
+
 # --------------------------------------------------------------------------
 # The stylesheet is code too, and it has been corrupted twice
 # --------------------------------------------------------------------------
