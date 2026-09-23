@@ -16,10 +16,11 @@ the artifact records that the diagram was withheld, with the reason.
 
 from __future__ import annotations
 
+from bisect import bisect_left
 from itertools import pairwise
 
 from svarupa.diagnostics import Diagnostic, Severity
-from svarupa.layout.geometry import Canvas, Style, band_label_rect, region_label_rect
+from svarupa.layout.geometry import Box, Canvas, Style, band_label_rect, region_label_rect
 from svarupa.layout.text import advance, sanitize
 
 __all__ = ["MIN_GAP", "validate"]
@@ -80,38 +81,76 @@ def _check_route_overlap(canvas: Canvas) -> list[Diagnostic]:
     clustered routers (tracks at the gap midpoint, exits and entries fanned
     over separate lists); with tracks per hop ordered by channel constraints
     and ports per side, both repos measure zero, and the gate holds it there.
+
+    Segments are bucketed by the line they run on and swept per line, because
+    only segments sharing a line can be collinear: the nested route-pair loop
+    compared 1.3 million pairs on one 1608-edge canvas and found a handful.
+    The sweep reports exactly what the loop did — one diagnostic per route
+    pair, in route order, on the pair's first overlapping segment pair in
+    nested segment order — a zero-length segment cannot overlap, as before.
     """
-    out: list[Diagnostic] = []
     routes = canvas.routes
+    srcs = [r.src for r in routes]
+    dsts = [r.dst for r in routes]
+    vertical: dict[int, list[tuple[int, int, int, int]]] = {}
+    horizontal: dict[int, list[tuple[int, int, int, int]]] = {}
     for i, r in enumerate(routes):
-        for s in routes[i + 1 :]:
-            if r.src == s.src or r.dst == s.dst or {r.src, r.dst} == {s.src, s.dst}:
-                continue
-            for (ax1, ay1), (ax2, ay2) in pairwise(r.points):
-                for (bx1, by1), (bx2, by2) in pairwise(s.points):
-                    vertical = ax1 == ax2 == bx1 == bx2
-                    horizontal = ay1 == ay2 == by1 == by2
-                    if vertical:
-                        lo = max(min(ay1, ay2), min(by1, by2))
-                        hi = min(max(ay1, ay2), max(by1, by2))
-                    elif horizontal:
-                        lo = max(min(ax1, ax2), min(bx1, bx2))
-                        hi = min(max(ax1, ax2), max(bx1, bx2))
-                    else:
-                        continue
-                    if hi > lo:
-                        out.append(
-                            _err(
-                                "SVA-G-015",
-                                f"{r.src} -> {r.dst}",
-                                f"is drawn on top of the different edge {s.src} -> {s.dst} "
-                                f"for {hi - lo}px at ({ax1},{ay1})-({ax2},{ay2})",
-                            )
-                        )
-                        break
-                else:
+        for j, ((x1, y1), (x2, y2)) in enumerate(pairwise(r.points)):
+            if x1 == x2 and y1 != y2:
+                vertical.setdefault(x1, []).append((i, j, min(y1, y2), max(y1, y2)))
+            elif y1 == y2 and x1 != x2:
+                horizontal.setdefault(y1, []).append((i, j, min(x1, x2), max(x1, x2)))
+
+    # best[(i, s)] = the pair's first overlap in nested segment order.
+    best: dict[tuple[int, int], tuple[int, int, int, int]] = {}
+
+    def scan(line: list[tuple[int, int, int, int]]) -> None:
+        active: list[tuple[int, int, int, int]] = []
+        for seg in sorted(line, key=lambda e: (e[2], e[3])):
+            i, j, lo, hi = seg
+            kept: list[tuple[int, int, int, int]] = []
+            for a in active:
+                ai, aj, alo, ahi = a
+                if ahi <= lo:
+                    continue  # touching, and no later segment reaches further down
+                kept.append(a)
+                if ai == i:
                     continue
-                break
+                olo, ohi = max(alo, lo), min(ahi, hi)
+                if ohi <= olo:
+                    continue
+                p, q = (ai, i) if ai < i else (i, ai)
+                if (
+                    srcs[p] == srcs[q]
+                    or dsts[p] == dsts[q]
+                    or {srcs[p], dsts[p]} == {srcs[q], dsts[q]}
+                ):
+                    continue
+                cand = (aj, j, olo, ohi) if ai < i else (j, aj, olo, ohi)
+                prev = best.get((p, q))
+                if prev is None or cand[:2] < prev[:2]:
+                    best[(p, q)] = cand
+            kept.append(seg)
+            active = kept
+
+    for line in vertical.values():
+        scan(line)
+    for line in horizontal.values():
+        scan(line)
+
+    out: list[Diagnostic] = []
+    for i, s in sorted(best):
+        j_i, _, lo, hi = best[(i, s)]
+        (ax1, ay1), (ax2, ay2) = routes[i].points[j_i], routes[i].points[j_i + 1]
+        r, other = routes[i], routes[s]
+        out.append(
+            _err(
+                "SVA-G-015",
+                f"{r.src} -> {r.dst}",
+                f"is drawn on top of the different edge {other.src} -> {other.dst} "
+                f"for {hi - lo}px at ({ax1},{ay1})-({ax2},{ay2})",
+            )
+        )
     return out
 
 
@@ -191,21 +230,25 @@ def _check_crossings(canvas: Canvas, waypoints: frozenset[str]) -> list[Diagnost
     the box it starts on.
     """
     out: list[Diagnostic] = []
+    # Waypoints are exempt, so they are filtered once rather than inside the
+    # segment loop: on a canvas of 37k mostly-waypoint boxes the exemption
+    # check itself was the loop's biggest cost. Order is preserved.
+    solid = [(b.id, b.x, b.y, b.right, b.bottom) for b in canvas.boxes if b.id not in waypoints]
     for r in canvas.routes:
         endpoints = {r.src, r.dst}
         for (x1, y1), (x2, y2) in pairwise(r.points):
             lo_x, hi_x = min(x1, x2), max(x1, x2)
             lo_y, hi_y = min(y1, y2), max(y1, y2)
-            for b in canvas.boxes:
-                if b.id in endpoints or b.id in waypoints:
+            for bid, bx, by, bright, bbottom in solid:
+                if bid in endpoints:
                     continue
-                if lo_x < b.right and hi_x > b.x and lo_y < b.bottom and hi_y > b.y:
+                if lo_x < bright and hi_x > bx and lo_y < bbottom and hi_y > by:
                     out.append(
                         _err(
                             "SVA-G-011",
                             f"{r.src} -> {r.dst}",
-                            f"segment ({x1},{y1})-({x2},{y2}) crosses box {b.id!r} "
-                            f"at ({b.x},{b.y})+{b.w}x{b.h}",
+                            f"segment ({x1},{y1})-({x2},{y2}) crosses box {bid!r} "
+                            f"at ({bx},{by})+{bright - bx}x{bbottom - by}",
                         )
                     )
     return out
@@ -292,27 +335,50 @@ def _check_boxes(canvas: Canvas, style: Style, waypoints: frozenset[str]) -> lis
 def _check_overlap(canvas: Canvas) -> list[Diagnostic]:
     out: list[Diagnostic] = []
     boxes = sorted(canvas.boxes, key=lambda b: (b.y, b.x, b.id))
-    for i, a in enumerate(boxes):
-        for b in boxes[i + 1 :]:
-            # Rows are laid out top to bottom, so once a later box starts below
-            # this one's bottom edge plus the gap, nothing after it can touch.
-            if b.y >= a.bottom + MIN_GAP:
-                break
-            if a.overlaps(b, MIN_GAP):
-                out.append(
-                    _err(
-                        "SVA-G-001",
-                        f"{a.id} / {b.id}",
-                        f"overlap or sit closer than {MIN_GAP}px: "
-                        f"({a.x},{a.y})+{a.w}x{a.h} against ({b.x},{b.y})+{b.w}x{b.h}",
+    # Candidates for a box's lower neighbours come from y-groups, not a
+    # forward scan: on a canvas with a thousand waypoints in one row the scan
+    # compared every pair sharing a y-band. A partner box b (later in sorted
+    # order) has b.y in [a.y, a.bottom + MIN_GAP), which is a handful of
+    # groups; inside a group, sorted by (x, id), a bisect skips everything
+    # that starts too far right to touch. Comparisons and the order of the
+    # diagnostics are exactly the nested loop's.
+    groups: dict[int, list[Box]] = {}
+    for b in boxes:
+        groups.setdefault(b.y, []).append(b)
+    ys = sorted(groups)
+    for a in boxes:
+        first = bisect_left(ys, a.y)
+        last = bisect_left(ys, a.bottom + MIN_GAP)
+        for gi in range(first, last):
+            row = groups[ys[gi]]
+            start = (
+                bisect_left(row, (a.x, a.id), key=lambda b: (b.x, b.id))
+                if ys[gi] == a.y
+                else 0
+            )
+            for b in row[start:]:
+                if b is a:
+                    continue
+                if b.x >= a.right + MIN_GAP:
+                    break
+                if a.overlaps(b, MIN_GAP):
+                    out.append(
+                        _err(
+                            "SVA-G-001",
+                            f"{a.id} / {b.id}",
+                            f"overlap or sit closer than {MIN_GAP}px: "
+                            f"({a.x},{a.y})+{a.w}x{a.h} against ({b.x},{b.y})+{b.w}x{b.h}",
+                        )
                     )
-                )
     return out
 
 
 def _check_routes(canvas: Canvas) -> list[Diagnostic]:
     out: list[Diagnostic] = []
     ids = {b.id for b in canvas.boxes}
+    # canvas.box() is a linear scan; on a 37k-box canvas the two endpoint
+    # lookups per route cost more than the rest of the check combined.
+    by_id = {b.id: b for b in canvas.boxes}
     for r in canvas.routes:
         missing = [end for end in (r.src, r.dst) if end not in ids]
         if missing:
@@ -353,8 +419,7 @@ def _check_routes(canvas: Canvas) -> list[Diagnostic]:
             ("starts", r.points[0], r.src),
             ("ends", r.points[-1], r.dst),
         ):
-            box = canvas.box(box_id)
-            assert box is not None  # membership checked above
+            box = by_id[box_id]  # membership checked above
             on_x = box.x - MIN_GAP <= end[0] <= box.right + MIN_GAP
             on_y = box.y - MIN_GAP <= end[1] <= box.bottom + MIN_GAP
             if not (on_x and on_y):
@@ -460,28 +525,36 @@ def _check_labels(canvas: Canvas, style: Style) -> list[Diagnostic]:
         masks.append(
             (f"{r.src} -> {r.dst}", cx - r.label_w // 2, cy - height // 2, r.label_w, height)
         )
+    # Waypoints filtered once (see _check_crossings); segment rects per route
+    # computed once rather than per mask. Iteration order is unchanged.
+    solid = [b for b in canvas.boxes if b.id not in canvas.waypoints]
+    route_segs = [
+        (
+            f"{r.src} -> {r.dst}",
+            [
+                (min(x0, x1), max(x0, x1), min(y0, y1), max(y0, y1))
+                for (x0, y0), (x1, y1) in pairwise(r.points)
+            ],
+        )
+        for r in canvas.routes
+    ]
     for who, x, y, w, h in masks:
-        for b in canvas.boxes:
-            if b.id in canvas.waypoints:
-                continue
+        for b in solid:
             if x < b.right and x + w > b.x and y < b.bottom and y + h > b.y:
                 out.append(_err("SVA-G-013", who, f"route label overlaps box {b.id!r}"))
                 break
         # Not over another route: the design names this gate, and a mask on a
         # bundle of lines hides which line the verb belongs to.
-        for r in canvas.routes:
-            if f"{r.src} -> {r.dst}" == who:
+        for who2, segs in route_segs:
+            if who2 == who:
                 continue
             hit = any(
-                min(x0, x1) < x + w
-                and max(x0, x1) > x
-                and min(y0, y1) < y + h
-                and max(y0, y1) > y
-                for (x0, y0), (x1, y1) in pairwise(r.points)
+                lo_x < x + w and hi_x > x and lo_y < y + h and hi_y > y
+                for lo_x, hi_x, lo_y, hi_y in segs
             )
             if hit:
                 out.append(
-                    _err("SVA-G-013", who, f"route label covers the route {r.src} -> {r.dst}")
+                    _err("SVA-G-013", who, f"route label covers the route {who2}")
                 )
                 break
     # Band and region labels are text on the same canvas (review #20 S5).

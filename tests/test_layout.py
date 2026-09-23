@@ -91,6 +91,40 @@ def canvas(
 # --------------------------------------------------------------------------
 
 
+def test_validation_is_near_linear_on_a_dense_canvas() -> None:
+    """_check_route_overlap compared every route pair's every segment pair:
+    on the acceptance repo's 1608-edge module-deps view that was 1.3 million
+    pairs and ~35 minutes. Bucketed by line it is a fraction of a second. The
+    budget here is asymptotic, not a stopwatch: the old loop does not finish
+    this canvas inside it, the new one needs a small part of it."""
+    import time
+
+    boxes = tuple(
+        box(f"m{r}_{c}", 20 + c * 240, 20 + r * 160) for r in range(10) for c in range(30)
+    )
+    routes = []
+    for k in range(1500):
+        a, b = boxes[k % len(boxes)], boxes[(k + 1) % len(boxes)]
+        lane = 33 + 37 * k  # a distinct x per route, like real waypoint columns
+        points = (
+            (a.right, a.bottom),
+            (lane, a.bottom),
+            (lane, b.y),
+            (b.x, b.y),
+        )
+        routes.append(Route(src=a.id, dst=b.id, label="", points=points, evidence=EV))
+    dense = canvas(*boxes, routes=tuple(routes), size=(8000, 2000))
+    start = time.monotonic()
+    validate(dense, STYLE)
+    elapsed = time.monotonic() - start
+    assert elapsed < 30, f"validation took {elapsed:.1f}s on a dense canvas"
+
+
+# --------------------------------------------------------------------------
+# Text metrics
+# --------------------------------------------------------------------------
+
+
 def test_the_font_stack_ends_in_the_monospace_generic() -> None:
     """The width model is only valid for a monospace font.
 
