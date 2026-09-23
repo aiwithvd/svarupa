@@ -15,6 +15,7 @@ from svarupa.cli import main
 from svarupa.cluster import cluster
 from svarupa.derive import NOT_DERIVABLE, derive_all
 from svarupa.derive.base import DiagramKind
+from svarupa.derive.dataflow import MAX_STAGE_BOXES
 from svarupa.detect import detect
 from svarupa.extract import declared_dependencies, extract
 from svarupa.layout import lay_out_set
@@ -499,3 +500,85 @@ def test_report_groups_informational_findings_and_counts_findings_not_lines() ->
     assert lines[-1] == (
         f"*... and {40 - shown} more finding(s) of these codes; the build prints every one*"
     )
+
+
+# --- the stage cap: a stage past the budget is a wall, not a picture ---------
+
+
+def _wide_service(root: Path, domain_count: int = 20) -> None:
+    """One handler importing `domain_count` domain modules: past the stage cap.
+
+    A module is a directory, so each domain module is its own package."""
+    write(root, "api/__init__.py", "")
+    imports = "\n".join(f"from dd{i:02d} import x" for i in range(domain_count))
+    write(
+        root,
+        "api/routes.py",
+        f"from fastapi import APIRouter\n{imports}\nrouter = APIRouter()\n\n"
+        '@router.get("/x")\ndef x():\n    return 1\n',
+    )
+    for i in range(domain_count):
+        write(root, f"dd{i:02d}/__init__.py", "")
+        write(root, f"dd{i:02d}/x.py", "from store import db\n\n\ndef f():\n    return db.q()\n")
+    write(root, "store/__init__.py", "")
+    write(root, "store/db.py", "import psycopg2\n\n\ndef q():\n    return []\n")
+
+
+def test_an_exploding_domain_stage_is_capped_and_the_remainder_stated(tmp_path: Path) -> None:
+    _wide_service(tmp_path)
+    g, (produced, _notes) = _produced(tmp_path)
+    root = produced[DiagramKind.DATA_FLOW].root_spec
+    domain = [n for n in root.nodes if n.attr("stage") == "Domain"]
+    assert len(domain) == MAX_STAGE_BOXES
+    assert "+ 9 more domain modules — drill from the architecture view" in root.subtitle, (
+        root.subtitle
+    )
+    note = next(d for d in produced[DiagramKind.DATA_FLOW].diagnostics if d.code == "SVA-R-006")
+    assert "9 less-connected domain module(s) not drawn" in note.message
+    # Selection is most-connected, ties by id: every kept module cites, and an
+    # omitted module is still in the graph with its components view drawn.
+    assert all(n.evidence for n in domain)
+    drawn_ids = {n.id for n in root.nodes}
+    assert "dd19" not in drawn_ids
+    assert "dd19" in g.modules, "the omitted module is still in the graph"
+
+
+def test_the_cap_is_deterministic(tmp_path: Path) -> None:
+    _wide_service(tmp_path)
+    _, (first, _n1) = _produced(tmp_path)
+    _, (second, _n2) = _produced(tmp_path)
+    a = first[DiagramKind.DATA_FLOW].root_spec
+    b = second[DiagramKind.DATA_FLOW].root_spec
+    assert a.subtitle == b.subtitle
+    assert [n.id for n in a.nodes] == [n.id for n in b.nodes]
+    assert [(e.src, e.dst) for e in a.edges] == [(e.src, e.dst) for e in b.edges]
+
+
+def test_a_capped_data_flow_still_passes_geometry(tmp_path: Path) -> None:
+    """The cap exists so this view draws; it must not withhold at the cap."""
+    _wide_service(tmp_path)
+    _, (produced, _notes) = _produced(tmp_path)
+    lo = lay_out_set(produced[DiagramKind.DATA_FLOW], Style())
+    assert not lo.withheld, [d.render() for d in lo.problems]
+    assert "/spec/root" in lo.canvases
+
+
+def test_a_kept_domain_module_still_drills(tmp_path: Path) -> None:
+    _wide_service(tmp_path)
+    _, (produced, _notes) = _produced(tmp_path)
+    ds = produced[DiagramKind.DATA_FLOW]
+    drillable = [n for n in ds.root_spec.nodes if n.child_spec is not None]
+    assert drillable, "kept modules keep their drill into components"
+    assert all(n.child_spec in ds.specs for n in drillable), "the drill targets resolve"
+
+
+def test_an_exploding_story_is_capped_per_hop(tmp_path: Path) -> None:
+    _wide_service(tmp_path)
+    _, (produced, _notes) = _produced(tmp_path)
+    ds = produced[DiagramKind.REQUEST_FLOW]
+    story = _story_of(ds)
+    hop1 = [n for n in story.nodes if n.attr("hop") == "1"]
+    assert len(hop1) == MAX_STAGE_BOXES
+    assert "+ 8 more at hop 1" in story.subtitle, story.subtitle
+    lo = lay_out_set(ds, Style())
+    assert not lo.withheld, [d.render() for d in lo.problems]

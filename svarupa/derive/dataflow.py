@@ -49,13 +49,22 @@ from svarupa.derive.base import (
 from svarupa.diagnostics import Diagnostic, Severity
 from svarupa.model import EdgeKind, Evidence
 
-__all__ = ["DataFlowDeriver", "RequestFlowDeriver"]
+__all__ = ["MAX_STAGE_BOXES", "DataFlowDeriver", "RequestFlowDeriver"]
 
 # How far a handler's imports are followed into the domain. Two hops is where
 # import chains on services stop carrying meaning about the request (Spike
 # 0b measured import depth 3-10 on libraries, far less on services); deeper
 # hops become the whole codebase.
 DOMAIN_DEPTH = 2
+
+# Above this a stage frame is a wall, not a picture. The most-connected
+# modules of the stage are kept, connectivity being what a reader drills in
+# to see, and the remainder is stated in the subtitle rather than hidden —
+# the same answer as MAX_TOP_BOXES at the top level and MAX_COMPONENT_BOXES
+# in a code view, one stage down. Twelve is the top-level budget. Omitted
+# modules are not gone: they stay in graph.json and one drill away in the
+# architecture view.
+MAX_STAGE_BOXES = 12
 
 _STAGES = ("Ingress", "Handlers", "Domain", "Storage / External")
 
@@ -223,6 +232,62 @@ def _module_node(
     )
 
 
+def _degree(imports: Imports) -> dict[str, int]:
+    """Distinct import connections per module, in both directions.
+
+    The selection weight when a stage must be capped: connectivity is what a
+    reader drills in to see (components.py ranks code views the same way).
+    """
+    degree: dict[str, int] = {}
+    for a, outs in imports.items():
+        degree[a] = degree.get(a, 0) + len(outs)
+        for b, _ev, _via in outs:
+            degree[b] = degree.get(b, 0) + 1
+    return degree
+
+
+def _cap(
+    members: list[str],
+    degree: dict[str, int],
+    stage: str,
+    diags: list[Diagnostic],
+) -> tuple[list[str], int]:
+    """The stage's most-connected MAX_STAGE_BOXES members, and how many rest.
+
+    A cap that dropped silently would make the picture claim the stage is
+    smaller than it is; the omitted count goes to the subtitle and an SVA-R-006
+    diagnostic, and every omitted module remains in graph.json and one drill
+    away in the architecture view. Below the cap nothing changes, so a small
+    repository's diagram is byte-identical.
+    """
+    if len(members) <= MAX_STAGE_BOXES:
+        return members, 0
+    ranked = sorted(members, key=lambda m: (-degree.get(m, 0), m))
+    kept = ranked[:MAX_STAGE_BOXES]
+    omitted = len(members) - len(kept)
+    diags.append(
+        Diagnostic(
+            code="SVA-R-006",
+            severity=Severity.INFO,
+            message=(
+                f"{omitted} less-connected {stage} module(s) not drawn; the "
+                f"{MAX_STAGE_BOXES} most connected are shown. Drill from the "
+                "architecture view; all of them are in graph.json"
+            ),
+            subject=", ".join(m or "(repo root)" for m in ranked[MAX_STAGE_BOXES:][:5]),
+        )
+    )
+    return kept, omitted
+
+
+def _remainder(clauses: list[str]) -> str:
+    """The stated remainder of capped stages, e.g.
+    `; + 253 more domain modules — drill from the architecture view`."""
+    if not clauses:
+        return ""
+    return "; + " + ", + ".join(clauses) + " — drill from the architecture view"
+
+
 def _not_drawn_note(lateral: int, upstream: int) -> str:
     """Imports between drawn modules that are not arrows, by kind. One
     number called "against the flow" counted a handler importing another
@@ -302,12 +367,21 @@ class DataFlowDeriver(Deriver):
                 ),
             )
         imports = _imports_of(graph)
+        degree = _degree(imports)
+        diags: list[Diagnostic] = []
+        # A stage past the cap is a wall, not a picture: keep the most
+        # connected, state the rest. The uncapped sets still drive what the
+        # SVA-R-007 note counts, or capped-away modules would read as
+        # "reachable from no handler", which is false.
+        all_handlers = handlers
+        handlers, omitted_handlers = _cap(handlers, degree, "handler", diags)
         hops, entry = _reach(set(handlers), imports, DOMAIN_DEPTH)
         domain = sorted(m for m, h in hops.items() if h > 0 and m in graph.modules)
+        domain_all = domain
+        domain, omitted_domain = _cap(domain, degree, "domain", diags)
         names = labels_for([*handlers, *domain])
         nodes: list[DiagramNode] = []
         cite: dict[str, tuple[Evidence, ...]] = {}
-        diags: list[Diagnostic] = []
         specs: dict[str, DiagramSpec] = {}
         arch = ArchitectureDeriver()
         for m in handlers:
@@ -368,6 +442,18 @@ class DataFlowDeriver(Deriver):
         # through the corridor. Externals belong to DRAWN modules only.
         ext_layer = 2 + max((hops[m] for m in domain if m in drawn), default=0)
         ext_nodes, ext_edges = external_nodes_and_edges(graph, drawn & set(graph.modules))
+        # Externals are not modules, so the import degree does not cover
+        # them; their connectivity here is how many drawn modules talk to them.
+        ext_degree: dict[str, int] = {}
+        for e in ext_edges:
+            ext_degree[e.dst] = ext_degree.get(e.dst, 0) + 1
+        kept_ext, omitted_ext = _cap(
+            sorted(n.id for n in ext_nodes), ext_degree, "external", diags
+        )
+        omitted_ext_ids = {n.id for n in ext_nodes} - set(kept_ext)
+        if omitted_ext_ids:
+            ext_nodes = [n for n in ext_nodes if n.id not in omitted_ext_ids]
+            ext_edges = [e for e in ext_edges if e.dst not in omitted_ext_ids]
         for n in ext_nodes:
             cite[n.id] = n.evidence
             nodes.append(
@@ -414,7 +500,7 @@ class DataFlowDeriver(Deriver):
                     edges.append(_import_edge(a, b, ev, via))
         edges.extend(e for e in ext_edges if e.src in drawn)
 
-        unstaged = sorted(set(graph.modules) - set(handlers) - set(domain))
+        unstaged = sorted(set(graph.modules) - set(all_handlers) - set(domain_all))
         if unstaged:
             diags.append(
                 Diagnostic(
@@ -428,6 +514,17 @@ class DataFlowDeriver(Deriver):
                     subject=", ".join(m or "(repo root)" for m in unstaged[:5]),
                 )
             )
+        clauses: list[str] = []
+        if omitted_handlers:
+            clauses.append(
+                f"{omitted_handlers} more handler module{'s' if omitted_handlers != 1 else ''}"
+            )
+        if omitted_domain:
+            clauses.append(
+                f"{omitted_domain} more domain module{'s' if omitted_domain != 1 else ''}"
+            )
+        if omitted_ext:
+            clauses.append(f"{omitted_ext} more external{'s' if omitted_ext != 1 else ''}")
         specs[ROOT] = DiagramSpec(
             kind=self.kind,
             id=ROOT,
@@ -436,6 +533,7 @@ class DataFlowDeriver(Deriver):
                 f"{len(handlers)} ingress module{'s' if len(handlers) != 1 else ''}, "
                 f"{len(domain)} domain module{'s' if len(domain) != 1 else ''}, "
                 f"{len(ext_nodes)} external" + _not_drawn_note(lateral, upstream)
+                + _remainder(clauses)
             ),
             nodes=tuple(sorted(nodes)),
             edges=tuple(sorted(edges)),
@@ -527,6 +625,18 @@ class RequestFlowDeriver(Deriver):
     ) -> str:
         sid = spec_id(f"req:{handler}")
         hops, entry = _reach({handler}, imports, DOMAIN_DEPTH)
+        degree = _degree(imports)
+        # A story whose hops explode stops being a story: cap each hop at the
+        # stage budget, most-connected first, and state the remainder.
+        kept: set[str] = {handler}
+        clauses: list[str] = []
+        for hop in range(1, DOMAIN_DEPTH + 1):
+            members = sorted(m for m, h in hops.items() if h == hop and m in graph.modules)
+            kept_hop, omitted = _cap(members, degree, f"hop {hop}", diags)
+            kept.update(kept_hop)
+            if omitted:
+                clauses.append(f"{omitted} more at hop {hop}")
+        hops = {m: h for m, h in hops.items() if m in kept}
         names = labels_for(sorted(m for m in hops if m in graph.modules))
         nodes: list[DiagramNode] = []
         cite: dict[str, tuple[Evidence, ...]] = {}
@@ -556,6 +666,17 @@ class RequestFlowDeriver(Deriver):
         drawn = {n.id for n in nodes}
         last = max((hops[m] for m in drawn), default=0) + 1
         ext_nodes, ext_edges = external_nodes_and_edges(graph, drawn)
+        ext_degree: dict[str, int] = {}
+        for e in ext_edges:
+            ext_degree[e.dst] = ext_degree.get(e.dst, 0) + 1
+        kept_ext, omitted_ext = _cap(
+            sorted(n.id for n in ext_nodes), ext_degree, "external", diags
+        )
+        omitted_ext_ids = {n.id for n in ext_nodes} - set(kept_ext)
+        if omitted_ext_ids:
+            ext_nodes = [n for n in ext_nodes if n.id not in omitted_ext_ids]
+            ext_edges = [e for e in ext_edges if e.dst not in omitted_ext_ids]
+            clauses.append(f"{omitted_ext} more external{'s' if omitted_ext != 1 else ''}")
         for n in ext_nodes:
             nodes.append(
                 DiagramNode(
@@ -603,6 +724,7 @@ class RequestFlowDeriver(Deriver):
             subtitle=(
                 f"{len(hops)} module{'s' if len(hops) != 1 else ''} within {DOMAIN_DEPTH} import "
                 f"hops; reachability, not call order" + _not_drawn_note(lateral, upstream)
+                + _remainder(clauses)
             ),
             nodes=tuple(sorted(nodes)),
             edges=tuple(sorted(edges)),
