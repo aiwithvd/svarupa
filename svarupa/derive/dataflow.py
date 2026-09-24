@@ -375,7 +375,12 @@ class DataFlowDeriver(Deriver):
         # "reachable from no handler", which is false.
         all_handlers = handlers
         handlers, omitted_handlers = _cap(handlers, degree, "handler", diags)
-        hops, entry = _reach(set(handlers), imports, DOMAIN_DEPTH)
+        # Reach is computed from ALL handlers, capped or not: a domain module
+        # reachable only through an omitted handler is still reachable, and
+        # counting it as "reachable from no route handler" (SVA-R-007) is a
+        # false claim about a real module. The domain cap below states its own
+        # remainder, so nothing is hidden either way.
+        hops, entry = _reach(set(all_handlers), imports, DOMAIN_DEPTH)
         domain = sorted(m for m, h in hops.items() if h > 0 and m in graph.modules)
         domain_all = domain
         domain, omitted_domain = _cap(domain, degree, "domain", diags)
@@ -627,12 +632,23 @@ class RequestFlowDeriver(Deriver):
         hops, entry = _reach({handler}, imports, DOMAIN_DEPTH)
         degree = _degree(imports)
         # A story whose hops explode stops being a story: cap each hop at the
-        # stage budget, most-connected first, and state the remainder.
+        # stage budget, most-connected first, and state the remainder. The
+        # caps are PROGRESSIVE: a hop-N box is eligible only when a drawn
+        # hop-(N-1) box imports it, because the alternative is a box labelled
+        # "hop N" with no visible path from the handler — a path claim the
+        # picture does not make. Every module dropped this way is still
+        # counted in the remainder.
+        parents: dict[str, set[str]] = {}
+        for a, outs in imports.items():
+            for b, _ev, _via in outs:
+                parents.setdefault(b, set()).add(a)
         kept: set[str] = {handler}
         clauses: list[str] = []
         for hop in range(1, DOMAIN_DEPTH + 1):
             members = sorted(m for m, h in hops.items() if h == hop and m in graph.modules)
-            kept_hop, omitted = _cap(members, degree, f"hop {hop}", diags)
+            eligible = [m for m in members if parents.get(m, set()) & kept]
+            kept_hop, _ = _cap(eligible, degree, f"hop {hop}", diags)
+            omitted = len(members) - len(kept_hop)
             kept.update(kept_hop)
             if omitted:
                 clauses.append(f"{omitted} more at hop {hop}")

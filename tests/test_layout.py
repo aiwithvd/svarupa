@@ -1419,6 +1419,33 @@ def test_flow_extends_the_trailing_lane_past_the_last_column() -> None:
     assert validate(c, STYLE) == (), [d.render() for d in validate(c, STYLE)]
 
 
+def test_flow_widening_keeps_the_canvas_wide_enough_for_the_env_strip() -> None:
+    """Review #26 F2: the demand-driven gap-widening branch dropped the
+    `strip_right` term from the canvas width, so a wide environment strip
+    plus one congested gap produced a canvas narrower than its own strip."""
+    layers = {"src": "0", **{f"m{i}": "1" for i in range(25)}, **{f"t{i}": "2" for i in range(25)}}
+    envs = tuple(
+        DiagramNode(
+            id=f"env:{e}",
+            label=f"{e}-production-environment",
+            kind="environment",
+            evidence=EV,
+        )
+        for e in ("us", "eu", "apac", "staging", "qa", "dev", "sandbox", "preview")
+    )
+    s = DiagramSpec(
+        kind=DiagramKind.DEPLOY_TOPOLOGY,
+        id="/spec/root",
+        title="t",
+        nodes=tuple(node(nid, layer=level) for nid, level in layers.items()) + envs,
+        edges=tuple(edge("src", f"t{i}") for i in range(25)),
+    )
+    c = lay_out(s, STYLE, "flow")
+    assert validate(c, STYLE) == (), [d.render() for d in validate(c, STYLE)]
+    strip_right = max(b.right for b in c.boxes if b.kind == "environment")
+    assert strip_right <= c.width, f"strip ends at {strip_right}, canvas is {c.width} wide"
+
+
 def test_flow_fan_heights_wrap_inside_a_box_with_more_ports_than_pixels() -> None:
     """With more exits than the box is tall the fan step collapses to 1px
     and an unwrapped fan walks off the bottom edge (SVA-G-005 on a module

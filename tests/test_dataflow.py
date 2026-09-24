@@ -582,3 +582,86 @@ def test_an_exploding_story_is_capped_per_hop(tmp_path: Path) -> None:
     assert "+ 8 more at hop 1" in story.subtitle, story.subtitle
     lo = lay_out_set(ds, Style())
     assert not lo.withheld, [d.render() for d in lo.problems]
+
+
+# --- review #26: cap interactions --------------------------------------------
+
+
+def _many_handlers(root: Path, handlers: int = 13) -> None:
+    """`handlers` api modules, all equally connected, so the cap drops the
+    last by id. Every one imports `shared`; the last one alone imports `only`."""
+    write(root, "shared/__init__.py", "")
+    write(root, "only/__init__.py", "")
+    for i in range(handlers):
+        write(root, f"h{i:02d}/__init__.py", "")
+        extra = "from only import x\n" if i == handlers - 1 else "from shared import s\n"
+        write(
+            root,
+            f"h{i:02d}/routes.py",
+            f"from fastapi import APIRouter\n{extra}"
+            "router = APIRouter()\n\n"
+            '@router.get("/x")\ndef x():\n    return s\n',
+        )
+    write(root, "shared/s.py", "s = 1\n")
+    write(root, "only/x.py", "x = 1\n")
+
+
+def test_a_module_reachable_only_via_a_capped_handler_is_not_called_unreachable(
+    tmp_path: Path,
+) -> None:
+    """Review #26 F1: handlers are capped before reach, so a module reachable
+    only through an omitted handler fell into SVA-R-007's "reachable from no
+    route handler" — a false claim. Reach runs from ALL handlers; the domain
+    cap states its own remainder."""
+    _many_handlers(tmp_path)
+    _, (produced, _notes) = _produced(tmp_path)
+    ds = produced[DiagramKind.DATA_FLOW]
+    ids = {n.id for n in ds.root_spec.nodes}
+    assert "h12" not in ids, "the least-id handler is the one capped away"
+    assert "+ 1 more handler module" in ds.root_spec.subtitle
+    assert "only" in ids, "still domain-reachable — from the capped handler"
+    unreachable = [d for d in ds.diagnostics if d.code == "SVA-R-007"]
+    assert not any("only" in (d.subject or "") for d in unreachable), (
+        f"SVA-R-007 calls a reachable module unreachable: {[d.render() for d in unreachable]}"
+    )
+
+
+def _pathless_story(root: Path) -> None:
+    """One handler, 20 equally-connected hop-1 modules (so a12..a19 are the
+    ones capped away); a19 alone reaches z0 at hop 2."""
+    write(root, "api/__init__.py", "")
+    imports = "\n".join(f"from a{i:02d} import x" for i in range(20))
+    write(
+        root,
+        "api/routes.py",
+        f"from fastapi import APIRouter\n{imports}\nrouter = APIRouter()\n\n"
+        '@router.get("/x")\ndef x():\n    return 1\n',
+    )
+    write(root, "shared2/__init__.py", "")
+    write(root, "shared2/s.py", "s = 1\n")
+    for i in range(20):
+        write(root, f"a{i:02d}/__init__.py", "")
+        dep = "from z0 import y" if i == 19 else "from shared2 import s"
+        write(root, f"a{i:02d}/x.py", f"{dep}\nx = 1\n")
+    write(root, "z0/__init__.py", "")
+    write(root, "z0/y.py", "y = 1\n")
+
+
+def test_a_capped_story_draws_no_pathless_box(tmp_path: Path) -> None:
+    """Review #26 F3: hop caps were independent, so a hop-2 module whose only
+    path ran through a capped hop-1 box stayed drawn with no in-edge — a path
+    claim the picture does not make. Caps are progressive now."""
+    _pathless_story(tmp_path)
+    _, (produced, _notes) = _produced(tmp_path)
+    ds = produced[DiagramKind.REQUEST_FLOW]
+    story = _story_of(ds)
+    drawn = {n.id for n in story.nodes}
+    assert "a19" not in drawn, "the fixture's design: a19 is capped away at hop 1"
+    assert "z0" not in drawn, "no drawn parent, so not drawn"
+    in_edges = {e.dst for e in story.edges if e.src in drawn}
+    for n in story.nodes:
+        hop = int(n.attr("hop") or 0)
+        if hop >= 1:
+            assert n.id in in_edges, f"{n.id} drawn at hop {hop} with no drawn in-edge"
+    assert "+ 8 more at hop 1" in story.subtitle, story.subtitle
+    assert "+ 1 more at hop 2" in story.subtitle, story.subtitle

@@ -1569,7 +1569,7 @@ def flow(
         col_right = {
             level: max(placed[b.id].right for b in col) for level, col in columns.items() if col
         }
-        width = x - gap_w[-1] + style.margin + pad + style.lane_gutter
+        width = max(x - gap_w[-1] + style.margin + pad + style.lane_gutter, strip_right)
     # The lane right of the LAST column must hold that column's own climbs
     # and backward drops too, not just the reserved gutter.
     if order and right_k.get(len(order) - 1):
