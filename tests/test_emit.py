@@ -1154,6 +1154,53 @@ def test_every_embeddable_drillable_box_has_an_expanded_variant(tmp_path: Path) 
         assert "//expanded" not in name.read_text(encoding="utf8")
 
 
+def _drillable_set(host_modules: int) -> tuple[object, object]:
+    """A module-deps set whose root view has `host_modules` drillable boxes."""
+    from svarupa.derive.base import ROOT, DiagramNode, DiagramSet, DiagramSpec
+    from svarupa.model import Evidence
+
+    ev = (Evidence("m/x.py", 1, 1),)
+    nodes = tuple(
+        DiagramNode(
+            id=f"m{i}", label=f"m{i}", kind="module", evidence=ev,
+            child_spec=f"/spec/m{i}", attrs=(("layer", "0"),),
+        )
+        for i in range(host_modules)
+    )
+    specs = {
+        ROOT: DiagramSpec(
+            kind=DiagramKind.MODULE_DEPS, id=ROOT, title="t", nodes=nodes, edges=()
+        ),
+        **{
+            f"/spec/m{i}": DiagramSpec(
+                kind=DiagramKind.MODULE_DEPS,
+                id=f"/spec/m{i}",
+                title="t",
+                nodes=(DiagramNode(id="x", label="x", kind="module", evidence=ev),),
+                edges=(),
+                parent=ROOT,
+            )
+            for i in range(host_modules)
+        },
+    }
+    ds = DiagramSet(DiagramKind.MODULE_DEPS, ROOT, specs)
+    return ds, lay_out_set(ds, Style())
+
+
+def test_expansions_are_capped_for_a_host_past_the_box_budget() -> None:
+    """Each expansion re-renders its whole host; past the budget the drill
+    falls back to the child as its own view rather than paying host-sized
+    bytes per drillable box."""
+    from svarupa.emit.viewer import MAX_EXPANSION_HOST_BOXES, _expanded_views
+
+    big_ds, big_lo = _drillable_set(MAX_EXPANSION_HOST_BOXES + 6)
+    assert _expanded_views(big_ds, big_lo, Style()) == []
+    small_ds, small_lo = _drillable_set(MAX_EXPANSION_HOST_BOXES - 4)
+    assert _expanded_views(small_ds, small_lo, Style()), (
+        "a host within the budget keeps its in-place expansions"
+    )
+
+
 def test_expansion_is_composition_not_new_geometry(tmp_path: Path) -> None:
     """The child keeps its own validated coordinates and is drawn translated.
 

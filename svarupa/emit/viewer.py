@@ -28,6 +28,13 @@ from svarupa.layout.text import FONT_STACK
 
 __all__ = ["render_viewer"]
 
+# Above this many real boxes in a host view, in-place expansions are not
+# pre-rendered: each expansion re-renders the whole host, so the bytes grow
+# with host size times drillable count, and the context an expansion
+# preserves is not readable at that size anyway. The drill then opens the
+# child as its own view — the same fallback an oversized child already took.
+MAX_EXPANSION_HOST_BOXES = 24
+
 
 def _css() -> Markup:
     """The visual system, studied from Archify's output rather than invented.
@@ -665,9 +672,22 @@ def _js() -> Markup:
     downBtn.onclick = function () { light(root, node, down); };
     // The drill, named: a single click on a drillable box gave a card and no
     // way on to the next level (review #20 M4). The button and the chevron
-    // both open it; a double-click still does.
+    // both open it; a double-click still does. It says "in place" only when
+    // the pre-rendered expansion exists; a host past MAX_EXPANSION_HOST_BOXES
+    // or a child too big to embed falls back to the child as its own view,
+    // and the button names what it does.
     var child = node.getAttribute('data-child');
     openBtn.hidden = !child;
+    if (child) {
+      var pv = node.closest('.view');
+      var hostId = pv.dataset.view;
+      if (pv.dataset.host) {
+        hostId = node.closest('[data-scope="child"]') ? pv.dataset.plain : pv.dataset.host;
+      }
+      var expandedId = hostId + '//' + node.getAttribute('data-id') + '//expanded';
+      var hasExpansion = !!node.closest('.tab').querySelector('[data-view="' + CSS.escape(expandedId) + '"]');
+      openBtn.textContent = hasExpansion ? 'Open in place \u203a' : 'Open \u203a';
+    }
     openBtn.onclick = child ? function () { openView(node, child); } : null;
   }
 
@@ -1444,6 +1464,14 @@ def _expanded_views(ds: DiagramSet, lo: LaidOutDiagram, style: Style) -> list[Ma
     A child too large to embed gets no variant, and the click falls back to
     opening the child as its own view. Different, but stated by behaviour a
     reader can see, never a silent scale-down.
+
+    A host bigger than MAX_EXPANSION_HOST_BOXES gets no variants either: each
+    expansion re-renders the whole host, so cost grows with host size times
+    drillable count (the 161-box, 176-drillable acceptance-repo host paid
+    90MB), and past a couple of dozen boxes the "surrounding context" the
+    expansion exists to preserve is not readable anyway. The drill falls back
+    to the child view, and the passport's button says "Open" rather than
+    "Open in place" so the affordance names what it does.
     """
     from svarupa.layout import ENGINE_FOR_KIND
     from svarupa.layout.compose import expand
@@ -1451,6 +1479,9 @@ def _expanded_views(ds: DiagramSet, lo: LaidOutDiagram, style: Style) -> list[Ma
     engine = ENGINE_FOR_KIND[ds.kind]
     out: list[Markup] = []
     for sid in sorted(lo.canvases):
+        canvas = lo.canvases[sid]
+        if sum(1 for b in canvas.boxes if b.id not in canvas.waypoints) > MAX_EXPANSION_HOST_BOXES:
+            continue
         for node in ds.specs[sid].nodes:
             child_id = node.child_spec
             if child_id is None or child_id not in lo.canvases:

@@ -193,6 +193,8 @@ if (drillable) {
   const openBtn = document.getElementById('panel-open');
   check('a single click on a drillable box opens its passport, not the drill', tab.querySelector('.view.is-open') === view && panel.classList.contains('is-open'));
   check('the passport of a drillable box offers Open in place', !openBtn.hidden);
+  check('the button says in place only when the expansion is pre-rendered',
+    openBtn.textContent === 'Open in place ›', openBtn.textContent);
   openBtn.click();
   check('the Open button opens the expansion', (tab.querySelector('.view.is-open') || {}).getAttribute && tab.querySelector('.view.is-open').getAttribute('data-view') === expandedId);
   crumbBack();
