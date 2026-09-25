@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "svarupa"
-version = "0.2.0"
+version = "0.2.1"
 description = "Verified architecture diagrams and a queryable knowledge graph, derived from your codebase. Every box points at a line of code."
 readme = "README.md"
 requires-python = ">=3.10"
