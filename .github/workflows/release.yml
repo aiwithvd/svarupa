@@ -36,3 +36,7 @@ jobs:
 
       - name: publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          # Re-runs and backfilled tags stay green instead of failing on
+          # "version already exists".
+          skip-existing: true
