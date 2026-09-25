@@ -675,10 +675,13 @@ def _js() -> Markup:
     // both open it; a double-click still does. It says "in place" only when
     // the pre-rendered expansion exists; a host past MAX_EXPANSION_HOST_BOXES
     // or a child too big to embed falls back to the child as its own view,
-    // and the button names what it does.
+    // and the button names what it does. A withheld child view has no target
+    // at all: no button, rather than a named click that opens nothing
+    // (review #26 F5); the tab's withheld note names the view and the reason.
     var child = node.getAttribute('data-child');
-    openBtn.hidden = !child;
-    if (child) {
+    var childWithheld = child !== null && node.getAttribute('data-child-withheld') !== null;
+    openBtn.hidden = !child || childWithheld;
+    if (child && !childWithheld) {
       var pv = node.closest('.view');
       var hostId = pv.dataset.view;
       if (pv.dataset.host) {
@@ -688,7 +691,7 @@ def _js() -> Markup:
       var hasExpansion = !!node.closest('.tab').querySelector('[data-view="' + CSS.escape(expandedId) + '"]');
       openBtn.textContent = hasExpansion ? 'Open in place \u203a' : 'Open \u203a';
     }
-    openBtn.onclick = child ? function () { openView(node, child); } : null;
+    openBtn.onclick = child && !childWithheld ? function () { openView(node, child); } : null;
   }
 
   // Focus: the clicked box glows, a chosen set stays lit, the rest recedes.
@@ -1272,7 +1275,7 @@ def _view(
                 crumb,
                 tag("h2", esc(spec.title)),
                 tag("p", esc(spec.subtitle), class_="meta"),
-                tag("div", canvas_svg(canvas, style), class_="scroller"),
+                tag("div", canvas_svg(canvas, style, frozenset(lo.withheld)), class_="scroller"),
                 _legend(canvas),
                 render_cards(cards) if cards and spec_id == ds.root else raw(""),
             )
@@ -1507,7 +1510,11 @@ def _expanded_views(ds: DiagramSet, lo: LaidOutDiagram, style: Style) -> list[Ma
                             crumb,
                             tag("h2", esc(lo.canvases[child_id].title)),
                             tag("p", esc(lo.canvases[child_id].subtitle), class_="meta"),
-                            tag("div", expanded_svg(exp, style), class_="scroller"),
+                            tag(
+                                "div",
+                                expanded_svg(exp, style, frozenset(lo.withheld)),
+                                class_="scroller",
+                            ),
                             _legend(lo.canvases[child_id], expanded=True),
                         )
                     ),

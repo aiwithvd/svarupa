@@ -1447,7 +1447,17 @@ def flow(
     def entry_y(src: str, dst: str) -> int:
         if levels.get(src, 0) >= levels.get(dst, 0):
             ports = right_ports[dst]
-            return fan_y(placed[dst], ports.index(("in", src)) + 1, len(ports))
+            b = placed[dst]
+            y = fan_y(b, ports.index(("in", src)) + 1, len(ports))
+            # Once the fan wraps (more same-side ports than the box is tall),
+            # port k and port k+cycle share a height; exits are even, so
+            # backward entries go odd or a wrapped exit and a wrapped entry
+            # leave the right edge on one line (review #26 F4). Below the wrap
+            # no two ports can coincide, so nothing changes.
+            slots = max(1, len(ports))
+            step = b.h // (slots + 1)
+            cycle = max(1, (b.h - 1) // max(1, step))
+            return y | 1 if slots > cycle else y
         left = left_ports[dst]
         return entry_fan_y(placed[dst], left.index(src) + 1, len(left)) | 1
 

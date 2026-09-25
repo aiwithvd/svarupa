@@ -204,6 +204,14 @@ if (drillable) {
   crumbBack();
   const leaf = Array.from(svg.querySelectorAll('.sv-node[data-id]')).find((n) => !n.hasAttribute('data-child'));
   if (leaf) { fire(leaf, 'click', { detail: 1 }); check('a leaf box has no Open button', openBtn.hidden); fire(view.querySelector('.scroller'), 'click', { detail: 1 }); }
+  // review #26 F5: a box whose child view was withheld carries the mark and
+  // offers no drill button, instead of a named click that opens nothing
+  drillable.setAttribute('data-child-withheld', '1');
+  fire(drillable, 'click', { detail: 1 });
+  check('a box whose child view was withheld offers no drill button', openBtn.hidden === true);
+  drillable.removeAttribute('data-child-withheld');
+  fire(drillable, 'click', { detail: 1 });
+  check('without the mark the drill button is back', !openBtn.hidden);
   fire(drillable, 'click', { detail: 1 });
   fire(drillable, 'click', { detail: 2 });
   const open = tab.querySelector('.view.is-open');

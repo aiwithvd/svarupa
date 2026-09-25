@@ -1446,6 +1446,21 @@ def test_flow_widening_keeps_the_canvas_wide_enough_for_the_env_strip() -> None:
     assert strip_right <= c.width, f"strip ends at {strip_right}, canvas is {c.width} wide"
 
 
+def test_flow_fan_wrap_separates_exits_from_backward_entries_on_a_full_side() -> None:
+    """Review #26 F4: the wrapped fan maps port k and port k+cycle to one y.
+    Exits and backward entries share the right-side port list, so with more
+    same-side ports than the box is tall (43 at 44px), a wrapped exit stub
+    and a wrapped backward-entry stub leave the box's right edge at the SAME
+    height — two different edges, no shared endpoint, SVA-G-015. The fan
+    keeps exits even and backward entries odd once the wrap is active, which
+    is the parity the forward-entry side already had."""
+    layers = {"hub": "1", **{f"t{i}": "2" for i in range(41)}, **{f"s{i}": "2" for i in range(4)}}
+    edges = [("hub", f"t{i}") for i in range(41)] + [(f"s{i}", "hub") for i in range(4)]
+    s = flow_spec_of(*edges, layers=layers)
+    c = lay_out(s, STYLE, "flow")
+    assert validate(c, STYLE) == (), [d.render() for d in validate(c, STYLE)]
+
+
 def test_flow_fan_heights_wrap_inside_a_box_with_more_ports_than_pixels() -> None:
     """With more exits than the box is tall the fan step collapses to 1px
     and an unwrapped fan walks off the bottom edge (SVA-G-005 on a module

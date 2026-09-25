@@ -81,13 +81,18 @@ def _band(label: str, y: int, h: int, width: int, style: Style) -> Markup:
     )
 
 
-def _box(box: Box, style: Style) -> Markup:
+def _box(box: Box, style: Style, withheld: frozenset[str] = frozenset()) -> Markup:
     """One box, as a group carrying everything the viewer needs.
 
     The full label is on the group as a `title`, so hovering a truncated label
     shows the whole thing even without JavaScript. Truncation happened at
     layout time and is what the geometry check measured, so what is drawn here
     is exactly what was validated.
+
+    A box whose child view was withheld carries `data-child-withheld`: the
+    drill target does not exist, and the viewer hides its Open button rather
+    than offering a click that opens nothing (review #26 F5). The withheld
+    note at the bottom of the tab already names the view and the reason.
     """
     # Two text lines when there is a sublabel: label above centre, sublabel
     # 14px below it (Archify's spacing); one centred line otherwise.
@@ -172,6 +177,9 @@ def _box(box: Box, style: Style) -> Markup:
         + (" sv-drillable" if box.is_drillable else ""),
         data_id=box.id,
         data_child=box.child_spec,
+        data_child_withheld=(
+            "1" if box.child_spec is not None and box.child_spec in withheld else None
+        ),
         # The passport reads these back; both are repository-derived text
         # and go through the same escaping as every other attribute.
         data_sublabel=box.sublabel or None,
@@ -440,7 +448,12 @@ def _rounded(points: tuple[tuple[int, int], ...], radius: int = 8) -> str:
     return " ".join(out)
 
 
-def canvas_body(canvas: Canvas, style: Style, skip: frozenset[str] = frozenset()) -> Markup:
+def canvas_body(
+    canvas: Canvas,
+    style: Style,
+    skip: frozenset[str] = frozenset(),
+    withheld: frozenset[str] = frozenset(),
+) -> Markup:
     """The drawable content of a canvas, without the `<svg>` wrapper.
 
     Split from the wrapper so an expanded view can nest one canvas's body
@@ -457,7 +470,7 @@ def canvas_body(canvas: Canvas, style: Style, skip: frozenset[str] = frozenset()
             join(_band(b.label, b.y, b.h, canvas.width, style) for b in canvas.bands),
             join(_route(r, style) for r in canvas.routes),
             join(
-                _box(b, style)
+                _box(b, style, withheld)
                 for b in canvas.boxes
                 if b.id not in canvas.waypoints and b.id not in skip
             ),
@@ -479,10 +492,10 @@ def svg_document(body: Markup, width: int, height: int, label: str) -> Markup:
     )
 
 
-def canvas_svg(canvas: Canvas, style: Style) -> Markup:
+def canvas_svg(canvas: Canvas, style: Style, withheld: frozenset[str] = frozenset()) -> Markup:
     """One positioned diagram as a complete inline SVG element."""
     return svg_document(
-        canvas_body(canvas, style),
+        canvas_body(canvas, style, withheld=withheld),
         canvas.width,
         canvas.height,
         f"{canvas.kind.value}: {canvas.title}",
@@ -499,7 +512,7 @@ def _slug(text: str) -> str:
     return "".join(c if c.isalnum() or c == "-" else "-" for c in text.lower()) or "none"
 
 
-def expanded_svg(exp: object, style: Style) -> Markup:
+def expanded_svg(exp: object, style: Style, withheld: frozenset[str] = frozenset()) -> Markup:
     """A pre-rendered expansion: the parent view with one box opened in place.
 
     The host box is drawn as a dashed container with its label as a header,
@@ -552,7 +565,7 @@ def expanded_svg(exp: object, style: Style) -> Markup:
     )
     embedded = tag(
         "g",
-        canvas_body(exp.child, style),
+        canvas_body(exp.child, style, withheld=withheld),
         transform=f"translate({exp.offset[0]} {exp.offset[1]})",
     )
     return svg_document(
@@ -566,7 +579,12 @@ def expanded_svg(exp: object, style: Style) -> Markup:
                 tag(
                     "g",
                     join(
-                        (canvas_body(exp.canvas, style, skip=frozenset({exp.host})), container)
+                        (
+                            canvas_body(
+                                exp.canvas, style, skip=frozenset({exp.host}), withheld=withheld
+                            ),
+                            container,
+                        )
                     ),
                     data_scope="parent",
                 ),

@@ -1201,6 +1201,59 @@ def test_expansions_are_capped_for_a_host_past_the_box_budget() -> None:
     )
 
 
+def test_a_withheld_child_view_marks_its_box_and_the_script_hides_the_drill() -> None:
+    """Review #26 F5: a box whose child view failed geometry has no drill
+    target at all. The emitted markup says so (`data-child-withheld`) and the
+    shipped script hides the Open button on it, instead of a named button
+    whose click opens nothing."""
+    from svarupa.derive.base import ROOT, DiagramEdge, DiagramNode, DiagramSet, DiagramSpec
+    from svarupa.emit.viewer import render_viewer
+    from svarupa.model import Evidence
+
+    ev = (Evidence("m/x.py", 1, 1),)
+    # The child spec's edge names a node that is not on it: SVA-G-004, an
+    # ERROR, so the view is withheld.
+    child = DiagramSpec(
+        kind=DiagramKind.MODULE_DEPS,
+        id="/spec/m0",
+        title="child",
+        nodes=(DiagramNode(id="x", label="x", kind="module", evidence=ev),),
+        edges=(DiagramEdge(src="x", dst="ghost", label="", evidence=ev),),
+        parent=ROOT,
+    )
+    ds = DiagramSet(
+        DiagramKind.MODULE_DEPS,
+        ROOT,
+        {
+            ROOT: DiagramSpec(
+                kind=DiagramKind.MODULE_DEPS,
+                id=ROOT,
+                title="t",
+                nodes=(
+                    DiagramNode(
+                        id="m0", label="m0", kind="module", evidence=ev,
+                        child_spec="/spec/m0", attrs=(("layer", "0"),),
+                    ),
+                ),
+                edges=(),
+            ),
+            "/spec/m0": child,
+        },
+    )
+    lo = lay_out_set(ds, Style())
+    assert "/spec/m0" in lo.withheld, "the fixture's child view must be withheld"
+    html = render_viewer(
+        "repo",
+        {DiagramKind.MODULE_DEPS: ds},
+        {DiagramKind.MODULE_DEPS: lo},
+        (),
+        Style(),
+        "0.0.0-test",
+    )
+    assert 'data-child="/spec/m0" data-child-withheld="1"' in html
+    assert "getAttribute('data-child-withheld')" in html, "the script reads the mark"
+
+
 def test_expansion_is_composition_not_new_geometry(tmp_path: Path) -> None:
     """The child keeps its own validated coordinates and is drawn translated.
 
