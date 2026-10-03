@@ -48,7 +48,9 @@ error-severity diagnostics. Exit 1 means at least one error or a refusal:
 an artifact may still have been written (a repository can carry a real
 error, like a case-colliding pair of files, and still be analyzable), and
 the diagnostics in the report on stdout say what is wrong. A refusal prints
-one structured diagnostic to stderr and writes nothing new.
+one structured diagnostic to stderr and writes nothing new. Exit 3 appears
+only with `--fail-on-change`: the run succeeded and the architecture delta
+is not empty.
 
 ## Query the graph
 
@@ -108,11 +110,14 @@ exactly the lines that changed.
    code (for example from a `git worktree` of the merge base) and pass it as
    `--drift-base <regenerated lock>`. Drift is then reported first, and the
    delta is taken against the regenerated base so it shows this change alone.
+4. Gate, if wanted: add `--fail-on-change` to exit 3 when the delta is not
+   empty. Without it a delta is informational and the exit code stays 0.
 
 `svarupa setup ci_github` installs a GitHub Actions workflow that does all
 three per pull request; `svarupa setup ci_gitlab` installs the same job for
 GitLab merge requests (it refuses to overwrite an existing `.gitlab-ci.yml`
-and prints the job to merge in by hand instead).
+and prints the job to merge in by hand instead). Both are informational
+by default; add `--fail-on-change` to their `svarupa` calls to gate merges.
 
 ## Rules the tool holds itself to, which you can rely on
 
