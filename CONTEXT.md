@@ -86,3 +86,33 @@ _Avoid_: diff (for the result), change set
 **Drift**:
 A committed base lockfile that no longer matches one regenerated from the base branch's code.
 _Avoid_: stale diff, mismatch
+
+## Design
+
+**Language pack**:
+The data that teaches the generic extractor one language: how imports, functions and branches look, and how an import name maps to a file. A language without a pack is detected but not analyzed.
+_Avoid_: plugin, parser, language support
+
+**Design style**:
+A known way to arrange code, such as layered, hexagonal or feature modules, written as rules over parts: which parts exist and which may depend on which. A system can use one style between its services and another inside each service.
+_Avoid_: pattern, architecture (for the style itself)
+
+**Target design**:
+The design style and the assignment of modules to its parts that the code is measured against. It is inferred until a person accepts it, then accepted and committed.
+_Avoid_: ideal design, intended design, blueprint
+
+**Check**:
+One rule in the catalog that code is measured against, such as a layer direction, a long function or an endpoint without auth. Each check names the standard it comes from.
+_Avoid_: lint rule, detector
+
+**Violation**:
+One place, with evidence, where code breaks a check or the target design.
+_Avoid_: smell, issue, warning, finding (findings are Svarupa's own diagnostics)
+
+**Maturity**:
+Whether a style or check is stable, proven on the benchmark repositories, or experimental and labelled so in every report.
+_Avoid_: beta, confidence
+
+**Health**:
+The graded result per quality area, built only from violations by one published formula.
+_Avoid_: quality score, rating
