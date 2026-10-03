@@ -519,7 +519,9 @@ def _wide_service(root: Path, domain_count: int = 20) -> None:
     )
     for i in range(domain_count):
         write(root, f"dd{i:02d}/__init__.py", "")
-        write(root, f"dd{i:02d}/x.py", "from store import db\n\n\ndef f():\n    return db.q()\n")
+        write(
+            root, f"dd{i:02d}/x.py", "from store import db\n\n\ndef f():\n    return db.q()\n"
+        )
     write(root, "store/__init__.py", "")
     write(root, "store/db.py", "import psycopg2\n\n\ndef q():\n    return []\n")
 

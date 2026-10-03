@@ -99,8 +99,7 @@ def _scan(
     env_names = sorted({e.name for e in graph.environments})
     if env_names:
         print(
-            f"  environments: {', '.join(env_names)} "
-            f"({len(graph.environments)} declaration(s))"
+            f"  environments: {', '.join(env_names)} ({len(graph.environments)} declaration(s))"
         )
     else:
         # An honest absence: environments are often implicit, and inventing

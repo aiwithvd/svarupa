@@ -391,9 +391,7 @@ def test_facts_land_on_the_extract_result(tmp_path: Path) -> None:
     write(tmp_path, "src/app.py", "x = 1\n")
     scan = detect(tmp_path)
     result = extract(scan, declared_dependencies(scan))
-    assert {(f.name, f.source) for f in result.environments} == {
-        ("production", "filename")
-    }
+    assert {(f.name, f.source) for f in result.environments} == {("production", "filename")}
 
 
 # --------------------------------------------------------------------------

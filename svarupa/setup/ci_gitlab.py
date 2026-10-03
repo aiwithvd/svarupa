@@ -88,9 +88,7 @@ class CiGitlabTarget(Target):
         return ((".gitlab-ci.yml", GITLAB_CI),)
 
     def collision_note(self) -> tuple[str, ...]:
-        return (
-            "Or merge the job into your existing .gitlab-ci.yml by hand:\n\n" + GITLAB_CI,
-        )
+        return ("Or merge the job into your existing .gitlab-ci.yml by hand:\n\n" + GITLAB_CI,)
 
     def next_steps(self) -> tuple[str, ...]:
         return (

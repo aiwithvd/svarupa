@@ -1403,7 +1403,11 @@ def test_flow_widens_a_gap_whose_corridor_climbs_would_leave_it() -> None:
     the gap was a fixed 84px: climb 19 ran through the next column's boxes.
     This is the SVA-G-011 shape that withheld the 4,434-edge acceptance
     repo's data-flow root."""
-    layers = {"src": "0", **{f"m{i}": "1" for i in range(25)}, **{f"t{i}": "2" for i in range(25)}}
+    layers = {
+        "src": "0",
+        **{f"m{i}": "1" for i in range(25)},
+        **{f"t{i}": "2" for i in range(25)},
+    }
     s = flow_spec_of(*[("src", f"t{i}") for i in range(25)], layers=layers)
     c = lay_out(s, STYLE, "flow")
     assert validate(c, STYLE) == (), [d.render() for d in validate(c, STYLE)]
@@ -1423,7 +1427,11 @@ def test_flow_widening_keeps_the_canvas_wide_enough_for_the_env_strip() -> None:
     """Review #26 F2: the demand-driven gap-widening branch dropped the
     `strip_right` term from the canvas width, so a wide environment strip
     plus one congested gap produced a canvas narrower than its own strip."""
-    layers = {"src": "0", **{f"m{i}": "1" for i in range(25)}, **{f"t{i}": "2" for i in range(25)}}
+    layers = {
+        "src": "0",
+        **{f"m{i}": "1" for i in range(25)},
+        **{f"t{i}": "2" for i in range(25)},
+    }
     envs = tuple(
         DiagramNode(
             id=f"env:{e}",
@@ -1454,7 +1462,11 @@ def test_flow_fan_wrap_separates_exits_from_backward_entries_on_a_full_side() ->
     height — two different edges, no shared endpoint, SVA-G-015. The fan
     keeps exits even and backward entries odd once the wrap is active, which
     is the parity the forward-entry side already had."""
-    layers = {"hub": "1", **{f"t{i}": "2" for i in range(41)}, **{f"s{i}": "2" for i in range(4)}}
+    layers = {
+        "hub": "1",
+        **{f"t{i}": "2" for i in range(41)},
+        **{f"s{i}": "2" for i in range(4)},
+    }
     edges = [("hub", f"t{i}") for i in range(41)] + [(f"s{i}", "hub") for i in range(4)]
     s = flow_spec_of(*edges, layers=layers)
     c = lay_out(s, STYLE, "flow")
@@ -1483,9 +1495,7 @@ def test_layered_ports_stay_distinct_when_the_residue_grid_is_too_coarse() -> No
     (SVA-G-015 on the acceptance repo's module-deps tree of its job
     framework)."""
     children = [node(f"c{i:02d}", layer="1") for i in range(40)]
-    edges = tuple(
-        e for t in children for e in (edge("hub", t.id), edge(t.id, "hub"))
-    )
+    edges = tuple(e for t in children for e in (edge("hub", t.id), edge(t.id, "hub")))
     s = spec(node("hub", layer="0"), *children, edges=edges)
     c = lay_out(s, STYLE, "layered")
     assert validate(c, STYLE) == (), [d.render() for d in validate(c, STYLE)]

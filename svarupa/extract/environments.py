@@ -263,9 +263,7 @@ def _filename_matches(rel: str) -> bool:
 
 def _wanted(name: str, rel: str) -> bool:
     return (
-        name == "eas.json"
-        or _DOCKERFILE_RE.match(name) is not None
-        or _filename_matches(rel)
+        name == "eas.json" or _DOCKERFILE_RE.match(name) is not None or _filename_matches(rel)
     )
 
 
@@ -288,8 +286,7 @@ def _unparseable(path: str, what: str, exc: Exception | None = None) -> Diagnost
         code="SVA-X-010",
         severity=Severity.WARNING,
         message=(
-            f"{what} could not be parsed or read{suffix}, so its environment "
-            "facts are missing"
+            f"{what} could not be parsed or read{suffix}, so its environment facts are missing"
         ),
         subject=path,
     )
@@ -421,7 +418,9 @@ def _environment_value(
     return _scalar(_mapping(env_node).get("name"))
 
 
-def _workflow_facts(path: str, text: str, kind: str, diags: list[Diagnostic]) -> list[EnvironmentFact]:
+def _workflow_facts(
+    path: str, text: str, kind: str, diags: list[Diagnostic]
+) -> list[EnvironmentFact]:
     try:
         root = cast(
             "yaml.Node | None",

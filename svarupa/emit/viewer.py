@@ -1275,7 +1275,9 @@ def _view(
                 crumb,
                 tag("h2", esc(spec.title)),
                 tag("p", esc(spec.subtitle), class_="meta"),
-                tag("div", canvas_svg(canvas, style, frozenset(lo.withheld)), class_="scroller"),
+                tag(
+                    "div", canvas_svg(canvas, style, frozenset(lo.withheld)), class_="scroller"
+                ),
                 _legend(canvas),
                 render_cards(cards) if cards and spec_id == ds.root else raw(""),
             )
@@ -1483,7 +1485,10 @@ def _expanded_views(ds: DiagramSet, lo: LaidOutDiagram, style: Style) -> list[Ma
     out: list[Markup] = []
     for sid in sorted(lo.canvases):
         canvas = lo.canvases[sid]
-        if sum(1 for b in canvas.boxes if b.id not in canvas.waypoints) > MAX_EXPANSION_HOST_BOXES:
+        if (
+            sum(1 for b in canvas.boxes if b.id not in canvas.waypoints)
+            > MAX_EXPANSION_HOST_BOXES
+        ):
             continue
         for node in ds.specs[sid].nodes:
             child_id = node.child_spec

@@ -790,8 +790,8 @@ def build(scan: Scan, extracted: ExtractResult, strict: bool = True) -> Graph:
             except OSError:
                 count = -1
             else:
-                count = 0 if not data else data.count(b"\n") + (
-                    0 if data.endswith(b"\n") else 1
+                count = (
+                    0 if not data else data.count(b"\n") + (0 if data.endswith(b"\n") else 1)
                 )
             disk_lines[ev.file] = count
         whole_file = ev.start_line == 0 and ev.end_line == 0

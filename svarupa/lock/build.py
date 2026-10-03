@@ -138,9 +138,7 @@ def lock_records(graph: Graph) -> tuple[Record, ...]:
     # workflow renamed or a values file moved is not an architecture change
     # and must not read as one. Unmatched tokens are recorded verbatim, the
     # same keep-don't-invent rule the extractor follows.
-    records.extend(
-        sorted({Record("environment", (f.name,)) for f in graph.environments})
-    )
+    records.extend(sorted({Record("environment", (f.name,)) for f in graph.environments}))
     return tuple(records)
 
 

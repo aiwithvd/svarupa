@@ -352,9 +352,7 @@ def _check_overlap(canvas: Canvas) -> list[Diagnostic]:
         for gi in range(first, last):
             row = groups[ys[gi]]
             start = (
-                bisect_left(row, (a.x, a.id), key=lambda b: (b.x, b.id))
-                if ys[gi] == a.y
-                else 0
+                bisect_left(row, (a.x, a.id), key=lambda b: (b.x, b.id)) if ys[gi] == a.y else 0
             )
             for b in row[start:]:
                 if b is a:
@@ -553,9 +551,7 @@ def _check_labels(canvas: Canvas, style: Style) -> list[Diagnostic]:
                 for lo_x, hi_x, lo_y, hi_y in segs
             )
             if hit:
-                out.append(
-                    _err("SVA-G-013", who, f"route label covers the route {who2}")
-                )
+                out.append(_err("SVA-G-013", who, f"route label covers the route {who2}"))
                 break
     # Band and region labels are text on the same canvas (review #20 S5).
     fixed = [("band label " + b.label, *band_label_rect(b, style)) for b in canvas.bands] + [

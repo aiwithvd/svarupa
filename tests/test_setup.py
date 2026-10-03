@@ -82,6 +82,7 @@ def test_rerun_is_a_no_op_reported_as_unchanged(tmp_path: Path) -> None:
     assert result.written == ()
     assert len(result.unchanged) == 1
 
+
 def test_an_existing_differing_file_refuses_with_sva_s_001(tmp_path: Path) -> None:
     path = tmp_path / ".claude/skills/svarupa/SKILL.md"
     path.parent.mkdir(parents=True)
@@ -252,7 +253,9 @@ def test_cli_setup_refusal_is_a_structured_diagnostic_and_exit_1(
     assert "Traceback" not in err
 
 
-def test_cli_setup_installs_ci_gitlab(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_cli_setup_installs_ci_gitlab(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     assert main(["setup", "ci_gitlab", "--dest", str(tmp_path)]) == 0
     out = capsys.readouterr().out
     assert "wrote" in out
@@ -419,7 +422,7 @@ def test_the_gitlab_job_parses_as_yaml_and_names_the_real_lockfile() -> None:
     doc = yaml.safe_load(GITLAB_CI)
     job = doc["architecture_diff"]
     assert job["variables"]["GIT_DEPTH"] == 0, "runners clone shallow by default"
-    assert job["rules"] == [{"if": "$CI_PIPELINE_SOURCE == \"merge_request_event\""}], (
+    assert job["rules"] == [{"if": '$CI_PIPELINE_SOURCE == "merge_request_event"'}], (
         "the job is not limited to merge-request pipelines"
     )
     from svarupa import __version__

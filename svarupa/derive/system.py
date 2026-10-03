@@ -310,9 +310,9 @@ def _environment_overlays(
         for source, evs in by_name[name]:
             for ev in evs:
                 for nid, node in sorted(members.items()):
-                    joins = (source == "filename" and nid.startswith(ev.file + "#service.")) or (
-                        source == "dockerfile" and node.attr("dockerfile") == ev.file
-                    )
+                    joins = (
+                        source == "filename" and nid.startswith(ev.file + "#service.")
+                    ) or (source == "dockerfile" and node.attr("dockerfile") == ev.file)
                     if joins:
                         link = linked.setdefault(name, {}).setdefault(nid, [])
                         link.extend([ev, *node.evidence[:1]])
