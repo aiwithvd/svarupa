@@ -474,6 +474,67 @@ def test_the_cli_prints_a_delta_against_a_base_lockfile(
     assert "1 added, 0 removed" in printed
 
 
+def _changed_repo(tmp_path: Path) -> tuple[Path, Path, Path]:
+    """A repository, its base lockfile, and one new cross-module dependency."""
+    source = tmp_path / "repo"
+    source.mkdir()
+    repo(source)
+    out = tmp_path / "out"
+    main([str(source), "--out", str(out), "--lock"])
+    base = tmp_path / "base.lock"
+    base.write_text((out / LOCK_NAME).read_text(encoding="utf8"), encoding="utf8")
+    return source, out, base
+
+
+def test_fail_on_change_exits_3_when_the_architecture_moved(tmp_path: Path) -> None:
+    """3, not 1: CI fails on any non-zero, and a script can still tell
+    "the architecture changed" from "the tool could not answer"."""
+    source, out, base = _changed_repo(tmp_path)
+    write(source, "src/worker/job.py", "from ..api.routes import show\n")
+    args = [str(source), "--out", str(out), "--diff", str(base)]
+    assert main(args) == 0, "informational by default"
+    assert main([*args, "--fail-on-change"]) == 3
+
+
+def test_fail_on_change_exits_0_when_nothing_moved(tmp_path: Path) -> None:
+    source, out, base = _changed_repo(tmp_path)
+    assert main([str(source), "--out", str(out), "--diff", str(base), "--fail-on-change"]) == 0
+
+
+def test_an_error_outranks_a_change(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A run that failed is a failure first; its delta cannot be trusted."""
+    import dataclasses
+
+    import svarupa.cli as cli
+    from svarupa.diagnostics import Diagnostic
+
+    source, out, base = _changed_repo(tmp_path)
+    write(source, "src/worker/job.py", "from ..api.routes import show\n")
+    real = cli.build_lock
+
+    def failing(graph: Graph, version: str) -> object:
+        result = real(graph, version)
+        broken = Diagnostic(code="SVA-L-009", severity=Severity.ERROR, message="injected")
+        return dataclasses.replace(result, diagnostics=(*result.diagnostics, broken))
+
+    monkeypatch.setattr(cli, "build_lock", failing)
+    assert main([str(source), "--out", str(out), "--diff", str(base), "--fail-on-change"]) == 1
+
+
+def test_fail_on_change_without_diff_is_a_usage_error(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Refused before the scan: without --diff there is nothing to compare."""
+    source = tmp_path / "repo"
+    source.mkdir()
+    repo(source)
+    with pytest.raises(SystemExit) as exc:
+        main([str(source), "--out", str(tmp_path / "out"), "--fail-on-change"])
+    assert exc.value.code == 2
+    assert "--fail-on-change needs --diff" in capsys.readouterr().err
+    assert not (tmp_path / "out").exists(), "the scan ran before the refusal"
+
+
 def test_the_cli_leads_with_drift_before_the_delta(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

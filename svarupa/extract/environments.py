@@ -56,7 +56,7 @@ from typing import cast
 
 import yaml
 
-from svarupa.detect import DEFAULT_EXCLUDES, FileRole, Scan, classify
+from svarupa.detect import DEFAULT_EXCLUDES, FileRole, Scan, classify, read_text
 from svarupa.diagnostics import Diagnostic, Severity
 from svarupa.extract.base import EnvironmentFact
 from svarupa.model import Evidence
@@ -263,9 +263,7 @@ def _filename_matches(rel: str) -> bool:
 
 def _wanted(name: str, rel: str) -> bool:
     return (
-        name == "eas.json"
-        or _DOCKERFILE_RE.match(name) is not None
-        or _filename_matches(rel)
+        name == "eas.json" or _DOCKERFILE_RE.match(name) is not None or _filename_matches(rel)
     )
 
 
@@ -288,8 +286,7 @@ def _unparseable(path: str, what: str, exc: Exception | None = None) -> Diagnost
         code="SVA-X-010",
         severity=Severity.WARNING,
         message=(
-            f"{what} could not be parsed or read{suffix}, so its environment "
-            "facts are missing"
+            f"{what} could not be parsed or read{suffix}, so its environment facts are missing"
         ),
         subject=path,
     )
@@ -421,7 +418,9 @@ def _environment_value(
     return _scalar(_mapping(env_node).get("name"))
 
 
-def _workflow_facts(path: str, text: str, kind: str, diags: list[Diagnostic]) -> list[EnvironmentFact]:
+def _workflow_facts(
+    path: str, text: str, kind: str, diags: list[Diagnostic]
+) -> list[EnvironmentFact]:
     try:
         root = cast(
             "yaml.Node | None",
@@ -543,7 +542,7 @@ def extract_environments(scan: Scan) -> EnvironmentFacts:
         if rec.role in (FileRole.TEST, FileRole.GENERATED, FileRole.VENDORED):
             continue
         try:
-            text = (scan.root / rec.path).read_text(encoding="utf8", errors="replace")
+            text = read_text(scan.root, rec.path)
         except OSError as exc:
             diags.append(_unparseable(rec.path, "a CI workflow", exc))
             continue

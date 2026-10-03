@@ -32,7 +32,7 @@ from pathlib import Path
 
 import yaml
 
-from svarupa.detect import Scan
+from svarupa.detect import Scan, read_bytes
 from svarupa.diagnostics import Diagnostic, Severity
 from svarupa.model import Edge, EdgeKind, Evidence, Node, NodeKind, Resolution
 
@@ -158,7 +158,7 @@ def _dockerfile_ships(
     if rel.startswith("..") or posixpath.isabs(rel):
         return None
     try:
-        raw_bytes = (root / rel).read_bytes()
+        raw_bytes = read_bytes(root, rel)
     except OSError:
         return None
     if len(raw_bytes) > _MAX_DOCKERFILE_BYTES:
@@ -226,7 +226,7 @@ def extract_compose(scan: Scan) -> ComposeFacts:
             continue
         path = rec.path
         try:
-            raw_bytes = (scan.root / path).read_bytes()
+            raw_bytes = read_bytes(scan.root, path)
             if len(raw_bytes) > _MAX_COMPOSE_BYTES:
                 diags.append(
                     Diagnostic(

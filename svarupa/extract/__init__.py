@@ -8,7 +8,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import cast
 
-from svarupa.detect import Scan, load_toml
+from svarupa.detect import Scan, load_toml, read_bytes, read_text
 from svarupa.diagnostics import Diagnostic, Severity
 from svarupa.extract.base import (
     CallShape,
@@ -72,8 +72,22 @@ def extract(scan: Scan, declared_deps: frozenset[str] = frozenset()) -> ExtractR
         if ex is None:
             continue
         try:
-            data = (scan.root / rec.path).read_bytes()
-        except OSError:
+            data = read_bytes(scan.root, rec.path)
+        except OSError as exc:
+            # Never a silent skip: this `continue` alone is how Linux lost
+            # every NFD-named file while the run reported success.
+            crashes.append(
+                Diagnostic(
+                    code="SVA-X-011",
+                    severity=Severity.WARNING,
+                    message=(
+                        f"a scanned file could not be read for extraction "
+                        f"({type(exc).__name__}), so it contributed no facts"
+                    ),
+                    subject=rec.path,
+                    location=rec.path,
+                )
+            )
             continue
         try:
             facts.append(ex.parse(rec.path, data))
@@ -169,9 +183,7 @@ def workspace_packages(scan: Scan) -> tuple[tuple[str, str], ...]:
         if holder not in allowed:
             continue
         try:
-            loaded: object = json.loads(
-                (scan.root / rec.path).read_text(encoding="utf8", errors="replace")
-            )
+            loaded: object = json.loads(read_text(scan.root, rec.path))
         except (OSError, json.JSONDecodeError):
             continue
         if not isinstance(loaded, dict):
@@ -213,7 +225,7 @@ def declared_dependencies(scan: Scan) -> frozenset[str]:
 
     for rec in scan.files:
         try:
-            text = (scan.root / rec.path).read_text(encoding="utf8", errors="replace")
+            text = read_text(scan.root, rec.path)
         except OSError:
             continue
         name = Path(rec.path).name

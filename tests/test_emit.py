@@ -93,6 +93,7 @@ def test_the_passport_carries_the_copy_link_affordance(tmp_path: Path) -> None:
     # The fragment is built client-side from percent-encoded box ids.
     assert "encodeURIComponent" in html
 
+
 def test_attrs_drops_none_instead_of_writing_the_word() -> None:
     """`class="None"` is a silent bug that renders as a real class name."""
     assert str(attrs(a=None, b=False, c=True, d="x")) == ' c d="x"'
@@ -1162,8 +1163,12 @@ def _drillable_set(host_modules: int) -> tuple[object, object]:
     ev = (Evidence("m/x.py", 1, 1),)
     nodes = tuple(
         DiagramNode(
-            id=f"m{i}", label=f"m{i}", kind="module", evidence=ev,
-            child_spec=f"/spec/m{i}", attrs=(("layer", "0"),),
+            id=f"m{i}",
+            label=f"m{i}",
+            kind="module",
+            evidence=ev,
+            child_spec=f"/spec/m{i}",
+            attrs=(("layer", "0"),),
         )
         for i in range(host_modules)
     )
@@ -1231,8 +1236,12 @@ def test_a_withheld_child_view_marks_its_box_and_the_script_hides_the_drill() ->
                 title="t",
                 nodes=(
                     DiagramNode(
-                        id="m0", label="m0", kind="module", evidence=ev,
-                        child_spec="/spec/m0", attrs=(("layer", "0"),),
+                        id="m0",
+                        label="m0",
+                        kind="module",
+                        evidence=ev,
+                        child_spec="/spec/m0",
+                        attrs=(("layer", "0"),),
                     ),
                 ),
                 edges=(),

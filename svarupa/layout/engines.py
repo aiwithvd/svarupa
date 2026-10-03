@@ -326,9 +326,7 @@ def _settle_labels(
             # On a segment long enough to show line on both sides of the
             # mask, the mask keeps that margin: a mask that swallows the whole
             # visible run reads as floating text, not as a label on a line.
-            margin = (
-                _LABEL_LINE_MARGIN if length >= 2 * (half + _LABEL_LINE_MARGIN) else 0
-            )
+            margin = _LABEL_LINE_MARGIN if length >= 2 * (half + _LABEL_LINE_MARGIN) else 0
             lo = half + margin
             before = sum(lengths[:i])
             after = sum(lengths[i + 1 :])
@@ -398,11 +396,8 @@ def _settle_labels(
             (
                 i
                 for i in range(n)
-                if lengths[i]
-                >= (r.label_w if horizontal[i] else h) + 2 * _LABEL_LINE_MARGIN
-                and not (
-                    horizontal[i] and pts[i][1] < top_edge and pts[i + 1][1] < top_edge
-                )
+                if lengths[i] >= (r.label_w if horizontal[i] else h) + 2 * _LABEL_LINE_MARGIN
+                and not (horizontal[i] and pts[i][1] < top_edge and pts[i + 1][1] < top_edge)
                 and min(sum(lengths[:i]), sum(lengths[i + 1 :]))
                 + (r.label_w if horizontal[i] else h) // 2
                 <= MAX_VERB_DISTANCE

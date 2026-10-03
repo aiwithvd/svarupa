@@ -170,6 +170,31 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
         "    if dangling:",
         "    if False:",
     ),
+    (
+        "--fail-on-change never fails",
+        "svarupa/cli.py",
+        "    return EXIT_CHANGED if fail_on_change and changed else 0",
+        "    return 0",
+    ),
+    (
+        "--fail-on-change fails even without --fail-on-change",
+        "svarupa/cli.py",
+        "    return EXIT_CHANGED if fail_on_change and changed else 0",
+        "    return EXIT_CHANGED if changed else 0",
+    ),
+    (
+        "a non-empty delta is reported as unchanged",
+        "svarupa/cli.py",
+        "        return failed, not delta.empty",
+        "        return failed, False",
+    ),
+    (
+        "a change outranks an error",
+        "svarupa/cli.py",
+        "    if errors or graph_errors or not artifact.ok or lock_failed:\n        return 1\n",
+        "    if changed and fail_on_change:\n        return EXIT_CHANGED\n"
+        "    if errors or graph_errors or not artifact.ok or lock_failed:\n        return 1\n",
+    ),
 ]
 
 
@@ -205,8 +230,10 @@ def main() -> int:
                 ]
                 print(f"caught    {name}  ->  {caught[0] if caught else 'error'}")
     finally:
-        if not (ROOT / "svarupa").exists():  # pragma: no cover - safety net
-            shutil.copytree(backup, ROOT / "svarupa")
+        # Restore unconditionally. An interrupt during pytest leaves the tree
+        # present but mutated, and a presence check would keep the mutation.
+        shutil.rmtree(ROOT / "svarupa", ignore_errors=True)
+        shutil.copytree(backup, ROOT / "svarupa")
     if failures:
         print("\nnot caught:")
         for f in failures:

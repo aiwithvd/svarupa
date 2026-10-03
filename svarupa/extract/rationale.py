@@ -27,6 +27,7 @@ import tree_sitter_python as tsp
 import tree_sitter_typescript as tst
 from tree_sitter import Language, Node, Parser
 
+from svarupa.detect import read_bytes
 from svarupa.model import Evidence
 
 __all__ = ["MARKERS", "RationaleFact", "rationale_facts"]
@@ -193,7 +194,7 @@ def rationale_facts(root: Path, files: frozenset[str] | set[str]) -> tuple[Ratio
         if not rel.endswith(_PY_SUFFIXES + _TS_SUFFIXES):
             continue
         try:
-            data = (root / rel).read_bytes()
+            data = read_bytes(root, rel)
         except OSError:
             continue
         try:

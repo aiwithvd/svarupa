@@ -537,7 +537,8 @@ class DataFlowDeriver(Deriver):
             subtitle=(
                 f"{len(handlers)} ingress module{'s' if len(handlers) != 1 else ''}, "
                 f"{len(domain)} domain module{'s' if len(domain) != 1 else ''}, "
-                f"{len(ext_nodes)} external" + _not_drawn_note(lateral, upstream)
+                f"{len(ext_nodes)} external"
+                + _not_drawn_note(lateral, upstream)
                 + _remainder(clauses)
             ),
             nodes=tuple(sorted(nodes)),
@@ -739,7 +740,8 @@ class RequestFlowDeriver(Deriver):
             title=f"{handler or '(repo root)'} request flow",
             subtitle=(
                 f"{len(hops)} module{'s' if len(hops) != 1 else ''} within {DOMAIN_DEPTH} import "
-                f"hops; reachability, not call order" + _not_drawn_note(lateral, upstream)
+                f"hops; reachability, not call order"
+                + _not_drawn_note(lateral, upstream)
                 + _remainder(clauses)
             ),
             nodes=tuple(sorted(nodes)),

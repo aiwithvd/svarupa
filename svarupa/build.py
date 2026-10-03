@@ -31,7 +31,7 @@ from typing import cast
 
 import networkx as nx
 
-from svarupa.detect import Scan, load_toml
+from svarupa.detect import Scan, load_toml, read_bytes, read_text
 from svarupa.diagnostics import Diagnostic, DiagnosticError, Severity
 from svarupa.extract.base import (
     EntrypointFact,
@@ -365,7 +365,7 @@ def workspace_members(scan: Scan) -> tuple[str, ...]:
 
 def _member_patterns(scan: Scan, manifest: str, kind: str) -> list[str]:
     try:
-        text = (scan.root / manifest).read_text(encoding="utf8", errors="replace")
+        text = read_text(scan.root, manifest)
     except OSError:
         return []
 
@@ -786,12 +786,12 @@ def build(scan: Scan, extracted: ExtractResult, strict: bool = True) -> Graph:
             count = disk_lines.get(ev.file)
         if count is None:
             try:
-                data = (scan.root / ev.file).read_bytes()
+                data = read_bytes(scan.root, ev.file)
             except OSError:
                 count = -1
             else:
-                count = 0 if not data else data.count(b"\n") + (
-                    0 if data.endswith(b"\n") else 1
+                count = (
+                    0 if not data else data.count(b"\n") + (0 if data.endswith(b"\n") else 1)
                 )
             disk_lines[ev.file] = count
         whole_file = ev.start_line == 0 and ev.end_line == 0

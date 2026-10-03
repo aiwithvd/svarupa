@@ -26,6 +26,11 @@ from svarupa.lock import (
 )
 from svarupa.setup import TARGETS, install
 
+# Exit codes are a machine contract: 0 answered, 1 no usable answer (an error
+# or a refusal), 2 argparse usage error, 3 answered and the architecture
+# changed (only with --fail-on-change).
+EXIT_CHANGED = 3
+
 
 def _scan(
     path: str,
@@ -34,6 +39,7 @@ def _scan(
     write_lock: bool,
     diff_base: str | None,
     drift_base: str | None,
+    fail_on_change: bool = False,
 ) -> int:
     # Validate everything that can be validated before the expensive work.
     # Scanning a large repository takes minutes, and a refusal that arrives
@@ -99,8 +105,7 @@ def _scan(
     env_names = sorted({e.name for e in graph.environments})
     if env_names:
         print(
-            f"  environments: {', '.join(env_names)} "
-            f"({len(graph.environments)} declaration(s))"
+            f"  environments: {', '.join(env_names)} ({len(graph.environments)} declaration(s))"
         )
     else:
         # An honest absence: environments are often implicit, and inventing
@@ -176,8 +181,13 @@ def _scan(
     print()
     print(f"  open {artifact.directory / 'index.html'}")
 
-    lock_failed = _lockfile(artifact.directory, graph, write_lock, bases, drift_base)
-    return 1 if errors or graph_errors or not artifact.ok or lock_failed else 0
+    lock_failed, changed = _lockfile(artifact.directory, graph, write_lock, bases, drift_base)
+    if errors or graph_errors or not artifact.ok or lock_failed:
+        return 1
+    # Only after every failure: a run that failed is a failure first, and its
+    # delta cannot be trusted. 3 rather than 1 so a script can tell "the
+    # architecture changed" from "the tool could not answer".
+    return EXIT_CHANGED if fail_on_change and changed else 0
 
 
 def _read_lock(path: str, flag: str) -> Lockfile:
@@ -236,16 +246,17 @@ def _lockfile(
     write_lock: bool,
     bases: dict[str, Lockfile],
     drift_base: str | None,
-) -> bool:
+) -> tuple[bool, bool]:
     """Build, optionally write, and optionally diff the architecture lockfile.
 
-    Returns whether anything here should fail the run. A collision is an error
+    Returns (failed, changed): whether anything here should fail the run, and
+    whether a delta was computed and is non-empty. A collision is an error
     because it would make a committed file silently wrong; drift is a warning
     because the delta is still worth reading, it just has to be read
     differently.
     """
     if not (write_lock or bases):
-        return False
+        return False, False
 
     result = build_lock(graph, __version__)
     print()
@@ -272,7 +283,7 @@ def _lockfile(
 
     if drift_base and "--diff" not in bases:
         print("    --drift-base needs --diff; nothing to compare drift against")
-        return True
+        return True, False
 
     if "--diff" in bases:
         base = bases["--diff"]
@@ -307,7 +318,8 @@ def _lockfile(
         print("  " + delta.render().replace("\n", "\n  "))
         for d in delta.diagnostics:
             print("  " + d.render())
-    return failed
+        return failed, not delta.empty
+    return failed, False
 
 
 def _setup(argv: list[str]) -> int:
@@ -395,6 +407,14 @@ def main(argv: list[str] | None = None) -> int:
             "Use this to analyze a repository without writing into it."
         ),
     )
+    parser.add_argument(
+        "--fail-on-change",
+        action="store_true",
+        help=(
+            f"with --diff, exit {EXIT_CHANGED} when the architecture delta is not "
+            "empty, so CI can block a change until the lockfile is committed"
+        ),
+    )
     try:
         # Dispatched on the literal first argument rather than via subparsers,
         # so `svarupa <path>` keeps working with no subcommand. The cost is
@@ -411,7 +431,18 @@ def main(argv: list[str] | None = None) -> int:
 
             return mcp_main(argv[1:])
         args = parser.parse_args(argv)
-        return _scan(args.path, args.max_files, args.out, args.lock, args.diff, args.drift_base)
+        if args.fail_on_change and args.diff is None:
+            # A usage error, so argparse's exit 2, and before the scan.
+            parser.error("--fail-on-change needs --diff; there is no delta to fail on")
+        return _scan(
+            args.path,
+            args.max_files,
+            args.out,
+            args.lock,
+            args.diff,
+            args.drift_base,
+            args.fail_on_change,
+        )
     except DiagnosticError as exc:
         # A structured refusal, printed as one. A traceback here would tell a
         # user about our call stack instead of about their input.

@@ -91,11 +91,7 @@ def test_a_dockerfile_env_links_the_service_built_from_it(tmp_path: Path) -> Non
     write(
         tmp_path,
         "docker-compose.yml",
-        "services:\n"
-        "  api:\n"
-        "    build:\n"
-        "      context: .\n"
-        "      dockerfile: Dockerfile.api\n",
+        "services:\n  api:\n    build:\n      context: .\n      dockerfile: Dockerfile.api\n",
     )
     write(tmp_path, "Dockerfile.api", "FROM python:3.12\nENV NODE_ENV=production\n")
     write(tmp_path, "api/__init__.py", "")
@@ -210,11 +206,7 @@ def test_two_environments_claiming_one_service_is_reported_not_resolved(
     write(
         tmp_path,
         "docker-compose.prod.yml",
-        "services:\n"
-        "  web:\n"
-        "    build:\n"
-        "      context: .\n"
-        "      dockerfile: Dockerfile\n",
+        "services:\n  web:\n    build:\n      context: .\n      dockerfile: Dockerfile\n",
     )
     write(tmp_path, "Dockerfile", "FROM nginx\nENV NODE_ENV=development\n")
     write(tmp_path, "web/__init__.py", "")
