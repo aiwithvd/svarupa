@@ -17,6 +17,7 @@ import errno
 import importlib.util
 import io
 import os
+import pathlib
 import unicodedata
 from collections.abc import Callable, Iterator
 from pathlib import Path
@@ -69,10 +70,24 @@ def _byte_exact(base: Path) -> Callable[..., Any]:
     return fake_open
 
 
+def _install(monkeypatch: pytest.MonkeyPatch, base: Path) -> None:
+    """Patch every route `Path.read_*` takes to `io.open`.
+
+    Python 3.10's pathlib opens through `_NormalAccessor.open`, bound to
+    `io.open` at import, so patching `io.open` alone is a no-op there (the
+    guard test below caught exactly that on macOS 3.10).
+    """
+    fake = _byte_exact(base)
+    monkeypatch.setattr(io, "open", fake)
+    accessor = getattr(pathlib, "_NormalAccessor", None)
+    if accessor is not None:
+        monkeypatch.setattr(accessor, "open", staticmethod(fake))
+
+
 @pytest.fixture
 def linux_lookup(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
     base = tmp_path.resolve()
-    monkeypatch.setattr(io, "open", _byte_exact(base))
+    _install(monkeypatch, base)
     yield base
 
 
@@ -103,7 +118,7 @@ def test_fixture_lockfile_is_identical_under_byte_exact_lookup(
     fixture.build_tree(root)
 
     normal = _render(root)
-    monkeypatch.setattr(io, "open", _byte_exact(tmp_path.resolve()))
+    _install(monkeypatch, tmp_path.resolve())
     exact = _render(root.resolve())
 
     assert "module\tsrc/café" in normal
