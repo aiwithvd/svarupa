@@ -145,6 +145,24 @@ Design and review history:
   marked Accepted, Rejected, or Deferred **with a recorded why**, because a
   rejected finding needs its reasoning kept just as much as an accepted one
 
+### Releasing
+
+Versions are calendar based, `YYYY.M.N` (see `docs/adr/0001-calendar-versioning.md`).
+A release is two commands, with a reviewed pull request in between:
+
+```bash
+git switch main && git pull --ff-only
+scripts/release.sh prepare        # next version, bump, draft notes, checks, release PR
+# edit docs/releases/vX.md in the PR, resolve every TODO:, merge
+git switch main && git pull --ff-only
+scripts/release.sh publish        # tag, PyPI via trusted publishing, GitHub Release, install check
+```
+
+`publish` pushes the tag and the `release` workflow uploads to PyPI with no
+token. It then creates the GitHub Release from the notes file and opens a small
+PR that moves the dogfood workflow pin to the new version. If the workflow
+had to be re-run by hand, finish with `scripts/release.sh publish-finish`.
+
 ---
 
 ## License
