@@ -49,6 +49,9 @@ __all__ = [
     "Workspace",
     "detect",
     "load_toml",
+    "on_disk",
+    "read_bytes",
+    "read_text",
 ]
 
 # --------------------------------------------------------------------------
@@ -242,6 +245,57 @@ class Workspace:
     kind: str
     root: str
     manifest: str
+
+
+def on_disk(root: Path, rel: str) -> Path | None:
+    """The real path of a repository file named by its NFC id, or None.
+
+    Ids are NFC; the bytes on disk keep the form they were created with. macOS
+    finds a file by either form, Linux matches bytes exactly, so `root / rel`
+    misses an NFD-named file there and the file was silently lost (the Linux
+    lockfile dropped `module src/café`). Each component is matched against the
+    directory listing by its NFC form. Two names that normalize alike are a
+    collision `detect` already reports, so they match nothing here.
+    """
+    cur = root
+    for part in rel.split("/"):
+        try:
+            names = [entry.name for entry in cur.iterdir()]
+        except OSError:
+            return None
+        if part not in names:
+            want = unicodedata.normalize("NFC", part)
+            hits = [n for n in names if unicodedata.normalize("NFC", n) == want]
+            if len(hits) != 1:
+                return None
+            part = hits[0]
+        cur = cur / part
+    return cur
+
+
+def read_bytes(root: Path, rel: str) -> bytes:
+    """Read a file by its NFC id, wherever its bytes sit on disk.
+
+    The direct path is tried first, so the directory walk costs nothing except
+    on a miss.
+    """
+    try:
+        return (root / rel).read_bytes()
+    except FileNotFoundError:
+        real = on_disk(root, rel)
+        if real is None:
+            raise
+        return real.read_bytes()
+
+
+def read_text(root: Path, rel: str, errors: str = "replace") -> str:
+    """`read_bytes`, decoded as UTF-8 the way `Path.read_text` would.
+
+    Including its universal-newline translation: a CRLF file read here must
+    give the same lines, and so the same evidence, as one read by `read_text`.
+    """
+    text = read_bytes(root, rel).decode("utf8", errors=errors)
+    return text.replace("\r\n", "\n").replace("\r", "\n")
 
 
 @dataclass(frozen=True, slots=True)
@@ -488,7 +542,7 @@ def _detect_workspaces(root: Path, files: Iterable[FileRec]) -> list[Workspace]:
 
     def read(rel: str) -> str | None:
         try:
-            return (root / rel).read_text(encoding="utf8", errors="replace")
+            return read_text(root, rel)
         except OSError:
             return None
 

@@ -25,7 +25,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import cast
 
-from svarupa.detect import Scan, load_toml
+from svarupa.detect import Scan, load_toml, read_text
 from svarupa.diagnostics import Diagnostic, Severity
 from svarupa.extract.base import (
     CallSite,
@@ -649,7 +649,7 @@ def semantics(
         if not rec.role.in_architecture:
             continue
         try:
-            text = (scan.root / rec.path).read_text(encoding="utf8")
+            text = read_text(scan.root, rec.path, errors="strict")
         except (OSError, UnicodeDecodeError) as exc:
             # A new loading channel is part of the parser's boundary: degrade
             # AND say so, never skip silently.

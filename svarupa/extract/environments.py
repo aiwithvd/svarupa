@@ -56,7 +56,7 @@ from typing import cast
 
 import yaml
 
-from svarupa.detect import DEFAULT_EXCLUDES, FileRole, Scan, classify
+from svarupa.detect import DEFAULT_EXCLUDES, FileRole, Scan, classify, read_text
 from svarupa.diagnostics import Diagnostic, Severity
 from svarupa.extract.base import EnvironmentFact
 from svarupa.model import Evidence
@@ -542,7 +542,7 @@ def extract_environments(scan: Scan) -> EnvironmentFacts:
         if rec.role in (FileRole.TEST, FileRole.GENERATED, FileRole.VENDORED):
             continue
         try:
-            text = (scan.root / rec.path).read_text(encoding="utf8", errors="replace")
+            text = read_text(scan.root, rec.path)
         except OSError as exc:
             diags.append(_unparseable(rec.path, "a CI workflow", exc))
             continue
