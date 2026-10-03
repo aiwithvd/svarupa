@@ -38,7 +38,9 @@ _TEMPLATE = """\
 # diff. Regenerates the base lockfile from base-commit code, diffs the head
 # against the committed base with the regenerated one as the drift guard. It
 # exits non-zero when the build reports an error; an architecture change is
-# printed in the job log, not failed.
+# printed in the job log, not failed. Add --fail-on-change to both svarupa
+# calls in the script to fail the job (exit 3) until the regenerated lockfile
+# is committed.
 architecture_diff:
   image: python:3.12
   rules:
@@ -95,6 +97,4 @@ class CiGitlabTarget(Target):
         return (
             "Run `svarupa . --lock` and commit .svarupa/architecture.lock as the base.",
             "Commit .gitlab-ci.yml.",
-            "The job installs svarupa from PyPI; until the package is published "
-            "there, point its `uv tool install` line at a checkout of svarupa.",
         )

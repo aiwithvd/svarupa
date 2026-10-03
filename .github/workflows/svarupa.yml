@@ -19,7 +19,7 @@ jobs:
       - uses: astral-sh/setup-uv@v5
 
       - name: install svarupa
-        run: uv tool install 'svarupa==0.1.0'
+        run: uv tool install 'svarupa==0.2.1'
 
       - name: regenerate the base lockfile from base-branch code
         shell: bash
@@ -38,6 +38,9 @@ jobs:
           # fallback: falling back would drop the drift guard exactly when
           # the checkout is wrong.
           git cat-file -e "$BASE_SHA^{commit}"
+          # Informational by default: the delta is shown and the job passes.
+          # Add --fail-on-change to both svarupa calls below to fail the job
+          # (exit 3) until the regenerated lockfile is committed.
           if git cat-file -e "$BASE_SHA:.svarupa/architecture.lock" 2>/dev/null; then
             git show "$BASE_SHA:.svarupa/architecture.lock" > /tmp/committed-base.lock
             svarupa . --lock \

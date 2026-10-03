@@ -73,6 +73,9 @@ jobs:
           # fallback: falling back would drop the drift guard exactly when
           # the checkout is wrong.
           git cat-file -e "$BASE_SHA^{commit}"
+          # Informational by default: the delta is shown and the job passes.
+          # Add --fail-on-change to both svarupa calls below to fail the job
+          # (exit 3) until the regenerated lockfile is committed.
           if git cat-file -e "$BASE_SHA:.svarupa/architecture.lock" 2>/dev/null; then
             git show "$BASE_SHA:.svarupa/architecture.lock" > /tmp/committed-base.lock
             svarupa . --lock \\
@@ -114,6 +117,4 @@ class CiGithubTarget(Target):
         return (
             "Run `svarupa . --lock` and commit .svarupa/architecture.lock as the base.",
             "Commit .github/workflows/svarupa.yml.",
-            "The workflow installs svarupa from PyPI; until the package is published "
-            "there, point its `uv tool install` line at a checkout of svarupa.",
         )

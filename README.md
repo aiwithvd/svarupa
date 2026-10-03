@@ -47,8 +47,9 @@ somewhere other than `<repo>/.svarupa/`. The artifact holds:
   with `file:line` evidence and surface in the CLI summary, a REPORT.md
   section, `graph.json` nodes, and a cited strip on the deploy topology.
 - `--lock` writes the committed architecture lockfile; `--diff` prints the
-  architecture delta against a base lockfile. `svarupa setup ci_github`
-  (or `ci_gitlab`) installs the per-pull-request workflow.
+  architecture delta against a base lockfile; add `--fail-on-change` to exit
+  3 when that delta is not empty. `svarupa setup ci_github` (or `ci_gitlab`)
+  installs the per-pull-request workflow, informational by default.
 
 ![The architecture tab of the demo repository](docs/images/demo-architecture.png)
 
