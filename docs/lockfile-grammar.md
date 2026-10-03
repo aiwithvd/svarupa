@@ -92,7 +92,7 @@ byte is emitted verbatim, including non-ASCII. Paths are **NFC-normalized**
 before serialization.
 
 `\\`, `\t`, `\n` and `\r` are the **only** valid escapes. An unrecognized
-sequence such as `\q` is refused with `SVA-L-004`. Tolerating it would make
+sequence such as `\q` is refused with `SVA-L-003`. Tolerating it would make
 parse→render non-idempotent: it would decode to a literal backslash-q and
 re-encode as `\\q`, changing the bytes of a committed file with no diagnostic.
 
@@ -202,7 +202,7 @@ carrying an NFD-encoded path.
 ### Collisions
 
 Two module ids that are distinct on disk but identical after NFC normalization,
-or after case-folding on a case-insensitive filesystem, raise `SVA-L-007`. They
+or after case-folding on a case-insensitive filesystem, raise `SVA-L-004`. They
 are never silently merged, because a silently merged module is a silently wrong
 lockfile.
 
@@ -245,4 +245,8 @@ lockfile schema 1.x cannot be diffed against 2.x.
 Regenerate the base lockfile with this version of svarupa.
 ```
 
-Hard refusal is reserved for this case alone.
+Among version differences, hard refusal is reserved for this case and for a
+file with no `# schema` stamp at all (both `SVA-L-007`). A minor difference
+still diffs, with `SVA-L-013` naming it. Malformed content refuses on its own
+terms: `SVA-L-001` (bad kind), `SVA-L-002` (wrong field count) and `SVA-L-003`
+(unknown escape).

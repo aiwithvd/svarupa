@@ -36,8 +36,9 @@ from svarupa.setup.base import Target
 _TEMPLATE = """\
 # Installed by `svarupa setup ci_gitlab`: the per-merge-request architecture
 # diff. Regenerates the base lockfile from base-commit code, diffs the head
-# against the committed base with the regenerated one as the drift guard, and
-# exits non-zero on an architecture change.
+# against the committed base with the regenerated one as the drift guard. It
+# exits non-zero when the build reports an error; an architecture change is
+# printed in the job log, not failed.
 architecture_diff:
   image: python:3.12
   rules:

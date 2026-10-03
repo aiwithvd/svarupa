@@ -520,9 +520,7 @@ class TypeScriptExtractor(Extractor):
         # From the tree, never a substring: `import typeA from './x'` matched
         # "import type" and stamped a false type-only attribute on a runtime
         # import. `import typeDefs from ...` is a common GraphQL idiom.
-        type_only = any(
-            c.type == "type" or (c.type == "identifier" and False) for c in node.children
-        ) or any(
+        type_only = any(c.type == "type" for c in node.children) or any(
             ch.type == "type"
             for c in node.children
             if c.type == "import_clause"

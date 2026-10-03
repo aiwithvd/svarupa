@@ -807,10 +807,16 @@ class Resolver:
                 lookup = self._real_name(imp, name)
                 # `from . import sub` names a submodule. Treating it as a
                 # symbol lookup inside __init__.py misses the real dependency.
-                sibling = self._resolve_module(
-                    f"{imp.specifier}.{name}" if imp.specifier.strip(".") else f".{name}",
-                    f.path,
-                    imp.level,
+                # A Python idiom only: TS named imports are always symbols, and
+                # probing `./user` + `service` could match `user.service.ts`.
+                sibling = (
+                    self._resolve_module(
+                        f"{imp.specifier}.{name}" if imp.specifier.strip(".") else f".{name}",
+                        f.path,
+                        imp.level,
+                    )
+                    if f.lang == "python"
+                    else None
                 )
                 if sibling is not None and sibling != target and sibling != f.path:
                     self.scorecard.record(f.lang, "references", Resolution.RESOLVED)

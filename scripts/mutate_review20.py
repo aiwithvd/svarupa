@@ -381,8 +381,10 @@ def main() -> int:
                 ]
                 print(f"caught    {name}  ->  {caught[0] if caught else 'error'}")
     finally:
-        if not (ROOT / "svarupa").exists():  # pragma: no cover - safety net
-            shutil.copytree(backup, ROOT / "svarupa")
+        # Restore unconditionally. An interrupt during pytest leaves the tree
+        # present but mutated, and a presence check would keep the mutation.
+        shutil.rmtree(ROOT / "svarupa", ignore_errors=True)
+        shutil.copytree(backup, ROOT / "svarupa")
     if failures:
         print("\nnot caught:")
         for f in failures:

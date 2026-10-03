@@ -17,7 +17,7 @@ The name states the thesis. Svarupa is a thing's actual form, not its intended
 one. Architecture documents describe what someone meant to build. Svarupa
 renders what exists.
 
-> **Status: alpha (v0.1.0).** The evidence contract is stable; flags and output
+> **Status: alpha.** The evidence contract is stable; flags and output
 > formats may still change between minor versions.
 
 ---
