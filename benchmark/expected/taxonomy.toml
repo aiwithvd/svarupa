@@ -1,0 +1,114 @@
+# taxonomy: shadcn-ui/taxonomy at 298a885 (Next.js 13 app router).
+# Read: README, package.json, tsconfig.json ("@/*" maps to "./*"), env.mjs,
+# middleware.ts, lib/*, config/*, the app/api route handlers, the dashboard
+# pages, pages/api/auth/[...nextauth].ts, prisma/schema.prisma and the
+# alias imports across components/.
+# Deliberately not expected: endpoints (Next.js file-system routes such as
+# app/api/posts/route.ts are not route declarations in code), and any
+# datastore/queue/service record, because the repo has no docker-compose
+# file (Prisma points at MySQL through DATABASE_URL only). types/ holds only
+# .d.ts declarations and is not claimed as a module either way.
+
+# Modules
+[[must]]
+record = ["module", "."]
+why = "env.mjs:1 import { createEnv } from \"@t3-oss/env-nextjs\""
+[[must]]
+record = ["module", "lib"]
+why = "lib/db.ts:18 export const db = prisma"
+[[must]]
+record = ["module", "lib/validations"]
+why = "lib/validations/post.ts:1 import * as z from \"zod\""
+[[must]]
+record = ["module", "components"]
+why = "components/billing-form.tsx:25 export function BillingForm({"
+[[must]]
+record = ["module", "components/ui"]
+why = "components/ui/card.tsx:3 import { cn } from \"@/lib/utils\""
+[[must]]
+record = ["module", "config"]
+why = "config/subscriptions.ts:2 import { env } from \"@/env.mjs\""
+[[must]]
+record = ["module", "app/api/posts"]
+why = "app/api/posts/route.ts:14 export async function GET() {"
+[[must]]
+record = ["module", "app/(dashboard)/dashboard"]
+why = "app/(dashboard)/dashboard/page.tsx:16 export default async function DashboardPage() {"
+
+# Dependencies (all through the "@/*" tsconfig path alias)
+[[must]]
+record = ["dep", "lib", "."]
+why = "lib/stripe.ts:3 import { env } from \"@/env.mjs\""
+[[must]]
+record = ["dep", "lib", "config"]
+why = "lib/auth.ts:8 import { siteConfig } from \"@/config/site\""
+[[must]]
+record = ["dep", "config", "."]
+why = "config/subscriptions.ts:2 import { env } from \"@/env.mjs\""
+[[must]]
+record = ["dep", "components", "components/ui"]
+why = "components/billing-form.tsx:7 import { buttonVariants } from \"@/components/ui/button\""
+[[must]]
+record = ["dep", "components", "lib"]
+why = "components/billing-form.tsx:6 import { cn, formatDate } from \"@/lib/utils\""
+[[must]]
+record = ["dep", "components", "hooks"]
+why = "components/mobile-nav.tsx:7 import { useLockBody } from \"@/hooks/use-lock-body\""
+[[must]]
+record = ["dep", "components", "lib/validations"]
+why = "components/editor.tsx:15 import { postPatchSchema } from \"@/lib/validations/post\""
+[[must]]
+record = ["dep", "components/ui", "lib"]
+why = "components/ui/card.tsx:3 import { cn } from \"@/lib/utils\""
+[[must]]
+record = ["dep", "app/api/posts", "lib"]
+why = "app/api/posts/route.ts:5 import { db } from \"@/lib/db\""
+[[must]]
+record = ["dep", "app/api/posts/[postId]", "lib/validations"]
+why = "app/api/posts/[postId]/route.ts:6 import { postPatchSchema } from \"@/lib/validations/post\""
+[[must]]
+record = ["dep", "app/(dashboard)/dashboard", "components"]
+why = "app/(dashboard)/dashboard/page.tsx:7 import { DashboardHeader } from \"@/components/header\""
+[[must]]
+record = ["dep", "pages/api/auth", "lib"]
+why = "pages/api/auth/[...nextauth].ts:3 import { authOptions } from \"@/lib/auth\""
+
+# Calls
+[[must]]
+call = "app/api/posts/route.ts -> lib/subscription.ts#getUserSubscriptionPlan"
+why = "app/api/posts/route.ts:50 const subscriptionPlan = await getUserSubscriptionPlan(user.id)"
+[[must]]
+call = "app/(dashboard)/dashboard/page.tsx -> lib/session.ts#getCurrentUser"
+why = "app/(dashboard)/dashboard/page.tsx:17 const user = await getCurrentUser()"
+[[must]]
+call = "app/(dashboard)/dashboard/billing/page.tsx -> lib/subscription.ts#getUserSubscriptionPlan"
+why = "app/(dashboard)/dashboard/billing/page.tsx:32 const subscriptionPlan = await getUserSubscriptionPlan(user.id)"
+[[must]]
+call = "app/api/users/stripe/route.ts -> lib/utils.ts#absoluteUrl"
+why = "app/api/users/stripe/route.ts:10 const billingUrl = absoluteUrl(\"/dashboard/billing\")"
+[[must]]
+call = "components/mobile-nav.tsx -> hooks/use-lock-body.ts#useLockBody"
+why = "components/mobile-nav.tsx:16 useLockBody()"
+
+# Probes
+[[must_not]]
+record = ["datastore", "postgres"]
+why = "no compose file exists and prisma/schema.prisma uses provider mysql"
+[[must_not]]
+record = ["datastore", "redis"]
+why = "no compose file and no redis client in package.json"
+[[must_not]]
+record = ["dep", "lib", "components"]
+why = "nothing under lib/ imports from components/; the direction is components -> lib only"
+[[must_not]]
+record = ["dep", "components/ui", "components"]
+why = "components/ui files only import @/lib/utils and other components/ui files, never top-level components"
+[[must_not]]
+record = ["module", "prisma"]
+why = "prisma/ holds only schema.prisma and SQL migrations, no source files"
+[[must_not]]
+record = ["module", "content"]
+why = "content/ holds only MDX documents for contentlayer"
+[[must_not]]
+call = "app/api/posts/route.ts -> lib/session.ts#getCurrentUser"
+why = "the posts route calls getServerSession(authOptions) directly and never imports lib/session"
