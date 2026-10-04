@@ -1,6 +1,6 @@
 {
  "path": "src/Button.jsx",
- "lang": "typescript",
+ "lang": "javascript",
  "symbols": [
   {
    "name": "Button",
@@ -10,6 +10,21 @@
     "file": "src/Button.jsx",
     "start_line": 3,
     "end_line": 5,
+    "rev": null
+   },
+   "enclosing_class": null,
+   "bases": [],
+   "exported": true,
+   "decorators": []
+  },
+  {
+   "name": "Icon",
+   "qualified_name": "src.Button.Icon",
+   "kind": "function",
+   "evidence": {
+    "file": "src/Button.jsx",
+    "start_line": 7,
+    "end_line": 7,
     "rev": null
    },
    "enclosing_class": null,
@@ -42,15 +57,6 @@
  "calls": [],
  "fields": [],
  "reexports": [],
- "diagnostics": [
-  {
-   "code": "SVA-X-001",
-   "severity": "WARNING",
-   "message": "file has syntax errors; extraction continues over the parseable regions and may be incomplete",
-   "subject": "src/Button.jsx",
-   "location": null,
-   "suggested_fixes": []
-  }
- ],
+ "diagnostics": [],
  "ctor_assigns": []
 }

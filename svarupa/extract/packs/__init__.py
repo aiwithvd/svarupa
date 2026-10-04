@@ -9,20 +9,20 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from svarupa.extract.packs import python, typescript
+from svarupa.extract.packs import javascript, python, typescript
 from svarupa.extract.packs.model import Pack
 from svarupa.extract.packs.walker import PackExtractor
 
 __all__ = ["ANALYZED_ELSEWHERE", "BY_DETECTED", "PACKS", "extractor", "load_extractors"]
 
-PACKS: tuple[Pack, ...] = (python.PACK, typescript.PACK)
+PACKS: tuple[Pack, ...] = (python.PACK, typescript.PACK, javascript.PACK)
 
-# detect.LANG_BY_EXT label -> pack. JavaScript rides the TypeScript pack
-# until it gets its own label and grammar choice.
+# detect.LANG_BY_EXT label -> pack.
+# JavaScript: TypeScript hooks, own label, TSX grammar (see javascript.py).
 BY_DETECTED: dict[str, Pack] = {
     "python": python.PACK,
     "typescript": typescript.PACK,
-    "javascript": typescript.PACK,
+    "javascript": javascript.PACK,
 }
 
 # Detected languages another extractor reads, so no pack is missing: SQL

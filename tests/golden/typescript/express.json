@@ -1,6 +1,6 @@
 {
  "path": "src/server.js",
- "lang": "typescript",
+ "lang": "javascript",
  "symbols": [],
  "imports": [
   {
