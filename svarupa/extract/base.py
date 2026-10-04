@@ -214,6 +214,9 @@ class FileFacts:
     # `local = callee(...)` bindings, as (local name, callee text). Generic:
     # the consumer decides that `app = express()` makes `app` a route holder.
     ctor_assigns: tuple[tuple[str, str], ...] = ()
+    # The language's own namespace for the file (Java `package a.b;`), or "".
+    # Languages whose imports name packages resolve through it.
+    namespace: str = ""
 
 
 def _d_counts() -> dict[tuple[str, str, Resolution], int]:

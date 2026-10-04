@@ -785,14 +785,13 @@ def test_a_decorated_method_keeps_kind_and_decorator() -> None:
 
 
 def test_languages_without_a_pack_are_reported_once_each(tmp_path: Path) -> None:
-    write(tmp_path, "svc/main.go", "package main\n")
-    write(tmp_path, "svc/util.go", "package main\n")
-    write(tmp_path, "lib/x.rs", "fn main() {}\n")
+    write(tmp_path, "lib/a.rs", "fn a() {}\n")
+    write(tmp_path, "lib/b.rs", "fn b() {}\n")
     write(tmp_path, "app.py", "def keep():\n    pass\n")
     result = run(tmp_path)
     x012 = [d for d in result.diagnostics if d.code == "SVA-X-012"]
-    assert [d.subject for d in x012] == ["go", "rust"]
-    assert "2 go files" in x012[0].message
+    assert [d.subject for d in x012] == ["rust"]
+    assert "2 rust files" in x012[0].message
     assert any(n.id.endswith(".keep") for n in result.nodes)
 
 

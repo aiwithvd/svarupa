@@ -197,5 +197,6 @@
   "UsersService"
  ],
  "diagnostics": [],
- "ctor_assigns": []
+ "ctor_assigns": [],
+ "namespace": ""
 }

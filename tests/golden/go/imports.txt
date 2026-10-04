@@ -1,0 +1,21 @@
+path: cmd/api/main.go
+---
+package main
+
+import (
+	"fmt"
+	db "github.com/acme/shop/internal/db"
+	_ "net/http/pprof"
+	. "github.com/acme/shop/internal/util"
+	"gopkg.in/yaml.v3"
+	"github.com/acme/shop/v2"
+)
+
+import "os"
+
+func main() {
+	fmt.Println(db.Open(), yaml.Marshal(nil), shop.Run())
+	os.Exit(len("x"))
+	helper(`raw`)
+	conn.Pool().Get()
+}

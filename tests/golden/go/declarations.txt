@@ -1,0 +1,26 @@
+path: internal/orders/service.go
+---
+package orders
+
+type Service struct {
+	repo Repo
+}
+
+type Store interface {
+	Save() error
+}
+
+type ID string
+
+func NewService() *Service {
+	return &Service{}
+}
+
+func (s *Service) Place(id ID) error {
+	go func() { notify(id) }()
+	return s.repo.Save()
+}
+
+func (r Repo) save() {}
+
+func broken( {

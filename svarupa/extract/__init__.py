@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import re
+import xml.etree.ElementTree as ET
 from collections.abc import Iterator, Mapping
 from dataclasses import replace
 from pathlib import Path
@@ -24,7 +26,8 @@ from svarupa.extract.base import (
 )
 from svarupa.extract.compose import extract_compose
 from svarupa.extract.environments import extract_environments
-from svarupa.extract.packs import ANALYZED_ELSEWHERE, load_extractors
+from svarupa.extract.packs import ANALYZED_ELSEWHERE, BY_DETECTED, load_extractors
+from svarupa.extract.packs.modules import ModuleContext, ModuleResolver
 from svarupa.extract.resolve import Resolver, resolve
 from svarupa.extract.semantics import semantics
 from svarupa.tsconfig import load_aliases
@@ -132,8 +135,24 @@ def extract(scan: Scan, declared_deps: frozenset[str] = frozenset()) -> ExtractR
     # through is the integration that was missing: the resolver otherwise
     # guesses at layout from the tree alone.
     roots = [w.root for w in scan.workspaces if w.root]
+    context = ModuleContext(
+        files=frozenset(f.path for f in facts),
+        facts=tuple(facts),
+        deps=declared_deps,
+        go_modules=go_modules(scan),
+    )
+    modules: dict[str, ModuleResolver] = {
+        lang: pack.modules(context)
+        for lang, pack in sorted(BY_DETECTED.items())
+        if pack.modules is not None and lang in _EXTRACTORS
+    }
     resolver = Resolver(
-        facts, declared_deps, roots, load_aliases(scan.root), workspace_packages(scan)
+        facts,
+        declared_deps,
+        roots,
+        load_aliases(scan.root),
+        workspace_packages(scan),
+        modules,
     )
     result = resolver.run()
 
@@ -208,6 +227,124 @@ def workspace_packages(scan: Scan) -> tuple[tuple[str, str], ...]:
     return tuple(sorted(out.items()))
 
 
+def _go_mod(text: str) -> tuple[str | None, list[str]]:
+    """The `module` path and the `require`d module paths of a go.mod.
+
+    go.mod is a line format by specification (like requirements.txt), so it
+    is read line by line; `//` starts a comment.
+    """
+    module: str | None = None
+    required: list[str] = []
+    in_block = False
+    for raw in text.splitlines():
+        line = raw.split("//", 1)[0].strip()
+        if not line:
+            continue
+        if in_block:
+            if line == ")":
+                in_block = False
+            else:
+                required.append(line.split()[0])
+            continue
+        words = line.split()
+        if words[0] == "module" and len(words) > 1:
+            module = words[1].strip('"')
+        elif words[0] == "require" and len(words) > 1:
+            if words[1] == "(":
+                in_block = True
+            else:
+                required.append(words[1])
+    return module, required
+
+
+def _jvm_group(group: str) -> str | None:
+    """A Maven groupId, trimmed to its first two segments.
+
+    `org.springframework.boot` publishes packages under `org.springframework`;
+    the trim is over-inclusive on purpose, the safe direction for the same
+    reason `_norm_dep` gives for Python distribution names. Placeholders like
+    `${project.groupId}` name nothing.
+    """
+    group = group.strip()
+    if not group or "$" in group or "{" in group:
+        return None
+    return ".".join(group.split(".")[:2])
+
+
+def _maven_groups(text: str) -> set[str]:
+    """`dependency/groupId` values from a pom.xml.
+
+    Parsed, never grepped. A pom never needs a DTD or entities, so a document
+    that declares one is refused before parsing: that closes entity-expansion
+    and external-entity attacks without a new dependency.
+    """
+    if "<!DOCTYPE" in text or "<!ENTITY" in text:
+        return set()
+    try:
+        root = ET.fromstring(text)
+    except ET.ParseError:
+        return set()
+    out: set[str] = set()
+    for el in root.iter():
+        if el.tag.rsplit("}", 1)[-1] != "dependency":
+            continue
+        for child in el:
+            if (
+                child.tag.rsplit("}", 1)[-1] == "groupId"
+                and child.text
+                and (g := _jvm_group(child.text)) is not None
+            ):
+                out.add(g)
+    return out
+
+
+# `group:artifact` or `group:artifact:version` inside a quoted string.
+_GRADLE_COORD = re.compile(r"""["']([A-Za-z0-9_.\-]+):([A-Za-z0-9_.\-]+)(?::[^"']*)?["']""")
+
+
+def _gradle_groups(text: str) -> set[str]:
+    """Coordinate strings from a build.gradle(.kts).
+
+    Gradle build files are programs, not data, so only literal coordinate
+    strings are read. Anything computed is missed, which leaves an import
+    unresolved rather than inventing an external one.
+    """
+    return {g for m in _GRADLE_COORD.finditer(text) if (g := _jvm_group(m.group(1)))}
+
+
+def _catalog_groups(text: str) -> set[str]:
+    """`[libraries]` entries of a Gradle version catalog (libs.versions.toml)."""
+    data = load_toml(text)
+    libraries = data.get("libraries") if data else None
+    if not isinstance(libraries, dict):
+        return set()
+    out: set[str] = set()
+    for value in cast("dict[str, object]", libraries).values():
+        coordinate: object = value
+        if isinstance(value, dict):
+            entry = cast("dict[str, object]", value)
+            coordinate = entry.get("module") or entry.get("group")
+        if isinstance(coordinate, str) and (g := _jvm_group(coordinate.split(":")[0])):
+            out.add(g)
+    return out
+
+
+def go_modules(scan: Scan) -> tuple[tuple[str, str], ...]:
+    """Map each go.mod `module` path to the directory that declares it."""
+    out: dict[str, str] = {}
+    for rec in scan.files:
+        if Path(rec.path).name != "go.mod":
+            continue
+        try:
+            module, _ = _go_mod(read_text(scan.root, rec.path))
+        except OSError:
+            continue
+        if module:
+            holder = str(Path(rec.path).parent)
+            out.setdefault(module, "" if holder == "." else holder)
+    return tuple(sorted(out.items()))
+
+
 def _norm_dep(raw: str) -> str | None:
     """PEP 508 requirement string -> importable top-level name, roughly.
 
@@ -270,6 +407,15 @@ def declared_dependencies(scan: Scan) -> frozenset[str]:
                 block: object = pkg.get(key)
                 if isinstance(block, dict):
                     names.update(str(k) for k in cast("dict[str, object]", block))
+
+        elif name == "go.mod":
+            names.update(_go_mod(text)[1])
+        elif name == "pom.xml":
+            names.update(_maven_groups(text))
+        elif name in ("build.gradle", "build.gradle.kts"):
+            names.update(_gradle_groups(text))
+        elif name == "libs.versions.toml":
+            names.update(_catalog_groups(text))
 
     return frozenset(names)
 

@@ -81,6 +81,7 @@ class Ctx:
         self.fields: list[FieldType] = []
         self.ctor_assigns: list[tuple[str, str]] = []
         self.reexports: list[str] = []
+        self.namespace = ""
         self.too_deep = False
 
     def text(self, node: TSNode) -> str:
@@ -159,6 +160,8 @@ class Ctx:
                 if child.type == rule.own_decorators
                 if (d := self.decorator(child)) is not None
             )
+        if rule.decorators_from is not None:
+            decorators += rule.decorators_from(self, node)
         name = self.text(name_node)
         qualified = self.qual((*frame.stack, name))
         self.symbols.append(
@@ -169,7 +172,13 @@ class Ctx:
                 evidence=self.node_evidence(node),
                 enclosing_class=frame.cls if rule.records_class else None,
                 bases=rule.bases(self, node) if rule.bases is not None else (),
-                exported=frame.exported if rule.inherit_exported else not name.startswith("_"),
+                exported=(
+                    rule.exported_by(self, node, name)
+                    if rule.exported_by is not None
+                    else frame.exported
+                    if rule.inherit_exported
+                    else not name.startswith("_")
+                ),
                 decorators=decorators,
             )
         )
@@ -227,6 +236,7 @@ class Ctx:
             reexports=tuple(sorted(set(self.reexports))),
             diagnostics=tuple(diags),
             ctor_assigns=tuple(self.ctor_assigns),
+            namespace=self.namespace,
         )
 
 

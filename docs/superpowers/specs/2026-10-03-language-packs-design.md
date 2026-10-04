@@ -234,3 +234,36 @@ Found while writing the implementation plan, by reading every branch of
 - **Resolver kinds, Go and Java move to plan 1a-2**, so plan 1a-1 is one
   reviewable series that changes no output except the JavaScript fix and
   the new SVA-X-012.
+
+## Revision 2 (2026-10-04, plan 1a-2)
+
+Decided while planning Go and Java, after measuring both grammars:
+
+- **A package import points at every source file in the package**
+  (maintainer decision). Go compiles a package as one unit and Java's
+  `import x.y.*` names a package, so the edge goes to each non-test source
+  file in it, all citing the same import line. The import counts once in
+  the scorecard. Module-level views and the lockfile show one dependency
+  either way.
+- **New resolvers sit beside the Python and TypeScript ones, not in place
+  of them.** A pack may name a module resolver (`targets(spec, from_file)`
+  and `is_external(spec)`); `resolve.py` asks it first. Python and
+  TypeScript keep their measured, heavily tested code in `resolve.py`
+  until a second language needs to share it (Kotlin with Java). Moving
+  them now would be risk with no user-visible gain.
+- **Go:** module paths come from every `go.mod` (`module` line), import
+  `<module>/<dir>` resolves to that directory's non-test `.go` files,
+  standard library is any path whose first element has no dot, external
+  dependencies are `go.mod` `require` paths. Methods attach to their
+  receiver type.
+- **Java:** files are indexed by their `package` declaration (a new
+  `FileFacts.namespace` field), `import a.b.C` resolves to `C.java` in
+  package `a.b`, `import a.b.*` to every file in it, static imports to
+  the class file. Standard library is `java.`, `javax.`, `jdk.` and a few
+  more prefixes; dependencies are Maven `groupId`s and Gradle coordinates,
+  trimmed to two segments (over-inclusive is the safe direction, as for
+  Python distribution names). An unqualified call inside a class is a call
+  on `this` unless the file statically imported that name.
+- **Walker additions used by both:** `Define.exported_by` (a hook that
+  decides export: `public` in Java, a capital first letter in Go) and
+  `Define.decorators_from` (Java annotations live inside `modifiers`).

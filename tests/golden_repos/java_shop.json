@@ -1,0 +1,344 @@
+{
+ "nodes": [
+  {
+   "id": "src/main/java/com/acme/shop/App.java",
+   "kind": "module",
+   "label": "App.java",
+   "qualified_name": "src/main/java/com/acme/shop/App.java",
+   "evidence": [
+    {
+     "file": "src/main/java/com/acme/shop/App.java",
+     "start_line": 1,
+     "end_line": 1,
+     "rev": null
+    }
+   ],
+   "lang": "java",
+   "attrs": [],
+   "producer": "java.module"
+  },
+  {
+   "id": "src/main/java/com/acme/shop/App.java#src.main.java.com.acme.shop.App.App",
+   "kind": "class",
+   "label": "App",
+   "qualified_name": "src.main.java.com.acme.shop.App.App",
+   "evidence": [
+    {
+     "file": "src/main/java/com/acme/shop/App.java",
+     "start_line": 6,
+     "end_line": 9,
+     "rev": null
+    }
+   ],
+   "lang": "java",
+   "attrs": [
+    [
+     "exported",
+     "true"
+    ]
+   ],
+   "producer": "java.symbols"
+  },
+  {
+   "id": "src/main/java/com/acme/shop/App.java#src.main.java.com.acme.shop.App.App.run",
+   "kind": "method",
+   "label": "run",
+   "qualified_name": "src.main.java.com.acme.shop.App.App.run",
+   "evidence": [
+    {
+     "file": "src/main/java/com/acme/shop/App.java",
+     "start_line": 8,
+     "end_line": 8,
+     "rev": null
+    }
+   ],
+   "lang": "java",
+   "attrs": [
+    [
+     "class",
+     "App"
+    ],
+    [
+     "exported",
+     "true"
+    ]
+   ],
+   "producer": "java.symbols"
+  },
+  {
+   "id": "src/main/java/com/acme/shop/service/Base.java",
+   "kind": "module",
+   "label": "Base.java",
+   "qualified_name": "src/main/java/com/acme/shop/service/Base.java",
+   "evidence": [
+    {
+     "file": "src/main/java/com/acme/shop/service/Base.java",
+     "start_line": 1,
+     "end_line": 1,
+     "rev": null
+    }
+   ],
+   "lang": "java",
+   "attrs": [],
+   "producer": "java.module"
+  },
+  {
+   "id": "src/main/java/com/acme/shop/service/Base.java#src.main.java.com.acme.shop.service.Base.Base",
+   "kind": "class",
+   "label": "Base",
+   "qualified_name": "src.main.java.com.acme.shop.service.Base.Base",
+   "evidence": [
+    {
+     "file": "src/main/java/com/acme/shop/service/Base.java",
+     "start_line": 3,
+     "end_line": 5,
+     "rev": null
+    }
+   ],
+   "lang": "java",
+   "attrs": [
+    [
+     "exported",
+     "false"
+    ]
+   ],
+   "producer": "java.symbols"
+  },
+  {
+   "id": "src/main/java/com/acme/shop/service/Base.java#src.main.java.com.acme.shop.service.Base.Base.audit",
+   "kind": "method",
+   "label": "audit",
+   "qualified_name": "src.main.java.com.acme.shop.service.Base.Base.audit",
+   "evidence": [
+    {
+     "file": "src/main/java/com/acme/shop/service/Base.java",
+     "start_line": 4,
+     "end_line": 4,
+     "rev": null
+    }
+   ],
+   "lang": "java",
+   "attrs": [
+    [
+     "class",
+     "Base"
+    ],
+    [
+     "exported",
+     "false"
+    ]
+   ],
+   "producer": "java.symbols"
+  },
+  {
+   "id": "src/main/java/com/acme/shop/service/OrderService.java",
+   "kind": "module",
+   "label": "OrderService.java",
+   "qualified_name": "src/main/java/com/acme/shop/service/OrderService.java",
+   "evidence": [
+    {
+     "file": "src/main/java/com/acme/shop/service/OrderService.java",
+     "start_line": 1,
+     "end_line": 1,
+     "rev": null
+    }
+   ],
+   "lang": "java",
+   "attrs": [],
+   "producer": "java.module"
+  },
+  {
+   "id": "src/main/java/com/acme/shop/service/OrderService.java#src.main.java.com.acme.shop.service.OrderService.OrderService",
+   "kind": "class",
+   "label": "OrderService",
+   "qualified_name": "src.main.java.com.acme.shop.service.OrderService.OrderService",
+   "evidence": [
+    {
+     "file": "src/main/java/com/acme/shop/service/OrderService.java",
+     "start_line": 3,
+     "end_line": 5,
+     "rev": null
+    }
+   ],
+   "lang": "java",
+   "attrs": [
+    [
+     "exported",
+     "true"
+    ]
+   ],
+   "producer": "java.symbols"
+  },
+  {
+   "id": "src/main/java/com/acme/shop/service/OrderService.java#src.main.java.com.acme.shop.service.OrderService.OrderService.place",
+   "kind": "method",
+   "label": "place",
+   "qualified_name": "src.main.java.com.acme.shop.service.OrderService.OrderService.place",
+   "evidence": [
+    {
+     "file": "src/main/java/com/acme/shop/service/OrderService.java",
+     "start_line": 4,
+     "end_line": 4,
+     "rev": null
+    }
+   ],
+   "lang": "java",
+   "attrs": [
+    [
+     "class",
+     "OrderService"
+    ],
+    [
+     "exported",
+     "true"
+    ]
+   ],
+   "producer": "java.symbols"
+  }
+ ],
+ "edges": [
+  {
+   "src": "src/main/java/com/acme/shop/App.java",
+   "dst": "src/main/java/com/acme/shop/service/Base.java",
+   "kind": "imports",
+   "evidence": [
+    {
+     "file": "src/main/java/com/acme/shop/App.java",
+     "start_line": 4,
+     "end_line": 4,
+     "rev": null
+    }
+   ],
+   "confidence": "RESOLVED",
+   "resolution": "resolved",
+   "arity": 1,
+   "attrs": [],
+   "producer": "java.imports"
+  },
+  {
+   "src": "src/main/java/com/acme/shop/App.java",
+   "dst": "src/main/java/com/acme/shop/service/OrderService.java",
+   "kind": "imports",
+   "evidence": [
+    {
+     "file": "src/main/java/com/acme/shop/App.java",
+     "start_line": 4,
+     "end_line": 4,
+     "rev": null
+    }
+   ],
+   "confidence": "RESOLVED",
+   "resolution": "resolved",
+   "arity": 1,
+   "attrs": [],
+   "producer": "java.imports"
+  },
+  {
+   "src": "src/main/java/com/acme/shop/App.java#src.main.java.com.acme.shop.App.App.run",
+   "dst": "src/main/java/com/acme/shop/service/OrderService.java#src.main.java.com.acme.shop.service.OrderService.OrderService.place",
+   "kind": "calls",
+   "evidence": [
+    {
+     "file": "src/main/java/com/acme/shop/App.java",
+     "start_line": 8,
+     "end_line": 8,
+     "rev": null
+    }
+   ],
+   "confidence": "RESOLVED",
+   "resolution": "resolved",
+   "arity": 1,
+   "attrs": [
+    [
+     "shape",
+     "self_field"
+    ]
+   ],
+   "producer": "java.calls"
+  },
+  {
+   "src": "src/main/java/com/acme/shop/service/OrderService.java#src.main.java.com.acme.shop.service.OrderService.OrderService",
+   "dst": "src/main/java/com/acme/shop/service/Base.java#src.main.java.com.acme.shop.service.Base.Base",
+   "kind": "inherits",
+   "evidence": [
+    {
+     "file": "src/main/java/com/acme/shop/service/OrderService.java",
+     "start_line": 3,
+     "end_line": 5,
+     "rev": null
+    }
+   ],
+   "confidence": "RESOLVED",
+   "resolution": "resolved",
+   "arity": 1,
+   "attrs": [],
+   "producer": "java.inherits"
+  },
+  {
+   "src": "src/main/java/com/acme/shop/service/OrderService.java#src.main.java.com.acme.shop.service.OrderService.OrderService.place",
+   "dst": "src/main/java/com/acme/shop/service/Base.java#src.main.java.com.acme.shop.service.Base.Base.audit",
+   "kind": "calls",
+   "evidence": [
+    {
+     "file": "src/main/java/com/acme/shop/service/OrderService.java",
+     "start_line": 4,
+     "end_line": 4,
+     "rev": null
+    }
+   ],
+   "confidence": "RESOLVED",
+   "resolution": "resolved",
+   "arity": 1,
+   "attrs": [
+    [
+     "shape",
+     "self"
+    ]
+   ],
+   "producer": "java.calls"
+  }
+ ],
+ "scorecard": {
+  "measures": "the share of intra-repository references pinned to a target, not whether the target is correct; a wrong edge counts as resolved",
+  "rows": [
+   {
+    "lang": "java",
+    "kind": "calls",
+    "resolved": 2,
+    "candidate": 0,
+    "external": 1,
+    "unresolved": 0,
+    "pinned_pct": 100.0
+   },
+   {
+    "lang": "java",
+    "kind": "imports",
+    "resolved": 1,
+    "candidate": 0,
+    "external": 1,
+    "unresolved": 0,
+    "pinned_pct": 100.0
+   },
+   {
+    "lang": "java",
+    "kind": "inherits",
+    "resolved": 1,
+    "candidate": 0,
+    "external": 0,
+    "unresolved": 0,
+    "pinned_pct": 100.0
+   },
+   {
+    "lang": "java",
+    "kind": "references",
+    "resolved": 0,
+    "candidate": 0,
+    "external": 1,
+    "unresolved": 0,
+    "pinned_pct": 0.0
+   }
+  ],
+  "unresolved_samples": {}
+ },
+ "diagnostics": []
+}
