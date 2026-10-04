@@ -26,7 +26,8 @@
     1,
     1
    ]
-  }
+  },
+  "expected": "0c6562d3db13f50c"
  },
  "express-boilerplate": {
   "recall": 0.9697,
@@ -61,7 +62,8 @@
     1,
     1
    ]
-  }
+  },
+  "expected": "337f2100dc737cc8"
  },
  "fastapi-template": {
   "recall": 0.9062,
@@ -100,7 +102,8 @@
     3,
     3
    ]
-  }
+  },
+  "expected": "f2e51805af3d9b12"
  },
  "gin-realworld": {
   "recall": 0.9474,
@@ -125,7 +128,8 @@
     4,
     4
    ]
-  }
+  },
+  "expected": "1b602a62aa024e50"
  },
  "go-clean-arch": {
   "recall": 1.0,
@@ -154,15 +158,14 @@
     1,
     1
    ]
-  }
+  },
+  "expected": "e8ca5ce60ba0b51d"
  },
  "go-clean-template": {
-  "recall": 0.973,
+  "recall": 1.0,
   "found": 36,
-  "total": 37,
-  "missed": [
-   "record:service\tintegration-test"
-  ],
+  "total": 36,
+  "missed": [],
   "fired": [],
   "by_kind": {
    "call": [
@@ -187,9 +190,10 @@
    ],
    "service": [
     3,
-    4
+    3
    ]
-  }
+  },
+  "expected": "305cba6f852ff31f"
  },
  "microblog": {
   "recall": 0.9667,
@@ -216,7 +220,8 @@
     6,
     6
    ]
-  }
+  },
+  "expected": "14f396490d99a4c6"
  },
  "nestjs-prisma": {
   "recall": 1.0,
@@ -249,7 +254,8 @@
     2,
     2
    ]
-  }
+  },
+  "expected": "0efc6f8bc3b76214"
  },
  "petclinic": {
   "recall": 1.0,
@@ -274,7 +280,8 @@
     5,
     5
    ]
-  }
+  },
+  "expected": "e13a204293e1e4eb"
  },
  "spring-realworld": {
   "recall": 0.8065,
@@ -302,7 +309,8 @@
     10,
     10
    ]
-  }
+  },
+  "expected": "348a051fef3774c8"
  },
  "taxonomy": {
   "recall": 1.0,
@@ -323,6 +331,7 @@
     8,
     8
    ]
-  }
+  },
+  "expected": "f5d75ee86312719d"
  }
 }

@@ -133,7 +133,10 @@ reasoning.
 repositories (Python, TypeScript, JavaScript, Go, Java) against facts checked
 by reading their source; a change that loses a found fact fails CI. A
 language pack is labelled stable only when two of its repositories reach 90%
-recall with no false fact. See `benchmark/`.
+recall with no false fact. Recall covers what Svarupa claims to extract
+(modules, dependencies, compose services, calls, and routes for FastAPI,
+Flask, Express and NestJS), not features it does not extract yet. See
+`benchmark/`.
 
 ---
 

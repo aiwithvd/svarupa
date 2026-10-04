@@ -12,6 +12,7 @@ source, never from Svarupa's output: see benchmark/README.md.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
@@ -61,6 +62,9 @@ class Score:
     missed: list[str]
     fired: list[str]
     by_kind: dict[str, tuple[int, int]]
+    # Fingerprint of the expected fact keys: a changed expectation must be
+    # accepted, even when every new fact happens to be found.
+    expected: str = ""
 
     @property
     def found(self) -> int:
@@ -172,7 +176,13 @@ def score(
         sorted(f.key for f in must if f.key not in resolved),
         sorted(f.key for f in must_not if f.key in seen),
         dict(sorted(by_kind.items())),
+        _fingerprint(must, must_not),
     )
+
+
+def _fingerprint(must: list[Fact], must_not: list[Fact]) -> str:
+    keys = sorted(f"must {f.key}" for f in must) + sorted(f"not {f.key}" for f in must_not)
+    return hashlib.sha256("\n".join(keys).encode("utf8")).hexdigest()[:16]
 
 
 def to_json(scores: dict[str, Score]) -> dict[str, dict[str, object]]:
@@ -184,6 +194,7 @@ def to_json(scores: dict[str, Score]) -> dict[str, dict[str, object]]:
             "missed": s.missed,
             "fired": s.fired,
             "by_kind": {k: list(v) for k, v in s.by_kind.items()},
+            "expected": s.expected,
         }
         for name, s in sorted(scores.items())
     }
@@ -195,6 +206,9 @@ def regressions(current: dict[str, Score], accepted: dict[str, dict[str, object]
         acc = accepted.get(name)
         if acc is None:
             out.append(f"{name}: no accepted score; run scripts/benchmark.py accept")
+            continue
+        if acc.get("expected", "") != s.expected:
+            out.append(f"{name}: expected facts changed; run scripts/benchmark.py accept")
             continue
         old_missed = set(acc.get("missed", []))  # type: ignore[arg-type]
         old_fired = set(acc.get("fired", []))  # type: ignore[arg-type]
@@ -260,8 +274,12 @@ def table(scores: dict[str, Score]) -> str:
 
 
 def _score_all(names: list[str]) -> dict[str, Score]:
+    corpus = load_corpus()
+    unknown = sorted(set(names) - {r.name for r in corpus})
+    if unknown:
+        raise BenchmarkError("not in the corpus: " + ", ".join(unknown))
     out: dict[str, Score] = {}
-    for repo in load_corpus():
+    for repo in corpus:
         if names and repo.name not in names:
             continue
         root = checkout(repo)

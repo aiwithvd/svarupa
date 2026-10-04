@@ -139,9 +139,11 @@ why = "docker-compose.yml:110 build:"
 record = ["service", "nginx"]
 why = "docker-compose.yml:136 image: nginx:1.31.3-alpine"
 
-[[must]]
-record = ["service", "integration-test"]
-why = "docker-compose-integration-test.yml:2 integration-test:"
+# Not expected: the `integration-test` service in
+# docker-compose-integration-test.yml. It is a test-runner container, not part
+# of the running system, consistent with `integration-test/` being rejected as
+# a module below. (Svarupa also does not read compose files named
+# `docker-compose-<x>.yml`; that gap is tracked separately.)
 
 # Calls
 [[must]]

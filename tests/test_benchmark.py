@@ -232,3 +232,26 @@ def test_pack_maturity_follows_the_benchmark() -> None:
         if (p.maturity is Maturity.STABLE) != (p.lang in stable)
     }
     assert not wrong, f"maturity labels disagree with the benchmark: {wrong}"
+
+
+def test_changed_expected_facts_require_accept() -> None:
+    # A new fact that Svarupa happens to find never shows up as missed, so
+    # without this the accepted totals and recall would silently go stale.
+    accepted = bm.to_json({"demo": bm.Score("demo", 2, [], [], {}, expected="old")})
+    current = {"demo": bm.Score("demo", 3, [], [], {}, expected="new")}
+    assert bm.regressions(current, accepted) == [
+        "demo: expected facts changed; run scripts/benchmark.py accept"
+    ]
+
+
+def test_expected_fingerprint_follows_the_facts() -> None:
+    a = bm.Fact("record:module\tx", "module", "x.py:1")
+    b = bm.Fact("record:module\ty", "module", "y.py:1")
+    one = bm.score("r", [a], [], set(), set()).expected
+    assert one == bm.score("r", [a], [], {"record:module\tx"}, set()).expected
+    assert one != bm.score("r", [a, b], [], set(), set()).expected
+
+
+def test_an_unknown_repo_name_is_an_error() -> None:
+    with pytest.raises(bm.BenchmarkError, match="not in the corpus: gin-realwrld"):
+        bm._score_all(["gin-realwrld"])
