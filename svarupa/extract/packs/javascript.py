@@ -16,12 +16,14 @@ from __future__ import annotations
 from dataclasses import replace
 
 from svarupa.extract.packs import typescript
-from svarupa.extract.packs.model import Pack
+from svarupa.extract.packs.model import Maturity, Pack
 
 __all__ = ["PACK"]
 
 PACK: Pack = replace(
     typescript.PACK,
     lang="javascript",
+    # One JavaScript repository in the benchmark so far; stable needs two.
+    maturity=Maturity.EXPERIMENTAL,
     grammar=replace(typescript.PACK.grammar, default="language_tsx", by_suffix=()),
 )

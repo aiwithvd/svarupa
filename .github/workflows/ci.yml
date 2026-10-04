@@ -126,3 +126,20 @@ jobs:
             exit 1
           fi
           echo "byte identity confirmed: $(sha256sum "$a" | cut -d' ' -f1)"
+
+  # Scores Svarupa on pinned public repositories against hand-checked facts
+  # (benchmark/). Fails when a found fact goes missing or a probe fires.
+  benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --dev
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/svarupa-bench
+          key: svarupa-bench-${{ hashFiles('benchmark/corpus.toml') }}
+      - name: benchmark
+        run: uv run python scripts/benchmark.py check

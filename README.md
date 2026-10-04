@@ -129,6 +129,12 @@ development: license swaps, viewer work, layout fixes) produced a median of
 moves, not when code churns. See `docs/reviews/` for the numbers and the
 reasoning.
 
+**Benchmarked.** Every pull request is scored on 11 pinned public
+repositories (Python, TypeScript, JavaScript, Go, Java) against facts checked
+by reading their source; a change that loses a found fact fails CI. A
+language pack is labelled stable only when two of its repositories reach 90%
+recall with no false fact. See `benchmark/`.
+
 ---
 
 ## Development

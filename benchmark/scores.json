@@ -1,0 +1,328 @@
+{
+ "bakerydemo": {
+  "recall": 1.0,
+  "found": 24,
+  "total": 24,
+  "missed": [],
+  "fired": [],
+  "by_kind": {
+   "call": [
+    4,
+    4
+   ],
+   "datastore": [
+    2,
+    2
+   ],
+   "dep": [
+    9,
+    9
+   ],
+   "module": [
+    8,
+    8
+   ],
+   "service": [
+    1,
+    1
+   ]
+  }
+ },
+ "express-boilerplate": {
+  "recall": 0.9697,
+  "found": 32,
+  "total": 33,
+  "missed": [
+   "call:src/controllers/user.controller.js -> src/services/user.service.js#queryUsers"
+  ],
+  "fired": [],
+  "by_kind": {
+   "call": [
+    4,
+    5
+   ],
+   "datastore": [
+    1,
+    1
+   ],
+   "dep": [
+    11,
+    11
+   ],
+   "endpoint": [
+    8,
+    8
+   ],
+   "module": [
+    7,
+    7
+   ],
+   "service": [
+    1,
+    1
+   ]
+  }
+ },
+ "fastapi-template": {
+  "recall": 0.9062,
+  "found": 29,
+  "total": 32,
+  "missed": [
+   "call:backend/app/api/routes/login.py -> backend/app/crud.py#authenticate",
+   "call:backend/app/api/routes/users.py -> backend/app/crud.py#create_user",
+   "call:backend/app/core/db.py -> backend/app/crud.py#create_user"
+  ],
+  "fired": [
+   "record:module\tbackend/app/alembic/versions"
+  ],
+  "by_kind": {
+   "call": [
+    2,
+    5
+   ],
+   "datastore": [
+    1,
+    1
+   ],
+   "dep": [
+    9,
+    9
+   ],
+   "endpoint": [
+    8,
+    8
+   ],
+   "module": [
+    6,
+    6
+   ],
+   "service": [
+    3,
+    3
+   ]
+  }
+ },
+ "gin-realworld": {
+  "recall": 0.9474,
+  "found": 18,
+  "total": 19,
+  "missed": [
+   "call:articles/routers.go -> articles/models.go#SaveOne"
+  ],
+  "fired": [
+   "call:articles/routers.go -> users/models.go#SaveOne"
+  ],
+  "by_kind": {
+   "call": [
+    8,
+    9
+   ],
+   "dep": [
+    6,
+    6
+   ],
+   "module": [
+    4,
+    4
+   ]
+  }
+ },
+ "go-clean-arch": {
+  "recall": 1.0,
+  "found": 23,
+  "total": 23,
+  "missed": [],
+  "fired": [],
+  "by_kind": {
+   "call": [
+    6,
+    6
+   ],
+   "datastore": [
+    1,
+    1
+   ],
+   "dep": [
+    8,
+    8
+   ],
+   "module": [
+    7,
+    7
+   ],
+   "service": [
+    1,
+    1
+   ]
+  }
+ },
+ "go-clean-template": {
+  "recall": 0.973,
+  "found": 36,
+  "total": 37,
+  "missed": [
+   "record:service\tintegration-test"
+  ],
+  "fired": [],
+  "by_kind": {
+   "call": [
+    6,
+    6
+   ],
+   "datastore": [
+    1,
+    1
+   ],
+   "dep": [
+    13,
+    13
+   ],
+   "module": [
+    11,
+    11
+   ],
+   "queue": [
+    2,
+    2
+   ],
+   "service": [
+    3,
+    4
+   ]
+  }
+ },
+ "microblog": {
+  "recall": 0.9667,
+  "found": 29,
+  "total": 30,
+  "missed": [
+   "record:endpoint\tPOST /tokens\tapp/api"
+  ],
+  "fired": [],
+  "by_kind": {
+   "call": [
+    6,
+    6
+   ],
+   "dep": [
+    8,
+    8
+   ],
+   "endpoint": [
+    9,
+    10
+   ],
+   "module": [
+    6,
+    6
+   ]
+  }
+ },
+ "nestjs-prisma": {
+  "recall": 1.0,
+  "found": 27,
+  "total": 27,
+  "missed": [],
+  "fired": [],
+  "by_kind": {
+   "call": [
+    5,
+    5
+   ],
+   "datastore": [
+    1,
+    1
+   ],
+   "dep": [
+    11,
+    11
+   ],
+   "endpoint": [
+    2,
+    2
+   ],
+   "module": [
+    6,
+    6
+   ],
+   "service": [
+    2,
+    2
+   ]
+  }
+ },
+ "petclinic": {
+  "recall": 1.0,
+  "found": 20,
+  "total": 20,
+  "missed": [],
+  "fired": [],
+  "by_kind": {
+   "call": [
+    9,
+    9
+   ],
+   "datastore": [
+    2,
+    2
+   ],
+   "dep": [
+    4,
+    4
+   ],
+   "module": [
+    5,
+    5
+   ]
+  }
+ },
+ "spring-realworld": {
+  "recall": 0.8065,
+  "found": 25,
+  "total": 31,
+  "missed": [
+   "call:src/main/java/io/spring/api/ArticlesApi.java -> src/main/java/io/spring/application/article/ArticleCommandService.java#createArticle",
+   "call:src/main/java/io/spring/api/CommentsApi.java -> src/main/java/io/spring/core/article/ArticleRepository.java#findBySlug",
+   "call:src/main/java/io/spring/api/TagsApi.java -> src/main/java/io/spring/application/TagsQueryService.java#allTags",
+   "call:src/main/java/io/spring/api/UsersApi.java -> src/main/java/io/spring/application/user/UserService.java#createUser",
+   "call:src/main/java/io/spring/application/TagsQueryService.java -> src/main/java/io/spring/infrastructure/mybatis/readservice/TagReadService.java#all",
+   "call:src/main/java/io/spring/infrastructure/repository/MyBatisArticleRepository.java -> src/main/java/io/spring/infrastructure/mybatis/mapper/ArticleMapper.java#findById"
+  ],
+  "fired": [],
+  "by_kind": {
+   "call": [
+    3,
+    9
+   ],
+   "dep": [
+    12,
+    12
+   ],
+   "module": [
+    10,
+    10
+   ]
+  }
+ },
+ "taxonomy": {
+  "recall": 1.0,
+  "found": 25,
+  "total": 25,
+  "missed": [],
+  "fired": [],
+  "by_kind": {
+   "call": [
+    5,
+    5
+   ],
+   "dep": [
+    12,
+    12
+   ],
+   "module": [
+    8,
+    8
+   ]
+  }
+ }
+}
