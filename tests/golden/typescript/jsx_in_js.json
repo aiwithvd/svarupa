@@ -1,0 +1,56 @@
+{
+ "path": "src/Button.jsx",
+ "lang": "typescript",
+ "symbols": [
+  {
+   "name": "Button",
+   "qualified_name": "src.Button.Button",
+   "kind": "function",
+   "evidence": {
+    "file": "src/Button.jsx",
+    "start_line": 3,
+    "end_line": 5,
+    "rev": null
+   },
+   "enclosing_class": null,
+   "bases": [],
+   "exported": true,
+   "decorators": []
+  }
+ ],
+ "imports": [
+  {
+   "specifier": "react",
+   "names": [
+    "React"
+   ],
+   "alias_of": [],
+   "evidence": {
+    "file": "src/Button.jsx",
+    "start_line": 1,
+    "end_line": 1,
+    "rev": null
+   },
+   "is_relative": false,
+   "level": 0,
+   "type_only": false,
+   "is_from": true,
+   "is_reexport": false,
+   "is_star": false
+  }
+ ],
+ "calls": [],
+ "fields": [],
+ "reexports": [],
+ "diagnostics": [
+  {
+   "code": "SVA-X-001",
+   "severity": "WARNING",
+   "message": "file has syntax errors; extraction continues over the parseable regions and may be incomplete",
+   "subject": "src/Button.jsx",
+   "location": null,
+   "suggested_fixes": []
+  }
+ ],
+ "ctor_assigns": []
+}

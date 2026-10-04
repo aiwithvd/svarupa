@@ -1,0 +1,38 @@
+path: src/shop/orders.py
+---
+"""Orders."""
+import logging
+
+
+class Base:
+    pass
+
+
+class Order(Base, models.Model):
+    class Meta:
+        ordering = ["id"]
+
+    def total(self):
+        def helper(x):
+            return x * 2
+        return helper(self.amount)
+
+    def _private(self):
+        pass
+
+
+@dataclass
+class Line:
+    qty: int
+
+
+def make_order():
+    return Order()
+
+
+async def fetch():
+    return None
+
+
+def _hidden():
+    pass

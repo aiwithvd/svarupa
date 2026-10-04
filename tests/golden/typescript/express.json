@@ -1,0 +1,325 @@
+{
+ "path": "src/server.js",
+ "lang": "typescript",
+ "symbols": [],
+ "imports": [
+  {
+   "specifier": "express",
+   "names": [
+    "express"
+   ],
+   "alias_of": [],
+   "evidence": {
+    "file": "src/server.js",
+    "start_line": 1,
+    "end_line": 1,
+    "rev": null
+   },
+   "is_relative": false,
+   "level": 0,
+   "type_only": false,
+   "is_from": true,
+   "is_reexport": false,
+   "is_star": false
+  },
+  {
+   "specifier": "express",
+   "names": [
+    "Router",
+    "json"
+   ],
+   "alias_of": [],
+   "evidence": {
+    "file": "src/server.js",
+    "start_line": 2,
+    "end_line": 2,
+    "rev": null
+   },
+   "is_relative": false,
+   "level": 0,
+   "type_only": false,
+   "is_from": true,
+   "is_reexport": false,
+   "is_star": false
+  },
+  {
+   "specifier": "./lazy",
+   "names": [
+    "lazy"
+   ],
+   "alias_of": [],
+   "evidence": {
+    "file": "src/server.js",
+    "start_line": 3,
+    "end_line": 3,
+    "rev": null
+   },
+   "is_relative": true,
+   "level": 0,
+   "type_only": false,
+   "is_from": true,
+   "is_reexport": false,
+   "is_star": false
+  }
+ ],
+ "calls": [
+  {
+   "name": "express",
+   "shape": "bare",
+   "receiver": null,
+   "evidence": {
+    "file": "src/server.js",
+    "start_line": 4,
+    "end_line": 4,
+    "rev": null
+   },
+   "enclosing": null,
+   "enclosing_class": null,
+   "first_str_arg": null,
+   "ident_args": [],
+   "first_arg_ident": null,
+   "recv_call": null
+  },
+  {
+   "name": "Router",
+   "shape": "bare",
+   "receiver": null,
+   "evidence": {
+    "file": "src/server.js",
+    "start_line": 5,
+    "end_line": 5,
+    "rev": null
+   },
+   "enclosing": null,
+   "enclosing_class": null,
+   "first_str_arg": null,
+   "ident_args": [],
+   "first_arg_ident": null,
+   "recv_call": null
+  },
+  {
+   "name": "use",
+   "shape": "qualified",
+   "receiver": "app",
+   "evidence": {
+    "file": "src/server.js",
+    "start_line": 7,
+    "end_line": 7,
+    "rev": null
+   },
+   "enclosing": null,
+   "enclosing_class": null,
+   "first_str_arg": null,
+   "ident_args": [],
+   "first_arg_ident": null,
+   "recv_call": null
+  },
+  {
+   "name": "json",
+   "shape": "bare",
+   "receiver": null,
+   "evidence": {
+    "file": "src/server.js",
+    "start_line": 7,
+    "end_line": 7,
+    "rev": null
+   },
+   "enclosing": null,
+   "enclosing_class": null,
+   "first_str_arg": null,
+   "ident_args": [],
+   "first_arg_ident": null,
+   "recv_call": null
+  },
+  {
+   "name": "get",
+   "shape": "qualified",
+   "receiver": "app",
+   "evidence": {
+    "file": "src/server.js",
+    "start_line": 8,
+    "end_line": 8,
+    "rev": null
+   },
+   "enclosing": null,
+   "enclosing_class": null,
+   "first_str_arg": "/health",
+   "ident_args": [],
+   "first_arg_ident": null,
+   "recv_call": null
+  },
+  {
+   "name": "send",
+   "shape": "qualified",
+   "receiver": "res",
+   "evidence": {
+    "file": "src/server.js",
+    "start_line": 8,
+    "end_line": 8,
+    "rev": null
+   },
+   "enclosing": null,
+   "enclosing_class": null,
+   "first_str_arg": "ok",
+   "ident_args": [],
+   "first_arg_ident": null,
+   "recv_call": null
+  },
+  {
+   "name": "use",
+   "shape": "qualified",
+   "receiver": "app",
+   "evidence": {
+    "file": "src/server.js",
+    "start_line": 9,
+    "end_line": 9,
+    "rev": null
+   },
+   "enclosing": null,
+   "enclosing_class": null,
+   "first_str_arg": "/api",
+   "ident_args": [
+    "router"
+   ],
+   "first_arg_ident": null,
+   "recv_call": null
+  },
+  {
+   "name": "post",
+   "shape": "qualified",
+   "receiver": "router",
+   "evidence": {
+    "file": "src/server.js",
+    "start_line": 10,
+    "end_line": 10,
+    "rev": null
+   },
+   "enclosing": null,
+   "enclosing_class": null,
+   "first_str_arg": "/items",
+   "ident_args": [
+    "createItem"
+   ],
+   "first_arg_ident": null,
+   "recv_call": null
+  },
+  {
+   "name": "delete",
+   "shape": "member",
+   "receiver": "app",
+   "evidence": {
+    "file": "src/server.js",
+    "start_line": 14,
+    "end_line": 14,
+    "rev": null
+   },
+   "enclosing": null,
+   "enclosing_class": null,
+   "first_str_arg": null,
+   "ident_args": [
+    "removeOrder"
+   ],
+   "first_arg_ident": "removeOrder",
+   "recv_call": [
+    "route",
+    "/orders"
+   ]
+  },
+  {
+   "name": "get",
+   "shape": "member",
+   "receiver": "app",
+   "evidence": {
+    "file": "src/server.js",
+    "start_line": 13,
+    "end_line": 13,
+    "rev": null
+   },
+   "enclosing": null,
+   "enclosing_class": null,
+   "first_str_arg": null,
+   "ident_args": [
+    "listOrders"
+   ],
+   "first_arg_ident": "listOrders",
+   "recv_call": [
+    "route",
+    "/orders"
+   ]
+  },
+  {
+   "name": "route",
+   "shape": "qualified",
+   "receiver": "app",
+   "evidence": {
+    "file": "src/server.js",
+    "start_line": 12,
+    "end_line": 12,
+    "rev": null
+   },
+   "enclosing": null,
+   "enclosing_class": null,
+   "first_str_arg": "/orders",
+   "ident_args": [],
+   "first_arg_ident": null,
+   "recv_call": null
+  },
+  {
+   "name": "listen",
+   "shape": "qualified",
+   "receiver": "app",
+   "evidence": {
+    "file": "src/server.js",
+    "start_line": 17,
+    "end_line": 17,
+    "rev": null
+   },
+   "enclosing": null,
+   "enclosing_class": null,
+   "first_str_arg": null,
+   "ident_args": [
+    "port"
+   ],
+   "first_arg_ident": "port",
+   "recv_call": null
+  },
+  {
+   "name": "log",
+   "shape": "bare",
+   "receiver": null,
+   "evidence": {
+    "file": "src/server.js",
+    "start_line": 18,
+    "end_line": 18,
+    "rev": null
+   },
+   "enclosing": null,
+   "enclosing_class": null,
+   "first_str_arg": null,
+   "ident_args": [],
+   "first_arg_ident": null,
+   "recv_call": null
+  }
+ ],
+ "fields": [],
+ "reexports": [],
+ "diagnostics": [],
+ "ctor_assigns": [
+  [
+   "express",
+   "require"
+  ],
+  [
+   "lazy",
+   "require"
+  ],
+  [
+   "app",
+   "express"
+  ],
+  [
+   "router",
+   "Router"
+  ]
+ ]
+}

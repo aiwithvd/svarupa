@@ -1,0 +1,6 @@
+path: src/shop/__init__.py
+---
+from .orders import Order, make_order
+from .views import *
+from shop.util import helper
+import shop.extra

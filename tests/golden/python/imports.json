@@ -1,0 +1,156 @@
+{
+ "path": "src/shop/views.py",
+ "lang": "python",
+ "symbols": [],
+ "imports": [
+  {
+   "specifier": "os",
+   "names": [
+    "os"
+   ],
+   "alias_of": [],
+   "evidence": {
+    "file": "src/shop/views.py",
+    "start_line": 2,
+    "end_line": 2,
+    "rev": null
+   },
+   "is_relative": false,
+   "level": 0,
+   "type_only": false,
+   "is_from": false,
+   "is_reexport": false,
+   "is_star": false
+  },
+  {
+   "specifier": "os.path",
+   "names": [
+    "os.path",
+    "sys"
+   ],
+   "alias_of": [],
+   "evidence": {
+    "file": "src/shop/views.py",
+    "start_line": 3,
+    "end_line": 3,
+    "rev": null
+   },
+   "is_relative": false,
+   "level": 0,
+   "type_only": false,
+   "is_from": false,
+   "is_reexport": false,
+   "is_star": false
+  },
+  {
+   "specifier": "numpy",
+   "names": [
+    "numpy"
+   ],
+   "alias_of": [
+    [
+     "np",
+     "numpy"
+    ]
+   ],
+   "evidence": {
+    "file": "src/shop/views.py",
+    "start_line": 4,
+    "end_line": 4,
+    "rev": null
+   },
+   "is_relative": false,
+   "level": 0,
+   "type_only": false,
+   "is_from": false,
+   "is_reexport": false,
+   "is_star": false
+  },
+  {
+   "specifier": ".",
+   "names": [
+    "models"
+   ],
+   "alias_of": [],
+   "evidence": {
+    "file": "src/shop/views.py",
+    "start_line": 5,
+    "end_line": 5,
+    "rev": null
+   },
+   "is_relative": true,
+   "level": 1,
+   "type_only": false,
+   "is_from": true,
+   "is_reexport": false,
+   "is_star": false
+  },
+  {
+   "specifier": ".models",
+   "names": [
+    "Order",
+    "Line"
+   ],
+   "alias_of": [
+    [
+     "OrderLine",
+     "Line"
+    ]
+   ],
+   "evidence": {
+    "file": "src/shop/views.py",
+    "start_line": 6,
+    "end_line": 6,
+    "rev": null
+   },
+   "is_relative": true,
+   "level": 1,
+   "type_only": false,
+   "is_from": true,
+   "is_reexport": false,
+   "is_star": false
+  },
+  {
+   "specifier": "..core.db",
+   "names": [
+    "session",
+    "engine"
+   ],
+   "alias_of": [],
+   "evidence": {
+    "file": "src/shop/views.py",
+    "start_line": 7,
+    "end_line": 10,
+    "rev": null
+   },
+   "is_relative": true,
+   "level": 2,
+   "type_only": false,
+   "is_from": true,
+   "is_reexport": false,
+   "is_star": false
+  },
+  {
+   "specifier": "pkg.sub",
+   "names": [],
+   "alias_of": [],
+   "evidence": {
+    "file": "src/shop/views.py",
+    "start_line": 11,
+    "end_line": 11,
+    "rev": null
+   },
+   "is_relative": false,
+   "level": 0,
+   "type_only": false,
+   "is_from": true,
+   "is_reexport": false,
+   "is_star": false
+  }
+ ],
+ "calls": [],
+ "fields": [],
+ "reexports": [],
+ "diagnostics": [],
+ "ctor_assigns": []
+}

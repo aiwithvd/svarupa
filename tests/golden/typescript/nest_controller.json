@@ -1,0 +1,384 @@
+{
+ "path": "src/users/users.controller.ts",
+ "lang": "typescript",
+ "symbols": [
+  {
+   "name": "UsersController",
+   "qualified_name": "src.users.users.controller.UsersController",
+   "kind": "class",
+   "evidence": {
+    "file": "src/users/users.controller.ts",
+    "start_line": 7,
+    "end_line": 40,
+    "rev": null
+   },
+   "enclosing_class": null,
+   "bases": [],
+   "exported": true,
+   "decorators": [
+    {
+     "name": "Controller",
+     "arg": "users",
+     "evidence": {
+      "file": "src/users/users.controller.ts",
+      "start_line": 6,
+      "end_line": 6,
+      "rev": null
+     },
+     "arg_dynamic": false,
+     "methods": null
+    }
+   ]
+  },
+  {
+   "name": "constructor",
+   "qualified_name": "src.users.users.controller.UsersController.constructor",
+   "kind": "method",
+   "evidence": {
+    "file": "src/users/users.controller.ts",
+    "start_line": 11,
+    "end_line": 15,
+    "rev": null
+   },
+   "enclosing_class": "UsersController",
+   "bases": [],
+   "exported": true,
+   "decorators": []
+  },
+  {
+   "name": "findOne",
+   "qualified_name": "src.users.users.controller.UsersController.findOne",
+   "kind": "method",
+   "evidence": {
+    "file": "src/users/users.controller.ts",
+    "start_line": 18,
+    "end_line": 20,
+    "rev": null
+   },
+   "enclosing_class": "UsersController",
+   "bases": [],
+   "exported": true,
+   "decorators": [
+    {
+     "name": "Get",
+     "arg": ":id",
+     "evidence": {
+      "file": "src/users/users.controller.ts",
+      "start_line": 17,
+      "end_line": 17,
+      "rev": null
+     },
+     "arg_dynamic": false,
+     "methods": null
+    }
+   ]
+  },
+  {
+   "name": "create",
+   "qualified_name": "src.users.users.controller.UsersController.create",
+   "kind": "method",
+   "evidence": {
+    "file": "src/users/users.controller.ts",
+    "start_line": 23,
+    "end_line": 26,
+    "rev": null
+   },
+   "enclosing_class": "UsersController",
+   "bases": [],
+   "exported": true,
+   "decorators": [
+    {
+     "name": "Post",
+     "arg": null,
+     "evidence": {
+      "file": "src/users/users.controller.ts",
+      "start_line": 22,
+      "end_line": 22,
+      "rev": null
+     },
+     "arg_dynamic": true,
+     "methods": null
+    }
+   ]
+  },
+  {
+   "name": "list",
+   "qualified_name": "src.users.users.controller.UsersController.list",
+   "kind": "method",
+   "evidence": {
+    "file": "src/users/users.controller.ts",
+    "start_line": 29,
+    "end_line": 31,
+    "rev": null
+   },
+   "enclosing_class": "UsersController",
+   "bases": [],
+   "exported": true,
+   "decorators": [
+    {
+     "name": "Get",
+     "arg": null,
+     "evidence": {
+      "file": "src/users/users.controller.ts",
+      "start_line": 28,
+      "end_line": 28,
+      "rev": null
+     },
+     "arg_dynamic": false,
+     "methods": null
+    }
+   ]
+  },
+  {
+   "name": "escaped",
+   "qualified_name": "src.users.users.controller.UsersController.escaped",
+   "kind": "method",
+   "evidence": {
+    "file": "src/users/users.controller.ts",
+    "start_line": 34,
+    "end_line": 34,
+    "rev": null
+   },
+   "enclosing_class": "UsersController",
+   "bases": [],
+   "exported": true,
+   "decorators": [
+    {
+     "name": "Get",
+     "arg": "/a\\'b",
+     "evidence": {
+      "file": "src/users/users.controller.ts",
+      "start_line": 33,
+      "end_line": 33,
+      "rev": null
+     },
+     "arg_dynamic": false,
+     "methods": null
+    }
+   ]
+  },
+  {
+   "name": "templated",
+   "qualified_name": "src.users.users.controller.UsersController.templated",
+   "kind": "method",
+   "evidence": {
+    "file": "src/users/users.controller.ts",
+    "start_line": 37,
+    "end_line": 37,
+    "rev": null
+   },
+   "enclosing_class": "UsersController",
+   "bases": [],
+   "exported": true,
+   "decorators": [
+    {
+     "name": "Get",
+     "arg": null,
+     "evidence": {
+      "file": "src/users/users.controller.ts",
+      "start_line": 36,
+      "end_line": 36,
+      "rev": null
+     },
+     "arg_dynamic": true,
+     "methods": null
+    }
+   ]
+  },
+  {
+   "name": "_hidden",
+   "qualified_name": "src.users.users.controller.UsersController._hidden",
+   "kind": "method",
+   "evidence": {
+    "file": "src/users/users.controller.ts",
+    "start_line": 39,
+    "end_line": 39,
+    "rev": null
+   },
+   "enclosing_class": "UsersController",
+   "bases": [],
+   "exported": false,
+   "decorators": []
+  },
+  {
+   "name": "Internal",
+   "qualified_name": "src.users.users.controller.Internal",
+   "kind": "class",
+   "evidence": {
+    "file": "src/users/users.controller.ts",
+    "start_line": 42,
+    "end_line": 45,
+    "rev": null
+   },
+   "enclosing_class": null,
+   "bases": [],
+   "exported": false,
+   "decorators": [
+    {
+     "name": "Injectable",
+     "arg": null,
+     "evidence": {
+      "file": "src/users/users.controller.ts",
+      "start_line": 42,
+      "end_line": 42,
+      "rev": null
+     },
+     "arg_dynamic": false,
+     "methods": null
+    }
+   ]
+  },
+  {
+   "name": "run",
+   "qualified_name": "src.users.users.controller.Internal.run",
+   "kind": "method",
+   "evidence": {
+    "file": "src/users/users.controller.ts",
+    "start_line": 44,
+    "end_line": 44,
+    "rev": null
+   },
+   "enclosing_class": "Internal",
+   "bases": [],
+   "exported": true,
+   "decorators": []
+  }
+ ],
+ "imports": [
+  {
+   "specifier": "@nestjs/common",
+   "names": [
+    "Controller",
+    "Get",
+    "Post"
+   ],
+   "alias_of": [],
+   "evidence": {
+    "file": "src/users/users.controller.ts",
+    "start_line": 1,
+    "end_line": 1,
+    "rev": null
+   },
+   "is_relative": false,
+   "level": 0,
+   "type_only": false,
+   "is_from": true,
+   "is_reexport": false,
+   "is_star": false
+  },
+  {
+   "specifier": "./users.service",
+   "names": [
+    "UsersService"
+   ],
+   "alias_of": [],
+   "evidence": {
+    "file": "src/users/users.controller.ts",
+    "start_line": 2,
+    "end_line": 2,
+    "rev": null
+   },
+   "is_relative": true,
+   "level": 0,
+   "type_only": false,
+   "is_from": true,
+   "is_reexport": false,
+   "is_star": false
+  }
+ ],
+ "calls": [
+  {
+   "name": "findOne",
+   "shape": "self_field",
+   "receiver": "usersService",
+   "evidence": {
+    "file": "src/users/users.controller.ts",
+    "start_line": 19,
+    "end_line": 19,
+    "rev": null
+   },
+   "enclosing": "src.users.users.controller.UsersController.findOne",
+   "enclosing_class": "UsersController",
+   "first_str_arg": null,
+   "ident_args": [],
+   "first_arg_ident": null,
+   "recv_call": null
+  },
+  {
+   "name": "save",
+   "shape": "self_field",
+   "receiver": "repo",
+   "evidence": {
+    "file": "src/users/users.controller.ts",
+    "start_line": 24,
+    "end_line": 24,
+    "rev": null
+   },
+   "enclosing": "src.users.users.controller.UsersController.create",
+   "enclosing_class": "UsersController",
+   "first_str_arg": null,
+   "ident_args": [],
+   "first_arg_ident": null,
+   "recv_call": null
+  },
+  {
+   "name": "create",
+   "shape": "super",
+   "receiver": "super",
+   "evidence": {
+    "file": "src/users/users.controller.ts",
+    "start_line": 25,
+    "end_line": 25,
+    "rev": null
+   },
+   "enclosing": "src.users.users.controller.UsersController.create",
+   "enclosing_class": "UsersController",
+   "first_str_arg": null,
+   "ident_args": [],
+   "first_arg_ident": null,
+   "recv_call": null
+  },
+  {
+   "name": "helper",
+   "shape": "self",
+   "receiver": "this",
+   "evidence": {
+    "file": "src/users/users.controller.ts",
+    "start_line": 30,
+    "end_line": 30,
+    "rev": null
+   },
+   "enclosing": "src.users.users.controller.UsersController.list",
+   "enclosing_class": "UsersController",
+   "first_str_arg": null,
+   "ident_args": [],
+   "first_arg_ident": null,
+   "recv_call": null
+  }
+ ],
+ "fields": [
+  {
+   "owner": "UsersController",
+   "field": "repo",
+   "type_name": "Repository"
+  },
+  {
+   "owner": "UsersController",
+   "field": "cache",
+   "type_name": "Cache"
+  },
+  {
+   "owner": "UsersController",
+   "field": "usersService",
+   "type_name": "UsersService"
+  },
+  {
+   "owner": "UsersController",
+   "field": "logger",
+   "type_name": "Logger"
+  }
+ ],
+ "reexports": [],
+ "diagnostics": [],
+ "ctor_assigns": []
+}

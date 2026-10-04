@@ -1,0 +1,47 @@
+path: src/users/users.controller.ts
+---
+import { Controller, Get, Post } from '@nestjs/common';
+import { UsersService } from './users.service';
+
+const PATH = 'dynamic';
+
+@Controller('users')
+export class UsersController {
+  repo: Repository<User>;
+  private readonly cache?: Cache | null;
+
+  constructor(
+    private readonly usersService: UsersService,
+    public logger: Logger,
+    config: ConfigService,
+  ) {}
+
+  @Get(':id')
+  findOne() {
+    return this.usersService.findOne();
+  }
+
+  @Post(PATH)
+  create() {
+    this.repo.save();
+    return super.create();
+  }
+
+  @Get()
+  list() {
+    return this.helper();
+  }
+
+  @Get('/a\'b')
+  escaped() {}
+
+  @Get(`/t/${PATH}`)
+  templated() {}
+
+  _hidden() {}
+}
+
+@Injectable()
+class Internal {
+  run() {}
+}

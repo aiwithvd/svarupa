@@ -1,0 +1,64 @@
+path: src/api/routes.py
+---
+from fastapi import APIRouter
+from flask import Blueprint
+
+router = APIRouter()
+bp = Blueprint("bp", __name__)
+PATH = "/dyn"
+METHODS = ["GET"]
+
+
+@router.get("/items")
+def list_items():
+    return []
+
+
+@router.post(PATH)
+def create_item():
+    return {}
+
+
+@router.get(f"/items/{PATH}")
+def fstring_path():
+    return {}
+
+
+@bp.route("/orders", methods=["GET", "POST"])
+def orders():
+    return ""
+
+
+@bp.route("/dyn", methods=METHODS)
+def dynamic_methods():
+    return ""
+
+
+@bp.route("/mixed", methods=["GET", verb])
+def mixed_methods():
+    return ""
+
+
+@bp.route("/plain")
+def plain_route():
+    return ""
+
+
+class Thing:
+    @staticmethod
+    def build():
+        return Thing()
+
+    @property
+    def name(self):
+        return "x"
+
+
+@celery.task(bind=True)
+def job(self):
+    return None
+
+
+@router.get(name="named", path="/kw")
+def keyword_only():
+    return None
