@@ -995,26 +995,7 @@ class Resolver:
             # nothing: the annotation there names a framework class.
             if not call.enclosing_class or not call.receiver:
                 return []
-            type_name = self.idx.field_types.get((f.path, call.enclosing_class, call.receiver))
-            if type_name is None:
-                return []
-            owner, ambiguous = self._resolve_class_name_x(type_name, f.path)
-            if owner is None:
-                # `_resolve_class_name` returns None both for "not in the repo"
-                # and for "in the repo twice". Collapsing those into EXTERNAL is
-                # the unconditioned-external shape review #4 promoted to the
-                # decision log; an ambiguous intra-repo type is unresolved.
-                if ambiguous:
-                    return []
-                return None if self._type_is_external(f, type_name) else []
-            return _dedupe(
-                [
-                    m
-                    for cls_id in self._mro_ids(owner)
-                    for m in self.idx.methods_of.get(cls_id, [])
-                    if m[1].rsplit(".", 1)[-1] == name
-                ]
-            )[:MAX_CANDIDATE_ARITY]
+            return self._field_call(f, call.enclosing_class, call.receiver, name)
 
         if call.shape in (CallShape.SELF, CallShape.SUPER):
             if not call.enclosing_class:
@@ -1055,6 +1036,13 @@ class Resolver:
                 spec, level = import_names[name]
                 return self._lookup_in_module(f, spec, level, name)
             hits = _dedupe([h for h in self.idx.by_name.get(name, []) if h not in methods])
+            module = self.modules.get(f.lang)
+            if module is not None and module.package_scoped_bare:
+                # Go: a bare name is defined in the caller's own package.
+                here = f.path.rsplit("/", 1)[0] if "/" in f.path else ""
+                hits = [
+                    h for h in hits if (h[0].rsplit("/", 1)[0] if "/" in h[0] else "") == here
+                ]
             if len(hits) == 1:
                 return hits
             return hits[:MAX_CANDIDATE_ARITY] if 1 < len(hits) <= MAX_CANDIDATE_ARITY else []
@@ -1063,7 +1051,22 @@ class Resolver:
             recv = call.receiver or ""
             if recv in import_names:
                 spec, level = import_names[recv]
-                return self._lookup_in_module(f, spec, level, name)
+                found = self._lookup_in_module(f, spec, level, name)
+                if found == [] and f.lang == "python":
+                    # `from app import crud` may name the submodule app/crud.py
+                    # rather than something defined in app/__init__.py.
+                    real = alias_targets.get(recv, recv)
+                    sub = f"{spec}.{real}" if spec.strip(".") else f"{spec}{real}"
+                    found = self._lookup_in_module(f, sub, level, name)
+                return found
+            module = self.modules.get(f.lang)
+            if (
+                module is not None
+                and module.fields_without_this
+                and call.enclosing_class
+                and (f.path, call.enclosing_class, recv) in self.idx.field_types
+            ):
+                return self._field_call(f, call.enclosing_class, recv, name)
             owner = self._resolve_class_name(recv, f.path)
             if owner is not None:
                 hits = _dedupe(
@@ -1083,6 +1086,31 @@ class Resolver:
 
         # MEMBER: chained receiver, type unknowable without inference.
         return []
+
+    def _field_call(
+        self, f: FileFacts, cls: str, field_name: str, name: str
+    ) -> list[tuple[str, str]] | None:
+        """`name` called on a field of `cls`, through the field's declared type."""
+        type_name = self.idx.field_types.get((f.path, cls, field_name))
+        if type_name is None:
+            return []
+        owner, ambiguous = self._resolve_class_name_x(type_name, f.path)
+        if owner is None:
+            # `_resolve_class_name` returns None both for "not in the repo"
+            # and for "in the repo twice". Collapsing those into EXTERNAL is
+            # the unconditioned-external shape review #4 promoted to the
+            # decision log; an ambiguous intra-repo type is unresolved.
+            if ambiguous:
+                return []
+            return None if self._type_is_external(f, type_name) else []
+        return _dedupe(
+            [
+                m
+                for cls_id in self._mro_ids(owner)
+                for m in self.idx.methods_of.get(cls_id, [])
+                if m[1].rsplit(".", 1)[-1] == name
+            ]
+        )[:MAX_CANDIDATE_ARITY]
 
     def _lookup_in_module(
         self, f: FileFacts, spec: str, level: int, name: str

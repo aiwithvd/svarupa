@@ -175,6 +175,12 @@ _GENERATED_RE = re.compile(
 _GENERATED_DIRS = frozenset({"__generated__", "generated", "gen", "migrations", "protogen"})
 _VENDOR_DIRS = frozenset({"vendor", "third_party", "thirdparty", "external", "extern"})
 
+# An Alembic migration, recognized by the two module-level variables Alembic
+# itself requires, so it is found whatever its directory is called. A
+# directory-name rule (`alembic/versions`) misses renamed layouts.
+_ALEMBIC_REVISION = re.compile(rb"^revision\s*(?::[^=\n]*)?=", re.MULTILINE)
+_ALEMBIC_DOWN = re.compile(rb"^down_revision\s*(?::[^=\n]*)?=", re.MULTILINE)
+
 # A generated file says so in a banner at the very top. Matching anywhere in
 # the first 2KB produced verified false positives: a tooling script whose
 # docstring merely *mentions* "DO NOT EDIT", or a cleanup script referring to
@@ -450,6 +456,11 @@ def _looks_generated(data: bytes) -> bool:
     return bool(_GENERATED_BANNER.search(head))
 
 
+def _is_alembic_migration(data: bytes) -> bool:
+    head = data[:8192]
+    return bool(_ALEMBIC_REVISION.search(head) and _ALEMBIC_DOWN.search(head))
+
+
 def classify(rel: str, data: bytes, lang: str | None, config_kind: str | None) -> FileRole:
     parts = rel.split("/")
     dirs, name = parts[:-1], parts[-1]
@@ -470,6 +481,8 @@ def classify(rel: str, data: bytes, lang: str | None, config_kind: str | None) -
         return FileRole.CONFIG
 
     if any(d in _GENERATED_DIRS for d in dirs) or _GENERATED_RE.search(name):
+        return FileRole.GENERATED
+    if lang == "python" and _is_alembic_migration(data):
         return FileRole.GENERATED
     if any(d in _TEST_DIR_NAMES for d in dirs) or _TEST_FILE_RE.search(name):
         return FileRole.TEST

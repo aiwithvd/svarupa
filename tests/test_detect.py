@@ -669,3 +669,26 @@ def test_matches_git_on_nested_gitignore(git_repo: Path) -> None:
     ours = {f.path for f in detect(git_repo).files}
     theirs = {p for p in _git_visible(git_repo) if p.endswith(".py")}
     assert ours == theirs
+
+
+ALEMBIC = (
+    b'"""add items\n\nRevision ID: 1a31ce608336\n"""\n'
+    b"from alembic import op\nimport sqlalchemy as sa\n\n"
+    b"revision = '1a31ce608336'\ndown_revision: str | None = 'd98dd8ec85a3'\n\n\n"
+    b"def upgrade():\n    op.add_column('item', sa.Column('x', sa.Integer()))\n"
+)
+
+
+@pytest.mark.parametrize(
+    "rel", ["backend/app/alembic/versions/1a31_add.py", "db/changes/0001.py"]
+)
+def test_an_alembic_migration_is_generated_wherever_it_lives(rel: str) -> None:
+    from svarupa.detect import FileRole, classify
+
+    assert classify(rel, ALEMBIC, "python", None) is FileRole.GENERATED
+
+
+def test_a_revision_variable_alone_is_not_a_migration() -> None:
+    from svarupa.detect import FileRole, classify
+
+    assert classify("app/release.py", b"revision = 3\n", "python", None) is FileRole.SOURCE
