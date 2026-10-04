@@ -1,0 +1,699 @@
+{
+ "nodes": [
+  {
+   "id": "src/index.ts",
+   "kind": "module",
+   "label": "index.ts",
+   "qualified_name": "src/index.ts",
+   "evidence": [
+    {
+     "file": "src/index.ts",
+     "start_line": 1,
+     "end_line": 1,
+     "rev": null
+    }
+   ],
+   "lang": "typescript",
+   "attrs": [],
+   "producer": "typescript.module"
+  },
+  {
+   "id": "src/legacy.js",
+   "kind": "module",
+   "label": "legacy.js",
+   "qualified_name": "src/legacy.js",
+   "evidence": [
+    {
+     "file": "src/legacy.js",
+     "start_line": 1,
+     "end_line": 1,
+     "rev": null
+    }
+   ],
+   "lang": "javascript",
+   "attrs": [],
+   "producer": "javascript.module"
+  },
+  {
+   "id": "src/shared/base.ts",
+   "kind": "module",
+   "label": "base.ts",
+   "qualified_name": "src/shared/base.ts",
+   "evidence": [
+    {
+     "file": "src/shared/base.ts",
+     "start_line": 1,
+     "end_line": 1,
+     "rev": null
+    }
+   ],
+   "lang": "typescript",
+   "attrs": [],
+   "producer": "typescript.module"
+  },
+  {
+   "id": "src/shared/base.ts#src.shared.base.Base",
+   "kind": "class",
+   "label": "Base",
+   "qualified_name": "src.shared.base.Base",
+   "evidence": [
+    {
+     "file": "src/shared/base.ts",
+     "start_line": 1,
+     "end_line": 3,
+     "rev": null
+    }
+   ],
+   "lang": "typescript",
+   "attrs": [
+    [
+     "exported",
+     "true"
+    ]
+   ],
+   "producer": "typescript.symbols"
+  },
+  {
+   "id": "src/shared/base.ts#src.shared.base.Base.helper",
+   "kind": "method",
+   "label": "helper",
+   "qualified_name": "src.shared.base.Base.helper",
+   "evidence": [
+    {
+     "file": "src/shared/base.ts",
+     "start_line": 2,
+     "end_line": 2,
+     "rev": null
+    }
+   ],
+   "lang": "typescript",
+   "attrs": [
+    [
+     "class",
+     "Base"
+    ],
+    [
+     "exported",
+     "true"
+    ]
+   ],
+   "producer": "typescript.symbols"
+  },
+  {
+   "id": "src/shared/index.ts",
+   "kind": "module",
+   "label": "index.ts",
+   "qualified_name": "src/shared/index.ts",
+   "evidence": [
+    {
+     "file": "src/shared/index.ts",
+     "start_line": 1,
+     "end_line": 1,
+     "rev": null
+    }
+   ],
+   "lang": "typescript",
+   "attrs": [],
+   "producer": "typescript.module"
+  },
+  {
+   "id": "src/users/users.controller.ts",
+   "kind": "module",
+   "label": "users.controller.ts",
+   "qualified_name": "src/users/users.controller.ts",
+   "evidence": [
+    {
+     "file": "src/users/users.controller.ts",
+     "start_line": 1,
+     "end_line": 1,
+     "rev": null
+    }
+   ],
+   "lang": "typescript",
+   "attrs": [],
+   "producer": "typescript.module"
+  },
+  {
+   "id": "src/users/users.controller.ts#src.users.users.controller.UsersController",
+   "kind": "class",
+   "label": "UsersController",
+   "qualified_name": "src.users.users.controller.UsersController",
+   "evidence": [
+    {
+     "file": "src/users/users.controller.ts",
+     "start_line": 2,
+     "end_line": 5,
+     "rev": null
+    }
+   ],
+   "lang": "typescript",
+   "attrs": [
+    [
+     "exported",
+     "true"
+    ]
+   ],
+   "producer": "typescript.symbols"
+  },
+  {
+   "id": "src/users/users.controller.ts#src.users.users.controller.UsersController.constructor",
+   "kind": "method",
+   "label": "constructor",
+   "qualified_name": "src.users.users.controller.UsersController.constructor",
+   "evidence": [
+    {
+     "file": "src/users/users.controller.ts",
+     "start_line": 3,
+     "end_line": 3,
+     "rev": null
+    }
+   ],
+   "lang": "typescript",
+   "attrs": [
+    [
+     "class",
+     "UsersController"
+    ],
+    [
+     "exported",
+     "true"
+    ]
+   ],
+   "producer": "typescript.symbols"
+  },
+  {
+   "id": "src/users/users.controller.ts#src.users.users.controller.UsersController.list",
+   "kind": "method",
+   "label": "list",
+   "qualified_name": "src.users.users.controller.UsersController.list",
+   "evidence": [
+    {
+     "file": "src/users/users.controller.ts",
+     "start_line": 4,
+     "end_line": 4,
+     "rev": null
+    }
+   ],
+   "lang": "typescript",
+   "attrs": [
+    [
+     "class",
+     "UsersController"
+    ],
+    [
+     "exported",
+     "true"
+    ]
+   ],
+   "producer": "typescript.symbols"
+  },
+  {
+   "id": "src/users/users.service.ts",
+   "kind": "module",
+   "label": "users.service.ts",
+   "qualified_name": "src/users/users.service.ts",
+   "evidence": [
+    {
+     "file": "src/users/users.service.ts",
+     "start_line": 1,
+     "end_line": 1,
+     "rev": null
+    }
+   ],
+   "lang": "typescript",
+   "attrs": [],
+   "producer": "typescript.module"
+  },
+  {
+   "id": "src/users/users.service.ts#src.users.users.service.UsersService",
+   "kind": "class",
+   "label": "UsersService",
+   "qualified_name": "src.users.users.service.UsersService",
+   "evidence": [
+    {
+     "file": "src/users/users.service.ts",
+     "start_line": 2,
+     "end_line": 4,
+     "rev": null
+    }
+   ],
+   "lang": "typescript",
+   "attrs": [
+    [
+     "exported",
+     "true"
+    ]
+   ],
+   "producer": "typescript.symbols"
+  },
+  {
+   "id": "src/users/users.service.ts#src.users.users.service.UsersService.findAll",
+   "kind": "method",
+   "label": "findAll",
+   "qualified_name": "src.users.users.service.UsersService.findAll",
+   "evidence": [
+    {
+     "file": "src/users/users.service.ts",
+     "start_line": 3,
+     "end_line": 3,
+     "rev": null
+    }
+   ],
+   "lang": "typescript",
+   "attrs": [
+    [
+     "class",
+     "UsersService"
+    ],
+    [
+     "exported",
+     "true"
+    ]
+   ],
+   "producer": "typescript.symbols"
+  },
+  {
+   "id": "src/util/log.ts",
+   "kind": "module",
+   "label": "log.ts",
+   "qualified_name": "src/util/log.ts",
+   "evidence": [
+    {
+     "file": "src/util/log.ts",
+     "start_line": 1,
+     "end_line": 1,
+     "rev": null
+    }
+   ],
+   "lang": "typescript",
+   "attrs": [],
+   "producer": "typescript.module"
+  },
+  {
+   "id": "src/util/log.ts#src.util.log.log",
+   "kind": "function",
+   "label": "log",
+   "qualified_name": "src.util.log.log",
+   "evidence": [
+    {
+     "file": "src/util/log.ts",
+     "start_line": 1,
+     "end_line": 1,
+     "rev": null
+    }
+   ],
+   "lang": "typescript",
+   "attrs": [
+    [
+     "exported",
+     "true"
+    ]
+   ],
+   "producer": "typescript.symbols"
+  }
+ ],
+ "edges": [
+  {
+   "src": "src/index.ts",
+   "dst": "src/users/users.controller.ts",
+   "kind": "imports",
+   "evidence": [
+    {
+     "file": "src/index.ts",
+     "start_line": 2,
+     "end_line": 2,
+     "rev": null
+    }
+   ],
+   "confidence": "RESOLVED",
+   "resolution": "resolved",
+   "arity": 1,
+   "attrs": [],
+   "producer": "typescript.imports"
+  },
+  {
+   "src": "src/index.ts",
+   "dst": "src/users/users.controller.ts#src.users.users.controller.UsersController",
+   "kind": "references",
+   "evidence": [
+    {
+     "file": "src/index.ts",
+     "start_line": 2,
+     "end_line": 2,
+     "rev": null
+    }
+   ],
+   "confidence": "RESOLVED",
+   "resolution": "resolved",
+   "arity": 1,
+   "attrs": [],
+   "producer": "typescript.imports"
+  },
+  {
+   "src": "src/index.ts",
+   "dst": "src/util/log.ts",
+   "kind": "imports",
+   "evidence": [
+    {
+     "file": "src/index.ts",
+     "start_line": 3,
+     "end_line": 3,
+     "rev": null
+    }
+   ],
+   "confidence": "RESOLVED",
+   "resolution": "resolved",
+   "arity": 1,
+   "attrs": [],
+   "producer": "typescript.imports"
+  },
+  {
+   "src": "src/index.ts",
+   "dst": "src/util/log.ts#src.util.log.log",
+   "kind": "calls",
+   "evidence": [
+    {
+     "file": "src/index.ts",
+     "start_line": 6,
+     "end_line": 6,
+     "rev": null
+    }
+   ],
+   "confidence": "RESOLVED",
+   "resolution": "resolved",
+   "arity": 1,
+   "attrs": [
+    [
+     "shape",
+     "bare"
+    ]
+   ],
+   "producer": "typescript.calls"
+  },
+  {
+   "src": "src/index.ts",
+   "dst": "src/util/log.ts#src.util.log.log",
+   "kind": "references",
+   "evidence": [
+    {
+     "file": "src/index.ts",
+     "start_line": 3,
+     "end_line": 3,
+     "rev": null
+    }
+   ],
+   "confidence": "RESOLVED",
+   "resolution": "resolved",
+   "arity": 1,
+   "attrs": [],
+   "producer": "typescript.imports"
+  },
+  {
+   "src": "src/legacy.js",
+   "dst": "src/util/log.ts",
+   "kind": "imports",
+   "evidence": [
+    {
+     "file": "src/legacy.js",
+     "start_line": 1,
+     "end_line": 1,
+     "rev": null
+    }
+   ],
+   "confidence": "RESOLVED",
+   "resolution": "resolved",
+   "arity": 1,
+   "attrs": [],
+   "producer": "javascript.imports"
+  },
+  {
+   "src": "src/legacy.js",
+   "dst": "src/util/log.ts#src.util.log.log",
+   "kind": "calls",
+   "evidence": [
+    {
+     "file": "src/legacy.js",
+     "start_line": 2,
+     "end_line": 2,
+     "rev": null
+    }
+   ],
+   "confidence": "RESOLVED",
+   "resolution": "resolved",
+   "arity": 1,
+   "attrs": [
+    [
+     "shape",
+     "bare"
+    ]
+   ],
+   "producer": "javascript.calls"
+  },
+  {
+   "src": "src/legacy.js",
+   "dst": "src/util/log.ts#src.util.log.log",
+   "kind": "references",
+   "evidence": [
+    {
+     "file": "src/legacy.js",
+     "start_line": 1,
+     "end_line": 1,
+     "rev": null
+    }
+   ],
+   "confidence": "RESOLVED",
+   "resolution": "resolved",
+   "arity": 1,
+   "attrs": [],
+   "producer": "javascript.imports"
+  },
+  {
+   "src": "src/shared/index.ts",
+   "dst": "src/shared/base.ts",
+   "kind": "imports",
+   "evidence": [
+    {
+     "file": "src/shared/index.ts",
+     "start_line": 1,
+     "end_line": 1,
+     "rev": null
+    }
+   ],
+   "confidence": "RESOLVED",
+   "resolution": "resolved",
+   "arity": 1,
+   "attrs": [],
+   "producer": "typescript.imports"
+  },
+  {
+   "src": "src/users/users.controller.ts",
+   "dst": "src/users/users.service.ts",
+   "kind": "imports",
+   "evidence": [
+    {
+     "file": "src/users/users.controller.ts",
+     "start_line": 1,
+     "end_line": 1,
+     "rev": null
+    }
+   ],
+   "confidence": "RESOLVED",
+   "resolution": "resolved",
+   "arity": 1,
+   "attrs": [],
+   "producer": "typescript.imports"
+  },
+  {
+   "src": "src/users/users.controller.ts",
+   "dst": "src/users/users.service.ts#src.users.users.service.UsersService",
+   "kind": "references",
+   "evidence": [
+    {
+     "file": "src/users/users.controller.ts",
+     "start_line": 1,
+     "end_line": 1,
+     "rev": null
+    }
+   ],
+   "confidence": "RESOLVED",
+   "resolution": "resolved",
+   "arity": 1,
+   "attrs": [],
+   "producer": "typescript.imports"
+  },
+  {
+   "src": "src/users/users.controller.ts#src.users.users.controller.UsersController.list",
+   "dst": "src/users/users.service.ts#src.users.users.service.UsersService.findAll",
+   "kind": "calls",
+   "evidence": [
+    {
+     "file": "src/users/users.controller.ts",
+     "start_line": 4,
+     "end_line": 4,
+     "rev": null
+    }
+   ],
+   "confidence": "RESOLVED",
+   "resolution": "resolved",
+   "arity": 1,
+   "attrs": [
+    [
+     "shape",
+     "self_field"
+    ]
+   ],
+   "producer": "typescript.calls"
+  },
+  {
+   "src": "src/users/users.service.ts",
+   "dst": "src/shared/base.ts#src.shared.base.Base",
+   "kind": "references",
+   "evidence": [
+    {
+     "file": "src/users/users.service.ts",
+     "start_line": 1,
+     "end_line": 1,
+     "rev": null
+    }
+   ],
+   "confidence": "RESOLVED",
+   "resolution": "resolved",
+   "arity": 1,
+   "attrs": [],
+   "producer": "typescript.imports"
+  },
+  {
+   "src": "src/users/users.service.ts",
+   "dst": "src/shared/index.ts",
+   "kind": "imports",
+   "evidence": [
+    {
+     "file": "src/users/users.service.ts",
+     "start_line": 1,
+     "end_line": 1,
+     "rev": null
+    }
+   ],
+   "confidence": "RESOLVED",
+   "resolution": "resolved",
+   "arity": 1,
+   "attrs": [],
+   "producer": "typescript.imports"
+  },
+  {
+   "src": "src/users/users.service.ts#src.users.users.service.UsersService",
+   "dst": "src/shared/base.ts#src.shared.base.Base",
+   "kind": "inherits",
+   "evidence": [
+    {
+     "file": "src/users/users.service.ts",
+     "start_line": 2,
+     "end_line": 4,
+     "rev": null
+    }
+   ],
+   "confidence": "RESOLVED",
+   "resolution": "resolved",
+   "arity": 1,
+   "attrs": [],
+   "producer": "typescript.inherits"
+  },
+  {
+   "src": "src/users/users.service.ts#src.users.users.service.UsersService.findAll",
+   "dst": "src/shared/base.ts#src.shared.base.Base.helper",
+   "kind": "calls",
+   "evidence": [
+    {
+     "file": "src/users/users.service.ts",
+     "start_line": 3,
+     "end_line": 3,
+     "rev": null
+    }
+   ],
+   "confidence": "RESOLVED",
+   "resolution": "resolved",
+   "arity": 1,
+   "attrs": [
+    [
+     "shape",
+     "self"
+    ]
+   ],
+   "producer": "typescript.calls"
+  }
+ ],
+ "scorecard": {
+  "measures": "the share of intra-repository references pinned to a target, not whether the target is correct; a wrong edge counts as resolved",
+  "rows": [
+   {
+    "lang": "javascript",
+    "kind": "calls",
+    "resolved": 1,
+    "candidate": 0,
+    "external": 0,
+    "unresolved": 0,
+    "pinned_pct": 100.0
+   },
+   {
+    "lang": "javascript",
+    "kind": "imports",
+    "resolved": 1,
+    "candidate": 0,
+    "external": 0,
+    "unresolved": 0,
+    "pinned_pct": 100.0
+   },
+   {
+    "lang": "javascript",
+    "kind": "references",
+    "resolved": 1,
+    "candidate": 0,
+    "external": 0,
+    "unresolved": 0,
+    "pinned_pct": 100.0
+   },
+   {
+    "lang": "typescript",
+    "kind": "calls",
+    "resolved": 3,
+    "candidate": 0,
+    "external": 1,
+    "unresolved": 1,
+    "pinned_pct": 75.0
+   },
+   {
+    "lang": "typescript",
+    "kind": "imports",
+    "resolved": 5,
+    "candidate": 0,
+    "external": 1,
+    "unresolved": 0,
+    "pinned_pct": 100.0
+   },
+   {
+    "lang": "typescript",
+    "kind": "inherits",
+    "resolved": 1,
+    "candidate": 0,
+    "external": 0,
+    "unresolved": 0,
+    "pinned_pct": 100.0
+   },
+   {
+    "lang": "typescript",
+    "kind": "references",
+    "resolved": 4,
+    "candidate": 0,
+    "external": 1,
+    "unresolved": 0,
+    "pinned_pct": 100.0
+   }
+  ],
+  "unresolved_samples": {
+   "typescript/calls": [
+    "qualified:app.get"
+   ]
+  }
+ },
+ "diagnostics": []
+}

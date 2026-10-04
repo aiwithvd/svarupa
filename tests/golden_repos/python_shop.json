@@ -1,0 +1,671 @@
+{
+ "nodes": [
+  {
+   "id": "src/ns/tool/helpers.py",
+   "kind": "module",
+   "label": "helpers.py",
+   "qualified_name": "src/ns/tool/helpers.py",
+   "evidence": [
+    {
+     "file": "src/ns/tool/helpers.py",
+     "start_line": 1,
+     "end_line": 1,
+     "rev": null
+    }
+   ],
+   "lang": "python",
+   "attrs": [],
+   "producer": "python.module"
+  },
+  {
+   "id": "src/ns/tool/helpers.py#src.ns.tool.helpers.assist",
+   "kind": "function",
+   "label": "assist",
+   "qualified_name": "src.ns.tool.helpers.assist",
+   "evidence": [
+    {
+     "file": "src/ns/tool/helpers.py",
+     "start_line": 1,
+     "end_line": 2,
+     "rev": null
+    }
+   ],
+   "lang": "python",
+   "attrs": [
+    [
+     "exported",
+     "true"
+    ]
+   ],
+   "producer": "python.symbols"
+  },
+  {
+   "id": "src/ns/tool/run.py",
+   "kind": "module",
+   "label": "run.py",
+   "qualified_name": "src/ns/tool/run.py",
+   "evidence": [
+    {
+     "file": "src/ns/tool/run.py",
+     "start_line": 1,
+     "end_line": 1,
+     "rev": null
+    }
+   ],
+   "lang": "python",
+   "attrs": [],
+   "producer": "python.module"
+  },
+  {
+   "id": "src/ns/tool/run.py#src.ns.tool.run.go",
+   "kind": "function",
+   "label": "go",
+   "qualified_name": "src.ns.tool.run.go",
+   "evidence": [
+    {
+     "file": "src/ns/tool/run.py",
+     "start_line": 4,
+     "end_line": 5,
+     "rev": null
+    }
+   ],
+   "lang": "python",
+   "attrs": [
+    [
+     "exported",
+     "true"
+    ]
+   ],
+   "producer": "python.symbols"
+  },
+  {
+   "id": "src/shop/__init__.py",
+   "kind": "module",
+   "label": "__init__.py",
+   "qualified_name": "src/shop/__init__.py",
+   "evidence": [
+    {
+     "file": "src/shop/__init__.py",
+     "start_line": 1,
+     "end_line": 1,
+     "rev": null
+    }
+   ],
+   "lang": "python",
+   "attrs": [],
+   "producer": "python.module"
+  },
+  {
+   "id": "src/shop/api.py",
+   "kind": "module",
+   "label": "api.py",
+   "qualified_name": "src/shop/api.py",
+   "evidence": [
+    {
+     "file": "src/shop/api.py",
+     "start_line": 1,
+     "end_line": 1,
+     "rev": null
+    }
+   ],
+   "lang": "python",
+   "attrs": [],
+   "producer": "python.module"
+  },
+  {
+   "id": "src/shop/api.py#src.shop.api.create",
+   "kind": "function",
+   "label": "create",
+   "qualified_name": "src.shop.api.create",
+   "evidence": [
+    {
+     "file": "src/shop/api.py",
+     "start_line": 9,
+     "end_line": 12,
+     "rev": null
+    }
+   ],
+   "lang": "python",
+   "attrs": [
+    [
+     "exported",
+     "true"
+    ]
+   ],
+   "producer": "python.symbols"
+  },
+  {
+   "id": "src/shop/base.py",
+   "kind": "module",
+   "label": "base.py",
+   "qualified_name": "src/shop/base.py",
+   "evidence": [
+    {
+     "file": "src/shop/base.py",
+     "start_line": 1,
+     "end_line": 1,
+     "rev": null
+    }
+   ],
+   "lang": "python",
+   "attrs": [],
+   "producer": "python.module"
+  },
+  {
+   "id": "src/shop/base.py#src.shop.base.Base",
+   "kind": "class",
+   "label": "Base",
+   "qualified_name": "src.shop.base.Base",
+   "evidence": [
+    {
+     "file": "src/shop/base.py",
+     "start_line": 1,
+     "end_line": 3,
+     "rev": null
+    }
+   ],
+   "lang": "python",
+   "attrs": [
+    [
+     "exported",
+     "true"
+    ]
+   ],
+   "producer": "python.symbols"
+  },
+  {
+   "id": "src/shop/base.py#src.shop.base.Base.validate",
+   "kind": "method",
+   "label": "validate",
+   "qualified_name": "src.shop.base.Base.validate",
+   "evidence": [
+    {
+     "file": "src/shop/base.py",
+     "start_line": 2,
+     "end_line": 3,
+     "rev": null
+    }
+   ],
+   "lang": "python",
+   "attrs": [
+    [
+     "class",
+     "Base"
+    ],
+    [
+     "exported",
+     "true"
+    ]
+   ],
+   "producer": "python.symbols"
+  },
+  {
+   "id": "src/shop/db.py",
+   "kind": "module",
+   "label": "db.py",
+   "qualified_name": "src/shop/db.py",
+   "evidence": [
+    {
+     "file": "src/shop/db.py",
+     "start_line": 1,
+     "end_line": 1,
+     "rev": null
+    }
+   ],
+   "lang": "python",
+   "attrs": [],
+   "producer": "python.module"
+  },
+  {
+   "id": "src/shop/db.py#src.shop.db.Session",
+   "kind": "class",
+   "label": "Session",
+   "qualified_name": "src.shop.db.Session",
+   "evidence": [
+    {
+     "file": "src/shop/db.py",
+     "start_line": 1,
+     "end_line": 3,
+     "rev": null
+    }
+   ],
+   "lang": "python",
+   "attrs": [
+    [
+     "exported",
+     "true"
+    ]
+   ],
+   "producer": "python.symbols"
+  },
+  {
+   "id": "src/shop/db.py#src.shop.db.Session.add",
+   "kind": "method",
+   "label": "add",
+   "qualified_name": "src.shop.db.Session.add",
+   "evidence": [
+    {
+     "file": "src/shop/db.py",
+     "start_line": 2,
+     "end_line": 3,
+     "rev": null
+    }
+   ],
+   "lang": "python",
+   "attrs": [
+    [
+     "class",
+     "Session"
+    ],
+    [
+     "exported",
+     "true"
+    ]
+   ],
+   "producer": "python.symbols"
+  },
+  {
+   "id": "src/shop/orders.py",
+   "kind": "module",
+   "label": "orders.py",
+   "qualified_name": "src/shop/orders.py",
+   "evidence": [
+    {
+     "file": "src/shop/orders.py",
+     "start_line": 1,
+     "end_line": 1,
+     "rev": null
+    }
+   ],
+   "lang": "python",
+   "attrs": [],
+   "producer": "python.module"
+  },
+  {
+   "id": "src/shop/orders.py#src.shop.orders.Order",
+   "kind": "class",
+   "label": "Order",
+   "qualified_name": "src.shop.orders.Order",
+   "evidence": [
+    {
+     "file": "src/shop/orders.py",
+     "start_line": 6,
+     "end_line": 10,
+     "rev": null
+    }
+   ],
+   "lang": "python",
+   "attrs": [
+    [
+     "exported",
+     "true"
+    ]
+   ],
+   "producer": "python.symbols"
+  },
+  {
+   "id": "src/shop/orders.py#src.shop.orders.Order.save",
+   "kind": "method",
+   "label": "save",
+   "qualified_name": "src.shop.orders.Order.save",
+   "evidence": [
+    {
+     "file": "src/shop/orders.py",
+     "start_line": 7,
+     "end_line": 10,
+     "rev": null
+    }
+   ],
+   "lang": "python",
+   "attrs": [
+    [
+     "class",
+     "Order"
+    ],
+    [
+     "exported",
+     "true"
+    ]
+   ],
+   "producer": "python.symbols"
+  }
+ ],
+ "edges": [
+  {
+   "src": "src/ns/tool/run.py",
+   "dst": "src/ns/tool/helpers.py",
+   "kind": "imports",
+   "evidence": [
+    {
+     "file": "src/ns/tool/run.py",
+     "start_line": 1,
+     "end_line": 1,
+     "rev": null
+    }
+   ],
+   "confidence": "RESOLVED",
+   "resolution": "resolved",
+   "arity": 1,
+   "attrs": [],
+   "producer": "python.imports"
+  },
+  {
+   "src": "src/shop/__init__.py",
+   "dst": "src/shop/orders.py",
+   "kind": "imports",
+   "evidence": [
+    {
+     "file": "src/shop/__init__.py",
+     "start_line": 1,
+     "end_line": 1,
+     "rev": null
+    }
+   ],
+   "confidence": "RESOLVED",
+   "resolution": "resolved",
+   "arity": 1,
+   "attrs": [],
+   "producer": "python.imports"
+  },
+  {
+   "src": "src/shop/__init__.py",
+   "dst": "src/shop/orders.py#src.shop.orders.Order",
+   "kind": "references",
+   "evidence": [
+    {
+     "file": "src/shop/__init__.py",
+     "start_line": 1,
+     "end_line": 1,
+     "rev": null
+    }
+   ],
+   "confidence": "RESOLVED",
+   "resolution": "resolved",
+   "arity": 1,
+   "attrs": [],
+   "producer": "python.imports"
+  },
+  {
+   "src": "src/shop/api.py",
+   "dst": "src/shop/__init__.py",
+   "kind": "imports",
+   "evidence": [
+    {
+     "file": "src/shop/api.py",
+     "start_line": 2,
+     "end_line": 2,
+     "rev": null
+    }
+   ],
+   "confidence": "RESOLVED",
+   "resolution": "resolved",
+   "arity": 1,
+   "attrs": [],
+   "producer": "python.imports"
+  },
+  {
+   "src": "src/shop/api.py",
+   "dst": "src/shop/__init__.py",
+   "kind": "imports",
+   "evidence": [
+    {
+     "file": "src/shop/api.py",
+     "start_line": 3,
+     "end_line": 3,
+     "rev": null
+    }
+   ],
+   "confidence": "RESOLVED",
+   "resolution": "resolved",
+   "arity": 1,
+   "attrs": [],
+   "producer": "python.imports"
+  },
+  {
+   "src": "src/shop/api.py",
+   "dst": "src/shop/db.py",
+   "kind": "imports",
+   "evidence": [
+    {
+     "file": "src/shop/api.py",
+     "start_line": 3,
+     "end_line": 3,
+     "rev": null
+    }
+   ],
+   "confidence": "RESOLVED",
+   "resolution": "resolved",
+   "arity": 1,
+   "attrs": [],
+   "producer": "python.imports"
+  },
+  {
+   "src": "src/shop/api.py",
+   "dst": "src/shop/orders.py#src.shop.orders.Order",
+   "kind": "references",
+   "evidence": [
+    {
+     "file": "src/shop/api.py",
+     "start_line": 2,
+     "end_line": 2,
+     "rev": null
+    }
+   ],
+   "confidence": "RESOLVED",
+   "resolution": "resolved",
+   "arity": 1,
+   "attrs": [],
+   "producer": "python.imports"
+  },
+  {
+   "src": "src/shop/api.py#src.shop.api.create",
+   "dst": "src/shop/orders.py#src.shop.orders.Order",
+   "kind": "calls",
+   "evidence": [
+    {
+     "file": "src/shop/api.py",
+     "start_line": 10,
+     "end_line": 10,
+     "rev": null
+    }
+   ],
+   "confidence": "RESOLVED",
+   "resolution": "resolved",
+   "arity": 1,
+   "attrs": [
+    [
+     "shape",
+     "bare"
+    ]
+   ],
+   "producer": "python.calls"
+  },
+  {
+   "src": "src/shop/orders.py",
+   "dst": "src/shop/base.py",
+   "kind": "imports",
+   "evidence": [
+    {
+     "file": "src/shop/orders.py",
+     "start_line": 3,
+     "end_line": 3,
+     "rev": null
+    }
+   ],
+   "confidence": "RESOLVED",
+   "resolution": "resolved",
+   "arity": 1,
+   "attrs": [],
+   "producer": "python.imports"
+  },
+  {
+   "src": "src/shop/orders.py",
+   "dst": "src/shop/base.py#src.shop.base.Base",
+   "kind": "references",
+   "evidence": [
+    {
+     "file": "src/shop/orders.py",
+     "start_line": 3,
+     "end_line": 3,
+     "rev": null
+    }
+   ],
+   "confidence": "RESOLVED",
+   "resolution": "resolved",
+   "arity": 1,
+   "attrs": [],
+   "producer": "python.imports"
+  },
+  {
+   "src": "src/shop/orders.py",
+   "dst": "src/shop/db.py",
+   "kind": "imports",
+   "evidence": [
+    {
+     "file": "src/shop/orders.py",
+     "start_line": 2,
+     "end_line": 2,
+     "rev": null
+    }
+   ],
+   "confidence": "RESOLVED",
+   "resolution": "resolved",
+   "arity": 1,
+   "attrs": [],
+   "producer": "python.imports"
+  },
+  {
+   "src": "src/shop/orders.py",
+   "dst": "src/shop/db.py#src.shop.db.Session",
+   "kind": "references",
+   "evidence": [
+    {
+     "file": "src/shop/orders.py",
+     "start_line": 2,
+     "end_line": 2,
+     "rev": null
+    }
+   ],
+   "confidence": "RESOLVED",
+   "resolution": "resolved",
+   "arity": 1,
+   "attrs": [],
+   "producer": "python.imports"
+  },
+  {
+   "src": "src/shop/orders.py#src.shop.orders.Order",
+   "dst": "src/shop/base.py#src.shop.base.Base",
+   "kind": "inherits",
+   "evidence": [
+    {
+     "file": "src/shop/orders.py",
+     "start_line": 6,
+     "end_line": 10,
+     "rev": null
+    }
+   ],
+   "confidence": "RESOLVED",
+   "resolution": "resolved",
+   "arity": 1,
+   "attrs": [],
+   "producer": "python.inherits"
+  },
+  {
+   "src": "src/shop/orders.py#src.shop.orders.Order.save",
+   "dst": "src/shop/base.py#src.shop.base.Base.validate",
+   "kind": "calls",
+   "evidence": [
+    {
+     "file": "src/shop/orders.py",
+     "start_line": 8,
+     "end_line": 8,
+     "rev": null
+    }
+   ],
+   "confidence": "RESOLVED",
+   "resolution": "resolved",
+   "arity": 1,
+   "attrs": [
+    [
+     "shape",
+     "self"
+    ]
+   ],
+   "producer": "python.calls"
+  },
+  {
+   "src": "src/shop/orders.py#src.shop.orders.Order.save",
+   "dst": "src/shop/db.py#src.shop.db.Session",
+   "kind": "calls",
+   "evidence": [
+    {
+     "file": "src/shop/orders.py",
+     "start_line": 9,
+     "end_line": 9,
+     "rev": null
+    }
+   ],
+   "confidence": "RESOLVED",
+   "resolution": "resolved",
+   "arity": 1,
+   "attrs": [
+    [
+     "shape",
+     "bare"
+    ]
+   ],
+   "producer": "python.calls"
+  }
+ ],
+ "scorecard": {
+  "measures": "the share of intra-repository references pinned to a target, not whether the target is correct; a wrong edge counts as resolved",
+  "rows": [
+   {
+    "lang": "python",
+    "kind": "calls",
+    "resolved": 3,
+    "candidate": 0,
+    "external": 2,
+    "unresolved": 5,
+    "pinned_pct": 37.5
+   },
+   {
+    "lang": "python",
+    "kind": "imports",
+    "resolved": 6,
+    "candidate": 0,
+    "external": 2,
+    "unresolved": 0,
+    "pinned_pct": 100.0
+   },
+   {
+    "lang": "python",
+    "kind": "inherits",
+    "resolved": 1,
+    "candidate": 0,
+    "external": 0,
+    "unresolved": 0,
+    "pinned_pct": 100.0
+   },
+   {
+    "lang": "python",
+    "kind": "references",
+    "resolved": 6,
+    "candidate": 0,
+    "external": 1,
+    "unresolved": 0,
+    "pinned_pct": 100.0
+   }
+  ],
+  "unresolved_samples": {
+   "python/calls": [
+    "member:Order().save",
+    "member:Session().add",
+    "qualified:db.Session",
+    "qualified:helpers.assist",
+    "qualified:missing.call"
+   ]
+  }
+ },
+ "diagnostics": []
+}
