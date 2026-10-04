@@ -35,6 +35,7 @@ from svarupa.extract.base import (
     sorted_edges,
     sorted_nodes,
 )
+from svarupa.extract.packs.modules import ModuleResolver
 from svarupa.model import (
     Confidence,
     Edge,
@@ -253,9 +254,13 @@ class Resolver:
         source_roots: Sequence[str] = (),
         ts_aliases: Sequence[Alias] = (),
         ts_packages: Sequence[tuple[str, str]] = (),
+        modules: Mapping[str, ModuleResolver] | None = None,
     ) -> None:
         self.facts = list(facts)
         self.deps = declared_deps
+        # Languages whose imports name packages resolve through their pack's
+        # resolver; the rest use the code below.
+        self.modules: dict[str, ModuleResolver] = dict(modules or {})
         # Longest alias first, so `@/store/x` prefers `@/store` over `@`.
         self.ts_aliases = tuple(ts_aliases)
         self.ts_packages = tuple(sorted(ts_packages, key=lambda kv: -len(kv[0])))
@@ -335,8 +340,7 @@ class Resolver:
 
     # ------------------------------------------------------------------
 
-    @staticmethod
-    def _package_root(spec: str, lang: str) -> str:
+    def _package_root(self, spec: str, lang: str) -> str:
         """The distribution name a specifier belongs to.
 
         Language-specific, and getting it wrong is silent: splitting a
@@ -345,6 +349,8 @@ class Resolver:
         dependency, so a perfectly ordinary framework import lands in the
         unresolved bin and the scorecard cries wolf.
         """
+        if lang in self.modules:
+            return spec
         if lang in ("typescript", "javascript"):
             bare = spec.removeprefix("node:")
             if bare.lower().endswith(_ASSET_SUFFIXES):
@@ -356,6 +362,8 @@ class Resolver:
         return spec.lstrip(".").split(".")[0]
 
     def _is_external(self, top: str, lang: str = "python") -> bool:
+        if lang in self.modules:
+            return self.modules[lang].is_external(top)
         if lang in ("typescript", "javascript"):
             if top.startswith("node:") or top in _NODE_BUILTINS:
                 return True
@@ -441,9 +449,21 @@ class Resolver:
     def _resolve_module(
         self, spec: str, from_file: str, level: int, lang: str = "python"
     ) -> str | None:
+        targets = self._resolve_targets(spec, from_file, level, lang)
+        return targets[0] if targets else None
+
+    def _resolve_targets(
+        self, spec: str, from_file: str, level: int, lang: str = "python"
+    ) -> tuple[str, ...]:
+        """Every repository file the specifier names: one for a module
+        import, all of a package's source files for a package import."""
+        if lang in self.modules:
+            return self.modules[lang].targets(spec, from_file)
         if lang in ("typescript", "javascript"):
-            return self._resolve_ts(spec, from_file)
-        return self._resolve_python(spec, from_file, level)
+            single = self._resolve_ts(spec, from_file)
+        else:
+            single = self._resolve_python(spec, from_file, level)
+        return (single,) if single else ()
 
     def _resolve_python(self, spec: str, from_file: str, level: int) -> str | None:
         """Map an import specifier to a file in the repo.
@@ -704,7 +724,8 @@ class Resolver:
         out: list[Edge] = []
         for imp in f.imports:
             top = self._package_root(imp.specifier, f.lang)
-            target = self._resolve_module(imp.specifier, f.path, imp.level, f.lang)
+            targets = self._resolve_targets(imp.specifier, f.path, imp.level, f.lang)
+            target = targets[0] if targets else None
 
             if target is None and f.lang == "python" and imp.is_from:
                 # A PEP 420 namespace package has no `__init__.py`, so the
@@ -779,22 +800,25 @@ class Resolver:
                         )
                 continue
 
-            if target == f.path:
+            # A package import names several files; it is still one import.
+            others = tuple(t for t in targets if t != f.path)
+            if not others:
                 continue
 
             self.scorecard.record(f.lang, EdgeKind.IMPORTS, Resolution.RESOLVED)
-            out.append(
-                Edge(
-                    src=f.path,
-                    dst=target,
-                    kind=EdgeKind.IMPORTS,
-                    evidence=(imp.evidence,),
-                    confidence=Confidence.RESOLVED,
-                    resolution=Resolution.RESOLVED,
-                    attrs=(("type_only", "true"),) if imp.type_only else (),
-                    producer=f"{f.lang}.imports",
+            for dst in others:
+                out.append(
+                    Edge(
+                        src=f.path,
+                        dst=dst,
+                        kind=EdgeKind.IMPORTS,
+                        evidence=(imp.evidence,),
+                        confidence=Confidence.RESOLVED,
+                        resolution=Resolution.RESOLVED,
+                        attrs=(("type_only", "true"),) if imp.type_only else (),
+                        producer=f"{f.lang}.imports",
+                    )
                 )
-            )
 
             # `names` are module paths for a plain `import x.y`, not symbols.
             # Running the reference loop over them recorded a guaranteed
@@ -832,7 +856,10 @@ class Resolver:
                         )
                     )
                     continue
-                found = self._follow_reexport(target, lookup)
+                found = next(
+                    (x for t in others if (x := self._follow_reexport(t, lookup)) is not None),
+                    None,
+                )
                 if found is None:
                     self.scorecard.record(
                         f.lang, "references", Resolution.UNRESOLVED, f"{imp.specifier}.{name}"
@@ -1015,12 +1042,7 @@ class Resolver:
                 return local[:MAX_CANDIDATE_ARITY]
             if name in import_names:
                 spec, level = import_names[name]
-                top = self._package_root(spec, f.lang)
-                target = self._resolve_module(spec, f.path, level, f.lang)
-                if target is None:
-                    return None if self._is_external(top, f.lang) else []
-                found = self._follow_reexport(target, name)
-                return [found] if found else []
+                return self._lookup_in_module(f, spec, level, name)
             hits = _dedupe([h for h in self.idx.by_name.get(name, []) if h not in methods])
             if len(hits) == 1:
                 return hits
@@ -1030,12 +1052,7 @@ class Resolver:
             recv = call.receiver or ""
             if recv in import_names:
                 spec, level = import_names[recv]
-                top = self._package_root(spec, f.lang)
-                target = self._resolve_module(spec, f.path, level, f.lang)
-                if target is None:
-                    return None if self._is_external(top, f.lang) else []
-                found = self._follow_reexport(target, name)
-                return [found] if found else []
+                return self._lookup_in_module(f, spec, level, name)
             owner = self._resolve_class_name(recv, f.path)
             if owner is not None:
                 hits = _dedupe(
@@ -1055,6 +1072,23 @@ class Resolver:
 
         # MEMBER: chained receiver, type unknowable without inference.
         return []
+
+    def _lookup_in_module(
+        self, f: FileFacts, spec: str, level: int, name: str
+    ) -> list[tuple[str, str]] | None:
+        """`name` defined in the module or package `spec` names.
+
+        None when the module is provably external, [] when it is ours but the
+        name is not found. A package spreads its definitions over files, so
+        every file is searched; two hits are candidates, not a guess.
+        """
+        targets = self._resolve_targets(spec, f.path, level, f.lang)
+        if not targets:
+            return None if self._is_external(self._package_root(spec, f.lang), f.lang) else []
+        hits = _dedupe(
+            [x for t in targets if (x := self._follow_reexport(t, name)) is not None]
+        )
+        return hits if len(hits) <= MAX_CANDIDATE_ARITY else []
 
     def _base_is_external(self, f: FileFacts, base: str) -> bool:
         """A base counts external only if we can point at why.
@@ -1115,5 +1149,6 @@ def resolve(
     source_roots: Sequence[str] = (),
     ts_aliases: Sequence[Alias] = (),
     ts_packages: Sequence[tuple[str, str]] = (),
+    modules: Mapping[str, ModuleResolver] | None = None,
 ) -> ExtractResult:
-    return Resolver(facts, declared_deps, source_roots, ts_aliases, ts_packages).run()
+    return Resolver(facts, declared_deps, source_roots, ts_aliases, ts_packages, modules).run()

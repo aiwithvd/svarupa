@@ -19,6 +19,7 @@ from tree_sitter import Node as TSNode
 from svarupa.extract.base import CallSite, DecoratorRef, FieldType, ImportRef
 
 if TYPE_CHECKING:
+    from svarupa.extract.packs.modules import ModuleContext, ModuleResolver
     from svarupa.extract.packs.walker import Ctx, Frame
 
 __all__ = [
@@ -144,3 +145,6 @@ class Pack:
     rules: Mapping[str, Rule]
     qualified_prefix: Callable[[str], str]
     decorator: DecoratorHook | None = None
+    # Imports that name packages need their own resolver; None means the
+    # language resolves in resolve.py (Python, TypeScript, JavaScript).
+    modules: Callable[[ModuleContext], ModuleResolver] | None = None

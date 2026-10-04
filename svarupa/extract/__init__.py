@@ -24,7 +24,8 @@ from svarupa.extract.base import (
 )
 from svarupa.extract.compose import extract_compose
 from svarupa.extract.environments import extract_environments
-from svarupa.extract.packs import ANALYZED_ELSEWHERE, load_extractors
+from svarupa.extract.packs import ANALYZED_ELSEWHERE, BY_DETECTED, load_extractors
+from svarupa.extract.packs.modules import ModuleContext, ModuleResolver
 from svarupa.extract.resolve import Resolver, resolve
 from svarupa.extract.semantics import semantics
 from svarupa.tsconfig import load_aliases
@@ -132,8 +133,24 @@ def extract(scan: Scan, declared_deps: frozenset[str] = frozenset()) -> ExtractR
     # through is the integration that was missing: the resolver otherwise
     # guesses at layout from the tree alone.
     roots = [w.root for w in scan.workspaces if w.root]
+    context = ModuleContext(
+        files=frozenset(f.path for f in facts),
+        facts=tuple(facts),
+        deps=declared_deps,
+        go_modules=go_modules(scan),
+    )
+    modules: dict[str, ModuleResolver] = {
+        lang: pack.modules(context)
+        for lang, pack in sorted(BY_DETECTED.items())
+        if pack.modules is not None and lang in _EXTRACTORS
+    }
     resolver = Resolver(
-        facts, declared_deps, roots, load_aliases(scan.root), workspace_packages(scan)
+        facts,
+        declared_deps,
+        roots,
+        load_aliases(scan.root),
+        workspace_packages(scan),
+        modules,
     )
     result = resolver.run()
 
@@ -206,6 +223,11 @@ def workspace_packages(scan: Scan) -> tuple[tuple[str, str], ...]:
         if isinstance(name, str) and name:
             out.setdefault(name, holder)
     return tuple(sorted(out.items()))
+
+
+def go_modules(_scan: Scan) -> tuple[tuple[str, str], ...]:
+    """Map each go.mod `module` path to the directory that declares it."""
+    return ()
 
 
 def _norm_dep(raw: str) -> str | None:
