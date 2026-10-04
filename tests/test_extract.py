@@ -782,3 +782,23 @@ def test_a_decorated_method_keeps_kind_and_decorator() -> None:
     assert build.kind == "method"
     assert build.enclosing_class == "A"
     assert [d.name for d in build.decorators] == ["staticmethod"]
+
+
+def test_languages_without_a_pack_are_reported_once_each(tmp_path: Path) -> None:
+    write(tmp_path, "svc/main.go", "package main\n")
+    write(tmp_path, "svc/util.go", "package main\n")
+    write(tmp_path, "lib/x.rs", "fn main() {}\n")
+    write(tmp_path, "app.py", "def keep():\n    pass\n")
+    result = run(tmp_path)
+    x012 = [d for d in result.diagnostics if d.code == "SVA-X-012"]
+    assert [d.subject for d in x012] == ["go", "rust"]
+    assert "2 go files" in x012[0].message
+    assert any(n.id.endswith(".keep") for n in result.nodes)
+
+
+def test_a_repository_of_packed_languages_gets_no_x012(tmp_path: Path) -> None:
+    write(tmp_path, "app.py", "def keep():\n    pass\n")
+    write(tmp_path, "web/a.ts", "export const a = 1;\n")
+    write(tmp_path, "db/schema.sql", "create table t (id int);\n")
+    result = run(tmp_path)
+    assert not [d for d in result.diagnostics if d.code == "SVA-X-012"]

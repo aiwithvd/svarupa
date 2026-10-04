@@ -13,7 +13,7 @@ from svarupa.extract.packs import python, typescript
 from svarupa.extract.packs.model import Pack
 from svarupa.extract.packs.walker import PackExtractor
 
-__all__ = ["BY_DETECTED", "PACKS", "extractor", "load_extractors"]
+__all__ = ["ANALYZED_ELSEWHERE", "BY_DETECTED", "PACKS", "extractor", "load_extractors"]
 
 PACKS: tuple[Pack, ...] = (python.PACK, typescript.PACK)
 
@@ -24,6 +24,10 @@ BY_DETECTED: dict[str, Pack] = {
     "typescript": typescript.PACK,
     "javascript": typescript.PACK,
 }
+
+# Detected languages another extractor reads, so no pack is missing: SQL
+# feeds the ERD from the scan's file languages, not from a syntax walk.
+ANALYZED_ELSEWHERE: frozenset[str] = frozenset({"sql"})
 
 
 def load_extractors(
