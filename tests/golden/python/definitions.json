@@ -229,5 +229,6 @@
  "fields": [],
  "reexports": [],
  "diagnostics": [],
- "ctor_assigns": []
+ "ctor_assigns": [],
+ "namespace": ""
 }

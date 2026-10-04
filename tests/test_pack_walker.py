@@ -133,3 +133,41 @@ def test_missing_grammar_is_reported_not_raised() -> None:
 
 def test_working_grammar_is_available() -> None:
     assert PackExtractor(PACK).available() is None
+
+
+def test_an_export_hook_overrides_the_name_rule() -> None:
+    from dataclasses import replace
+
+    capital = Define(kind="function", exported_by=lambda _ctx, _node, name: name[:1].isupper())
+    pack = replace(PACK, rules={**PACK.rules, "function_definition": capital})
+    f = PackExtractor(pack).parse("m.py", b"def Up():\n    pass\n\ndef down():\n    pass\n")
+    assert [(s.name, s.exported) for s in f.symbols] == [("Up", True), ("down", False)]
+
+
+def test_a_decorators_hook_adds_decorators() -> None:
+    from dataclasses import replace
+
+    def tagged(ctx: Ctx, node: TSNode) -> tuple[DecoratorRef, ...]:
+        return (DecoratorRef(name="tag", arg=None, evidence=ctx.node_evidence(node)),)
+
+    rule = Define(kind="class", sets_class=True, decorators_from=tagged)
+    pack = replace(PACK, rules={**PACK.rules, "class_definition": rule})
+    f = PackExtractor(pack).parse("m.py", b"class A:\n    pass\n")
+    assert [d.name for d in f.symbols[0].decorators] == ["tag"]
+
+
+def test_a_hook_can_record_the_file_namespace() -> None:
+    from dataclasses import replace
+
+    from svarupa.extract.packs.model import Custom
+
+    def remember(ctx: Ctx, node: TSNode, _frame: Frame, _depth: int) -> None:
+        ctx.namespace = ctx.text(node).split()[1]
+
+    pack = replace(PACK, rules={**PACK.rules, "import_statement": Custom(hook=remember)})
+    f = PackExtractor(pack).parse("m.py", b"import shop.core\n")
+    assert f.namespace == "shop.core"
+
+
+def test_namespace_defaults_to_empty() -> None:
+    assert parse("x = 1\n").namespace == ""

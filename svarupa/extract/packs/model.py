@@ -32,7 +32,9 @@ __all__ = [
     "CustomHook",
     "Decorated",
     "DecoratorHook",
+    "DecoratorsHook",
     "Define",
+    "ExportedHook",
     "Field",
     "FieldHook",
     "Grammar",
@@ -52,6 +54,8 @@ CustomHook = Callable[["Ctx", TSNode, "Frame", int], None]
 DecoratorHook = Callable[["Ctx", TSNode], DecoratorRef | None]
 BasesHook = Callable[["Ctx", TSNode], tuple[str, ...]]
 AfterHook = Callable[["Ctx", TSNode, "Frame", str], None]
+ExportedHook = Callable[["Ctx", TSNode, str], bool]
+DecoratorsHook = Callable[["Ctx", TSNode], tuple[DecoratorRef, ...]]
 
 
 class Maturity(str, Enum):
@@ -83,6 +87,8 @@ class Define:
     member_decorators: str | None = None  # body child type paired with next member
     bases: BasesHook | None = None
     after: AfterHook | None = None  # runs after the symbol, before the body
+    exported_by: ExportedHook | None = None  # Java `public`, Go capital letter
+    decorators_from: DecoratorsHook | None = None  # Java annotations in `modifiers`
 
 
 @dataclass(frozen=True, slots=True)
