@@ -50,6 +50,9 @@ somewhere other than `<repo>/.svarupa/`. The artifact holds:
   architecture delta against a base lockfile; add `--fail-on-change` to exit
   3 when that delta is not empty. `svarupa setup ci_github` (or `ci_gitlab`)
   installs the per-pull-request workflow, informational by default.
+- Code facts come from language packs: Python, TypeScript, JavaScript, Go
+  and Java today. Other detected languages are listed as detected but not
+  analyzed (SVA-X-012), never guessed.
 
 ![The architecture tab of the demo repository](docs/images/demo-architecture.png)
 

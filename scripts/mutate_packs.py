@@ -8,7 +8,12 @@ Each entry breaks one promise of the walker; a test must go red:
 * a decorated definition receives its decorators;
 * member decorators pair with the next member only;
 * JavaScript facts carry the javascript label;
-* languages without a pack are reported.
+* languages without a pack are reported;
+* a package import points at every file in the package;
+* Go test files are never import targets;
+* a dotless Go module path is never the standard library;
+* Maven placeholders are never dependencies;
+* a pom that declares entities is refused.
 """
 
 from __future__ import annotations
@@ -27,6 +32,10 @@ SUITE = [
     "tests/test_extract.py",
     "tests/test_extract_typescript.py",
     "tests/test_packs.py",
+    "tests/test_module_resolvers.py",
+    "tests/test_extract_go.py",
+    "tests/test_extract_java.py",
+    "tests/test_golden_repos.py",
 ]
 
 MUTATIONS: list[tuple[str, str, str, str]] = [
@@ -71,6 +80,36 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
         "svarupa/extract/__init__.py",
         "            if rec.lang and rec.lang not in ANALYZED_ELSEWHERE:\n",
         "            if False:\n",
+    ),
+    (
+        "a package import points at only its first file",
+        "svarupa/extract/resolve.py",
+        "            for dst in others:\n",
+        "            for dst in others[:1]:\n",
+    ),
+    (
+        "go test files become import targets",
+        "svarupa/extract/packs/modules.py",
+        'if path.endswith(".go") and not path.endswith("_test.go"):',
+        'if path.endswith(".go"):',
+    ),
+    (
+        "a dotless go module path counts as standard library",
+        "svarupa/extract/packs/modules.py",
+        "        if self._module_of(spec) is not None:\n            return False\n",
+        "",
+    ),
+    (
+        "a pom that declares entities is parsed anyway",
+        "svarupa/extract/__init__.py",
+        '    if "<!DOCTYPE" in text or "<!ENTITY" in text:\n        return set()\n',
+        "",
+    ),
+    (
+        "maven placeholders become dependencies",
+        "svarupa/extract/__init__.py",
+        '    if not group or "$" in group or "{" in group:\n        return None\n',
+        "    if not group:\n        return None\n",
     ),
 ]
 
