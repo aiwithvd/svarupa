@@ -203,7 +203,7 @@ PACK = Pack(
         module="tree_sitter_go",
         default="language",
     ),
-    maturity=Maturity.EXPERIMENTAL,
+    maturity=Maturity.STABLE,
     rules={
         "import_spec": Import(hook=import_),
         "type_spec": Custom(hook=type_spec),

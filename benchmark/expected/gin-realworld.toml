@@ -1,0 +1,115 @@
+# gin-realworld: gothinkster/golang-gin-realworld-example-app @ 626c372d2594
+# Module: github.com/gothinkster/golang-gin-realworld-example-app (go.mod).
+# Read: readme.md, go.mod, .env.example, hello.go (main), and every non-test
+# .go file in articles/, users/ and common/.
+# Layout: feature packages (articles, users) on top of a shared common package
+# (GORM over SQLite, JWT, validation helpers). The root package main wires them.
+# Not expected on purpose:
+# - endpoint records: routes are Gin router calls, which are not a supported
+#   route declaration for this benchmark.
+# - datastore/queue/service records: the repo has no docker-compose file.
+#   SQLite is opened in-process through gorm.io/driver/sqlite.
+
+# Modules
+[[must]]
+record = ["module", "."]
+why = "hello.go:1 package main"
+
+[[must]]
+record = ["module", "articles"]
+why = "articles/routers.go:1 package articles"
+
+[[must]]
+record = ["module", "users"]
+why = "users/routers.go:1 package users"
+
+[[must]]
+record = ["module", "common"]
+why = "common/database.go:1 package common"
+
+# Dependencies
+[[must]]
+record = ["dep", ".", "articles"]
+why = "hello.go:9 \"github.com/gothinkster/golang-gin-realworld-example-app/articles\""
+
+[[must]]
+record = ["dep", ".", "common"]
+why = "hello.go:10 \"github.com/gothinkster/golang-gin-realworld-example-app/common\""
+
+[[must]]
+record = ["dep", ".", "users"]
+why = "hello.go:11 \"github.com/gothinkster/golang-gin-realworld-example-app/users\""
+
+[[must]]
+record = ["dep", "articles", "common"]
+why = "articles/models.go:6 \"github.com/gothinkster/golang-gin-realworld-example-app/common\""
+
+[[must]]
+record = ["dep", "articles", "users"]
+why = "articles/models.go:7 \"github.com/gothinkster/golang-gin-realworld-example-app/users\""
+
+[[must]]
+record = ["dep", "users", "common"]
+why = "users/models.go:6 \"github.com/gothinkster/golang-gin-realworld-example-app/common\""
+
+# Calls
+[[must]]
+call = "hello.go -> common/database.go#Init"
+why = "hello.go:26 db := common.Init()"
+
+[[must]]
+call = "hello.go -> users/models.go#AutoMigrate"
+why = "hello.go:16 users.AutoMigrate()"
+
+[[must]]
+call = "hello.go -> users/routers.go#UsersRegister"
+why = "hello.go:42 users.UsersRegister(v1.Group(\"/users\"))"
+
+[[must]]
+call = "hello.go -> users/middlewares.go#AuthMiddleware"
+why = "hello.go:43 v1.Use(users.AuthMiddleware(false))"
+
+[[must]]
+call = "hello.go -> articles/routers.go#ArticlesRegister"
+why = "hello.go:52 articles.ArticlesRegister(v1.Group(\"/articles\"))"
+
+[[must]]
+call = "articles/models.go -> common/database.go#GetDB"
+why = "articles/models.go:59 db := common.GetDB()"
+
+[[must]]
+call = "articles/routers.go -> articles/models.go#FindOneArticle"
+why = "articles/routers.go:90 articleModel, err := FindOneArticle(&ArticleModel{Slug: slug})"
+
+[[must]]
+call = "articles/routers.go -> articles/models.go#SaveOne"
+why = "articles/routers.go:46 if err := SaveOne(&articleModelValidator.articleModel); err != nil {"
+
+[[must]]
+call = "users/serializers.go -> common/utils.go#GenToken"
+why = "users/serializers.go:63 Token:    common.GenToken(myUserModel.ID),"
+
+# Probes
+[[must_not]]
+record = ["dep", "users", "articles"]
+why = "users never imports articles; the dependency only goes articles -> users"
+
+[[must_not]]
+record = ["dep", "common", "users"]
+why = "common imports no repo package; it is the shared base layer"
+
+[[must_not]]
+call = "articles/routers.go -> users/models.go#SaveOne"
+why = "articles/routers.go calls the bare SaveOne of its own package (articles/models.go:144); users.SaveOne is a different function with the same name"
+
+[[must_not]]
+record = ["datastore", "postgres"]
+why = "no docker-compose file and no Postgres driver; the only database is SQLite via gorm.io/driver/sqlite"
+
+[[must_not]]
+record = ["module", "api"]
+why = "api/ holds only a shell script and a Postman collection, no Go source"
+
+[[must_not]]
+call = "hello.go -> articles/models.go#Update"
+why = "Update is a method on *ArticleModel, not a top-level function, and hello.go never calls it"

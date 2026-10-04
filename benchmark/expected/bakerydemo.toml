@@ -1,0 +1,142 @@
+# bakerydemo (Wagtail demo site, Django), pinned commit.
+# Read: readme.md, requirements.txt, docker-compose.yml, Dockerfile,
+# manage.py, bakerydemo/settings/*, bakerydemo/urls.py, bakerydemo/api.py,
+# the apps (base, blog, breads, locations, people, recipes, search) and
+# base/management/commands.
+# Not expected on purpose:
+# - endpoints: this is a Django/Wagtail project (urls.py path() and Wagtail
+#   page routing), which the endpoint record does not cover.
+# - entrypoints: no pyproject.toml, so no [project.scripts].
+# - bakerydemo/static/js: small browser scripts served as static assets; left
+#   out rather than asserted as an application module.
+# - Elasticsearch: only mentioned as an optional search backend in settings,
+#   not a compose service.
+
+# Modules
+[[must]]
+record = ["module", "."]
+why = "manage.py:10 os.environ.setdefault(\"DJANGO_SETTINGS_MODULE\", \"bakerydemo.settings.dev\")"
+
+[[must]]
+record = ["module", "bakerydemo"]
+why = "bakerydemo/urls.py:16 urlpatterns = ["
+
+[[must]]
+record = ["module", "bakerydemo/base"]
+why = "bakerydemo/base/models.py:40 from .blocks import BaseStreamBlock"
+
+[[must]]
+record = ["module", "bakerydemo/blog"]
+why = "bakerydemo/blog/models.py:233 def get_posts(self, tag=None):"
+
+[[must]]
+record = ["module", "bakerydemo/breads"]
+why = "bakerydemo/breads/models.py:13 from bakerydemo.base.blocks import BaseStreamBlock"
+
+[[must]]
+record = ["module", "bakerydemo/search"]
+why = "bakerydemo/search/views.py:13 def search(request):"
+
+[[must]]
+record = ["module", "bakerydemo/settings"]
+why = "bakerydemo/settings/dev.py:1 from .base import *  # noqa: F403"
+
+[[must]]
+record = ["module", "bakerydemo/base/management/commands"]
+why = "bakerydemo/base/management/commands/create_random_data.py:172 def handle(self, **options):"
+
+# Dependencies
+[[must]]
+record = ["dep", "bakerydemo", "bakerydemo/search"]
+why = "bakerydemo/urls.py:12 from bakerydemo.search import views as search_views"
+
+[[must]]
+record = ["dep", "bakerydemo", "bakerydemo/base"]
+why = "bakerydemo/api.py:7 from bakerydemo.base.api import PersonApiViewSet"
+
+[[must]]
+record = ["dep", "bakerydemo/search", "bakerydemo/blog"]
+why = "bakerydemo/search/views.py:7 from bakerydemo.blog.models import BlogPage"
+
+[[must]]
+record = ["dep", "bakerydemo/search", "bakerydemo/breads"]
+why = "bakerydemo/search/views.py:8 from bakerydemo.breads.models import BreadPage"
+
+[[must]]
+record = ["dep", "bakerydemo/search", "bakerydemo/recipes"]
+why = "bakerydemo/search/views.py:10 from bakerydemo.recipes.models import RecipePage"
+
+[[must]]
+record = ["dep", "bakerydemo/blog", "bakerydemo/base"]
+why = "bakerydemo/blog/models.py:15 from bakerydemo.base.blocks import BaseStreamBlock"
+
+[[must]]
+record = ["dep", "bakerydemo/people", "bakerydemo/breads"]
+why = "bakerydemo/people/models.py:13 from ..breads.models import Country"
+
+[[must]]
+record = ["dep", "bakerydemo/base", "bakerydemo/blog"]
+why = "bakerydemo/base/models.py:149 from bakerydemo.blog.models import BlogPage"
+
+[[must]]
+record = ["dep", "bakerydemo/base/management/commands", "bakerydemo/base"]
+why = "bakerydemo/base/management/commands/create_random_data.py:12 from bakerydemo.base.models import FooterText, HomePage, Person, StandardPage"
+
+# Compose services
+[[must]]
+record = ["datastore", "db"]
+why = "docker-compose.yml:8 image: postgres:18.1"
+
+[[must]]
+record = ["datastore", "redis"]
+why = "docker-compose.yml:14 image: redis:8.4"
+
+[[must]]
+record = ["service", "app"]
+why = "docker-compose.yml:18 app: (built from ./Dockerfile)"
+
+# Calls
+[[must]]
+call = "bakerydemo/blog/models.py -> bakerydemo/blog/models.py#get_posts"
+why = "bakerydemo/blog/models.py:223 posts = self.get_posts(tag=tag)"
+
+[[must]]
+call = "bakerydemo/base/management/commands/create_random_data.py -> bakerydemo/base/management/commands/create_random_data.py#create_pages"
+why = "bakerydemo/base/management/commands/create_random_data.py:175 self.create_pages(options[\"page_count\"])"
+
+[[must]]
+call = "bakerydemo/base/management/commands/create_random_data.py -> bakerydemo/base/management/commands/create_random_data.py#make_title"
+why = "bakerydemo/base/management/commands/create_random_data.py:59 title = self.make_title()"
+
+[[must]]
+call = "bakerydemo/base/management/commands/load_initial_data.py -> bakerydemo/base/management/commands/load_initial_data.py#_copy_files"
+why = "bakerydemo/base/management/commands/load_initial_data.py:31 self._copy_files(local_storage, \"\")  # file storage paths are relative"
+
+# Probes
+[[must_not]]
+record = ["datastore", "mongodb"]
+why = "only PostgreSQL (db) and Redis are in docker-compose.yml; no Mongo anywhere"
+
+[[must_not]]
+record = ["queue", "rabbitmq"]
+why = "no message broker service; Redis is used as a cache only"
+
+[[must_not]]
+record = ["dep", "bakerydemo/base", "bakerydemo/search"]
+why = "the base app never imports the search view module"
+
+[[must_not]]
+record = ["dep", "bakerydemo/blog", "bakerydemo/search"]
+why = "content apps do not import the search view; only search imports them"
+
+[[must_not]]
+record = ["module", "bakerydemo/base/tests"]
+why = "test directory"
+
+[[must_not]]
+record = ["module", "bakerydemo/blog/migrations"]
+why = "migration directory"
+
+[[must_not]]
+call = "bakerydemo/search/views.py -> bakerydemo/blog/models.py#get_posts"
+why = "search/views.py only uses BlogPage.objects.live().search(...), it never calls get_posts"

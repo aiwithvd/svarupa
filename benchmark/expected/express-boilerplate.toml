@@ -1,0 +1,146 @@
+# express-boilerplate: hagopj13/node-express-boilerplate at 179ae84.
+# Read: README, package.json, the four docker-compose files, src/index.js,
+# src/app.js, src/config/*, every route, controller, service, model and
+# middleware file.
+# Endpoint path assumption: routers are mounted in other files
+# (src/app.js app.use('/v1', routes) and src/routes/v1/index.js
+# router.use('/auth' | '/users' | '/docs', ...)), so each endpoint path is
+# given as written at the route call, without the /v1/auth or /v1/users prefix.
+# "GET /" is not expected because it is declared by both user.route.js and
+# docs.route.js. Not expected either way: src/docs (holds swaggerDef.js next
+# to YAML docs) and bin/ (the create-app CLI, not part of the API).
+
+# Modules
+[[must]]
+record = ["module", "src"]
+why = "src/index.js:2 const app = require('./app');"
+[[must]]
+record = ["module", "src/routes/v1"]
+why = "src/routes/v1/index.js:7 const router = express.Router();"
+[[must]]
+record = ["module", "src/controllers"]
+why = "src/controllers/user.controller.js:7 const createUser = catchAsync(async (req, res) => {"
+[[must]]
+record = ["module", "src/services"]
+why = "src/services/user.service.js:10 const createUser = async (userBody) => {"
+[[must]]
+record = ["module", "src/models"]
+why = "src/models/user.model.js:1 const mongoose = require('mongoose');"
+[[must]]
+record = ["module", "src/config"]
+why = "src/config/config.js:38 mongoose: {"
+[[must]]
+record = ["module", "src/middlewares"]
+why = "src/middlewares/auth.js:23 const auth = (...requiredRights) => async (req, res, next) => {"
+
+# Dependencies
+[[must]]
+record = ["dep", "src", "src/routes/v1"]
+why = "src/app.js:13 const routes = require('./routes/v1');"
+[[must]]
+record = ["dep", "src", "src/config"]
+why = "src/index.js:3 const config = require('./config/config');"
+[[must]]
+record = ["dep", "src", "src/middlewares"]
+why = "src/app.js:14 const { errorConverter, errorHandler } = require('./middlewares/error');"
+[[must]]
+record = ["dep", "src/routes/v1", "src/controllers"]
+why = "src/routes/v1/auth.route.js:4 const authController = require('../../controllers/auth.controller');"
+[[must]]
+record = ["dep", "src/routes/v1", "src/middlewares"]
+why = "src/routes/v1/user.route.js:2 const auth = require('../../middlewares/auth');"
+[[must]]
+record = ["dep", "src/routes/v1", "src/validations"]
+why = "src/routes/v1/user.route.js:4 const userValidation = require('../../validations/user.validation');"
+[[must]]
+record = ["dep", "src/controllers", "src/services"]
+why = "src/controllers/auth.controller.js:3 const { authService, userService, tokenService, emailService } = require('../services');"
+[[must]]
+record = ["dep", "src/services", "src/models"]
+why = "src/services/user.service.js:2 const { User } = require('../models');"
+[[must]]
+record = ["dep", "src/models", "src/models/plugins"]
+why = "src/models/user.model.js:4 const { toJSON, paginate } = require('./plugins');"
+[[must]]
+record = ["dep", "src/config", "src/models"]
+why = "src/config/passport.js:4 const { User } = require('../models');"
+[[must]]
+record = ["dep", "src/middlewares", "src/utils"]
+why = "src/middlewares/auth.js:3 const ApiError = require('../utils/ApiError');"
+
+# Endpoints (paths as written at the route, see top comment)
+[[must]]
+record = ["endpoint", "POST /register", "src/routes/v1"]
+why = "src/routes/v1/auth.route.js:9 router.post('/register', validate(authValidation.register), authController.register);"
+[[must]]
+record = ["endpoint", "POST /login", "src/routes/v1"]
+why = "src/routes/v1/auth.route.js:10 router.post('/login', validate(authValidation.login), authController.login);"
+[[must]]
+record = ["endpoint", "POST /refresh-tokens", "src/routes/v1"]
+why = "src/routes/v1/auth.route.js:12 router.post('/refresh-tokens', validate(authValidation.refreshTokens), authController.refreshTokens);"
+[[must]]
+record = ["endpoint", "POST /verify-email", "src/routes/v1"]
+why = "src/routes/v1/auth.route.js:16 router.post('/verify-email', validate(authValidation.verifyEmail), authController.verifyEmail);"
+[[must]]
+record = ["endpoint", "POST /", "src/routes/v1"]
+why = "src/routes/v1/user.route.js:11 .post(auth('manageUsers'), validate(userValidation.createUser), userController.createUser)"
+[[must]]
+record = ["endpoint", "GET /:userId", "src/routes/v1"]
+why = "src/routes/v1/user.route.js:16 .get(auth('getUsers'), validate(userValidation.getUser), userController.getUser)"
+[[must]]
+record = ["endpoint", "PATCH /:userId", "src/routes/v1"]
+why = "src/routes/v1/user.route.js:17 .patch(auth('manageUsers'), validate(userValidation.updateUser), userController.updateUser)"
+[[must]]
+record = ["endpoint", "DELETE /:userId", "src/routes/v1"]
+why = "src/routes/v1/user.route.js:18 .delete(auth('manageUsers'), validate(userValidation.deleteUser), userController.deleteUser);"
+
+# Compose services
+[[must]]
+record = ["datastore", "mongodb"]
+why = "docker-compose.yml:19 image: mongo:4.2.1-bionic"
+[[must]]
+record = ["service", "node-app"]
+why = "docker-compose.yml:4 node-app: (build: . image: node-app)"
+
+# Calls
+[[must]]
+call = "src/services/auth.service.js -> src/services/user.service.js#getUserByEmail"
+why = "src/services/auth.service.js:15 const user = await userService.getUserByEmail(email);"
+[[must]]
+call = "src/services/auth.service.js -> src/services/token.service.js#verifyToken"
+why = "src/services/auth.service.js:42 const refreshTokenDoc = await tokenService.verifyToken(refreshToken, tokenTypes.REFRESH);"
+[[must]]
+call = "src/services/auth.service.js -> src/services/token.service.js#generateAuthTokens"
+why = "src/services/auth.service.js:48 return tokenService.generateAuthTokens(user);"
+[[must]]
+call = "src/services/token.service.js -> src/services/user.service.js#getUserByEmail"
+why = "src/services/token.service.js:94 const user = await userService.getUserByEmail(email);"
+[[must]]
+call = "src/controllers/user.controller.js -> src/services/user.service.js#queryUsers"
+why = "src/controllers/user.controller.js:15 const result = await userService.queryUsers(filter, options);"
+
+# Probes
+[[must_not]]
+record = ["datastore", "postgres"]
+why = "only MongoDB is used (mongoose in src/index.js, mongo image in docker-compose.yml); no SQL client"
+[[must_not]]
+record = ["datastore", "redis"]
+why = "no redis service in compose and no redis client in package.json"
+[[must_not]]
+record = ["dep", "src/models", "src/controllers"]
+why = "models only require mongoose, validator, bcryptjs, ./plugins and ../config; nothing from controllers"
+[[must_not]]
+record = ["dep", "src/services", "src/routes/v1"]
+why = "services never require route files; the dependency only runs routes -> controllers -> services"
+[[must_not]]
+record = ["module", "tests/integration"]
+why = "tests/ only holds jest test files and fixtures"
+[[must_not]]
+record = ["endpoint", "PUT /:userId", "src/routes/v1"]
+why = "user.route.js declares get, patch and delete on /:userId; there is no PUT"
+[[must_not]]
+record = ["endpoint", "POST /signup", "src/routes/v1"]
+why = "the sign-up route is POST /register; no /signup route exists"
+[[must_not]]
+call = "src/controllers/auth.controller.js -> src/services/auth.service.js#register"
+why = "auth.service.js exports loginUserWithEmailAndPassword, logout, refreshAuth, resetPassword and verifyEmail; register is a controller function that calls userService.createUser"

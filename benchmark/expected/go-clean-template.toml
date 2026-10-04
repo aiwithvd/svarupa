@@ -1,0 +1,200 @@
+# go-clean-template: evrone/go-clean-template @ d40c828aa650
+# Module: github.com/evrone/go-clean-template (go.mod).
+# Read: README.md, go.mod, docker-compose.yml, docker-compose-integration-test.yml,
+# cmd/app/main.go, config/config.go, internal/app/app.go, the routers of every
+# controller (restapi, grpc, amqp_rpc, nats_rpc), internal/usecase/**,
+# internal/repo/**, internal/entity, and the pkg/ constructors.
+# Layers: controllers (restapi on Fiber, gRPC, RabbitMQ RPC, NATS RPC) depend on
+# internal/usecase contracts; use case implementations depend on internal/repo
+# contracts and internal/entity; repo implementations use pkg/postgres or an
+# HTTP web API. internal/app wires everything together.
+# Not expected on purpose:
+# - endpoint records: routes are Fiber/gRPC registrations, not a supported
+#   route declaration for this benchmark.
+# - modules for docs/ and docs/proto/v1: all files there are generated
+#   (swaggo and protoc-gen-go, "DO NOT EDIT").
+# - calls through use case or repo interfaces: not statically resolvable.
+# - internal/app/migrate.go facts: it is behind the "migrate" build tag.
+
+# Modules
+[[must]]
+record = ["module", "cmd/app"]
+why = "cmd/app/main.go:1 package main"
+
+[[must]]
+record = ["module", "config"]
+why = "config/config.go:1 package config"
+
+[[must]]
+record = ["module", "internal/app"]
+why = "internal/app/app.go:2 package app"
+
+[[must]]
+record = ["module", "internal/controller/restapi"]
+why = "internal/controller/restapi/router.go:1 package restapi"
+
+[[must]]
+record = ["module", "internal/controller/restapi/v1"]
+why = "internal/controller/restapi/v1/controller.go:1 package v1"
+
+[[must]]
+record = ["module", "internal/usecase"]
+why = "internal/usecase/contracts.go:2 package usecase"
+
+[[must]]
+record = ["module", "internal/usecase/translation"]
+why = "internal/usecase/translation/translation.go:1 package translation"
+
+[[must]]
+record = ["module", "internal/repo"]
+why = "internal/repo/contracts.go:2 package repo"
+
+[[must]]
+record = ["module", "internal/repo/persistent/translation"]
+why = "internal/repo/persistent/translation/translation.go:1 package persistent"
+
+[[must]]
+record = ["module", "internal/entity"]
+why = "internal/entity/translation.go:3 package entity"
+
+[[must]]
+record = ["module", "pkg/postgres"]
+why = "pkg/postgres/postgres.go:2 package postgres"
+
+# Dependencies
+[[must]]
+record = ["dep", "cmd/app", "internal/app"]
+why = "cmd/app/main.go:7 \"github.com/evrone/go-clean-template/internal/app\""
+
+[[must]]
+record = ["dep", "cmd/app", "config"]
+why = "cmd/app/main.go:6 \"github.com/evrone/go-clean-template/config\""
+
+[[must]]
+record = ["dep", "internal/app", "internal/controller/restapi"]
+why = "internal/app/app.go:16 \"github.com/evrone/go-clean-template/internal/controller/restapi\""
+
+[[must]]
+record = ["dep", "internal/app", "internal/controller/grpc"]
+why = "internal/app/app.go:13 \"github.com/evrone/go-clean-template/internal/controller/grpc\""
+
+[[must]]
+record = ["dep", "internal/app", "internal/repo/persistent/translation"]
+why = "internal/app/app.go:18 persistTranslationRepo \"github.com/evrone/go-clean-template/internal/repo/persistent/translation\""
+
+[[must]]
+record = ["dep", "internal/app", "pkg/postgres"]
+why = "internal/app/app.go:30 \"github.com/evrone/go-clean-template/pkg/postgres\""
+
+[[must]]
+record = ["dep", "internal/controller/restapi", "internal/controller/restapi/v1"]
+why = "internal/controller/restapi/router.go:10 v1 \"github.com/evrone/go-clean-template/internal/controller/restapi/v1\""
+
+[[must]]
+record = ["dep", "internal/controller/restapi/v1", "internal/usecase"]
+why = "internal/controller/restapi/v1/controller.go:4 \"github.com/evrone/go-clean-template/internal/usecase\""
+
+[[must]]
+record = ["dep", "internal/usecase", "internal/entity"]
+why = "internal/usecase/contracts.go:7 \"github.com/evrone/go-clean-template/internal/entity\""
+
+[[must]]
+record = ["dep", "internal/usecase/translation", "internal/repo"]
+why = "internal/usecase/translation/translation.go:8 \"github.com/evrone/go-clean-template/internal/repo\""
+
+[[must]]
+record = ["dep", "internal/usecase/translation", "internal/usecase"]
+why = "internal/usecase/translation/translation.go:9 \"github.com/evrone/go-clean-template/internal/usecase\""
+
+[[must]]
+record = ["dep", "internal/repo/persistent/translation", "pkg/postgres"]
+why = "internal/repo/persistent/translation/translation.go:9 \"github.com/evrone/go-clean-template/pkg/postgres\""
+
+[[must]]
+record = ["dep", "internal/repo/persistent/translation", "internal/repo"]
+why = "internal/repo/persistent/translation/translation.go:8 \"github.com/evrone/go-clean-template/internal/repo\""
+
+# Compose services
+[[must]]
+record = ["datastore", "db"]
+why = "docker-compose.yml:52 image: postgres:18.6-alpine"
+
+[[must]]
+record = ["queue", "rabbitmq"]
+why = "docker-compose.yml:66 image: rabbitmq:4.3.6-management"
+
+[[must]]
+record = ["queue", "nats"]
+why = "docker-compose.yml:81 image: nats:2.15-alpine"
+
+[[must]]
+record = ["service", "jaeger"]
+why = "docker-compose.yml:95 image: jaegertracing/all-in-one:1.76.0"
+
+[[must]]
+record = ["service", "app"]
+why = "docker-compose.yml:110 build:"
+
+[[must]]
+record = ["service", "nginx"]
+why = "docker-compose.yml:136 image: nginx:1.31.3-alpine"
+
+# Not expected: the `integration-test` service in
+# docker-compose-integration-test.yml. It is a test-runner container, not part
+# of the running system, consistent with `integration-test/` being rejected as
+# a module below. (Svarupa also does not read compose files named
+# `docker-compose-<x>.yml`; that gap is tracked separately.)
+
+# Calls
+[[must]]
+call = "cmd/app/main.go -> config/config.go#NewConfig"
+why = "cmd/app/main.go:12 cfg, err := config.NewConfig()"
+
+[[must]]
+call = "cmd/app/main.go -> internal/app/app.go#Run"
+why = "cmd/app/main.go:18 app.Run(cfg)"
+
+[[must]]
+call = "internal/app/app.go -> pkg/postgres/postgres.go#New"
+why = "internal/app/app.go:174 pg, err := postgres.New(cfg.PG.URL, postgres.MaxPoolSize(cfg.PG.PoolMax))"
+
+[[must]]
+call = "internal/app/app.go -> internal/controller/restapi/router.go#NewRouter"
+why = "internal/app/app.go:92 restapi.NewRouter(httpServer.App, cfg, uc.translation, uc.user, uc.task, jwtManager, l)"
+
+[[must]]
+call = "internal/app/app.go -> internal/usecase/translation/translation.go#New"
+why = "internal/app/app.go:58 translation: translation.New(translationRepo, webapi.New()),"
+
+[[must]]
+call = "internal/app/app.go -> internal/repo/persistent/translation/translation.go#New"
+why = "internal/app/app.go:51 translationRepo := persistTranslationRepo.New(pg)"
+
+# Probes
+[[must_not]]
+record = ["dep", "internal/repo/persistent/translation", "internal/usecase"]
+why = "repo implementations import only internal/entity, internal/repo and pkg/postgres, never the use case layer"
+
+[[must_not]]
+record = ["dep", "internal/usecase/translation", "internal/controller/restapi"]
+why = "no use case package imports any controller package"
+
+[[must_not]]
+record = ["dep", "internal/entity", "internal/usecase"]
+why = "internal/entity imports no repo package outside its tests"
+
+[[must_not]]
+record = ["module", "integration-test"]
+why = "integration-test/ contains only *_test.go files and a Dockerfile"
+
+[[must_not]]
+record = ["module", "docs/proto/v1"]
+why = "every file in docs/proto/v1 is generated by protoc-gen-go (DO NOT EDIT)"
+
+[[must_not]]
+record = ["datastore", "mongodb"]
+why = "the only database is PostgreSQL (service db); no Mongo service or client exists"
+
+[[must_not]]
+call = "internal/app/app.go -> pkg/rabbitmq/rmq_rpc/client/client.go#New"
+why = "app.go imports the RabbitMQ server package (rmqRPCServer.New), not the client package that has a same-named New"

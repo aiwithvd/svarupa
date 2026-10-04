@@ -1,0 +1,80 @@
+# Public repositories the benchmark scores Svarupa on, each pinned to one
+# commit. Changing a sha means re-checking that repo's expected facts in the
+# same pull request.
+
+[[repo]]
+name = "fastapi-template"
+url = "https://github.com/fastapi/full-stack-fastapi-template"
+sha = "1762adac607a1b29cfc4da129557780beea71616"
+license = "MIT"
+languages = ["python", "typescript"]
+
+[[repo]]
+name = "microblog"
+url = "https://github.com/miguelgrinberg/microblog"
+sha = "a975ef64864354867c88e0ed3a17ba7d17dca752"
+license = "MIT"
+languages = ["python"]
+
+[[repo]]
+name = "bakerydemo"
+url = "https://github.com/wagtail/bakerydemo"
+sha = "c8f8255593c0efcfab5fef2fb19d60895227748a"
+license = "BSD-3-Clause"
+languages = ["python"]
+
+[[repo]]
+name = "nestjs-prisma"
+url = "https://github.com/notiz-dev/nestjs-prisma-starter"
+sha = "225e5a906865df237a681c1ad228a3ecf2909326"
+license = "MIT"
+languages = ["typescript"]
+
+[[repo]]
+name = "express-boilerplate"
+url = "https://github.com/hagopj13/node-express-boilerplate"
+sha = "179ae84efec61b14206d0305d941daed6c6d07f9"
+license = "MIT"
+languages = ["javascript"]
+
+[[repo]]
+name = "taxonomy"
+url = "https://github.com/shadcn-ui/taxonomy"
+sha = "298a8857c7128a0d121e7f699dfd729f23b3966d"
+license = "MIT"
+languages = ["typescript"]
+
+[[repo]]
+name = "gin-realworld"
+url = "https://github.com/gothinkster/golang-gin-realworld-example-app"
+sha = "626c372d259472148d93303f74aa9b9a1cdcef24"
+license = "MIT"
+languages = ["go"]
+
+[[repo]]
+name = "go-clean-arch"
+url = "https://github.com/bxcodec/go-clean-arch"
+sha = "e06c6d0cb37069b0ef56e3df67f80ca130a1ab82"
+license = "MIT"
+languages = ["go"]
+
+[[repo]]
+name = "go-clean-template"
+url = "https://github.com/evrone/go-clean-template"
+sha = "d40c828aa650497453db13ac3d8539c4086b96d9"
+license = "MIT"
+languages = ["go"]
+
+[[repo]]
+name = "petclinic"
+url = "https://github.com/spring-projects/spring-petclinic"
+sha = "500158f732419217507c7656904b8e6aa1bcc0d6"
+license = "Apache-2.0"
+languages = ["java"]
+
+[[repo]]
+name = "spring-realworld"
+url = "https://github.com/gothinkster/spring-boot-realworld-example-app"
+sha = "ee17e31aafe733d98c4853c8b9a74d7f2f6c924a"
+license = "MIT"
+languages = ["java"]

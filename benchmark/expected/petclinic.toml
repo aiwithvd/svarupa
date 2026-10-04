@@ -1,0 +1,129 @@
+# spring-petclinic @ 500158f73241
+# Read: README.md, pom.xml, docker-compose.yml, application*.properties,
+# PetClinicApplication, PetClinicRuntimeHints, every class under model/, owner/,
+# system/ and vet/ in src/main/java.
+# Not expected on purpose:
+# - endpoint records: routes are Spring @GetMapping/@PostMapping annotations,
+#   which this benchmark does not treat as route declarations.
+# - calls to inherited Spring Data methods (save, saveAndFlush on JpaRepository),
+#   since those methods are not declared in the repo.
+# - k8s/db.yml is a Kubernetes manifest, not a compose file, so its postgres
+#   deployment is not a compose service.
+# The import graph is small: only four cross-package deps exist in main code.
+
+# Modules
+[[must]]
+record = ["module", "src/main/java/org/springframework/samples/petclinic"]
+why = "src/main/java/org/springframework/samples/petclinic/PetClinicApplication.java:30 public class PetClinicApplication {"
+
+[[must]]
+record = ["module", "src/main/java/org/springframework/samples/petclinic/model"]
+why = "src/main/java/org/springframework/samples/petclinic/model/BaseEntity.java:33 public class BaseEntity implements Serializable {"
+
+[[must]]
+record = ["module", "src/main/java/org/springframework/samples/petclinic/owner"]
+why = "src/main/java/org/springframework/samples/petclinic/owner/Owner.java:50 public class Owner extends Person {"
+
+[[must]]
+record = ["module", "src/main/java/org/springframework/samples/petclinic/system"]
+why = "src/main/java/org/springframework/samples/petclinic/system/WelcomeController.java:23 class WelcomeController {"
+
+[[must]]
+record = ["module", "src/main/java/org/springframework/samples/petclinic/vet"]
+why = "src/main/java/org/springframework/samples/petclinic/vet/Vet.java:45 public class Vet extends Person {"
+
+# Deps
+[[must]]
+record = ["dep", "src/main/java/org/springframework/samples/petclinic/owner", "src/main/java/org/springframework/samples/petclinic/model"]
+why = "src/main/java/org/springframework/samples/petclinic/owner/Owner.java:23 import org.springframework.samples.petclinic.model.Person;"
+
+[[must]]
+record = ["dep", "src/main/java/org/springframework/samples/petclinic/vet", "src/main/java/org/springframework/samples/petclinic/model"]
+why = "src/main/java/org/springframework/samples/petclinic/vet/Vet.java:25 import org.springframework.samples.petclinic.model.Person;"
+
+[[must]]
+record = ["dep", "src/main/java/org/springframework/samples/petclinic", "src/main/java/org/springframework/samples/petclinic/model"]
+why = "src/main/java/org/springframework/samples/petclinic/PetClinicRuntimeHints.java:21 import org.springframework.samples.petclinic.model.BaseEntity;"
+
+[[must]]
+record = ["dep", "src/main/java/org/springframework/samples/petclinic", "src/main/java/org/springframework/samples/petclinic/vet"]
+why = "src/main/java/org/springframework/samples/petclinic/PetClinicRuntimeHints.java:23 import org.springframework.samples.petclinic.vet.Vet;"
+
+# Compose datastores
+[[must]]
+record = ["datastore", "mysql"]
+why = "docker-compose.yml:3 image: mysql:9.7"
+
+[[must]]
+record = ["datastore", "postgres"]
+why = "docker-compose.yml:15 image: postgres:18.4"
+
+# Calls
+[[must]]
+call = "src/main/java/org/springframework/samples/petclinic/owner/OwnerController.java -> src/main/java/org/springframework/samples/petclinic/owner/OwnerRepository.java#findById"
+why = "src/main/java/org/springframework/samples/petclinic/owner/OwnerController.java:181 Optional<Owner> optionalOwner = this.owners.findById(ownerId);"
+
+[[must]]
+call = "src/main/java/org/springframework/samples/petclinic/owner/PetController.java -> src/main/java/org/springframework/samples/petclinic/owner/PetTypeRepository.java#findPetTypes"
+why = "src/main/java/org/springframework/samples/petclinic/owner/PetController.java:64 return this.types.findPetTypes();"
+
+[[must]]
+call = "src/main/java/org/springframework/samples/petclinic/owner/PetController.java -> src/main/java/org/springframework/samples/petclinic/owner/OwnerRepository.java#findById"
+why = "src/main/java/org/springframework/samples/petclinic/owner/PetController.java:69 Optional<Owner> optionalOwner = this.owners.findById(ownerId);"
+
+[[must]]
+call = "src/main/java/org/springframework/samples/petclinic/owner/PetTypeFormatter.java -> src/main/java/org/springframework/samples/petclinic/owner/PetTypeRepository.java#findPetTypes"
+why = "src/main/java/org/springframework/samples/petclinic/owner/PetTypeFormatter.java:53 Collection<PetType> findPetTypes = this.types.findPetTypes();"
+
+[[must]]
+call = "src/main/java/org/springframework/samples/petclinic/vet/VetController.java -> src/main/java/org/springframework/samples/petclinic/vet/VetRepository.java#findAll"
+why = "src/main/java/org/springframework/samples/petclinic/vet/VetController.java:77 vets.getVetList().addAll(this.vetRepository.findAll());"
+
+[[must]]
+call = "src/main/java/org/springframework/samples/petclinic/owner/OwnerController.java -> src/main/java/org/springframework/samples/petclinic/owner/OwnerController.java#findPaginatedForOwnersLastName"
+why = "src/main/java/org/springframework/samples/petclinic/owner/OwnerController.java:107 Page<Owner> ownersResults = findPaginatedForOwnersLastName(page, lastName);"
+
+[[must]]
+call = "src/main/java/org/springframework/samples/petclinic/vet/VetController.java -> src/main/java/org/springframework/samples/petclinic/vet/VetController.java#findPaginated"
+why = "src/main/java/org/springframework/samples/petclinic/vet/VetController.java:48 Page<Vet> paginated = findPaginated(page);"
+
+[[must]]
+call = "src/main/java/org/springframework/samples/petclinic/owner/Owner.java -> src/main/java/org/springframework/samples/petclinic/owner/Owner.java#getPets"
+why = "src/main/java/org/springframework/samples/petclinic/owner/Owner.java:104 if (getPets().contains(pet)) {"
+
+[[must]]
+call = "src/main/java/org/springframework/samples/petclinic/owner/Owner.java -> src/main/java/org/springframework/samples/petclinic/model/BaseEntity.java#isNew"
+why = "src/main/java/org/springframework/samples/petclinic/owner/Owner.java:162 .append(\"new\", this.isNew())"
+
+# Probes
+[[must_not]]
+record = ["datastore", "mongodb"]
+why = "only MySQL, PostgreSQL and embedded H2 are configured; no Mongo driver in pom.xml and no mongo service in docker-compose.yml"
+
+[[must_not]]
+record = ["datastore", "redis"]
+why = "caching uses Caffeine through JCache (CacheConfiguration); there is no Redis service or client"
+
+[[must_not]]
+record = ["dep", "src/main/java/org/springframework/samples/petclinic/model", "src/main/java/org/springframework/samples/petclinic/owner"]
+why = "model holds base entities only and imports nothing from owner"
+
+[[must_not]]
+record = ["dep", "src/main/java/org/springframework/samples/petclinic/owner", "src/main/java/org/springframework/samples/petclinic/vet"]
+why = "owner and vet are independent feature packages; no owner class imports from vet"
+
+[[must_not]]
+record = ["dep", "src/main/java/org/springframework/samples/petclinic/system", "src/main/java/org/springframework/samples/petclinic/owner"]
+why = "system classes (config, welcome, crash controllers) import nothing from owner"
+
+[[must_not]]
+record = ["module", "src/test/java/org/springframework/samples/petclinic/owner"]
+why = "test sources are not application modules"
+
+[[must_not]]
+call = "src/main/java/org/springframework/samples/petclinic/vet/VetController.java -> src/main/java/org/springframework/samples/petclinic/owner/OwnerRepository.java#findById"
+why = "VetController only holds a VetRepository and never touches OwnerRepository"
+
+[[must_not]]
+record = ["queue", "rabbitmq"]
+why = "no message broker in docker-compose.yml or pom.xml"

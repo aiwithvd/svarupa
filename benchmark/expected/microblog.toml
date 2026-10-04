@@ -1,0 +1,164 @@
+# microblog (Miguel Grinberg's Flask Mega-Tutorial app), pinned commit.
+# Read: README, requirements.txt, config.py, Procfile, boot.sh, Dockerfile,
+# microblog.py, app/__init__.py, the blueprints (main, auth, api, errors),
+# app/models.py, app/search.py, app/email.py, app/tasks.py, app/translate.py.
+# Not expected on purpose:
+# - compose services / datastores / queues: the repo has no docker-compose or
+#   compose file. PostgreSQL, Elasticsearch and Redis/RQ are only reached
+#   through env URLs in config.py, so no compose-based record exists.
+# - entrypoints: no pyproject.toml, so no [project.scripts].
+# - endpoint paths with blueprint url_prefix (/auth, /api): the prefix is set
+#   in app/__init__.py register_blueprint, not in the route decorator.
+
+# Modules
+[[must]]
+record = ["module", "."]
+why = "microblog.py:3 from app import create_app, db"
+
+[[must]]
+record = ["module", "app"]
+why = "app/__init__.py:31 def create_app(config_class=Config):"
+
+[[must]]
+record = ["module", "app/main"]
+why = "app/main/routes.py:25 @bp.route('/', methods=['GET', 'POST'])"
+
+[[must]]
+record = ["module", "app/auth"]
+why = "app/auth/routes.py:14 @bp.route('/login', methods=['GET', 'POST'])"
+
+[[must]]
+record = ["module", "app/api"]
+why = "app/api/users.py:10 @bp.route('/users/<int:id>', methods=['GET'])"
+
+[[must]]
+record = ["module", "app/errors"]
+why = "app/errors/handlers.py:13 def not_found_error(error):"
+
+# Dependencies
+[[must]]
+record = ["dep", ".", "app"]
+why = "microblog.py:4 from app.models import User, Post, Message, Notification, Task"
+
+[[must]]
+record = ["dep", "app", "."]
+why = "app/__init__.py:14 from config import Config"
+
+[[must]]
+record = ["dep", "app", "app/main"]
+why = "app/__init__.py:52 from app.main import bp as main_bp"
+
+[[must]]
+record = ["dep", "app", "app/api"]
+why = "app/__init__.py:58 from app.api import bp as api_bp"
+
+[[must]]
+record = ["dep", "app/main", "app"]
+why = "app/main/routes.py:11 from app.models import User, Post, Message, Notification"
+
+[[must]]
+record = ["dep", "app/auth", "app"]
+why = "app/auth/email.py:3 from app.email import send_email"
+
+[[must]]
+record = ["dep", "app/api", "app"]
+why = "app/api/users.py:4 from app.models import User"
+
+[[must]]
+record = ["dep", "app/errors", "app/api"]
+why = "app/errors/handlers.py:4 from app.api.errors import error_response as api_error_response"
+
+# Endpoints (Flask, blueprint url_prefix not prepended)
+[[must]]
+record = ["endpoint", "GET /", "app/main"]
+why = "app/main/routes.py:25 @bp.route('/', methods=['GET', 'POST'])"
+
+[[must]]
+record = ["endpoint", "POST /index", "app/main"]
+why = "app/main/routes.py:26 @bp.route('/index', methods=['GET', 'POST'])"
+
+[[must]]
+record = ["endpoint", "GET /explore", "app/main"]
+why = "app/main/routes.py:54 @bp.route('/explore')"
+
+[[must]]
+record = ["endpoint", "POST /follow/<username>", "app/main"]
+why = "app/main/routes.py:114 @bp.route('/follow/<username>', methods=['POST'])"
+
+[[must]]
+record = ["endpoint", "POST /login", "app/auth"]
+why = "app/auth/routes.py:14 @bp.route('/login', methods=['GET', 'POST'])"
+
+[[must]]
+record = ["endpoint", "GET /logout", "app/auth"]
+why = "app/auth/routes.py:33 @bp.route('/logout')"
+
+[[must]]
+record = ["endpoint", "GET /users/<int:id>", "app/api"]
+why = "app/api/users.py:10 @bp.route('/users/<int:id>', methods=['GET'])"
+
+[[must]]
+record = ["endpoint", "POST /users", "app/api"]
+why = "app/api/users.py:45 @bp.route('/users', methods=['POST'])"
+
+[[must]]
+record = ["endpoint", "PUT /users/<int:id>", "app/api"]
+why = "app/api/users.py:64 @bp.route('/users/<int:id>', methods=['PUT'])"
+
+[[must]]
+record = ["endpoint", "POST /tokens", "app/api"]
+why = "app/api/tokens.py:6 @bp.route('/tokens', methods=['POST'])"
+
+# Calls
+[[must]]
+call = "app/auth/email.py -> app/email.py#send_email"
+why = "app/auth/email.py:8 send_email(_('[Microblog] Reset Your Password'),"
+
+[[must]]
+call = "app/main/routes.py -> app/translate.py#translate"
+why = "app/main/routes.py:160 return {'text': translate(data['text'],"
+
+[[must]]
+call = "app/api/users.py -> app/api/errors.py#bad_request"
+why = "app/api/users.py:49 return bad_request('must include username, email and password fields')"
+
+[[must]]
+call = "app/models.py -> app/search.py#add_to_index"
+why = "app/models.py:44 add_to_index(obj.__tablename__, obj)"
+
+[[must]]
+call = "app/auth/routes.py -> app/auth/email.py#send_password_reset_email"
+why = "app/auth/routes.py:64 send_password_reset_email(user)"
+
+[[must]]
+call = "app/tasks.py -> app/email.py#send_email"
+why = "app/tasks.py:44 send_email("
+
+# Probes
+[[must_not]]
+record = ["datastore", "mongodb"]
+why = "no MongoDB anywhere; data lives in SQLAlchemy (SQLite or PostgreSQL via DATABASE_URL)"
+
+[[must_not]]
+record = ["queue", "rabbitmq"]
+why = "background jobs use RQ on Redis; no RabbitMQ and no compose file at all"
+
+[[must_not]]
+record = ["dep", "app/api", "app/main"]
+why = "the API blueprint never imports the web UI blueprint"
+
+[[must_not]]
+record = ["module", "migrations/versions"]
+why = "Alembic migration scripts"
+
+[[must_not]]
+record = ["endpoint", "GET /follow/<username>", "app/main"]
+why = "follow is registered with methods=['POST'] only"
+
+[[must_not]]
+record = ["endpoint", "GET /tokens", "app/api"]
+why = "/tokens only allows POST and DELETE"
+
+[[must_not]]
+call = "app/main/routes.py -> app/search.py#query_index"
+why = "routes search through Post.search in models.py; routes.py does not import app.search"
