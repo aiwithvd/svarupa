@@ -1,0 +1,172 @@
+# fastapi-template (full-stack-fastapi-template), pinned commit.
+# Read: README, backend/pyproject.toml, root pyproject.toml, compose.yml,
+# compose.override.yml, backend/app (main, api/main, api/deps, api/routes/*,
+# crud, models, core/*, utils, initial_data), frontend/tsconfig.json and
+# frontend/src/routes + hooks imports.
+# Not expected on purpose:
+# - entrypoints: neither pyproject declares [project.scripts].
+# - frontend/src/client: generated OpenAPI client, left out of module facts.
+# - endpoint paths with the APIRouter prefix (/items, /users, /utils, /private)
+#   or the /api/v1 include prefix, per the record rules.
+
+# Modules
+[[must]]
+record = ["module", "backend/app"]
+why = "backend/app/crud.py:10 def create_user(*, session: Session, user_create: UserCreate) -> User:"
+
+[[must]]
+record = ["module", "backend/app/api"]
+why = "backend/app/api/deps.py:30 def get_current_user(session: SessionDep, token: TokenDep) -> User:"
+
+[[must]]
+record = ["module", "backend/app/api/routes"]
+why = "backend/app/api/routes/items.py:10 router = APIRouter(prefix=\"/items\", tags=[\"items\"])"
+
+[[must]]
+record = ["module", "backend/app/core"]
+why = "backend/app/core/security.py:35 def get_password_hash(password: str) -> str:"
+
+[[must]]
+record = ["module", "frontend/src/routes"]
+why = "frontend/src/routes/login.tsx:23 import useAuth, { isLoggedIn } from \"@/hooks/useAuth\""
+
+[[must]]
+record = ["module", "frontend/src/hooks"]
+why = "frontend/src/hooks/useAuth.ts:1 import { useMutation, useQuery, useQueryClient } from \"@tanstack/react-query\""
+
+# Dependencies
+[[must]]
+record = ["dep", "backend/app", "backend/app/api"]
+why = "backend/app/main.py:8 from app.api.main import api_router"
+
+[[must]]
+record = ["dep", "backend/app/api", "backend/app/api/routes"]
+why = "backend/app/api/main.py:3 from app.api.routes import items, login, private, users, utils"
+
+[[must]]
+record = ["dep", "backend/app/api/routes", "backend/app/api"]
+why = "backend/app/api/routes/items.py:7 from app.api.deps import CurrentUser, SessionDep"
+
+[[must]]
+record = ["dep", "backend/app/api/routes", "backend/app"]
+why = "backend/app/api/routes/items.py:8 from app.models import Item, ItemCreate, ItemPublic, ItemsPublic, ItemUpdate, Message"
+
+[[must]]
+record = ["dep", "backend/app/api/routes", "backend/app/core"]
+why = "backend/app/api/routes/users.py:14 from app.core.security import get_password_hash, verify_password"
+
+[[must]]
+record = ["dep", "backend/app", "backend/app/core"]
+why = "backend/app/crud.py:6 from app.core.security import get_password_hash, verify_password"
+
+[[must]]
+record = ["dep", "backend/app/core", "backend/app"]
+why = "backend/app/core/db.py:3 from app import crud"
+
+[[must]]
+record = ["dep", "backend/app/api", "backend/app/core"]
+why = "backend/app/api/deps.py:13 from app.core.db import engine"
+
+[[must]]
+record = ["dep", "frontend/src/routes", "frontend/src/hooks"]
+why = "frontend/src/routes/login.tsx:23 import useAuth, { isLoggedIn } from \"@/hooks/useAuth\""
+
+# Endpoints (paths as written in the decorator, router prefix not prepended)
+[[must]]
+record = ["endpoint", "GET /", "backend/app/api/routes"]
+why = "backend/app/api/routes/items.py:13 @router.get(\"/\", response_model=ItemsPublic)"
+
+[[must]]
+record = ["endpoint", "GET /{id}", "backend/app/api/routes"]
+why = "backend/app/api/routes/items.py:48 @router.get(\"/{id}\", response_model=ItemPublic)"
+
+[[must]]
+record = ["endpoint", "PUT /{id}", "backend/app/api/routes"]
+why = "backend/app/api/routes/items.py:75 @router.put(\"/{id}\", response_model=ItemPublic)"
+
+[[must]]
+record = ["endpoint", "DELETE /{id}", "backend/app/api/routes"]
+why = "backend/app/api/routes/items.py:99 @router.delete(\"/{id}\")"
+
+[[must]]
+record = ["endpoint", "POST /login/access-token", "backend/app/api/routes"]
+why = "backend/app/api/routes/login.py:23 @router.post(\"/login/access-token\")"
+
+[[must]]
+record = ["endpoint", "POST /signup", "backend/app/api/routes"]
+why = "backend/app/api/routes/users.py:146 @router.post(\"/signup\", response_model=UserPublic)"
+
+[[must]]
+record = ["endpoint", "PATCH /me", "backend/app/api/routes"]
+why = "backend/app/api/routes/users.py:81 @router.patch(\"/me\", response_model=UserPublic)"
+
+[[must]]
+record = ["endpoint", "GET /health-check/", "backend/app/api/routes"]
+why = "backend/app/api/routes/utils.py:29 @router.get(\"/health-check/\")"
+
+# Compose services
+[[must]]
+record = ["datastore", "db"]
+why = "compose.yml:21 image: postgres:18"
+
+[[must]]
+record = ["service", "backend"]
+why = "compose.yml:49 backend: (image backend:latest, built from backend/Dockerfile)"
+
+[[must]]
+record = ["service", "adminer"]
+why = "compose.yml:34 adminer: (image adminer)"
+
+[[must]]
+record = ["service", "proxy"]
+why = "compose.yml:3 proxy:"
+
+# Calls
+[[must]]
+call = "backend/app/api/routes/users.py -> backend/app/crud.py#create_user"
+why = "backend/app/api/routes/users.py:68 user = crud.create_user(session=session, user_create=user_in)"
+
+[[must]]
+call = "backend/app/api/routes/login.py -> backend/app/crud.py#authenticate"
+why = "backend/app/api/routes/login.py:30 user = crud.authenticate("
+
+[[must]]
+call = "backend/app/core/db.py -> backend/app/crud.py#create_user"
+why = "backend/app/core/db.py:33 user = crud.create_user(session=session, user_create=user_in)"
+
+[[must]]
+call = "backend/app/crud.py -> backend/app/core/security.py#get_password_hash"
+why = "backend/app/crud.py:12 user_create, update={\"hashed_password\": get_password_hash(user_create.password)}"
+
+[[must]]
+call = "backend/app/initial_data.py -> backend/app/core/db.py#init_db"
+why = "backend/app/initial_data.py:13 init_db(session)"
+
+# Probes
+[[must_not]]
+record = ["datastore", "mongodb"]
+why = "only PostgreSQL (service db) is configured; no Mongo client or service anywhere"
+
+[[must_not]]
+record = ["datastore", "redis"]
+why = "no Redis service in any compose file and no redis client dependency"
+
+[[must_not]]
+record = ["dep", "backend/app/core", "backend/app/api/routes"]
+why = "core (config, db, security) never imports the route layer"
+
+[[must_not]]
+record = ["module", "backend/tests"]
+why = "test directory"
+
+[[must_not]]
+record = ["module", "backend/app/alembic/versions"]
+why = "migration directory"
+
+[[must_not]]
+record = ["endpoint", "GET /items/", "backend/app/api/routes"]
+why = "the /items prefix comes from APIRouter(prefix=...), the decorator path is \"/\""
+
+[[must_not]]
+call = "backend/app/api/routes/items.py -> backend/app/crud.py#create_item"
+why = "items.py does not import crud; create_item builds the Item inline with Item.model_validate"
