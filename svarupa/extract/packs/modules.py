@@ -19,6 +19,10 @@ __all__ = ["GoModules", "JvmPackages", "ModuleContext", "ModuleResolver"]
 
 
 class ModuleResolver(Protocol):
+    # True when `pkg.Name` can only name a top-level definition (Go); False
+    # when it may name a class member (Java static imports).
+    top_level_only: bool
+
     def targets(self, spec: str, from_file: str, /) -> tuple[str, ...]:
         """Repository files the specifier names, sorted; () when none."""
         ...
@@ -47,6 +51,8 @@ class GoModules:
     nested module wins over its parent). The standard library is any path
     whose first element has no dot: that is the Go toolchain's own rule.
     """
+
+    top_level_only = True
 
     def __init__(self, context: ModuleContext) -> None:
         self.modules = tuple(sorted(context.go_modules, key=lambda m: (-len(m[0]), m[0])))
@@ -115,6 +121,8 @@ class JvmPackages:
     `import a.b.*`) names every file in it. Source roots never need guessing,
     because every file says which package it is in.
     """
+
+    top_level_only = False
 
     def __init__(self, context: ModuleContext) -> None:
         by_ns: dict[str, list[str]] = {}

@@ -10,6 +10,8 @@ from svarupa.model import EdgeKind, Evidence, Resolution
 class TwoFiles:
     """A package `pkg` made of two files; `std` is provably external."""
 
+    top_level_only = True
+
     def targets(self, spec: str, _from_file: str, /) -> tuple[str, ...]:
         return ("pkg/a.toy", "pkg/b.toy") if spec == "pkg" else ()
 

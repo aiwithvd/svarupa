@@ -106,3 +106,19 @@ def test_go_mod_requires_are_declared_dependencies(tmp_path: Path) -> None:
     write(tmp_path, "go.mod", GO_MOD + "require golang.org/x/sync v0.7.0\n")
     deps = declared_dependencies(detect(tmp_path))
     assert {"github.com/gin-gonic/gin", "golang.org/x/sync"} <= deps
+
+
+def test_a_package_call_never_lands_on_a_method(tmp_path: Path) -> None:
+    write(tmp_path, "go.mod", "module github.com/acme/shop\n")
+    write(
+        tmp_path,
+        "cmd/main.go",
+        'package main\n\nimport "github.com/acme/shop/orders"\n\nfunc main() { orders.Validate() }\n',
+    )
+    write(
+        tmp_path,
+        "orders/a.go",
+        "package orders\n\ntype S struct{}\n\nfunc (s *S) Validate() {}\n",
+    )
+    calls = [(e.dst, e.resolution) for e in run(tmp_path).edges if e.kind is EdgeKind.CALLS]
+    assert not [c for c in calls if ".S.Validate" in c[0]], calls

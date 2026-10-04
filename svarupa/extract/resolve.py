@@ -609,9 +609,20 @@ class Resolver:
         facts = self.idx.by_file.get(file)
         if facts is None:
             return None
+        module = self.modules.get(facts.lang)
         for s in facts.symbols:
-            if s.name == name:
-                return (file, s.qualified_name)
+            if s.name != name:
+                continue
+            # `orders.Validate()` in Go can never name a method.
+            if module is not None and module.top_level_only and s.enclosing_class:
+                continue
+            return (file, s.qualified_name)
+        if module is not None:
+            # Package languages have no re-exports: a name is defined in the
+            # package or it is not there. Chasing this file's own imports
+            # would invent a definition (Java `import c.*` inside a.Util does
+            # not put c's names into a.Util).
+            return None
 
         for imp in facts.imports:
             # F8: `export * from './x'` names nothing, so the only way to chase

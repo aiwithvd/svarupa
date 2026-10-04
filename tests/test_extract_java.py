@@ -212,3 +212,32 @@ def test_maven_placeholders_and_broken_xml_add_nothing(tmp_path: Path) -> None:
     write(tmp_path, "other/pom.xml", "<project><dependencies>\n")
     deps = declared_dependencies(detect(tmp_path))
     assert not {d for d in deps if "$" in d or d.startswith("project")}
+
+
+def test_imports_are_not_chased_through_another_files_imports(tmp_path: Path) -> None:
+    # Java has no re-exports: `helper` is not in a.Util just because Util
+    # imports a package that defines one.
+    write(
+        tmp_path,
+        "src/b/Caller.java",
+        "package b;\nimport static a.Util.helper;\nclass Caller { void go() { helper(); } }\n",
+    )
+    write(tmp_path, "src/a/Util.java", "package a;\nimport c.*;\npublic class Util {}\n")
+    write(
+        tmp_path,
+        "src/c/A.java",
+        "package c;\npublic class A { public static void helper() {} }\n",
+    )
+    edges = [
+        (e.src, e.dst)
+        for e in run(tmp_path).edges
+        if e.kind in (EdgeKind.CALLS, EdgeKind.REFERENCES)
+    ]
+    assert not [e for e in edges if e[1].startswith("src/c/A.java")], edges
+
+
+def test_a_class_import_does_not_make_a_same_named_method_call_bare() -> None:
+    f = extractor("java").parse(
+        "A.java", b"import a.b.Order;\nclass A { void Order() {} void m() { Order(); } }\n"
+    )
+    assert [(c.name, c.shape) for c in f.calls] == [("Order", CallShape.SELF)]

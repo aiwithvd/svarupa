@@ -172,8 +172,12 @@ def call(ctx: Ctx, node: TSNode, frame: Frame) -> CallSite | None:
     first = _first_str_arg(ctx, node)
     obj = node.child_by_field_name("object")
     if obj is None:
-        imported = {n for imp in ctx.imports for n in imp.names}
-        if cls and name not in imported:
+        # Only static imports bring a bare method name into scope; a class
+        # import (`import a.b.Order`) names a type, never a method to call.
+        static = {
+            n for imp in ctx.imports for n in imp.names if not imp.specifier.endswith("." + n)
+        }
+        if cls and name not in static:
             return CallSite(name, CallShape.SELF, "this", ev, fn, cls, first)
         return CallSite(name, CallShape.BARE, None, ev, fn, cls, first)
     if obj.type == "this":
