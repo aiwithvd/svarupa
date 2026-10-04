@@ -36,13 +36,13 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ),
     (
         "the route claim cites the line below the decorator",
-        "svarupa/extract/python.py",
-        "        ev = self.evidence(path, node.start_point[0], node.end_point[0])",
-        "        ev = self.evidence(path, node.start_point[0] + 1, node.end_point[0] + 1)",
+        "svarupa/extract/packs/python.py",
+        '    ev = ctx.node_evidence(node)\n    if expr.type != "call":',
+        '    ev = ctx.evidence(node.start_point[0] + 1, node.end_point[0] + 1)\n    if expr.type != "call":',
     ),
     (
         "an f-string route path is guessed from its static parts",
-        "svarupa/extract/python.py",
+        "svarupa/extract/packs/python.py",
         '    if any(c.type == "interpolation" for c in node.children):',
         "    if False:",
     ),

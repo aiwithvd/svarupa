@@ -18,6 +18,9 @@ dep	svarupa/emit	svarupa/extract
 dep	svarupa/emit	svarupa/layout
 dep	svarupa/emit	svarupa/lock
 dep	svarupa/extract	svarupa
+dep	svarupa/extract	svarupa/extract/packs
+dep	svarupa/extract/packs	svarupa
+dep	svarupa/extract/packs	svarupa/extract
 dep	svarupa/layout	svarupa
 dep	svarupa/layout	svarupa/derive
 dep	svarupa/lock	svarupa
@@ -31,6 +34,7 @@ module	svarupa
 module	svarupa/derive
 module	svarupa/emit
 module	svarupa/extract
+module	svarupa/extract/packs
 module	svarupa/layout
 module	svarupa/lock
 module	svarupa/query

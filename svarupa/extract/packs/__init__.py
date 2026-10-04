@@ -9,15 +9,16 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
+from svarupa.extract.packs import python
 from svarupa.extract.packs.model import Pack
 from svarupa.extract.packs.walker import PackExtractor
 
 __all__ = ["BY_DETECTED", "PACKS", "extractor", "load_extractors"]
 
-PACKS: tuple[Pack, ...] = ()
+PACKS: tuple[Pack, ...] = (python.PACK,)
 
 # detect.LANG_BY_EXT label -> pack.
-BY_DETECTED: dict[str, Pack] = {}
+BY_DETECTED: dict[str, Pack] = {"python": python.PACK}
 
 
 def load_extractors(
