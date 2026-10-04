@@ -1,0 +1,178 @@
+{
+ "path": "src/main/java/com/acme/shop/model/Types.java",
+ "lang": "java",
+ "symbols": [
+  {
+   "name": "Api",
+   "qualified_name": "src.main.java.com.acme.shop.model.Types.Api",
+   "kind": "interface",
+   "evidence": {
+    "file": "src/main/java/com/acme/shop/model/Types.java",
+    "start_line": 3,
+    "end_line": 5,
+    "rev": null
+   },
+   "enclosing_class": null,
+   "bases": [
+    "Base",
+    "Other"
+   ],
+   "exported": true,
+   "decorators": []
+  },
+  {
+   "name": "call",
+   "qualified_name": "src.main.java.com.acme.shop.model.Types.Api.call",
+   "kind": "method",
+   "evidence": {
+    "file": "src/main/java/com/acme/shop/model/Types.java",
+    "start_line": 4,
+    "end_line": 4,
+    "rev": null
+   },
+   "enclosing_class": "Api",
+   "bases": [],
+   "exported": false,
+   "decorators": []
+  },
+  {
+   "name": "Status",
+   "qualified_name": "src.main.java.com.acme.shop.model.Types.Status",
+   "kind": "class",
+   "evidence": {
+    "file": "src/main/java/com/acme/shop/model/Types.java",
+    "start_line": 7,
+    "end_line": 7,
+    "rev": null
+   },
+   "enclosing_class": null,
+   "bases": [],
+   "exported": false,
+   "decorators": []
+  },
+  {
+   "name": "Line",
+   "qualified_name": "src.main.java.com.acme.shop.model.Types.Line",
+   "kind": "class",
+   "evidence": {
+    "file": "src/main/java/com/acme/shop/model/Types.java",
+    "start_line": 9,
+    "end_line": 11,
+    "rev": null
+   },
+   "enclosing_class": null,
+   "bases": [],
+   "exported": true,
+   "decorators": []
+  },
+  {
+   "name": "total",
+   "qualified_name": "src.main.java.com.acme.shop.model.Types.Line.total",
+   "kind": "method",
+   "evidence": {
+    "file": "src/main/java/com/acme/shop/model/Types.java",
+    "start_line": 10,
+    "end_line": 10,
+    "rev": null
+   },
+   "enclosing_class": "Line",
+   "bases": [],
+   "exported": true,
+   "decorators": []
+  },
+  {
+   "name": "Outer",
+   "qualified_name": "src.main.java.com.acme.shop.model.Types.Outer",
+   "kind": "class",
+   "evidence": {
+    "file": "src/main/java/com/acme/shop/model/Types.java",
+    "start_line": 13,
+    "end_line": 17,
+    "rev": null
+   },
+   "enclosing_class": null,
+   "bases": [],
+   "exported": false,
+   "decorators": []
+  },
+  {
+   "name": "Inner",
+   "qualified_name": "src.main.java.com.acme.shop.model.Types.Outer.Inner",
+   "kind": "class",
+   "evidence": {
+    "file": "src/main/java/com/acme/shop/model/Types.java",
+    "start_line": 14,
+    "end_line": 16,
+    "rev": null
+   },
+   "enclosing_class": "Outer",
+   "bases": [],
+   "exported": false,
+   "decorators": []
+  },
+  {
+   "name": "run",
+   "qualified_name": "src.main.java.com.acme.shop.model.Types.Outer.Inner.run",
+   "kind": "method",
+   "evidence": {
+    "file": "src/main/java/com/acme/shop/model/Types.java",
+    "start_line": 15,
+    "end_line": 15,
+    "rev": null
+   },
+   "enclosing_class": "Inner",
+   "bases": [],
+   "exported": false,
+   "decorators": []
+  },
+  {
+   "name": "Broken",
+   "qualified_name": "src.main.java.com.acme.shop.model.Types.Broken",
+   "kind": "class",
+   "evidence": {
+    "file": "src/main/java/com/acme/shop/model/Types.java",
+    "start_line": 19,
+    "end_line": 21,
+    "rev": null
+   },
+   "enclosing_class": null,
+   "bases": [],
+   "exported": false,
+   "decorators": []
+  }
+ ],
+ "imports": [],
+ "calls": [
+  {
+   "name": "helper",
+   "shape": "qualified",
+   "receiver": "Outer",
+   "evidence": {
+    "file": "src/main/java/com/acme/shop/model/Types.java",
+    "start_line": 15,
+    "end_line": 15,
+    "rev": null
+   },
+   "enclosing": "src.main.java.com.acme.shop.model.Types.Outer.Inner.run",
+   "enclosing_class": "Inner",
+   "first_str_arg": null,
+   "ident_args": [],
+   "first_arg_ident": null,
+   "recv_call": null
+  }
+ ],
+ "fields": [],
+ "reexports": [],
+ "diagnostics": [
+  {
+   "code": "SVA-X-001",
+   "severity": "WARNING",
+   "message": "file has syntax errors; extraction continues over the parseable regions and may be incomplete",
+   "subject": "src/main/java/com/acme/shop/model/Types.java",
+   "location": null,
+   "suggested_fixes": []
+  }
+ ],
+ "ctor_assigns": [],
+ "namespace": "com.acme.shop.model"
+}

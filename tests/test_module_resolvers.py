@@ -124,3 +124,52 @@ def test_a_dotless_module_path_is_never_standard_library() -> None:
     assert r.targets("shop/nowhere", "cmd/api/main.go") == ()
     assert not r.is_external("shop/nowhere")
     assert r.is_external("fmt")
+
+
+from svarupa.extract.packs.modules import JvmPackages  # noqa: E402
+
+
+def _jfacts(path: str, ns: str) -> FileFacts:
+    return FileFacts(path=path, lang="java", namespace=ns)
+
+
+JAVA = (
+    _jfacts("src/main/java/com/acme/shop/Api.java", "com.acme.shop"),
+    _jfacts("src/main/java/com/acme/shop/model/Order.java", "com.acme.shop.model"),
+    _jfacts("src/main/java/com/acme/shop/model/Line.java", "com.acme.shop.model"),
+    _jfacts("src/main/java/com/acme/shop/util/Strings.java", "com.acme.shop.util"),
+)
+
+
+def jvm(deps: frozenset[str] = frozenset()) -> JvmPackages:
+    return JvmPackages(
+        ModuleContext(files=frozenset(f.path for f in JAVA), facts=JAVA, deps=deps)
+    )
+
+
+def test_a_class_import_names_its_file() -> None:
+    assert jvm().targets("com.acme.shop.model.Order", "x") == (
+        "src/main/java/com/acme/shop/model/Order.java",
+    )
+
+
+def test_a_package_import_names_every_class_in_it() -> None:
+    assert jvm().targets("com.acme.shop.model", "x") == (
+        "src/main/java/com/acme/shop/model/Line.java",
+        "src/main/java/com/acme/shop/model/Order.java",
+    )
+
+
+def test_a_static_or_nested_import_names_the_class_file() -> None:
+    assert jvm().targets("com.acme.shop.util.Strings.trim", "x") == (
+        "src/main/java/com/acme/shop/util/Strings.java",
+    )
+
+
+def test_jvm_external_needs_the_jdk_or_a_declared_group() -> None:
+    r = jvm(frozenset({"org.springframework"}))
+    assert r.is_external("java.util.List")
+    assert r.is_external("org.springframework.web.bind.annotation.GetMapping")
+    assert not r.is_external("org.springframeworkx.Thing")
+    assert not r.is_external("com.acme.missing.Thing")
+    assert not r.is_external("com.acme.shop.model")

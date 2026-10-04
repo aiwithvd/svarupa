@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import re
+import xml.etree.ElementTree as ET
 from collections.abc import Iterator, Mapping
 from dataclasses import replace
 from pathlib import Path
@@ -255,6 +257,78 @@ def _go_mod(text: str) -> tuple[str | None, list[str]]:
     return module, required
 
 
+def _jvm_group(group: str) -> str | None:
+    """A Maven groupId, trimmed to its first two segments.
+
+    `org.springframework.boot` publishes packages under `org.springframework`;
+    the trim is over-inclusive on purpose, the safe direction for the same
+    reason `_norm_dep` gives for Python distribution names. Placeholders like
+    `${project.groupId}` name nothing.
+    """
+    group = group.strip()
+    if not group or "$" in group or "{" in group:
+        return None
+    return ".".join(group.split(".")[:2])
+
+
+def _maven_groups(text: str) -> set[str]:
+    """`dependency/groupId` values from a pom.xml.
+
+    Parsed, never grepped. A pom never needs a DTD or entities, so a document
+    that declares one is refused before parsing: that closes entity-expansion
+    and external-entity attacks without a new dependency.
+    """
+    if "<!DOCTYPE" in text or "<!ENTITY" in text:
+        return set()
+    try:
+        root = ET.fromstring(text)
+    except ET.ParseError:
+        return set()
+    out: set[str] = set()
+    for el in root.iter():
+        if el.tag.rsplit("}", 1)[-1] != "dependency":
+            continue
+        for child in el:
+            if (
+                child.tag.rsplit("}", 1)[-1] == "groupId"
+                and child.text
+                and (g := _jvm_group(child.text)) is not None
+            ):
+                out.add(g)
+    return out
+
+
+# `group:artifact` or `group:artifact:version` inside a quoted string.
+_GRADLE_COORD = re.compile(r"""["']([A-Za-z0-9_.\-]+):([A-Za-z0-9_.\-]+)(?::[^"']*)?["']""")
+
+
+def _gradle_groups(text: str) -> set[str]:
+    """Coordinate strings from a build.gradle(.kts).
+
+    Gradle build files are programs, not data, so only literal coordinate
+    strings are read. Anything computed is missed, which leaves an import
+    unresolved rather than inventing an external one.
+    """
+    return {g for m in _GRADLE_COORD.finditer(text) if (g := _jvm_group(m.group(1)))}
+
+
+def _catalog_groups(text: str) -> set[str]:
+    """`[libraries]` entries of a Gradle version catalog (libs.versions.toml)."""
+    data = load_toml(text)
+    libraries = data.get("libraries") if data else None
+    if not isinstance(libraries, dict):
+        return set()
+    out: set[str] = set()
+    for value in cast("dict[str, object]", libraries).values():
+        coordinate: object = value
+        if isinstance(value, dict):
+            entry = cast("dict[str, object]", value)
+            coordinate = entry.get("module") or entry.get("group")
+        if isinstance(coordinate, str) and (g := _jvm_group(coordinate.split(":")[0])):
+            out.add(g)
+    return out
+
+
 def go_modules(scan: Scan) -> tuple[tuple[str, str], ...]:
     """Map each go.mod `module` path to the directory that declares it."""
     out: dict[str, str] = {}
@@ -336,6 +410,12 @@ def declared_dependencies(scan: Scan) -> frozenset[str]:
 
         elif name == "go.mod":
             names.update(_go_mod(text)[1])
+        elif name == "pom.xml":
+            names.update(_maven_groups(text))
+        elif name in ("build.gradle", "build.gradle.kts"):
+            names.update(_gradle_groups(text))
+        elif name == "libs.versions.toml":
+            names.update(_catalog_groups(text))
 
     return frozenset(names)
 

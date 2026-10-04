@@ -113,6 +113,30 @@ REPOS: dict[str, dict[str, str]] = {
         ),
         "internal/orders/service_test.go": "package orders\n\nfunc TestX() {}\n",
     },
+    "java_shop": {
+        "pom.xml": (
+            "<project><dependencies><dependency><groupId>org.springframework.boot"
+            "</groupId></dependency></dependencies></project>\n"
+        ),
+        "src/main/java/com/acme/shop/App.java": (
+            "package com.acme.shop;\n\n"
+            "import org.springframework.boot.SpringApplication;\n"
+            "import com.acme.shop.service.*;\n\n"
+            "public class App {\n"
+            "    private final OrderService orders = new OrderService();\n"
+            "    public void run() { this.orders.place(); SpringApplication.run(App.class); }\n"
+            "}\n"
+        ),
+        "src/main/java/com/acme/shop/service/OrderService.java": (
+            "package com.acme.shop.service;\n\n"
+            "public class OrderService extends Base {\n"
+            "    public void place() { audit(); }\n"
+            "}\n"
+        ),
+        "src/main/java/com/acme/shop/service/Base.java": (
+            "package com.acme.shop.service;\n\nclass Base {\n    void audit() {}\n}\n"
+        ),
+    },
 }
 
 

@@ -1,0 +1,315 @@
+{
+ "path": "src/main/java/com/acme/shop/OrderController.java",
+ "lang": "java",
+ "symbols": [
+  {
+   "name": "OrderController",
+   "qualified_name": "src.main.java.com.acme.shop.OrderController.OrderController",
+   "kind": "class",
+   "evidence": {
+    "file": "src/main/java/com/acme/shop/OrderController.java",
+    "start_line": 7,
+    "end_line": 29,
+    "rev": null
+   },
+   "enclosing_class": null,
+   "bases": [
+    "BaseController",
+    "Api",
+    "Audited"
+   ],
+   "exported": true,
+   "decorators": [
+    {
+     "name": "RestController",
+     "arg": null,
+     "evidence": {
+      "file": "src/main/java/com/acme/shop/OrderController.java",
+      "start_line": 7,
+      "end_line": 7,
+      "rev": null
+     },
+     "arg_dynamic": false,
+     "methods": null
+    },
+    {
+     "name": "RequestMapping",
+     "arg": "/api",
+     "evidence": {
+      "file": "src/main/java/com/acme/shop/OrderController.java",
+      "start_line": 8,
+      "end_line": 8,
+      "rev": null
+     },
+     "arg_dynamic": false,
+     "methods": null
+    }
+   ]
+  },
+  {
+   "name": "OrderController",
+   "qualified_name": "src.main.java.com.acme.shop.OrderController.OrderController.OrderController",
+   "kind": "method",
+   "evidence": {
+    "file": "src/main/java/com/acme/shop/OrderController.java",
+    "start_line": 13,
+    "end_line": 16,
+    "rev": null
+   },
+   "enclosing_class": "OrderController",
+   "bases": [],
+   "exported": true,
+   "decorators": [
+    {
+     "name": "Autowired",
+     "arg": null,
+     "evidence": {
+      "file": "src/main/java/com/acme/shop/OrderController.java",
+      "start_line": 13,
+      "end_line": 13,
+      "rev": null
+     },
+     "arg_dynamic": false,
+     "methods": null
+    }
+   ]
+  },
+  {
+   "name": "list",
+   "qualified_name": "src.main.java.com.acme.shop.OrderController.OrderController.list",
+   "kind": "method",
+   "evidence": {
+    "file": "src/main/java/com/acme/shop/OrderController.java",
+    "start_line": 18,
+    "end_line": 26,
+    "rev": null
+   },
+   "enclosing_class": "OrderController",
+   "bases": [],
+   "exported": true,
+   "decorators": [
+    {
+     "name": "GetMapping",
+     "arg": null,
+     "evidence": {
+      "file": "src/main/java/com/acme/shop/OrderController.java",
+      "start_line": 18,
+      "end_line": 18,
+      "rev": null
+     },
+     "arg_dynamic": true,
+     "methods": null
+    }
+   ]
+  },
+  {
+   "name": "own",
+   "qualified_name": "src.main.java.com.acme.shop.OrderController.OrderController.own",
+   "kind": "method",
+   "evidence": {
+    "file": "src/main/java/com/acme/shop/OrderController.java",
+    "start_line": 28,
+    "end_line": 28,
+    "rev": null
+   },
+   "enclosing_class": "OrderController",
+   "bases": [],
+   "exported": false,
+   "decorators": []
+  }
+ ],
+ "imports": [
+  {
+   "specifier": "java.util.List",
+   "names": [
+    "List"
+   ],
+   "alias_of": [],
+   "evidence": {
+    "file": "src/main/java/com/acme/shop/OrderController.java",
+    "start_line": 3,
+    "end_line": 3,
+    "rev": null
+   },
+   "is_relative": false,
+   "level": 0,
+   "type_only": false,
+   "is_from": true,
+   "is_reexport": false,
+   "is_star": false
+  },
+  {
+   "specifier": "com.acme.shop.model",
+   "names": [],
+   "alias_of": [],
+   "evidence": {
+    "file": "src/main/java/com/acme/shop/OrderController.java",
+    "start_line": 4,
+    "end_line": 4,
+    "rev": null
+   },
+   "is_relative": false,
+   "level": 0,
+   "type_only": false,
+   "is_from": true,
+   "is_reexport": false,
+   "is_star": true
+  },
+  {
+   "specifier": "com.acme.shop.util.Strings",
+   "names": [
+    "trim"
+   ],
+   "alias_of": [],
+   "evidence": {
+    "file": "src/main/java/com/acme/shop/OrderController.java",
+    "start_line": 5,
+    "end_line": 5,
+    "rev": null
+   },
+   "is_relative": false,
+   "level": 0,
+   "type_only": false,
+   "is_from": true,
+   "is_reexport": false,
+   "is_star": false
+  }
+ ],
+ "calls": [
+  {
+   "name": "trim",
+   "shape": "bare",
+   "receiver": null,
+   "evidence": {
+    "file": "src/main/java/com/acme/shop/OrderController.java",
+    "start_line": 20,
+    "end_line": 20,
+    "rev": null
+   },
+   "enclosing": "src.main.java.com.acme.shop.OrderController.OrderController.list",
+   "enclosing_class": "OrderController",
+   "first_str_arg": "x",
+   "ident_args": [],
+   "first_arg_ident": null,
+   "recv_call": null
+  },
+  {
+   "name": "own",
+   "shape": "self",
+   "receiver": "this",
+   "evidence": {
+    "file": "src/main/java/com/acme/shop/OrderController.java",
+    "start_line": 21,
+    "end_line": 21,
+    "rev": null
+   },
+   "enclosing": "src.main.java.com.acme.shop.OrderController.OrderController.list",
+   "enclosing_class": "OrderController",
+   "first_str_arg": null,
+   "ident_args": [],
+   "first_arg_ident": null,
+   "recv_call": null
+  },
+  {
+   "name": "save",
+   "shape": "qualified",
+   "receiver": "repo",
+   "evidence": {
+    "file": "src/main/java/com/acme/shop/OrderController.java",
+    "start_line": 22,
+    "end_line": 22,
+    "rev": null
+   },
+   "enclosing": "src.main.java.com.acme.shop.OrderController.OrderController.list",
+   "enclosing_class": "OrderController",
+   "first_str_arg": null,
+   "ident_args": [],
+   "first_arg_ident": null,
+   "recv_call": null
+  },
+  {
+   "name": "close",
+   "shape": "super",
+   "receiver": "super",
+   "evidence": {
+    "file": "src/main/java/com/acme/shop/OrderController.java",
+    "start_line": 23,
+    "end_line": 23,
+    "rev": null
+   },
+   "enclosing": "src.main.java.com.acme.shop.OrderController.OrderController.list",
+   "enclosing_class": "OrderController",
+   "first_str_arg": null,
+   "ident_args": [],
+   "first_arg_ident": null,
+   "recv_call": null
+  },
+  {
+   "name": "items",
+   "shape": "member",
+   "receiver": "Order.create()",
+   "evidence": {
+    "file": "src/main/java/com/acme/shop/OrderController.java",
+    "start_line": 24,
+    "end_line": 24,
+    "rev": null
+   },
+   "enclosing": "src.main.java.com.acme.shop.OrderController.OrderController.list",
+   "enclosing_class": "OrderController",
+   "first_str_arg": null,
+   "ident_args": [],
+   "first_arg_ident": null,
+   "recv_call": null
+  },
+  {
+   "name": "create",
+   "shape": "qualified",
+   "receiver": "Order",
+   "evidence": {
+    "file": "src/main/java/com/acme/shop/OrderController.java",
+    "start_line": 24,
+    "end_line": 24,
+    "rev": null
+   },
+   "enclosing": "src.main.java.com.acme.shop.OrderController.OrderController.list",
+   "enclosing_class": "OrderController",
+   "first_str_arg": null,
+   "ident_args": [],
+   "first_arg_ident": null,
+   "recv_call": null
+  },
+  {
+   "name": "findAll",
+   "shape": "self_field",
+   "receiver": "service",
+   "evidence": {
+    "file": "src/main/java/com/acme/shop/OrderController.java",
+    "start_line": 25,
+    "end_line": 25,
+    "rev": null
+   },
+   "enclosing": "src.main.java.com.acme.shop.OrderController.OrderController.list",
+   "enclosing_class": "OrderController",
+   "first_str_arg": null,
+   "ident_args": [],
+   "first_arg_ident": null,
+   "recv_call": null
+  }
+ ],
+ "fields": [
+  {
+   "owner": "OrderController",
+   "field": "service",
+   "type_name": "OrderService"
+  },
+  {
+   "owner": "OrderController",
+   "field": "cache",
+   "type_name": "List"
+  }
+ ],
+ "reexports": [],
+ "diagnostics": [],
+ "ctor_assigns": [],
+ "namespace": "com.acme.shop"
+}

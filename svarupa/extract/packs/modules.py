@@ -15,7 +15,7 @@ from typing import Protocol
 
 from svarupa.extract.base import FileFacts
 
-__all__ = ["GoModules", "ModuleContext", "ModuleResolver"]
+__all__ = ["GoModules", "JvmPackages", "ModuleContext", "ModuleResolver"]
 
 
 class ModuleResolver(Protocol):
@@ -91,3 +91,53 @@ class GoModules:
         if spec == "C" or "." not in spec.split("/", 1)[0]:
             return True
         return any(spec == d or spec.startswith(d + "/") for d in self.deps)
+
+
+# Packages the JDK itself provides.
+_JDK = (
+    "java.",
+    "javax.",
+    "jdk.",
+    "sun.",
+    "com.sun.",
+    "org.w3c.",
+    "org.xml.",
+    "org.ietf.",
+    "org.omg.",
+)
+
+
+class JvmPackages:
+    """Java: files are found by their `package` declaration, not their path.
+
+    `a.b.C` names `C.java` in package `a.b`; a longer name (`a.b.C.member`,
+    `a.b.C.Inner`) still names the file of `C`; a bare package (`a.b`, from
+    `import a.b.*`) names every file in it. Source roots never need guessing,
+    because every file says which package it is in.
+    """
+
+    def __init__(self, context: ModuleContext) -> None:
+        by_ns: dict[str, list[str]] = {}
+        for f in context.facts:
+            if f.lang == "java":
+                by_ns.setdefault(f.namespace, []).append(f.path)
+        self.by_ns = {ns: tuple(sorted(paths)) for ns, paths in by_ns.items()}
+        self.deps = context.deps
+
+    def targets(self, spec: str, _from_file: str, /) -> tuple[str, ...]:
+        parts = spec.split(".")
+        for n in range(len(parts) - 1, 0, -1):
+            package, cls = ".".join(parts[:n]), parts[n]
+            hits = tuple(
+                p for p in self.by_ns.get(package, ()) if p.rsplit("/", 1)[-1] == f"{cls}.java"
+            )
+            if hits:
+                return hits
+        return self.by_ns.get(spec, ())
+
+    def is_external(self, spec: str, /) -> bool:
+        if spec.startswith(_JDK):
+            return True
+        if any(spec == ns or spec.startswith(ns + ".") for ns in self.by_ns if ns):
+            return False  # our own package: a miss here is a resolution failure
+        return any(spec == d or spec.startswith(d + ".") for d in self.deps)

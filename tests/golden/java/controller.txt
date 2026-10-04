@@ -1,0 +1,31 @@
+path: src/main/java/com/acme/shop/OrderController.java
+---
+package com.acme.shop;
+
+import java.util.List;
+import com.acme.shop.model.*;
+import static com.acme.shop.util.Strings.trim;
+
+@RestController
+@RequestMapping("/api")
+public class OrderController extends BaseController implements Api, Audited<Order> {
+    private final OrderService service;
+    private List<Order> cache;
+
+    @Autowired
+    public OrderController(OrderService service) {
+        this.service = service;
+    }
+
+    @GetMapping(PATH)
+    public List<Order> list() {
+        trim("x");
+        own();
+        repo.save();
+        super.close();
+        Order.create().items();
+        return this.service.findAll();
+    }
+
+    private void own() {}
+}

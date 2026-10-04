@@ -33,6 +33,7 @@ dependencies = [
   "tree-sitter-python==0.25.0",
   "tree-sitter-typescript==0.23.2",
   "tree-sitter-go==0.25.0",
+  "tree-sitter-java==0.23.5",
   "networkx>=3.2,<4",
   "PyYAML>=6,<7",
   # MPL-2.0: file-level copyleft; as an unmodified dependency it imposes

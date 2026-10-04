@@ -56,7 +56,7 @@ def load_case(case: Path) -> tuple[str, bytes]:
 
 def test_the_case_set_is_complete() -> None:
     # Guards the parametrized test below against passing vacuously.
-    assert len(CASES) == 15, [c.name for c in CASES]
+    assert len(CASES) == 17, [c.name for c in CASES]
 
 
 @pytest.mark.parametrize("case", CASES, ids=lambda c: f"{c.parent.name}/{c.stem}")

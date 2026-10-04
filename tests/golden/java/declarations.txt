@@ -1,0 +1,23 @@
+path: src/main/java/com/acme/shop/model/Types.java
+---
+package com.acme.shop.model;
+
+public interface Api extends Base, Other {
+    void call();
+}
+
+enum Status { OPEN, CLOSED }
+
+public record Line(int qty) {
+    public int total() { return qty; }
+}
+
+class Outer {
+    static class Inner {
+        void run() { Outer.helper(); }
+    }
+}
+
+class Broken {
+    void m( {
+}
