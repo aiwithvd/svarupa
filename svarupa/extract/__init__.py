@@ -24,6 +24,7 @@ from svarupa.extract.base import (
 )
 from svarupa.extract.compose import extract_compose
 from svarupa.extract.environments import extract_environments
+from svarupa.extract.packs import load_extractors
 from svarupa.extract.python import PythonExtractor
 from svarupa.extract.resolve import Resolver, resolve
 from svarupa.extract.semantics import semantics
@@ -47,11 +48,15 @@ __all__ = [
     "resolve",
 ]
 
+_PACK_EXTRACTORS, _UNAVAILABLE = load_extractors()
+
 _EXTRACTORS: dict[str, Extractor] = {
     "python": PythonExtractor(),
     "typescript": TypeScriptExtractor(),
     # .js/.jsx parse fine with the TypeScript grammar, which is a superset.
     "javascript": TypeScriptExtractor(),
+    # A language served by a pack overrides its hand-written extractor.
+    **_PACK_EXTRACTORS,
 }
 
 GRAMMAR_VERSIONS: dict[str, str] = {
