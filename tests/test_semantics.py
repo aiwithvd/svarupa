@@ -953,9 +953,9 @@ def test_ts_pass1_details_pin_the_reviewers_probes() -> None:
     """Direct pass-1 pins: destructuring never enters ctor_assigns, and
     `export const f = () => {}` keeps its exported flag through the
     declaration hop."""
-    from svarupa.extract.typescript import TypeScriptExtractor
+    from svarupa.extract.packs import extractor
 
-    f = TypeScriptExtractor().parse(
+    f = extractor("typescript").parse(
         "src/a.ts",
         b"export const handler = () => 1;\nconst { get } = app;\n",
     )

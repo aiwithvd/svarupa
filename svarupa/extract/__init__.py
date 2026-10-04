@@ -27,7 +27,6 @@ from svarupa.extract.environments import extract_environments
 from svarupa.extract.packs import load_extractors
 from svarupa.extract.resolve import Resolver, resolve
 from svarupa.extract.semantics import semantics
-from svarupa.extract.typescript import TypeScriptExtractor
 from svarupa.tsconfig import load_aliases
 
 __all__ = [
@@ -48,13 +47,7 @@ __all__ = [
 
 _PACK_EXTRACTORS, _UNAVAILABLE = load_extractors()
 
-_EXTRACTORS: dict[str, Extractor] = {
-    "typescript": TypeScriptExtractor(),
-    # .js/.jsx parse fine with the TypeScript grammar, which is a superset.
-    "javascript": TypeScriptExtractor(),
-    # A language served by a pack overrides its hand-written extractor.
-    **_PACK_EXTRACTORS,
-}
+_EXTRACTORS: dict[str, Extractor] = dict(_PACK_EXTRACTORS)
 
 GRAMMAR_VERSIONS: dict[str, str] = {
     lang: ex.grammar_version for lang, ex in _EXTRACTORS.items()

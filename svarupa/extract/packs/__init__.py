@@ -9,16 +9,21 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from svarupa.extract.packs import python
+from svarupa.extract.packs import python, typescript
 from svarupa.extract.packs.model import Pack
 from svarupa.extract.packs.walker import PackExtractor
 
 __all__ = ["BY_DETECTED", "PACKS", "extractor", "load_extractors"]
 
-PACKS: tuple[Pack, ...] = (python.PACK,)
+PACKS: tuple[Pack, ...] = (python.PACK, typescript.PACK)
 
-# detect.LANG_BY_EXT label -> pack.
-BY_DETECTED: dict[str, Pack] = {"python": python.PACK}
+# detect.LANG_BY_EXT label -> pack. JavaScript rides the TypeScript pack
+# until it gets its own label and grammar choice.
+BY_DETECTED: dict[str, Pack] = {
+    "python": python.PACK,
+    "typescript": typescript.PACK,
+    "javascript": typescript.PACK,
+}
 
 
 def load_extractors(

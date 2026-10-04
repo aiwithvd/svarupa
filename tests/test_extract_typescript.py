@@ -18,7 +18,7 @@ import pytest
 from svarupa.detect import detect
 from svarupa.extract import declared_dependencies, extract
 from svarupa.extract.base import CallShape, node_id
-from svarupa.extract.typescript import TypeScriptExtractor
+from svarupa.extract.packs import extractor
 from svarupa.model import EdgeKind, Resolution
 from svarupa.tsconfig import load_aliases, strip_jsonc
 
@@ -35,7 +35,7 @@ def run(root: Path):
 
 
 def facts(src: str, path: str = "src/mod.ts"):
-    return TypeScriptExtractor().parse(path, src.encode())
+    return extractor("typescript").parse(path, src.encode())
 
 
 # --------------------------------------------------------------------------
@@ -370,7 +370,7 @@ def test_javascript_files_use_the_typescript_grammar(tmp_path: Path) -> None:
 def test_grammar_version_matches_the_installed_pin() -> None:
     from importlib.metadata import version
 
-    assert TypeScriptExtractor.grammar_version == version("tree-sitter-typescript")
+    assert extractor("typescript").grammar_version == version("tree-sitter-typescript")
 
 
 # --------------------------------------------------------------------------
