@@ -77,3 +77,50 @@ def test_a_qualified_call_finds_its_target_in_any_file_of_the_package() -> None:
 def test_languages_without_a_resolver_are_untouched() -> None:
     r = Resolver(facts(), modules={})
     assert r.resolve_module("pkg", "app/main.toy", 0, "toy") is None
+
+
+from svarupa.extract.packs.modules import GoModules, ModuleContext  # noqa: E402
+
+GO_FILES = frozenset(
+    {
+        "go.mod",
+        "cmd/api/main.go",
+        "internal/orders/service.go",
+        "internal/orders/repo.go",
+        "internal/orders/service_test.go",
+        "tools/gen/gen.go",
+    }
+)
+
+
+def go(modules: tuple[tuple[str, str], ...], deps: frozenset[str] = frozenset()) -> GoModules:
+    return GoModules(ModuleContext(files=GO_FILES, facts=(), deps=deps, go_modules=modules))
+
+
+def test_package_imports_skip_test_files() -> None:
+    r = go((("github.com/acme/shop", ""),))
+    assert r.targets("github.com/acme/shop/internal/orders", "cmd/api/main.go") == (
+        "internal/orders/repo.go",
+        "internal/orders/service.go",
+    )
+
+
+def test_the_longest_module_path_wins() -> None:
+    r = go((("github.com/acme/shop", ""), ("github.com/acme/shop/tools", "tools")))
+    assert r.targets("github.com/acme/shop/tools/gen", "x.go") == ("tools/gen/gen.go",)
+
+
+def test_standard_library_and_required_modules_are_external() -> None:
+    r = go((("github.com/acme/shop", ""),), frozenset({"github.com/gin-gonic/gin"}))
+    assert r.is_external("net/http")
+    assert r.is_external("github.com/gin-gonic/gin")
+    assert r.is_external("github.com/gin-gonic/gin/binding")
+    assert not r.is_external("github.com/gin-gonic/ginx")
+    assert not r.is_external("github.com/other/lib")
+
+
+def test_a_dotless_module_path_is_never_standard_library() -> None:
+    r = go((("shop", ""),))
+    assert r.targets("shop/nowhere", "cmd/api/main.go") == ()
+    assert not r.is_external("shop/nowhere")
+    assert r.is_external("fmt")

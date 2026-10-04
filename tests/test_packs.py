@@ -63,7 +63,7 @@ def test_every_detected_language_has_a_pack_or_a_reason() -> None:
     detected = set(LANG_BY_EXT.values())
     unanalyzed = detected - set(BY_DETECTED) - ANALYZED_ELSEWHERE
     # These are reported as SVA-X-012. The list shrinks as packs land.
-    assert unanalyzed == {"go", "rust", "java"}
+    assert unanalyzed == {"rust", "java"}
 
 
 def test_all_shipped_packs_load() -> None:

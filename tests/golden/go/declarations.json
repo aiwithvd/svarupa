@@ -1,0 +1,132 @@
+{
+ "path": "internal/orders/service.go",
+ "lang": "go",
+ "symbols": [
+  {
+   "name": "Service",
+   "qualified_name": "internal.orders.service.Service",
+   "kind": "class",
+   "evidence": {
+    "file": "internal/orders/service.go",
+    "start_line": 3,
+    "end_line": 5,
+    "rev": null
+   },
+   "enclosing_class": null,
+   "bases": [],
+   "exported": true,
+   "decorators": []
+  },
+  {
+   "name": "Store",
+   "qualified_name": "internal.orders.service.Store",
+   "kind": "interface",
+   "evidence": {
+    "file": "internal/orders/service.go",
+    "start_line": 7,
+    "end_line": 9,
+    "rev": null
+   },
+   "enclosing_class": null,
+   "bases": [],
+   "exported": true,
+   "decorators": []
+  },
+  {
+   "name": "NewService",
+   "qualified_name": "internal.orders.service.NewService",
+   "kind": "function",
+   "evidence": {
+    "file": "internal/orders/service.go",
+    "start_line": 13,
+    "end_line": 15,
+    "rev": null
+   },
+   "enclosing_class": null,
+   "bases": [],
+   "exported": true,
+   "decorators": []
+  },
+  {
+   "name": "Place",
+   "qualified_name": "internal.orders.service.Service.Place",
+   "kind": "method",
+   "evidence": {
+    "file": "internal/orders/service.go",
+    "start_line": 17,
+    "end_line": 20,
+    "rev": null
+   },
+   "enclosing_class": "Service",
+   "bases": [],
+   "exported": true,
+   "decorators": []
+  },
+  {
+   "name": "save",
+   "qualified_name": "internal.orders.service.Repo.save",
+   "kind": "method",
+   "evidence": {
+    "file": "internal/orders/service.go",
+    "start_line": 22,
+    "end_line": 22,
+    "rev": null
+   },
+   "enclosing_class": "Repo",
+   "bases": [],
+   "exported": false,
+   "decorators": []
+  }
+ ],
+ "imports": [],
+ "calls": [
+  {
+   "name": "notify",
+   "shape": "bare",
+   "receiver": null,
+   "evidence": {
+    "file": "internal/orders/service.go",
+    "start_line": 18,
+    "end_line": 18,
+    "rev": null
+   },
+   "enclosing": "internal.orders.service.Service.Place",
+   "enclosing_class": "Service",
+   "first_str_arg": null,
+   "ident_args": [],
+   "first_arg_ident": null,
+   "recv_call": null
+  },
+  {
+   "name": "Save",
+   "shape": "member",
+   "receiver": "s.repo",
+   "evidence": {
+    "file": "internal/orders/service.go",
+    "start_line": 19,
+    "end_line": 19,
+    "rev": null
+   },
+   "enclosing": "internal.orders.service.Service.Place",
+   "enclosing_class": "Service",
+   "first_str_arg": null,
+   "ident_args": [],
+   "first_arg_ident": null,
+   "recv_call": null
+  }
+ ],
+ "fields": [],
+ "reexports": [],
+ "diagnostics": [
+  {
+   "code": "SVA-X-001",
+   "severity": "WARNING",
+   "message": "file has syntax errors; extraction continues over the parseable regions and may be incomplete",
+   "subject": "internal/orders/service.go",
+   "location": null,
+   "suggested_fixes": []
+  }
+ ],
+ "ctor_assigns": [],
+ "namespace": ""
+}

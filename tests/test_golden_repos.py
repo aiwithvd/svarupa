@@ -94,6 +94,25 @@ REPOS: dict[str, dict[str, str]] = {
         "src/util/log.ts": "export function log(m: string) { console.log(m); }\n",
         "src/legacy.js": "const { log } = require('./util/log');\nlog('x');\n",
     },
+    "go_shop": {
+        "go.mod": (
+            "module github.com/acme/shop\n\ngo 1.22\n\n"
+            "require (\n\tgithub.com/gin-gonic/gin v1.9.1\n)\n"
+        ),
+        "cmd/api/main.go": (
+            'package main\n\nimport (\n\t"fmt"\n\t"github.com/gin-gonic/gin"\n'
+            '\t"github.com/acme/shop/internal/orders"\n)\n\n'
+            "func main() {\n\tr := gin.Default()\n\tfmt.Println(orders.NewService(), r)\n}\n"
+        ),
+        "internal/orders/service.go": (
+            "package orders\n\ntype Service struct{}\n\n"
+            "func NewService() *Service {\n\treturn newRepo().wrap()\n}\n"
+        ),
+        "internal/orders/repo.go": (
+            "package orders\n\ntype Repo struct{}\n\nfunc newRepo() *Repo { return &Repo{} }\n"
+        ),
+        "internal/orders/service_test.go": "package orders\n\nfunc TestX() {}\n",
+    },
 }
 
 

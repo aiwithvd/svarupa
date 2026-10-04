@@ -1,0 +1,310 @@
+{
+ "path": "cmd/api/main.go",
+ "lang": "go",
+ "symbols": [
+  {
+   "name": "main",
+   "qualified_name": "cmd.api.main.main",
+   "kind": "function",
+   "evidence": {
+    "file": "cmd/api/main.go",
+    "start_line": 14,
+    "end_line": 19,
+    "rev": null
+   },
+   "enclosing_class": null,
+   "bases": [],
+   "exported": false,
+   "decorators": []
+  }
+ ],
+ "imports": [
+  {
+   "specifier": "fmt",
+   "names": [],
+   "alias_of": [
+    [
+     "fmt",
+     "fmt"
+    ]
+   ],
+   "evidence": {
+    "file": "cmd/api/main.go",
+    "start_line": 4,
+    "end_line": 4,
+    "rev": null
+   },
+   "is_relative": false,
+   "level": 0,
+   "type_only": false,
+   "is_from": true,
+   "is_reexport": false,
+   "is_star": false
+  },
+  {
+   "specifier": "github.com/acme/shop/internal/db",
+   "names": [],
+   "alias_of": [
+    [
+     "db",
+     "github.com/acme/shop/internal/db"
+    ]
+   ],
+   "evidence": {
+    "file": "cmd/api/main.go",
+    "start_line": 5,
+    "end_line": 5,
+    "rev": null
+   },
+   "is_relative": false,
+   "level": 0,
+   "type_only": false,
+   "is_from": true,
+   "is_reexport": false,
+   "is_star": false
+  },
+  {
+   "specifier": "net/http/pprof",
+   "names": [],
+   "alias_of": [],
+   "evidence": {
+    "file": "cmd/api/main.go",
+    "start_line": 6,
+    "end_line": 6,
+    "rev": null
+   },
+   "is_relative": false,
+   "level": 0,
+   "type_only": false,
+   "is_from": true,
+   "is_reexport": false,
+   "is_star": false
+  },
+  {
+   "specifier": "github.com/acme/shop/internal/util",
+   "names": [],
+   "alias_of": [],
+   "evidence": {
+    "file": "cmd/api/main.go",
+    "start_line": 7,
+    "end_line": 7,
+    "rev": null
+   },
+   "is_relative": false,
+   "level": 0,
+   "type_only": false,
+   "is_from": true,
+   "is_reexport": false,
+   "is_star": false
+  },
+  {
+   "specifier": "gopkg.in/yaml.v3",
+   "names": [],
+   "alias_of": [
+    [
+     "yaml",
+     "gopkg.in/yaml.v3"
+    ]
+   ],
+   "evidence": {
+    "file": "cmd/api/main.go",
+    "start_line": 8,
+    "end_line": 8,
+    "rev": null
+   },
+   "is_relative": false,
+   "level": 0,
+   "type_only": false,
+   "is_from": true,
+   "is_reexport": false,
+   "is_star": false
+  },
+  {
+   "specifier": "github.com/acme/shop/v2",
+   "names": [],
+   "alias_of": [
+    [
+     "shop",
+     "github.com/acme/shop/v2"
+    ]
+   ],
+   "evidence": {
+    "file": "cmd/api/main.go",
+    "start_line": 9,
+    "end_line": 9,
+    "rev": null
+   },
+   "is_relative": false,
+   "level": 0,
+   "type_only": false,
+   "is_from": true,
+   "is_reexport": false,
+   "is_star": false
+  },
+  {
+   "specifier": "os",
+   "names": [],
+   "alias_of": [
+    [
+     "os",
+     "os"
+    ]
+   ],
+   "evidence": {
+    "file": "cmd/api/main.go",
+    "start_line": 12,
+    "end_line": 12,
+    "rev": null
+   },
+   "is_relative": false,
+   "level": 0,
+   "type_only": false,
+   "is_from": true,
+   "is_reexport": false,
+   "is_star": false
+  }
+ ],
+ "calls": [
+  {
+   "name": "Println",
+   "shape": "qualified",
+   "receiver": "fmt",
+   "evidence": {
+    "file": "cmd/api/main.go",
+    "start_line": 15,
+    "end_line": 15,
+    "rev": null
+   },
+   "enclosing": "cmd.api.main.main",
+   "enclosing_class": null,
+   "first_str_arg": null,
+   "ident_args": [],
+   "first_arg_ident": null,
+   "recv_call": null
+  },
+  {
+   "name": "Open",
+   "shape": "qualified",
+   "receiver": "db",
+   "evidence": {
+    "file": "cmd/api/main.go",
+    "start_line": 15,
+    "end_line": 15,
+    "rev": null
+   },
+   "enclosing": "cmd.api.main.main",
+   "enclosing_class": null,
+   "first_str_arg": null,
+   "ident_args": [],
+   "first_arg_ident": null,
+   "recv_call": null
+  },
+  {
+   "name": "Marshal",
+   "shape": "qualified",
+   "receiver": "yaml",
+   "evidence": {
+    "file": "cmd/api/main.go",
+    "start_line": 15,
+    "end_line": 15,
+    "rev": null
+   },
+   "enclosing": "cmd.api.main.main",
+   "enclosing_class": null,
+   "first_str_arg": null,
+   "ident_args": [],
+   "first_arg_ident": null,
+   "recv_call": null
+  },
+  {
+   "name": "Run",
+   "shape": "qualified",
+   "receiver": "shop",
+   "evidence": {
+    "file": "cmd/api/main.go",
+    "start_line": 15,
+    "end_line": 15,
+    "rev": null
+   },
+   "enclosing": "cmd.api.main.main",
+   "enclosing_class": null,
+   "first_str_arg": null,
+   "ident_args": [],
+   "first_arg_ident": null,
+   "recv_call": null
+  },
+  {
+   "name": "Exit",
+   "shape": "qualified",
+   "receiver": "os",
+   "evidence": {
+    "file": "cmd/api/main.go",
+    "start_line": 16,
+    "end_line": 16,
+    "rev": null
+   },
+   "enclosing": "cmd.api.main.main",
+   "enclosing_class": null,
+   "first_str_arg": null,
+   "ident_args": [],
+   "first_arg_ident": null,
+   "recv_call": null
+  },
+  {
+   "name": "helper",
+   "shape": "bare",
+   "receiver": null,
+   "evidence": {
+    "file": "cmd/api/main.go",
+    "start_line": 17,
+    "end_line": 17,
+    "rev": null
+   },
+   "enclosing": "cmd.api.main.main",
+   "enclosing_class": null,
+   "first_str_arg": "raw",
+   "ident_args": [],
+   "first_arg_ident": null,
+   "recv_call": null
+  },
+  {
+   "name": "Get",
+   "shape": "member",
+   "receiver": "conn.Pool()",
+   "evidence": {
+    "file": "cmd/api/main.go",
+    "start_line": 18,
+    "end_line": 18,
+    "rev": null
+   },
+   "enclosing": "cmd.api.main.main",
+   "enclosing_class": null,
+   "first_str_arg": null,
+   "ident_args": [],
+   "first_arg_ident": null,
+   "recv_call": null
+  },
+  {
+   "name": "Pool",
+   "shape": "qualified",
+   "receiver": "conn",
+   "evidence": {
+    "file": "cmd/api/main.go",
+    "start_line": 18,
+    "end_line": 18,
+    "rev": null
+   },
+   "enclosing": "cmd.api.main.main",
+   "enclosing_class": null,
+   "first_str_arg": null,
+   "ident_args": [],
+   "first_arg_ident": null,
+   "recv_call": null
+  }
+ ],
+ "fields": [],
+ "reexports": [],
+ "diagnostics": [],
+ "ctor_assigns": [],
+ "namespace": ""
+}

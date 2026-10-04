@@ -225,9 +225,50 @@ def workspace_packages(scan: Scan) -> tuple[tuple[str, str], ...]:
     return tuple(sorted(out.items()))
 
 
-def go_modules(_scan: Scan) -> tuple[tuple[str, str], ...]:
+def _go_mod(text: str) -> tuple[str | None, list[str]]:
+    """The `module` path and the `require`d module paths of a go.mod.
+
+    go.mod is a line format by specification (like requirements.txt), so it
+    is read line by line; `//` starts a comment.
+    """
+    module: str | None = None
+    required: list[str] = []
+    in_block = False
+    for raw in text.splitlines():
+        line = raw.split("//", 1)[0].strip()
+        if not line:
+            continue
+        if in_block:
+            if line == ")":
+                in_block = False
+            else:
+                required.append(line.split()[0])
+            continue
+        words = line.split()
+        if words[0] == "module" and len(words) > 1:
+            module = words[1].strip('"')
+        elif words[0] == "require" and len(words) > 1:
+            if words[1] == "(":
+                in_block = True
+            else:
+                required.append(words[1])
+    return module, required
+
+
+def go_modules(scan: Scan) -> tuple[tuple[str, str], ...]:
     """Map each go.mod `module` path to the directory that declares it."""
-    return ()
+    out: dict[str, str] = {}
+    for rec in scan.files:
+        if Path(rec.path).name != "go.mod":
+            continue
+        try:
+            module, _ = _go_mod(read_text(scan.root, rec.path))
+        except OSError:
+            continue
+        if module:
+            holder = str(Path(rec.path).parent)
+            out.setdefault(module, "" if holder == "." else holder)
+    return tuple(sorted(out.items()))
 
 
 def _norm_dep(raw: str) -> str | None:
@@ -292,6 +333,9 @@ def declared_dependencies(scan: Scan) -> frozenset[str]:
                 block: object = pkg.get(key)
                 if isinstance(block, dict):
                     names.update(str(k) for k in cast("dict[str, object]", block))
+
+        elif name == "go.mod":
+            names.update(_go_mod(text)[1])
 
     return frozenset(names)
 

@@ -1,0 +1,317 @@
+{
+ "nodes": [
+  {
+   "id": "cmd/api/main.go",
+   "kind": "module",
+   "label": "main.go",
+   "qualified_name": "cmd/api/main.go",
+   "evidence": [
+    {
+     "file": "cmd/api/main.go",
+     "start_line": 1,
+     "end_line": 1,
+     "rev": null
+    }
+   ],
+   "lang": "go",
+   "attrs": [],
+   "producer": "go.module"
+  },
+  {
+   "id": "cmd/api/main.go#cmd.api.main.main",
+   "kind": "function",
+   "label": "main",
+   "qualified_name": "cmd.api.main.main",
+   "evidence": [
+    {
+     "file": "cmd/api/main.go",
+     "start_line": 9,
+     "end_line": 12,
+     "rev": null
+    }
+   ],
+   "lang": "go",
+   "attrs": [
+    [
+     "exported",
+     "false"
+    ]
+   ],
+   "producer": "go.symbols"
+  },
+  {
+   "id": "internal/orders/repo.go",
+   "kind": "module",
+   "label": "repo.go",
+   "qualified_name": "internal/orders/repo.go",
+   "evidence": [
+    {
+     "file": "internal/orders/repo.go",
+     "start_line": 1,
+     "end_line": 1,
+     "rev": null
+    }
+   ],
+   "lang": "go",
+   "attrs": [],
+   "producer": "go.module"
+  },
+  {
+   "id": "internal/orders/repo.go#internal.orders.repo.Repo",
+   "kind": "class",
+   "label": "Repo",
+   "qualified_name": "internal.orders.repo.Repo",
+   "evidence": [
+    {
+     "file": "internal/orders/repo.go",
+     "start_line": 3,
+     "end_line": 3,
+     "rev": null
+    }
+   ],
+   "lang": "go",
+   "attrs": [
+    [
+     "exported",
+     "true"
+    ]
+   ],
+   "producer": "go.symbols"
+  },
+  {
+   "id": "internal/orders/repo.go#internal.orders.repo.newRepo",
+   "kind": "function",
+   "label": "newRepo",
+   "qualified_name": "internal.orders.repo.newRepo",
+   "evidence": [
+    {
+     "file": "internal/orders/repo.go",
+     "start_line": 5,
+     "end_line": 5,
+     "rev": null
+    }
+   ],
+   "lang": "go",
+   "attrs": [
+    [
+     "exported",
+     "false"
+    ]
+   ],
+   "producer": "go.symbols"
+  },
+  {
+   "id": "internal/orders/service.go",
+   "kind": "module",
+   "label": "service.go",
+   "qualified_name": "internal/orders/service.go",
+   "evidence": [
+    {
+     "file": "internal/orders/service.go",
+     "start_line": 1,
+     "end_line": 1,
+     "rev": null
+    }
+   ],
+   "lang": "go",
+   "attrs": [],
+   "producer": "go.module"
+  },
+  {
+   "id": "internal/orders/service.go#internal.orders.service.NewService",
+   "kind": "function",
+   "label": "NewService",
+   "qualified_name": "internal.orders.service.NewService",
+   "evidence": [
+    {
+     "file": "internal/orders/service.go",
+     "start_line": 5,
+     "end_line": 7,
+     "rev": null
+    }
+   ],
+   "lang": "go",
+   "attrs": [
+    [
+     "exported",
+     "true"
+    ]
+   ],
+   "producer": "go.symbols"
+  },
+  {
+   "id": "internal/orders/service.go#internal.orders.service.Service",
+   "kind": "class",
+   "label": "Service",
+   "qualified_name": "internal.orders.service.Service",
+   "evidence": [
+    {
+     "file": "internal/orders/service.go",
+     "start_line": 3,
+     "end_line": 3,
+     "rev": null
+    }
+   ],
+   "lang": "go",
+   "attrs": [
+    [
+     "exported",
+     "true"
+    ]
+   ],
+   "producer": "go.symbols"
+  },
+  {
+   "id": "internal/orders/service_test.go",
+   "kind": "module",
+   "label": "service_test.go",
+   "qualified_name": "internal/orders/service_test.go",
+   "evidence": [
+    {
+     "file": "internal/orders/service_test.go",
+     "start_line": 1,
+     "end_line": 1,
+     "rev": null
+    }
+   ],
+   "lang": "go",
+   "attrs": [],
+   "producer": "go.module"
+  },
+  {
+   "id": "internal/orders/service_test.go#internal.orders.service_test.TestX",
+   "kind": "function",
+   "label": "TestX",
+   "qualified_name": "internal.orders.service_test.TestX",
+   "evidence": [
+    {
+     "file": "internal/orders/service_test.go",
+     "start_line": 3,
+     "end_line": 3,
+     "rev": null
+    }
+   ],
+   "lang": "go",
+   "attrs": [
+    [
+     "exported",
+     "true"
+    ]
+   ],
+   "producer": "go.symbols"
+  }
+ ],
+ "edges": [
+  {
+   "src": "cmd/api/main.go",
+   "dst": "internal/orders/repo.go",
+   "kind": "imports",
+   "evidence": [
+    {
+     "file": "cmd/api/main.go",
+     "start_line": 6,
+     "end_line": 6,
+     "rev": null
+    }
+   ],
+   "confidence": "RESOLVED",
+   "resolution": "resolved",
+   "arity": 1,
+   "attrs": [],
+   "producer": "go.imports"
+  },
+  {
+   "src": "cmd/api/main.go",
+   "dst": "internal/orders/service.go",
+   "kind": "imports",
+   "evidence": [
+    {
+     "file": "cmd/api/main.go",
+     "start_line": 6,
+     "end_line": 6,
+     "rev": null
+    }
+   ],
+   "confidence": "RESOLVED",
+   "resolution": "resolved",
+   "arity": 1,
+   "attrs": [],
+   "producer": "go.imports"
+  },
+  {
+   "src": "cmd/api/main.go#cmd.api.main.main",
+   "dst": "internal/orders/service.go#internal.orders.service.NewService",
+   "kind": "calls",
+   "evidence": [
+    {
+     "file": "cmd/api/main.go",
+     "start_line": 11,
+     "end_line": 11,
+     "rev": null
+    }
+   ],
+   "confidence": "RESOLVED",
+   "resolution": "resolved",
+   "arity": 1,
+   "attrs": [
+    [
+     "shape",
+     "qualified"
+    ]
+   ],
+   "producer": "go.calls"
+  },
+  {
+   "src": "internal/orders/service.go#internal.orders.service.NewService",
+   "dst": "internal/orders/repo.go#internal.orders.repo.newRepo",
+   "kind": "calls",
+   "evidence": [
+    {
+     "file": "internal/orders/service.go",
+     "start_line": 6,
+     "end_line": 6,
+     "rev": null
+    }
+   ],
+   "confidence": "RESOLVED",
+   "resolution": "resolved",
+   "arity": 1,
+   "attrs": [
+    [
+     "shape",
+     "bare"
+    ]
+   ],
+   "producer": "go.calls"
+  }
+ ],
+ "scorecard": {
+  "measures": "the share of intra-repository references pinned to a target, not whether the target is correct; a wrong edge counts as resolved",
+  "rows": [
+   {
+    "lang": "go",
+    "kind": "calls",
+    "resolved": 2,
+    "candidate": 0,
+    "external": 2,
+    "unresolved": 1,
+    "pinned_pct": 66.67
+   },
+   {
+    "lang": "go",
+    "kind": "imports",
+    "resolved": 1,
+    "candidate": 0,
+    "external": 2,
+    "unresolved": 0,
+    "pinned_pct": 100.0
+   }
+  ],
+  "unresolved_samples": {
+   "go/calls": [
+    "member:newRepo().wrap"
+   ]
+  }
+ },
+ "diagnostics": []
+}

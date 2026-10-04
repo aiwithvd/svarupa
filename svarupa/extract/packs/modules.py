@@ -15,7 +15,7 @@ from typing import Protocol
 
 from svarupa.extract.base import FileFacts
 
-__all__ = ["ModuleContext", "ModuleResolver"]
+__all__ = ["GoModules", "ModuleContext", "ModuleResolver"]
 
 
 class ModuleResolver(Protocol):
@@ -37,3 +37,57 @@ class ModuleContext:
     facts: tuple[FileFacts, ...]
     deps: frozenset[str]
     go_modules: tuple[tuple[str, str], ...] = ()  # (module path, directory)
+
+
+class GoModules:
+    """Go: an import path names a package, which is a directory.
+
+    `<module path>/<dir>` resolves to that directory's non-test `.go` files,
+    using every go.mod in the repository (longest module path first, so a
+    nested module wins over its parent). The standard library is any path
+    whose first element has no dot: that is the Go toolchain's own rule.
+    """
+
+    def __init__(self, context: ModuleContext) -> None:
+        self.modules = tuple(sorted(context.go_modules, key=lambda m: (-len(m[0]), m[0])))
+        self.deps = context.deps
+        by_dir: dict[str, list[str]] = {}
+        for path in context.files:
+            if path.endswith(".go") and not path.endswith("_test.go"):
+                directory = path.rsplit("/", 1)[0] if "/" in path else ""
+                by_dir.setdefault(directory, []).append(path)
+        self.by_dir = {d: tuple(sorted(v)) for d, v in by_dir.items()}
+
+    def _module_of(self, spec: str) -> tuple[str, str] | None:
+        for path, directory in self.modules:
+            if spec == path or spec.startswith(path + "/"):
+                return path, directory
+        return None
+
+    def targets(self, spec: str, from_file: str, /) -> tuple[str, ...]:
+        if spec.startswith(("./", "../")):
+            cur = from_file.split("/")[:-1]
+            for part in spec.split("/"):
+                if part in ("", "."):
+                    continue
+                if part == "..":
+                    cur = cur[:-1]
+                else:
+                    cur.append(part)
+            return self.by_dir.get("/".join(cur), ())
+        hit = self._module_of(spec)
+        if hit is None:
+            return ()
+        path, directory = hit
+        rest = spec[len(path) :].strip("/")
+        return self.by_dir.get("/".join(p for p in (directory, rest) if p), ())
+
+    def is_external(self, spec: str, /) -> bool:
+        # A module of this repository is never external, even when its path
+        # has no dot (`module shop`), or a broken intra-repo import would be
+        # filed under the standard library.
+        if self._module_of(spec) is not None:
+            return False
+        if spec == "C" or "." not in spec.split("/", 1)[0]:
+            return True
+        return any(spec == d or spec.startswith(d + "/") for d in self.deps)
