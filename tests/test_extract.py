@@ -801,3 +801,14 @@ def test_a_repository_of_packed_languages_gets_no_x012(tmp_path: Path) -> None:
     write(tmp_path, "db/schema.sql", "create table t (id int);\n")
     result = run(tmp_path)
     assert not [d for d in result.diagnostics if d.code == "SVA-X-012"]
+
+
+@pytest.mark.parametrize("stmt", ["from app import crud", "from . import crud"])
+def test_a_call_through_an_imported_submodule_resolves(tmp_path: Path, stmt: str) -> None:
+    write(tmp_path, "app/__init__.py", "")
+    write(tmp_path, "app/crud.py", "def create_user():\n    return 1\n")
+    write(
+        tmp_path, "app/routes.py", f"{stmt}\n\n\ndef make():\n    return crud.create_user()\n"
+    )
+    calls = {(e.src, e.dst) for e in run(tmp_path).edges if e.kind is EdgeKind.CALLS}
+    assert ("app/routes.py#app.routes.make", "app/crud.py#app.crud.create_user") in calls

@@ -212,7 +212,7 @@ PACK = Pack(
         module="tree_sitter_java",
         default="language",
     ),
-    maturity=Maturity.EXPERIMENTAL,
+    maturity=Maturity.STABLE,
     rules={
         "package_declaration": Custom(hook=package_declaration),
         "import_declaration": Import(hook=import_),

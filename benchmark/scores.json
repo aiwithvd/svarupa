@@ -66,20 +66,14 @@
   "expected": "337f2100dc737cc8"
  },
  "fastapi-template": {
-  "recall": 0.9062,
-  "found": 29,
+  "recall": 1.0,
+  "found": 32,
   "total": 32,
-  "missed": [
-   "call:backend/app/api/routes/login.py -> backend/app/crud.py#authenticate",
-   "call:backend/app/api/routes/users.py -> backend/app/crud.py#create_user",
-   "call:backend/app/core/db.py -> backend/app/crud.py#create_user"
-  ],
-  "fired": [
-   "record:module\tbackend/app/alembic/versions"
-  ],
+  "missed": [],
+  "fired": [],
   "by_kind": {
    "call": [
-    2,
+    5,
     5
    ],
    "datastore": [
@@ -106,18 +100,14 @@
   "expected": "f2e51805af3d9b12"
  },
  "gin-realworld": {
-  "recall": 0.9474,
-  "found": 18,
+  "recall": 1.0,
+  "found": 19,
   "total": 19,
-  "missed": [
-   "call:articles/routers.go -> articles/models.go#SaveOne"
-  ],
-  "fired": [
-   "call:articles/routers.go -> users/models.go#SaveOne"
-  ],
+  "missed": [],
+  "fired": [],
   "by_kind": {
    "call": [
-    8,
+    9,
     9
    ],
    "dep": [
@@ -284,21 +274,14 @@
   "expected": "e13a204293e1e4eb"
  },
  "spring-realworld": {
-  "recall": 0.8065,
-  "found": 25,
+  "recall": 1.0,
+  "found": 31,
   "total": 31,
-  "missed": [
-   "call:src/main/java/io/spring/api/ArticlesApi.java -> src/main/java/io/spring/application/article/ArticleCommandService.java#createArticle",
-   "call:src/main/java/io/spring/api/CommentsApi.java -> src/main/java/io/spring/core/article/ArticleRepository.java#findBySlug",
-   "call:src/main/java/io/spring/api/TagsApi.java -> src/main/java/io/spring/application/TagsQueryService.java#allTags",
-   "call:src/main/java/io/spring/api/UsersApi.java -> src/main/java/io/spring/application/user/UserService.java#createUser",
-   "call:src/main/java/io/spring/application/TagsQueryService.java -> src/main/java/io/spring/infrastructure/mybatis/readservice/TagReadService.java#all",
-   "call:src/main/java/io/spring/infrastructure/repository/MyBatisArticleRepository.java -> src/main/java/io/spring/infrastructure/mybatis/mapper/ArticleMapper.java#findById"
-  ],
+  "missed": [],
   "fired": [],
   "by_kind": {
    "call": [
-    3,
+    9,
     9
    ],
    "dep": [

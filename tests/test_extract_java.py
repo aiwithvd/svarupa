@@ -241,3 +241,23 @@ def test_a_class_import_does_not_make_a_same_named_method_call_bare() -> None:
         "A.java", b"import a.b.Order;\nclass A { void Order() {} void m() { Order(); } }\n"
     )
     assert [(c.name, c.shape) for c in f.calls] == [("Order", CallShape.SELF)]
+
+
+def test_a_field_call_without_this_resolves_through_the_field_type(tmp_path: Path) -> None:
+    write(
+        tmp_path,
+        "src/a/Api.java",
+        "package a;\nimport b.Service;\n"
+        "public class Api {\n  private final Service service;\n"
+        "  public void list() { service.all(); }\n}\n",
+    )
+    write(
+        tmp_path,
+        "src/b/Service.java",
+        "package b;\npublic class Service {\n  public void all() {}\n}\n",
+    )
+    calls = {(e.src, e.dst) for e in run(tmp_path).edges if e.kind is EdgeKind.CALLS}
+    assert (
+        "src/a/Api.java#src.a.Api.Api.list",
+        "src/b/Service.java#src.b.Service.Service.all",
+    ) in calls

@@ -22,6 +22,12 @@ class ModuleResolver(Protocol):
     # True when `pkg.Name` can only name a top-level definition (Go); False
     # when it may name a class member (Java static imports).
     top_level_only: bool
+    # True when a bare name can only mean a definition in the caller's own
+    # package directory (Go).
+    package_scoped_bare: bool
+    # True when `field.m()` without `this.` is a call on the class's field
+    # (Java); languages that require `this.` leave it False.
+    fields_without_this: bool
 
     def targets(self, spec: str, from_file: str, /) -> tuple[str, ...]:
         """Repository files the specifier names, sorted; () when none."""
@@ -53,6 +59,8 @@ class GoModules:
     """
 
     top_level_only = True
+    package_scoped_bare = True
+    fields_without_this = False
 
     def __init__(self, context: ModuleContext) -> None:
         self.modules = tuple(sorted(context.go_modules, key=lambda m: (-len(m[0]), m[0])))
@@ -123,6 +131,8 @@ class JvmPackages:
     """
 
     top_level_only = False
+    package_scoped_bare = False
+    fields_without_this = True
 
     def __init__(self, context: ModuleContext) -> None:
         by_ns: dict[str, list[str]] = {}

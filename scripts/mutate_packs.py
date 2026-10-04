@@ -36,6 +36,7 @@ SUITE = [
     "tests/test_extract_go.py",
     "tests/test_extract_java.py",
     "tests/test_golden_repos.py",
+    "tests/test_detect.py",
 ]
 
 MUTATIONS: list[tuple[str, str, str, str]] = [
@@ -110,6 +111,30 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
         "svarupa/extract/__init__.py",
         '    if not group or "$" in group or "{" in group:\n        return None\n',
         "    if not group:\n        return None\n",
+    ),
+    (
+        "alembic migrations count as architecture again",
+        "svarupa/detect.py",
+        '    if lang == "python" and _is_alembic_migration(data):\n        return FileRole.GENERATED\n',
+        "",
+    ),
+    (
+        "go bare calls match other packages again",
+        "svarupa/extract/resolve.py",
+        "            if module is not None and module.package_scoped_bare:",
+        "            if False:",
+    ),
+    (
+        "python calls through an imported submodule stay unresolved",
+        "svarupa/extract/resolve.py",
+        '                if found == [] and f.lang == "python":',
+        "                if False:",
+    ),
+    (
+        "java field calls without this stay unresolved",
+        "svarupa/extract/resolve.py",
+        "                and module.fields_without_this\n",
+        "                and False\n",
     ),
 ]
 

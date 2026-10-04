@@ -122,3 +122,12 @@ def test_a_package_call_never_lands_on_a_method(tmp_path: Path) -> None:
     )
     calls = [(e.dst, e.resolution) for e in run(tmp_path).edges if e.kind is EdgeKind.CALLS]
     assert not [c for c in calls if ".S.Validate" in c[0]], calls
+
+
+def test_a_bare_call_resolves_only_inside_its_own_package(tmp_path: Path) -> None:
+    write(tmp_path, "go.mod", "module github.com/acme/shop\n")
+    write(tmp_path, "articles/routers.go", "package articles\n\nfunc Create() { SaveOne() }\n")
+    write(tmp_path, "articles/models.go", "package articles\n\nfunc SaveOne() {}\n")
+    write(tmp_path, "users/models.go", "package users\n\nfunc SaveOne() {}\n")
+    calls = [(e.dst, e.resolution) for e in run(tmp_path).edges if e.kind is EdgeKind.CALLS]
+    assert calls == [("articles/models.go#articles.models.SaveOne", Resolution.RESOLVED)]

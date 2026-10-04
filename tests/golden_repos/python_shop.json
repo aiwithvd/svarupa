@@ -350,6 +350,29 @@
    "producer": "python.imports"
   },
   {
+   "src": "src/ns/tool/run.py#src.ns.tool.run.go",
+   "dst": "src/ns/tool/helpers.py#src.ns.tool.helpers.assist",
+   "kind": "calls",
+   "evidence": [
+    {
+     "file": "src/ns/tool/run.py",
+     "start_line": 5,
+     "end_line": 5,
+     "rev": null
+    }
+   ],
+   "confidence": "RESOLVED",
+   "resolution": "resolved",
+   "arity": 1,
+   "attrs": [
+    [
+     "shape",
+     "qualified"
+    ]
+   ],
+   "producer": "python.calls"
+  },
+  {
    "src": "src/shop/__init__.py",
    "dst": "src/shop/orders.py",
    "kind": "imports",
@@ -456,6 +479,29 @@
    "arity": 1,
    "attrs": [],
    "producer": "python.imports"
+  },
+  {
+   "src": "src/shop/api.py#src.shop.api.create",
+   "dst": "src/shop/db.py#src.shop.db.Session",
+   "kind": "calls",
+   "evidence": [
+    {
+     "file": "src/shop/api.py",
+     "start_line": 11,
+     "end_line": 11,
+     "rev": null
+    }
+   ],
+   "confidence": "RESOLVED",
+   "resolution": "resolved",
+   "arity": 1,
+   "attrs": [
+    [
+     "shape",
+     "qualified"
+    ]
+   ],
+   "producer": "python.calls"
   },
   {
    "src": "src/shop/api.py#src.shop.api.create",
@@ -623,11 +669,11 @@
    {
     "lang": "python",
     "kind": "calls",
-    "resolved": 3,
+    "resolved": 5,
     "candidate": 0,
     "external": 2,
-    "unresolved": 5,
-    "pinned_pct": 37.5
+    "unresolved": 3,
+    "pinned_pct": 62.5
    },
    {
     "lang": "python",
@@ -661,8 +707,6 @@
    "python/calls": [
     "member:Order().save",
     "member:Session().add",
-    "qualified:db.Session",
-    "qualified:helpers.assist",
     "qualified:missing.call"
    ]
   }
