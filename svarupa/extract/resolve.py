@@ -441,7 +441,7 @@ class Resolver:
     def _resolve_module(
         self, spec: str, from_file: str, level: int, lang: str = "python"
     ) -> str | None:
-        if lang == "typescript":
+        if lang in ("typescript", "javascript"):
             return self._resolve_ts(spec, from_file)
         return self._resolve_python(spec, from_file, level)
 

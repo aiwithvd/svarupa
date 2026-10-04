@@ -14,7 +14,7 @@ import pytest
 from svarupa.detect import detect
 from svarupa.extract import declared_dependencies, extract
 from svarupa.extract.base import CallShape, node_id
-from svarupa.extract.python import PythonExtractor
+from svarupa.extract.packs import extractor
 from svarupa.model import EdgeKind, Resolution
 
 
@@ -35,7 +35,7 @@ def run(root: Path):
 
 
 def facts(src: str, path: str = "src/mod.py"):
-    return PythonExtractor().parse(path, src.encode())
+    return extractor("python").parse(path, src.encode())
 
 
 def test_collects_definitions_with_line_evidence() -> None:
@@ -342,9 +342,9 @@ def test_pass_one_reads_only_its_own_file(tmp_path: Path) -> None:
     and `--update` could diverge from a full build.
     """
     src = "from .other import thing\n\n\ndef go():\n    return thing()\n"
-    a = PythonExtractor().parse("src/a.py", src.encode())
+    a = extractor("python").parse("src/a.py", src.encode())
     write(tmp_path, "src/other.py", "def thing():\n    pass\n")
-    b = PythonExtractor().parse("src/a.py", src.encode())
+    b = extractor("python").parse("src/a.py", src.encode())
     assert a == b, "pass 1 output changed when an unrelated file appeared"
 
 
@@ -574,9 +574,7 @@ def test_absolute_from_import_does_not_record_a_phantom_name() -> None:
     phantom unresolved reference, polluting the headline honesty feature with
     the extractor's own bug.
     """
-    from svarupa.extract.python import PythonExtractor
-
-    f = PythonExtractor().parse("src/a.py", b"from mypkg.b import helper\n")
+    f = extractor("python").parse("src/a.py", b"from mypkg.b import helper\n")
     assert f.imports[0].names == ("helper",)
     assert f.imports[0].specifier == "mypkg.b"
 
@@ -645,9 +643,7 @@ def test_grammar_version_matches_the_installed_pin() -> None:
     """Guards against silent drift when the grammar pin is bumped."""
     from importlib.metadata import version
 
-    from svarupa.extract.python import PythonExtractor
-
-    assert PythonExtractor.grammar_version == version("tree-sitter-python")
+    assert extractor("python").grammar_version == version("tree-sitter-python")
 
 
 def test_conditional_definition_yields_one_node_and_a_diagnostic(tmp_path: Path) -> None:
@@ -778,3 +774,31 @@ def test_namespace_package_import_of_missing_submodule_stays_unresolved(
     res = run(tmp_path)
     assert not [e for e in res.edges if e.kind is EdgeKind.IMPORTS and "nothing" in e.dst]
     assert res.scorecard.get("python", "references", Resolution.UNRESOLVED) >= 1
+
+
+def test_a_decorated_method_keeps_kind_and_decorator() -> None:
+    f = facts("class A:\n    @staticmethod\n    def build():\n        pass\n")
+    build = next(s for s in f.symbols if s.name == "build")
+    assert build.kind == "method"
+    assert build.enclosing_class == "A"
+    assert [d.name for d in build.decorators] == ["staticmethod"]
+
+
+def test_languages_without_a_pack_are_reported_once_each(tmp_path: Path) -> None:
+    write(tmp_path, "svc/main.go", "package main\n")
+    write(tmp_path, "svc/util.go", "package main\n")
+    write(tmp_path, "lib/x.rs", "fn main() {}\n")
+    write(tmp_path, "app.py", "def keep():\n    pass\n")
+    result = run(tmp_path)
+    x012 = [d for d in result.diagnostics if d.code == "SVA-X-012"]
+    assert [d.subject for d in x012] == ["go", "rust"]
+    assert "2 go files" in x012[0].message
+    assert any(n.id.endswith(".keep") for n in result.nodes)
+
+
+def test_a_repository_of_packed_languages_gets_no_x012(tmp_path: Path) -> None:
+    write(tmp_path, "app.py", "def keep():\n    pass\n")
+    write(tmp_path, "web/a.ts", "export const a = 1;\n")
+    write(tmp_path, "db/schema.sql", "create table t (id int);\n")
+    result = run(tmp_path)
+    assert not [d for d in result.diagnostics if d.code == "SVA-X-012"]

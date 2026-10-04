@@ -1,0 +1,201 @@
+{
+ "path": "src/app/index.ts",
+ "lang": "typescript",
+ "symbols": [
+  {
+   "name": "handler",
+   "qualified_name": "src.app.index.handler",
+   "kind": "function",
+   "evidence": {
+    "file": "src/app/index.ts",
+    "start_line": 3,
+    "end_line": 3,
+    "rev": null
+   },
+   "enclosing_class": null,
+   "bases": [],
+   "exported": true,
+   "decorators": []
+  },
+  {
+   "name": "boot",
+   "qualified_name": "src.app.index.boot",
+   "kind": "function",
+   "evidence": {
+    "file": "src/app/index.ts",
+    "start_line": 5,
+    "end_line": 7,
+    "rev": null
+   },
+   "enclosing_class": null,
+   "bases": [],
+   "exported": true,
+   "decorators": []
+  },
+  {
+   "name": "App",
+   "qualified_name": "src.app.index.App",
+   "kind": "class",
+   "evidence": {
+    "file": "src/app/index.ts",
+    "start_line": 8,
+    "end_line": 8,
+    "rev": null
+   },
+   "enclosing_class": null,
+   "bases": [],
+   "exported": true,
+   "decorators": []
+  },
+  {
+   "name": "Settings",
+   "qualified_name": "src.app.index.Settings",
+   "kind": "interface",
+   "evidence": {
+    "file": "src/app/index.ts",
+    "start_line": 9,
+    "end_line": 11,
+    "rev": null
+   },
+   "enclosing_class": null,
+   "bases": [],
+   "exported": true,
+   "decorators": []
+  },
+  {
+   "name": "Repo",
+   "qualified_name": "src.app.index.Repo",
+   "kind": "class",
+   "evidence": {
+    "file": "src/app/index.ts",
+    "start_line": 12,
+    "end_line": 12,
+    "rev": null
+   },
+   "enclosing_class": null,
+   "bases": [
+    "BaseRepo",
+    "Store"
+   ],
+   "exported": true,
+   "decorators": []
+  },
+  {
+   "name": "_internal",
+   "qualified_name": "src.app.index._internal",
+   "kind": "function",
+   "evidence": {
+    "file": "src/app/index.ts",
+    "start_line": 13,
+    "end_line": 13,
+    "rev": null
+   },
+   "enclosing_class": null,
+   "bases": [],
+   "exported": false,
+   "decorators": []
+  },
+  {
+   "name": "local",
+   "qualified_name": "src.app.index.local",
+   "kind": "function",
+   "evidence": {
+    "file": "src/app/index.ts",
+    "start_line": 14,
+    "end_line": 14,
+    "rev": null
+   },
+   "enclosing_class": null,
+   "bases": [],
+   "exported": false,
+   "decorators": []
+  }
+ ],
+ "imports": [
+  {
+   "specifier": "./users.service",
+   "names": [
+    "UsersService",
+    "Svc"
+   ],
+   "alias_of": [
+    [
+     "Svc",
+     "UsersService"
+    ]
+   ],
+   "evidence": {
+    "file": "src/app/index.ts",
+    "start_line": 1,
+    "end_line": 1,
+    "rev": null
+   },
+   "is_relative": true,
+   "level": 0,
+   "type_only": false,
+   "is_from": true,
+   "is_reexport": true,
+   "is_star": false
+  },
+  {
+   "specifier": "./models",
+   "names": [],
+   "alias_of": [],
+   "evidence": {
+    "file": "src/app/index.ts",
+    "start_line": 2,
+    "end_line": 2,
+    "rev": null
+   },
+   "is_relative": true,
+   "level": 0,
+   "type_only": false,
+   "is_from": true,
+   "is_reexport": true,
+   "is_star": true
+  }
+ ],
+ "calls": [
+  {
+   "name": "compute",
+   "shape": "bare",
+   "receiver": null,
+   "evidence": {
+    "file": "src/app/index.ts",
+    "start_line": 3,
+    "end_line": 3,
+    "rev": null
+   },
+   "enclosing": "src.app.index.handler",
+   "enclosing_class": null,
+   "first_str_arg": null,
+   "ident_args": [],
+   "first_arg_ident": null,
+   "recv_call": null
+  },
+  {
+   "name": "start",
+   "shape": "bare",
+   "receiver": null,
+   "evidence": {
+    "file": "src/app/index.ts",
+    "start_line": 6,
+    "end_line": 6,
+    "rev": null
+   },
+   "enclosing": "src.app.index.boot",
+   "enclosing_class": null,
+   "first_str_arg": null,
+   "ident_args": [],
+   "first_arg_ident": null,
+   "recv_call": null
+  }
+ ],
+ "fields": [],
+ "reexports": [
+  "Svc",
+  "UsersService"
+ ],
+ "diagnostics": [],
+ "ctor_assigns": []
+}

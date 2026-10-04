@@ -1,0 +1,117 @@
+{
+ "path": "src/App.tsx",
+ "lang": "typescript",
+ "symbols": [
+  {
+   "name": "App",
+   "qualified_name": "src.App.App",
+   "kind": "function",
+   "evidence": {
+    "file": "src/App.tsx",
+    "start_line": 4,
+    "end_line": 7,
+    "rev": null
+   },
+   "enclosing_class": null,
+   "bases": [],
+   "exported": true,
+   "decorators": []
+  },
+  {
+   "name": "Panel",
+   "qualified_name": "src.App.Panel",
+   "kind": "function",
+   "evidence": {
+    "file": "src/App.tsx",
+    "start_line": 9,
+    "end_line": 9,
+    "rev": null
+   },
+   "enclosing_class": null,
+   "bases": [],
+   "exported": true,
+   "decorators": []
+  }
+ ],
+ "imports": [
+  {
+   "specifier": "react",
+   "names": [
+    "React",
+    "useState"
+   ],
+   "alias_of": [],
+   "evidence": {
+    "file": "src/App.tsx",
+    "start_line": 1,
+    "end_line": 1,
+    "rev": null
+   },
+   "is_relative": false,
+   "level": 0,
+   "type_only": false,
+   "is_from": true,
+   "is_reexport": false,
+   "is_star": false
+  },
+  {
+   "specifier": "./Button",
+   "names": [
+    "Button"
+   ],
+   "alias_of": [],
+   "evidence": {
+    "file": "src/App.tsx",
+    "start_line": 2,
+    "end_line": 2,
+    "rev": null
+   },
+   "is_relative": true,
+   "level": 0,
+   "type_only": false,
+   "is_from": true,
+   "is_reexport": false,
+   "is_star": false
+  }
+ ],
+ "calls": [
+  {
+   "name": "useState",
+   "shape": "bare",
+   "receiver": null,
+   "evidence": {
+    "file": "src/App.tsx",
+    "start_line": 5,
+    "end_line": 5,
+    "rev": null
+   },
+   "enclosing": "src.App.App",
+   "enclosing_class": null,
+   "first_str_arg": null,
+   "ident_args": [],
+   "first_arg_ident": null,
+   "recv_call": null
+  },
+  {
+   "name": "setCount",
+   "shape": "bare",
+   "receiver": null,
+   "evidence": {
+    "file": "src/App.tsx",
+    "start_line": 6,
+    "end_line": 6,
+    "rev": null
+   },
+   "enclosing": "src.App.App",
+   "enclosing_class": null,
+   "first_str_arg": null,
+   "ident_args": [],
+   "first_arg_ident": null,
+   "recv_call": null
+  }
+ ],
+ "fields": [],
+ "reexports": [],
+ "diagnostics": [],
+ "ctor_assigns": []
+}

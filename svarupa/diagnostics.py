@@ -106,6 +106,7 @@ CODES: dict[str, str] = {
     "SVA-X-009": "an express router mount forms a cycle or mounts itself",
     "SVA-X-010": "an environment source could not be parsed or read",
     "SVA-X-011": "a scanned file could not be read for extraction",
+    "SVA-X-012": "files in a language were detected but not analyzed, with the reason",
     # build
     "SVA-B-001": "two different nodes claim the same id",
     "SVA-B-002": "an evidence range is not a valid source location",

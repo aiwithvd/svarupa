@@ -1,0 +1,363 @@
+{
+ "path": "src/svc/service.py",
+ "lang": "python",
+ "symbols": [
+  {
+   "name": "run",
+   "qualified_name": "src.svc.service.run",
+   "kind": "function",
+   "evidence": {
+    "file": "src/svc/service.py",
+    "start_line": 5,
+    "end_line": 12,
+    "rev": null
+   },
+   "enclosing_class": null,
+   "bases": [],
+   "exported": true,
+   "decorators": []
+  },
+  {
+   "name": "Service",
+   "qualified_name": "src.svc.service.Service",
+   "kind": "class",
+   "evidence": {
+    "file": "src/svc/service.py",
+    "start_line": 15,
+    "end_line": 24,
+    "rev": null
+   },
+   "enclosing_class": null,
+   "bases": [],
+   "exported": true,
+   "decorators": []
+  },
+  {
+   "name": "handle",
+   "qualified_name": "src.svc.service.Service.handle",
+   "kind": "method",
+   "evidence": {
+    "file": "src/svc/service.py",
+    "start_line": 18,
+    "end_line": 24,
+    "rev": null
+   },
+   "enclosing_class": "Service",
+   "bases": [],
+   "exported": true,
+   "decorators": []
+  },
+  {
+   "name": "wrapped",
+   "qualified_name": "src.svc.service.wrapped",
+   "kind": "function",
+   "evidence": {
+    "file": "src/svc/service.py",
+    "start_line": 28,
+    "end_line": 29,
+    "rev": null
+   },
+   "enclosing_class": null,
+   "bases": [],
+   "exported": true,
+   "decorators": [
+    {
+     "name": "decorate",
+     "arg": null,
+     "evidence": {
+      "file": "src/svc/service.py",
+      "start_line": 27,
+      "end_line": 27,
+      "rev": null
+     },
+     "arg_dynamic": false,
+     "methods": null
+    }
+   ]
+  }
+ ],
+ "imports": [
+  {
+   "specifier": "helpers",
+   "names": [
+    "helpers"
+   ],
+   "alias_of": [],
+   "evidence": {
+    "file": "src/svc/service.py",
+    "start_line": 1,
+    "end_line": 1,
+    "rev": null
+   },
+   "is_relative": false,
+   "level": 0,
+   "type_only": false,
+   "is_from": false,
+   "is_reexport": false,
+   "is_star": false
+  },
+  {
+   "specifier": "repo",
+   "names": [
+    "Repo"
+   ],
+   "alias_of": [],
+   "evidence": {
+    "file": "src/svc/service.py",
+    "start_line": 2,
+    "end_line": 2,
+    "rev": null
+   },
+   "is_relative": false,
+   "level": 0,
+   "type_only": false,
+   "is_from": true,
+   "is_reexport": false,
+   "is_star": false
+  }
+ ],
+ "calls": [
+  {
+   "name": "prepare",
+   "shape": "qualified",
+   "receiver": "helpers",
+   "evidence": {
+    "file": "src/svc/service.py",
+    "start_line": 7,
+    "end_line": 7,
+    "rev": null
+   },
+   "enclosing": "src.svc.service.run",
+   "enclosing_class": null,
+   "first_str_arg": null,
+   "ident_args": [],
+   "first_arg_ident": null,
+   "recv_call": null
+  },
+  {
+   "name": "Repo",
+   "shape": "bare",
+   "receiver": null,
+   "evidence": {
+    "file": "src/svc/service.py",
+    "start_line": 8,
+    "end_line": 8,
+    "rev": null
+   },
+   "enclosing": "src.svc.service.run",
+   "enclosing_class": null,
+   "first_str_arg": null,
+   "ident_args": [],
+   "first_arg_ident": null,
+   "recv_call": null
+  },
+  {
+   "name": "save",
+   "shape": "qualified",
+   "receiver": "local",
+   "evidence": {
+    "file": "src/svc/service.py",
+    "start_line": 9,
+    "end_line": 9,
+    "rev": null
+   },
+   "enclosing": "src.svc.service.run",
+   "enclosing_class": null,
+   "first_str_arg": null,
+   "ident_args": [],
+   "first_arg_ident": null,
+   "recv_call": null
+  },
+  {
+   "name": "compute",
+   "shape": "bare",
+   "receiver": null,
+   "evidence": {
+    "file": "src/svc/service.py",
+    "start_line": 10,
+    "end_line": 10,
+    "rev": null
+   },
+   "enclosing": "src.svc.service.run",
+   "enclosing_class": null,
+   "first_str_arg": null,
+   "ident_args": [],
+   "first_arg_ident": null,
+   "recv_call": null
+  },
+  {
+   "name": "done",
+   "shape": "member",
+   "receiver": "chain().then()",
+   "evidence": {
+    "file": "src/svc/service.py",
+    "start_line": 11,
+    "end_line": 11,
+    "rev": null
+   },
+   "enclosing": "src.svc.service.run",
+   "enclosing_class": null,
+   "first_str_arg": null,
+   "ident_args": [],
+   "first_arg_ident": null,
+   "recv_call": null
+  },
+  {
+   "name": "then",
+   "shape": "member",
+   "receiver": "chain()",
+   "evidence": {
+    "file": "src/svc/service.py",
+    "start_line": 11,
+    "end_line": 11,
+    "rev": null
+   },
+   "enclosing": "src.svc.service.run",
+   "enclosing_class": null,
+   "first_str_arg": null,
+   "ident_args": [],
+   "first_arg_ident": null,
+   "recv_call": null
+  },
+  {
+   "name": "chain",
+   "shape": "bare",
+   "receiver": null,
+   "evidence": {
+    "file": "src/svc/service.py",
+    "start_line": 11,
+    "end_line": 11,
+    "rev": null
+   },
+   "enclosing": "src.svc.service.run",
+   "enclosing_class": null,
+   "first_str_arg": null,
+   "ident_args": [],
+   "first_arg_ident": null,
+   "recv_call": null
+  },
+  {
+   "name": "make_registry",
+   "shape": "bare",
+   "receiver": null,
+   "evidence": {
+    "file": "src/svc/service.py",
+    "start_line": 16,
+    "end_line": 16,
+    "rev": null
+   },
+   "enclosing": null,
+   "enclosing_class": "Service",
+   "first_str_arg": null,
+   "ident_args": [],
+   "first_arg_ident": null,
+   "recv_call": null
+  },
+  {
+   "name": "validate",
+   "shape": "self",
+   "receiver": "self",
+   "evidence": {
+    "file": "src/svc/service.py",
+    "start_line": 19,
+    "end_line": 19,
+    "rev": null
+   },
+   "enclosing": "src.svc.service.Service.handle",
+   "enclosing_class": "Service",
+   "first_str_arg": null,
+   "ident_args": [],
+   "first_arg_ident": null,
+   "recv_call": null
+  },
+  {
+   "name": "handle",
+   "shape": "super",
+   "receiver": "super",
+   "evidence": {
+    "file": "src/svc/service.py",
+    "start_line": 20,
+    "end_line": 20,
+    "rev": null
+   },
+   "enclosing": "src.svc.service.Service.handle",
+   "enclosing_class": "Service",
+   "first_str_arg": null,
+   "ident_args": [],
+   "first_arg_ident": null,
+   "recv_call": null
+  },
+  {
+   "name": "handle",
+   "shape": "super",
+   "receiver": "super",
+   "evidence": {
+    "file": "src/svc/service.py",
+    "start_line": 21,
+    "end_line": 21,
+    "rev": null
+   },
+   "enclosing": "src.svc.service.Service.handle",
+   "enclosing_class": "Service",
+   "first_str_arg": null,
+   "ident_args": [],
+   "first_arg_ident": null,
+   "recv_call": null
+  },
+  {
+   "name": "load",
+   "shape": "member",
+   "receiver": "self.repo",
+   "evidence": {
+    "file": "src/svc/service.py",
+    "start_line": 22,
+    "end_line": 22,
+    "rev": null
+   },
+   "enclosing": "src.svc.service.Service.handle",
+   "enclosing_class": "Service",
+   "first_str_arg": null,
+   "ident_args": [],
+   "first_arg_ident": null,
+   "recv_call": null
+  },
+  {
+   "name": "transform",
+   "shape": "bare",
+   "receiver": null,
+   "evidence": {
+    "file": "src/svc/service.py",
+    "start_line": 23,
+    "end_line": 23,
+    "rev": null
+   },
+   "enclosing": "src.svc.service.Service.handle",
+   "enclosing_class": "Service",
+   "first_str_arg": null,
+   "ident_args": [],
+   "first_arg_ident": null,
+   "recv_call": null
+  },
+  {
+   "name": "inner",
+   "shape": "bare",
+   "receiver": null,
+   "evidence": {
+    "file": "src/svc/service.py",
+    "start_line": 29,
+    "end_line": 29,
+    "rev": null
+   },
+   "enclosing": "src.svc.service.wrapped",
+   "enclosing_class": null,
+   "first_str_arg": null,
+   "ident_args": [],
+   "first_arg_ident": null,
+   "recv_call": null
+  }
+ ],
+ "fields": [],
+ "reexports": [],
+ "diagnostics": [],
+ "ctor_assigns": []
+}

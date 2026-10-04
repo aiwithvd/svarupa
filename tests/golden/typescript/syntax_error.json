@@ -1,0 +1,38 @@
+{
+ "path": "src/broken.ts",
+ "lang": "typescript",
+ "symbols": [],
+ "imports": [],
+ "calls": [
+  {
+   "name": "ok",
+   "shape": "bare",
+   "receiver": null,
+   "evidence": {
+    "file": "src/broken.ts",
+    "start_line": 6,
+    "end_line": 6,
+    "rev": null
+   },
+   "enclosing": null,
+   "enclosing_class": null,
+   "first_str_arg": null,
+   "ident_args": [],
+   "first_arg_ident": null,
+   "recv_call": null
+  }
+ ],
+ "fields": [],
+ "reexports": [],
+ "diagnostics": [
+  {
+   "code": "SVA-X-001",
+   "severity": "WARNING",
+   "message": "file has syntax errors; extraction continues over the parseable regions and may be incomplete",
+   "subject": "src/broken.ts",
+   "location": null,
+   "suggested_fixes": []
+  }
+ ],
+ "ctor_assigns": []
+}

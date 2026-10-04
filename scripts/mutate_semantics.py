@@ -36,13 +36,13 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ),
     (
         "the route claim cites the line below the decorator",
-        "svarupa/extract/python.py",
-        "        ev = self.evidence(path, node.start_point[0], node.end_point[0])",
-        "        ev = self.evidence(path, node.start_point[0] + 1, node.end_point[0] + 1)",
+        "svarupa/extract/packs/python.py",
+        '    ev = ctx.node_evidence(node)\n    if expr.type != "call":',
+        '    ev = ctx.evidence(node.start_point[0] + 1, node.end_point[0] + 1)\n    if expr.type != "call":',
     ),
     (
         "an f-string route path is guessed from its static parts",
-        "svarupa/extract/python.py",
+        "svarupa/extract/packs/python.py",
         '    if any(c.type == "interpolation" for c in node.children):',
         "    if False:",
     ),
@@ -198,7 +198,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ),
     (
         "a substituted template literal is guessed from its static parts",
-        "svarupa/extract/typescript.py",
+        "svarupa/extract/packs/typescript.py",
         '    if node.type == "template_string" and any(',
         "    if False and any(",
     ),
@@ -222,9 +222,9 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ),
     (
         "the export keyword consumes pending class decorators",
-        "svarupa/extract/typescript.py",
-        '                    if child.type in ("export", "default", ";"):',
-        "                    if False:",
+        "svarupa/extract/packs/typescript.py",
+        '        if child.type in ("export", "default", ";"):',
+        "        if False:",
     ),
     (
         "a dynamic nest decorator argument composes as empty again",
@@ -240,9 +240,9 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ),
     (
         "require() stops being an import",
-        "svarupa/extract/typescript.py",
-        '                    if callee is not None and _text(data, callee) == "require":',
-        '                    if callee is not None and _text(data, callee) == "never":',
+        "svarupa/extract/packs/typescript.py",
+        '        if callee is not None and ctx.text(callee) == "require":',
+        '        if callee is not None and ctx.text(callee) == "never":',
     ),
     (
         "a non-express bind stops poisoning the receiver name",
@@ -252,15 +252,15 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ),
     (
         "escape sequences vanish from string values again",
-        "svarupa/extract/typescript.py",
-        '            if c.type in ("string_fragment", "escape_sequence")',
-        '            if c.type in ("string_fragment",)',
+        "svarupa/extract/packs/typescript.py",
+        ' if c.type in ("string_fragment", "escape_sequence")',
+        ' if c.type in ("string_fragment",)',
     ),
     (
         "a later-position string becomes the decorator or call path",
-        "svarupa/extract/typescript.py",
-        '            if child.type in ("string", "template_string"):\n                return _ts_string(src, child)\n            return None',
-        '            if child.type in ("string", "template_string"):\n                return _ts_string(src, child)\n            continue',
+        "svarupa/extract/packs/typescript.py",
+        '        if child.type in ("string", "template_string"):\n            return _ts_string(ctx, child)\n        return None',
+        '        if child.type in ("string", "template_string"):\n            return _ts_string(ctx, child)\n        continue',
     ),
     (
         "controller prefixes stop normalizing slashes",
@@ -270,15 +270,15 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ),
     (
         "the declaration hop drops the exported flag again",
-        "svarupa/extract/typescript.py",
-        "                    visit(child, stack, cls, fn, exported=exported, depth=depth + 1)",
-        "                    visit(child, stack, cls, fn, depth=depth + 1)",
+        "svarupa/extract/packs/walker.py",
+        "carried = Frame(frame.stack, frame.cls, frame.fn, exported=frame.exported)",
+        "carried = Frame(frame.stack, frame.cls, frame.fn)",
     ),
     (
         "non-exported classes lose their own decorators",
-        "svarupa/extract/typescript.py",
-        "                decorators = decorators + tuple(",
-        "                decorators = decorators + () and tuple(",
+        "svarupa/extract/packs/walker.py",
+        "            decorators += tuple(",
+        "            decorators += () and tuple(",
     ),
     (
         "a chain root other than route claims a route",
@@ -312,9 +312,9 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ),
     (
         "the chain unwinder loses the root path",
-        "svarupa/extract/typescript.py",
-        "        return (_text(src, cur), _text(src, prop), self._first_str_arg(src, innermost))",
-        "        return (_text(src, cur), _text(src, prop), None)",
+        "svarupa/extract/packs/typescript.py",
+        "    return (ctx.text(cur), ctx.text(prop), _first_str_arg(ctx, innermost))",
+        "    return (ctx.text(cur), ctx.text(prop), None)",
     ),
     (
         "app.get(path, router) becomes a mount",
@@ -336,9 +336,9 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ),
     (
         "the chain unwinder is capped below a real chain",
-        "svarupa/extract/typescript.py",
-        "        for _ in range(16):",
-        "        for _ in range(2):",
+        "svarupa/extract/packs/typescript.py",
+        "    for _ in range(16):",
+        "    for _ in range(2):",
     ),
     (
         "a router name bound twice composes as one object",
@@ -360,9 +360,9 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ),
     (
         "member calls cite the chain start again",
-        "svarupa/extract/typescript.py",
-        "            ev = self.evidence(path, prop.start_point[0], prop.start_point[0])",
-        "            pass",
+        "svarupa/extract/packs/typescript.py",
+        "        ev = ctx.evidence(prow, prow)",
+        "        pass",
     ),
     (
         "mounted routes lose their trailing-slash spelling",

@@ -1,0 +1,16 @@
+path: src/app/index.ts
+---
+export { UsersService, UsersService as Svc } from './users.service';
+export * from './models';
+export const handler = () => compute();
+export const value = 3;
+export function boot(): void {
+  start();
+}
+export default class App {}
+export interface Settings {
+  port: number;
+}
+export abstract class Repo<T> extends BaseRepo<T> implements Store, Cache.Like {}
+function _internal() {}
+const local = function () { return 1; };

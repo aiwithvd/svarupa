@@ -1,0 +1,69 @@
+{
+ "path": "src/bad.py",
+ "lang": "python",
+ "symbols": [
+  {
+   "name": "broken",
+   "qualified_name": "src.bad.broken",
+   "kind": "function",
+   "evidence": {
+    "file": "src/bad.py",
+    "start_line": 1,
+    "end_line": 2,
+    "rev": null
+   },
+   "enclosing_class": null,
+   "bases": [],
+   "exported": true,
+   "decorators": []
+  },
+  {
+   "name": "fine",
+   "qualified_name": "src.bad.fine",
+   "kind": "function",
+   "evidence": {
+    "file": "src/bad.py",
+    "start_line": 5,
+    "end_line": 6,
+    "rev": null
+   },
+   "enclosing_class": null,
+   "bases": [],
+   "exported": true,
+   "decorators": []
+  }
+ ],
+ "imports": [],
+ "calls": [
+  {
+   "name": "ok",
+   "shape": "bare",
+   "receiver": null,
+   "evidence": {
+    "file": "src/bad.py",
+    "start_line": 6,
+    "end_line": 6,
+    "rev": null
+   },
+   "enclosing": "src.bad.fine",
+   "enclosing_class": null,
+   "first_str_arg": null,
+   "ident_args": [],
+   "first_arg_ident": null,
+   "recv_call": null
+  }
+ ],
+ "fields": [],
+ "reexports": [],
+ "diagnostics": [
+  {
+   "code": "SVA-X-001",
+   "severity": "WARNING",
+   "message": "file has syntax errors; extraction continues over the parseable regions and may be incomplete",
+   "subject": "src/bad.py",
+   "location": null,
+   "suggested_fixes": []
+  }
+ ],
+ "ctor_assigns": []
+}

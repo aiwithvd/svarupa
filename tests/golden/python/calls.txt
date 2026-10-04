@@ -1,0 +1,31 @@
+path: src/svc/service.py
+---
+import helpers
+from repo import Repo
+
+
+def run(items=build_default()):
+    print(len(items))
+    helpers.prepare(items)
+    local = Repo()
+    local.save(items)
+    result = compute(items)
+    chain().then().done()
+    return result
+
+
+class Service(make_base()):
+    registry = make_registry()
+
+    def handle(self):
+        self.validate()
+        super().handle()
+        super(Service, self).handle()
+        self.repo.load()
+        callback = lambda x: transform(x)
+        return callback
+
+
+@decorate(setup())
+def wrapped():
+    inner()

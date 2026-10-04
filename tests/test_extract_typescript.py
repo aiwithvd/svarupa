@@ -18,7 +18,7 @@ import pytest
 from svarupa.detect import detect
 from svarupa.extract import declared_dependencies, extract
 from svarupa.extract.base import CallShape, node_id
-from svarupa.extract.typescript import TypeScriptExtractor
+from svarupa.extract.packs import extractor
 from svarupa.model import EdgeKind, Resolution
 from svarupa.tsconfig import load_aliases, strip_jsonc
 
@@ -35,7 +35,7 @@ def run(root: Path):
 
 
 def facts(src: str, path: str = "src/mod.ts"):
-    return TypeScriptExtractor().parse(path, src.encode())
+    return extractor("typescript").parse(path, src.encode())
 
 
 # --------------------------------------------------------------------------
@@ -359,18 +359,38 @@ def test_asset_imports_are_external_not_a_failure(tmp_path: Path) -> None:
     assert res.scorecard.get("typescript", "imports", Resolution.EXTERNAL) == 2
 
 
-def test_javascript_files_use_the_typescript_grammar(tmp_path: Path) -> None:
+def test_javascript_files_resolve_like_typescript(tmp_path: Path) -> None:
     write(tmp_path, "src/a.js", "export function go() {}\n")
     write(tmp_path, "src/b.js", "import { go } from './a.js';\n")
+    write(tmp_path, "src/c.ts", "import { go } from './a';\n")
     res = run(tmp_path)
     imports = {(e.src, e.dst) for e in res.edges if e.kind is EdgeKind.IMPORTS}
     assert ("src/b.js", "src/a.js") in imports
+    assert ("src/c.ts", "src/a.js") in imports
+
+
+def test_javascript_facts_carry_their_own_label() -> None:
+    f = extractor("javascript").parse("src/a.js", b"export function go() {}\n")
+    assert f.lang == "javascript"
+
+
+@pytest.mark.parametrize("path", ["src/Button.jsx", "src/Button.js"])
+def test_jsx_in_javascript_parses_cleanly(path: str) -> None:
+    src = b"export function Button({ go }) {\n  return <button onClick={go}>x</button>;\n}\n"
+    f = extractor("javascript").parse(path, src)
+    assert [d.code for d in f.diagnostics] == []
+    assert [s.name for s in f.symbols] == ["Button"]
+
+
+def test_typescript_type_assertions_still_parse_in_ts_files() -> None:
+    f = extractor("typescript").parse("src/a.ts", b"const n = <number>value;\n")
+    assert [d.code for d in f.diagnostics] == []
 
 
 def test_grammar_version_matches_the_installed_pin() -> None:
     from importlib.metadata import version
 
-    assert TypeScriptExtractor.grammar_version == version("tree-sitter-typescript")
+    assert extractor("typescript").grammar_version == version("tree-sitter-typescript")
 
 
 # --------------------------------------------------------------------------

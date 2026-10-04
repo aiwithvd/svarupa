@@ -1,0 +1,21 @@
+path: src/server.js
+---
+const express = require('express');
+const { Router, json } = require('express');
+const lazy = require(`./lazy`);
+const app = express();
+const router = Router();
+
+app.use(json());
+app.get('/health', (req, res) => res.send('ok'));
+app.use('/api', router);
+router.post('/items', createItem);
+app
+  .route('/orders')
+  .get(listOrders)
+  .delete(removeOrder);
+console.log('started');
+fetch('/x');
+app.listen(port, () => {
+  log(`listening ${port}`);
+});

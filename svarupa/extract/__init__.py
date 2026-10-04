@@ -24,10 +24,9 @@ from svarupa.extract.base import (
 )
 from svarupa.extract.compose import extract_compose
 from svarupa.extract.environments import extract_environments
-from svarupa.extract.python import PythonExtractor
+from svarupa.extract.packs import ANALYZED_ELSEWHERE, load_extractors
 from svarupa.extract.resolve import Resolver, resolve
 from svarupa.extract.semantics import semantics
-from svarupa.extract.typescript import TypeScriptExtractor
 from svarupa.tsconfig import load_aliases
 
 __all__ = [
@@ -38,7 +37,6 @@ __all__ = [
     "Extractor",
     "FileFacts",
     "ImportRef",
-    "PythonExtractor",
     "Resolver",
     "Scorecard",
     "SymbolRef",
@@ -47,12 +45,9 @@ __all__ = [
     "resolve",
 ]
 
-_EXTRACTORS: dict[str, Extractor] = {
-    "python": PythonExtractor(),
-    "typescript": TypeScriptExtractor(),
-    # .js/.jsx parse fine with the TypeScript grammar, which is a superset.
-    "javascript": TypeScriptExtractor(),
-}
+_PACK_EXTRACTORS, _UNAVAILABLE = load_extractors()
+
+_EXTRACTORS: dict[str, Extractor] = dict(_PACK_EXTRACTORS)
 
 GRAMMAR_VERSIONS: dict[str, str] = {
     lang: ex.grammar_version for lang, ex in _EXTRACTORS.items()
@@ -67,9 +62,12 @@ def extract(scan: Scan, declared_deps: frozenset[str] = frozenset()) -> ExtractR
     """
     facts: list[FileFacts] = []
     crashes: list[Diagnostic] = []
+    unanalyzed: dict[str, int] = {}
     for rec in scan.files:
         ex = _EXTRACTORS.get(rec.lang or "")
         if ex is None:
+            if rec.lang and rec.lang not in ANALYZED_ELSEWHERE:
+                unanalyzed[rec.lang] = unanalyzed.get(rec.lang, 0) + 1
             continue
         try:
             data = read_bytes(scan.root, rec.path)
@@ -113,6 +111,22 @@ def extract(scan: Scan, declared_deps: frozenset[str] = frozenset()) -> ExtractR
                     location=rec.path,
                 )
             )
+
+    # One line per language, never one per file: a Go service with 900 files
+    # is one fact ("Go is not analyzed"), and 900 warnings would bury it.
+    for lang, count in sorted(unanalyzed.items()):
+        reason = _UNAVAILABLE.get(lang, f"no language pack exists for {lang} yet")
+        crashes.append(
+            Diagnostic(
+                code="SVA-X-012",
+                severity=Severity.WARNING,
+                message=(
+                    f"{count} {lang} files were detected but not analyzed: {reason}; "
+                    "they appear in no diagram"
+                ),
+                subject=lang,
+            )
+        )
 
     # Workspace roots discovered by `detect` are import roots. Passing them
     # through is the integration that was missing: the resolver otherwise

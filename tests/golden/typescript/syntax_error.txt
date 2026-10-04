@@ -1,0 +1,9 @@
+path: src/broken.ts
+---
+export function broken( {
+  return 1;
+}
+
+export function fine() {
+  ok();
+}

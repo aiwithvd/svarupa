@@ -1,0 +1,233 @@
+{
+ "path": "src/shop/orders.py",
+ "lang": "python",
+ "symbols": [
+  {
+   "name": "Base",
+   "qualified_name": "src.shop.orders.Base",
+   "kind": "class",
+   "evidence": {
+    "file": "src/shop/orders.py",
+    "start_line": 5,
+    "end_line": 6,
+    "rev": null
+   },
+   "enclosing_class": null,
+   "bases": [],
+   "exported": true,
+   "decorators": []
+  },
+  {
+   "name": "Order",
+   "qualified_name": "src.shop.orders.Order",
+   "kind": "class",
+   "evidence": {
+    "file": "src/shop/orders.py",
+    "start_line": 9,
+    "end_line": 19,
+    "rev": null
+   },
+   "enclosing_class": null,
+   "bases": [
+    "Base",
+    "Model"
+   ],
+   "exported": true,
+   "decorators": []
+  },
+  {
+   "name": "Meta",
+   "qualified_name": "src.shop.orders.Order.Meta",
+   "kind": "class",
+   "evidence": {
+    "file": "src/shop/orders.py",
+    "start_line": 10,
+    "end_line": 11,
+    "rev": null
+   },
+   "enclosing_class": "Order",
+   "bases": [],
+   "exported": true,
+   "decorators": []
+  },
+  {
+   "name": "total",
+   "qualified_name": "src.shop.orders.Order.total",
+   "kind": "method",
+   "evidence": {
+    "file": "src/shop/orders.py",
+    "start_line": 13,
+    "end_line": 16,
+    "rev": null
+   },
+   "enclosing_class": "Order",
+   "bases": [],
+   "exported": true,
+   "decorators": []
+  },
+  {
+   "name": "helper",
+   "qualified_name": "src.shop.orders.Order.total.helper",
+   "kind": "method",
+   "evidence": {
+    "file": "src/shop/orders.py",
+    "start_line": 14,
+    "end_line": 15,
+    "rev": null
+   },
+   "enclosing_class": "Order",
+   "bases": [],
+   "exported": true,
+   "decorators": []
+  },
+  {
+   "name": "_private",
+   "qualified_name": "src.shop.orders.Order._private",
+   "kind": "method",
+   "evidence": {
+    "file": "src/shop/orders.py",
+    "start_line": 18,
+    "end_line": 19,
+    "rev": null
+   },
+   "enclosing_class": "Order",
+   "bases": [],
+   "exported": false,
+   "decorators": []
+  },
+  {
+   "name": "Line",
+   "qualified_name": "src.shop.orders.Line",
+   "kind": "class",
+   "evidence": {
+    "file": "src/shop/orders.py",
+    "start_line": 23,
+    "end_line": 24,
+    "rev": null
+   },
+   "enclosing_class": null,
+   "bases": [],
+   "exported": true,
+   "decorators": [
+    {
+     "name": "dataclass",
+     "arg": null,
+     "evidence": {
+      "file": "src/shop/orders.py",
+      "start_line": 22,
+      "end_line": 22,
+      "rev": null
+     },
+     "arg_dynamic": false,
+     "methods": null
+    }
+   ]
+  },
+  {
+   "name": "make_order",
+   "qualified_name": "src.shop.orders.make_order",
+   "kind": "function",
+   "evidence": {
+    "file": "src/shop/orders.py",
+    "start_line": 27,
+    "end_line": 28,
+    "rev": null
+   },
+   "enclosing_class": null,
+   "bases": [],
+   "exported": true,
+   "decorators": []
+  },
+  {
+   "name": "fetch",
+   "qualified_name": "src.shop.orders.fetch",
+   "kind": "function",
+   "evidence": {
+    "file": "src/shop/orders.py",
+    "start_line": 31,
+    "end_line": 32,
+    "rev": null
+   },
+   "enclosing_class": null,
+   "bases": [],
+   "exported": true,
+   "decorators": []
+  },
+  {
+   "name": "_hidden",
+   "qualified_name": "src.shop.orders._hidden",
+   "kind": "function",
+   "evidence": {
+    "file": "src/shop/orders.py",
+    "start_line": 35,
+    "end_line": 36,
+    "rev": null
+   },
+   "enclosing_class": null,
+   "bases": [],
+   "exported": false,
+   "decorators": []
+  }
+ ],
+ "imports": [
+  {
+   "specifier": "logging",
+   "names": [
+    "logging"
+   ],
+   "alias_of": [],
+   "evidence": {
+    "file": "src/shop/orders.py",
+    "start_line": 2,
+    "end_line": 2,
+    "rev": null
+   },
+   "is_relative": false,
+   "level": 0,
+   "type_only": false,
+   "is_from": false,
+   "is_reexport": false,
+   "is_star": false
+  }
+ ],
+ "calls": [
+  {
+   "name": "helper",
+   "shape": "bare",
+   "receiver": null,
+   "evidence": {
+    "file": "src/shop/orders.py",
+    "start_line": 16,
+    "end_line": 16,
+    "rev": null
+   },
+   "enclosing": "src.shop.orders.Order.total",
+   "enclosing_class": "Order",
+   "first_str_arg": null,
+   "ident_args": [],
+   "first_arg_ident": null,
+   "recv_call": null
+  },
+  {
+   "name": "Order",
+   "shape": "bare",
+   "receiver": null,
+   "evidence": {
+    "file": "src/shop/orders.py",
+    "start_line": 28,
+    "end_line": 28,
+    "rev": null
+   },
+   "enclosing": "src.shop.orders.make_order",
+   "enclosing_class": null,
+   "first_str_arg": null,
+   "ident_args": [],
+   "first_arg_ident": null,
+   "recv_call": null
+  }
+ ],
+ "fields": [],
+ "reexports": [],
+ "diagnostics": [],
+ "ctor_assigns": []
+}
