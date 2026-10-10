@@ -151,6 +151,7 @@ def _scan(
         design,
         design.exceptions,
         secrets=secret_texts(scan),
+        auth_markers=tuple(accepted.auth_markers) if accepted else (),
     )
     print()
     print(

@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 
 from svarupa.build import Graph
 from svarupa.detect import Scan, read_text
+from svarupa.health.auth import auth_checks
 from svarupa.health.catalog import AREAS, BY_ID, CATALOG, Check
 from svarupa.health.checks import (
     class_checks,
@@ -72,7 +73,10 @@ def assess(
     exceptions: Sequence[DesignException] = (),
     *,
     secrets: Mapping[str, str] | None = None,
+    auth_markers: Sequence[str] = (),
 ) -> Health:
+    unit_ids = [u.unit.id for u in design.units] if design is not None else []
+    auth, notes = auth_checks(graph, texts, auth_markers, unit_ids or [""])
     found = [
         *function_checks(graph),
         *file_checks(texts),
@@ -82,10 +86,11 @@ def assess(
         *design_checks(design, exceptions),
         *security_checks(graph),
         *secret_checks(secrets or {}),
+        *auth,
     ]
     kept = [v for v in found if not _excepted(v, exceptions)]
     accepted = sorted(
         (v for v in found if _excepted(v, exceptions)),
         key=lambda v: (v.check, v.evidence[0].file, v.evidence[0].start_line),
     )
-    return replace(grade(graph, texts, kept), accepted=tuple(accepted))
+    return replace(grade(graph, texts, kept), accepted=tuple(accepted), notes=tuple(notes))
