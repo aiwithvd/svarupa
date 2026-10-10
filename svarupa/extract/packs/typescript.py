@@ -542,6 +542,7 @@ METRICS = MetricsSpec(
             "method_definition",
             "arrow_function",
             "function_expression",
+            "generator_function",
         }
     ),
     branch_types=frozenset(

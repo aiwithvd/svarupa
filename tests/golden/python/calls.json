@@ -402,19 +402,6 @@
    "lines": 1
   },
   {
-   "name": "(anonymous)",
-   "evidence": {
-    "file": "src/svc/service.py",
-    "start_line": 23,
-    "end_line": 23,
-    "rev": null
-   },
-   "complexity": 1,
-   "params": 0,
-   "nesting": 0,
-   "lines": 1
-  },
-  {
    "name": "wrapped",
    "evidence": {
     "file": "src/svc/service.py",

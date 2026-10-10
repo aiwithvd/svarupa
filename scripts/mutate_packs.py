@@ -142,7 +142,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     (
         "nested functions add to the outer complexity",
         "svarupa/extract/packs/walker.py",
-        "            if kind in spec.function_types:\n                continue  # measured on its own\n",
+        "            if kind in spec.function_types and node.is_named:\n                continue  # measured on its own\n",
         "",
     ),
     (

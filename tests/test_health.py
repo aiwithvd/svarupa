@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from svarupa.build import build
 from svarupa.detect import detect
 from svarupa.extract import declared_dependencies, extract
@@ -195,3 +197,46 @@ def test_cycle_evidence_is_ordered_by_file_and_line(tmp_path: Path) -> None:
         ("a/x.py", 3),
         ("b/z.py", 1),
     ]
+
+
+LICENSE = (
+    "/*\nCopyright 2024 The Authors.\n\nLicensed under the Apache License, Version 2.0 (the\n"
+    '"License"); you may not use this file except in compliance with the License.\n'
+    "You may obtain a copy of the License at\n\n    http://www.apache.org/licenses/LICENSE-2.0\n\n"
+    "Unless required by applicable law or agreed to in writing, software\n"
+    'distributed under the License is distributed on an "AS IS" BASIS,\n'
+    "WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n"
+    "See the License for the specific language governing permissions and\n"
+    "limitations under the License.\n*/\n\n"
+)
+GO_IMPORTS = "import (\n" + "".join(f'\t"github.com/acme/pkg{i}"\n' for i in range(11)) + ")\n"
+PY_IMPORTS = "from x import (\n" + "".join(f"    name{i},\n" for i in range(11)) + ")\n"
+TS_IMPORTS = "import {\n" + "".join(f"  Name{i},\n" for i in range(11)) + "} from './x';\n"
+PY_DOC = (
+    '"""Module.\n\n'
+    + "".join(f"Line {i} of a shared license text.\n" for i in range(11))
+    + '"""\n'
+)
+
+
+@pytest.mark.parametrize(
+    "ext,head",
+    [
+        ("go", LICENSE + "package foo\n\n"),
+        ("go", "package foo\n\n" + GO_IMPORTS),
+        ("py", PY_IMPORTS),
+        ("ts", TS_IMPORTS),
+        ("py", PY_DOC),
+    ],
+)
+def test_headers_and_import_groups_are_not_duplication(
+    tmp_path: Path, ext: str, head: str
+) -> None:
+    write(tmp_path, f"app/a.{ext}", head + "\n")
+    write(tmp_path, f"app/b.{ext}", head + "\n")
+    from svarupa.health.duplication import duplicated_blocks
+
+    texts = {
+        p: (tmp_path / p).read_text(encoding="utf8") for p in (f"app/a.{ext}", f"app/b.{ext}")
+    }
+    assert duplicated_blocks(texts) == []

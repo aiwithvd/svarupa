@@ -1,7 +1,8 @@
 """Duplicated blocks: the same 10 or more lines in more than one place.
 
-Lines are compared after collapsing whitespace. Blank lines, comments,
-punctuation-only lines and import or package lines are skipped, so shared
+Lines are compared after collapsing whitespace. Blank lines, comments
+(including whole `/* */` blocks and docstrings), punctuation-only lines and
+import or package lines (including grouped imports) are skipped, so shared
 import blocks and license headers never count as copy-paste.
 """
 
@@ -20,10 +21,34 @@ WINDOW = 10
 _SKIP_PREFIXES = ("#", "//", "/*", "*", "import ", "from ", "package ", "using ", "require(")
 
 
+def _opens_group(line: str) -> str | None:
+    """The closing token of a grouped import that starts on this line."""
+    if line.startswith(("import (", "from ")) and line.endswith("("):
+        return ")"
+    if line.startswith(("import {", "import type {", "export {")) and line.endswith("{"):
+        return "}"
+    return None
+
+
 def _lines(text: str) -> list[tuple[int, str]]:
     out: list[tuple[int, str]] = []
+    skip_until: str | None = None  # inside a block comment, docstring or import group
     for number, raw in enumerate(text.splitlines(), 1):
         line = " ".join(raw.split())
+        if skip_until is not None:
+            if skip_until in line:
+                skip_until = None
+            continue
+        if line.startswith("/*") and "*/" not in line[2:]:
+            skip_until = "*/"
+            continue
+        if line.startswith(('"""', "'''")):
+            if line.count(line[:3]) == 1:
+                skip_until = line[:3]
+            continue
+        if (closer := _opens_group(line)) is not None:
+            skip_until = closer
+            continue
         if not line or line.startswith(_SKIP_PREFIXES) or not any(ch.isalnum() for ch in line):
             continue
         out.append((number, line))

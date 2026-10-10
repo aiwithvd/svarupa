@@ -138,3 +138,39 @@ def test_metrics_reach_the_graph(tmp_path) -> None:
     scan = detect(tmp_path)
     graph = build(scan, extract(scan, declared_dependencies(scan)), strict=False)
     assert [(m.evidence.file, m.name) for m in graph.functions] == [("app/m.py", "f")]
+
+
+def test_a_python_lambda_is_measured_once() -> None:
+    f = extractor("python").parse("m.py", b"g = lambda x: x if x else 0\n")
+    assert [(m.name, m.complexity) for m in f.functions] == [("(anonymous)", 2)]
+
+
+def test_a_js_generator_expression_is_its_own_function() -> None:
+    got = metrics(
+        "javascript",
+        "m.js",
+        "function outer(a) {\n  const ge = function* (b) { if (b) {} };\n  return ge;\n}\n",
+    )
+    assert got["outer"][0] == 1
+    assert got["ge"][0] == 2
+
+
+def test_every_metrics_node_type_exists_in_its_grammar() -> None:
+    from svarupa.extract.packs import PACKS
+    from svarupa.extract.packs.walker import language_for
+
+    for pack in PACKS:
+        spec = pack.metrics
+        if spec is None:
+            continue
+        names = (
+            spec.function_types
+            | spec.branch_types
+            | spec.nesting_types
+            | {t for t, _ in spec.boolean_ops}
+            | {t for t, _ in spec.not_branch}
+        )
+        for path in ["x", *(f"x{s}" for s, _ in pack.grammar.by_suffix)]:
+            lang = language_for(pack.grammar, path)
+            missing = sorted(n for n in names if lang.id_for_node_kind(n, True) is None)
+            assert not missing, (pack.lang, path, missing)

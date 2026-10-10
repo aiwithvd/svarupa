@@ -221,7 +221,9 @@ class Ctx:
         stack = [root]
         while stack:
             node = stack.pop()
-            if node.type in spec.function_types:
+            # Named nodes only: Python's `lambda` keyword token shares the
+            # node's type name and would be measured as a second function.
+            if node.is_named and node.type in spec.function_types:
                 out.append(self._measure(node, spec))
             stack.extend(reversed(node.children))
         return out
@@ -234,7 +236,7 @@ class Ctx:
         while work:
             node, depth, parent = work.pop()
             kind = node.type
-            if kind in spec.function_types:
+            if kind in spec.function_types and node.is_named:
                 continue  # measured on its own
             if kind in spec.branch_types:
                 if not any((kind, c.type) in excluded for c in node.children):
