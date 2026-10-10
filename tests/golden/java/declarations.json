@@ -174,5 +174,46 @@
   }
  ],
  "ctor_assigns": [],
- "namespace": "com.acme.shop.model"
+ "namespace": "com.acme.shop.model",
+ "functions": [
+  {
+   "name": "call",
+   "evidence": {
+    "file": "src/main/java/com/acme/shop/model/Types.java",
+    "start_line": 4,
+    "end_line": 4,
+    "rev": null
+   },
+   "complexity": 1,
+   "params": 0,
+   "nesting": 0,
+   "lines": 1
+  },
+  {
+   "name": "total",
+   "evidence": {
+    "file": "src/main/java/com/acme/shop/model/Types.java",
+    "start_line": 10,
+    "end_line": 10,
+    "rev": null
+   },
+   "complexity": 1,
+   "params": 0,
+   "nesting": 0,
+   "lines": 1
+  },
+  {
+   "name": "run",
+   "evidence": {
+    "file": "src/main/java/com/acme/shop/model/Types.java",
+    "start_line": 15,
+    "end_line": 15,
+    "rev": null
+   },
+   "complexity": 1,
+   "params": 0,
+   "nesting": 0,
+   "lines": 1
+  }
+ ]
 }

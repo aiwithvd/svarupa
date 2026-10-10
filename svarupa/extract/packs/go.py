@@ -21,6 +21,7 @@ from svarupa.extract.packs.model import (
     Grammar,
     Import,
     Maturity,
+    MetricsSpec,
     Pack,
 )
 from svarupa.extract.packs.modules import GoModules
@@ -195,6 +196,40 @@ def call(ctx: Ctx, node: TSNode, frame: Frame) -> CallSite | None:
     return None
 
 
+def _count_params(fn: TSNode) -> int:
+    params = fn.child_by_field_name("parameters")
+    if params is None:
+        return 0
+    count = 0
+    for c in params.children:
+        if c.type == "parameter_declaration":
+            # `a, b int` declares two; an unnamed `int` declares one.
+            count += max(1, sum(1 for x in c.children if x.type == "identifier"))
+        elif c.type == "variadic_parameter_declaration":
+            count += 1
+    return count
+
+
+METRICS = MetricsSpec(
+    function_types=frozenset({"function_declaration", "method_declaration", "func_literal"}),
+    branch_types=frozenset(
+        {"if_statement", "for_statement", "expression_case", "type_case", "communication_case"}
+    ),
+    nesting_types=frozenset(
+        {
+            "if_statement",
+            "for_statement",
+            "expression_switch_statement",
+            "type_switch_statement",
+            "select_statement",
+        }
+    ),
+    count_params=_count_params,
+    boolean_ops=(("binary_expression", frozenset({"&&", "||"})),),
+    else_if_parents=frozenset({"if_statement"}),
+)
+
+
 PACK = Pack(
     lang="go",
     grammar=Grammar(
@@ -204,6 +239,7 @@ PACK = Pack(
         default="language",
     ),
     maturity=Maturity.STABLE,
+    metrics=METRICS,
     rules={
         "import_spec": Import(hook=import_),
         "type_spec": Custom(hook=type_spec),

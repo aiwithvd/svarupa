@@ -135,3 +135,16 @@ why = "compose.yaml defines only web and mysql; the app opens a mysql driver"
 [[must_not]]
 call = "article/service.go -> internal/repository/mysql/article.go#GetByID"
 why = "GetByID is a method on *ArticleRepository, reached from the service only through the ArticleRepository interface"
+
+# Health violations (counted by hand from source)
+[[must_not]]
+violation = "complex-function internal/repository/helper.go:13"
+why = "internal/repository/helper.go:13 func DecodeCursor(encodedTime): complexity 2, 11 lines, 1 parameter"
+
+[[must_not]]
+violation = "complex-function internal/repository/mysql/author.go:38"
+why = "internal/repository/mysql/author.go:38 func (m *AuthorRepository) GetByID(ctx, id): complexity 1, 4 lines, 2 parameters"
+
+[[must_not]]
+violation = "long-function article/service.go:38"
+why = "article/service.go:38 func NewService(a, ar): 6 lines, complexity 1"

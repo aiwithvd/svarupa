@@ -144,3 +144,20 @@ why = "the sign-up route is POST /register; no /signup route exists"
 [[must_not]]
 call = "src/controllers/auth.controller.js -> src/services/auth.service.js#register"
 why = "auth.service.js exports loginUserWithEmailAndPassword, logout, refreshAuth, resetPassword and verifyEmail; register is a controller function that calls userService.createUser"
+
+# Health violations (counted by hand from source)
+[[must]]
+violation = "module-cycle src/config/passport.js:4"
+why = "src/config/passport.js:4 requires ../models, while src/models/token.model.js:3 requires ../config/tokens and src/models/user.model.js:5 requires ../config/roles, so src/config and src/models require each other"
+[[must_not]]
+violation = "complex-function src/services/user.service.js:10"
+why = "src/services/user.service.js:10 createUser(userBody): 1 if, complexity 2, 6 lines, 1 parameter"
+[[must_not]]
+violation = "complex-function src/services/user.service.js:26"
+why = "src/services/user.service.js:26 queryUsers(filter, options): no branches, complexity 1, 4 lines, 2 parameters"
+[[must_not]]
+violation = "complex-function src/services/user.service.js:36"
+why = "src/services/user.service.js:36 getUserById(id): one return, complexity 1, 3 lines, 1 parameter"
+[[must_not]]
+violation = "long-function src/services/auth.service.js:27"
+why = "src/services/auth.service.js:27 logout(refreshToken): 7 lines (27 to 33)"

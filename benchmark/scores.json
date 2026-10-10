@@ -1,8 +1,8 @@
 {
  "bakerydemo": {
   "recall": 1.0,
-  "found": 24,
-  "total": 24,
+  "found": 26,
+  "total": 26,
   "missed": [],
   "fired": [],
   "by_kind": {
@@ -25,14 +25,22 @@
    "service": [
     1,
     1
+   ],
+   "violation:long-function": [
+    1,
+    1
+   ],
+   "violation:module-cycle": [
+    1,
+    1
    ]
   },
-  "expected": "0c6562d3db13f50c"
+  "expected": "0a136bd0c28bf519"
  },
  "express-boilerplate": {
-  "recall": 0.9697,
-  "found": 32,
-  "total": 33,
+  "recall": 0.9706,
+  "found": 33,
+  "total": 34,
   "missed": [
    "call:src/controllers/user.controller.js -> src/services/user.service.js#queryUsers"
   ],
@@ -61,9 +69,13 @@
    "service": [
     1,
     1
+   ],
+   "violation:module-cycle": [
+    1,
+    1
    ]
   },
-  "expected": "337f2100dc737cc8"
+  "expected": "c1b4b34e9d5a296c"
  },
  "fastapi-template": {
   "recall": 1.0,
@@ -97,12 +109,12 @@
     3
    ]
   },
-  "expected": "f2e51805af3d9b12"
+  "expected": "3d43d974aaffe19b"
  },
  "gin-realworld": {
   "recall": 1.0,
-  "found": 19,
-  "total": 19,
+  "found": 21,
+  "total": 21,
   "missed": [],
   "fired": [],
   "by_kind": {
@@ -117,9 +129,17 @@
    "module": [
     4,
     4
+   ],
+   "violation:complex-function": [
+    1,
+    1
+   ],
+   "violation:long-function": [
+    1,
+    1
    ]
   },
-  "expected": "1b602a62aa024e50"
+  "expected": "36872b5ce19e6da9"
  },
  "go-clean-arch": {
   "recall": 1.0,
@@ -149,12 +169,12 @@
     1
    ]
   },
-  "expected": "e8ca5ce60ba0b51d"
+  "expected": "ba0f746f96fcc213"
  },
  "go-clean-template": {
   "recall": 1.0,
-  "found": 36,
-  "total": 36,
+  "found": 39,
+  "total": 39,
   "missed": [],
   "fired": [],
   "by_kind": {
@@ -181,14 +201,22 @@
    "service": [
     3,
     3
+   ],
+   "violation:long-function": [
+    2,
+    2
+   ],
+   "violation:many-parameters": [
+    1,
+    1
    ]
   },
-  "expected": "305cba6f852ff31f"
+  "expected": "20b6c96a78b8f5f5"
  },
  "microblog": {
-  "recall": 0.9667,
-  "found": 29,
-  "total": 30,
+  "recall": 0.9688,
+  "found": 31,
+  "total": 32,
   "missed": [
    "record:endpoint\tPOST /tokens\tapp/api"
   ],
@@ -209,14 +237,22 @@
    "module": [
     6,
     6
+   ],
+   "violation:long-function": [
+    1,
+    1
+   ],
+   "violation:module-cycle": [
+    1,
+    1
    ]
   },
-  "expected": "14f396490d99a4c6"
+  "expected": "0fb3c38614a35344"
  },
  "nestjs-prisma": {
   "recall": 1.0,
-  "found": 27,
-  "total": 27,
+  "found": 28,
+  "total": 28,
   "missed": [],
   "fired": [],
   "by_kind": {
@@ -243,9 +279,13 @@
    "service": [
     2,
     2
+   ],
+   "violation:module-cycle": [
+    1,
+    1
    ]
   },
-  "expected": "0efc6f8bc3b76214"
+  "expected": "3002b105ba1081bf"
  },
  "petclinic": {
   "recall": 1.0,
@@ -271,12 +311,12 @@
     5
    ]
   },
-  "expected": "e13a204293e1e4eb"
+  "expected": "89c0e2c1d6095c4f"
  },
  "spring-realworld": {
   "recall": 1.0,
-  "found": 31,
-  "total": 31,
+  "found": 33,
+  "total": 33,
   "missed": [],
   "fired": [],
   "by_kind": {
@@ -291,14 +331,22 @@
    "module": [
     10,
     10
+   ],
+   "violation:many-parameters": [
+    1,
+    1
+   ],
+   "violation:module-cycle": [
+    1,
+    1
    ]
   },
-  "expected": "348a051fef3774c8"
+  "expected": "d73f07c4ba19cfa7"
  },
  "taxonomy": {
   "recall": 1.0,
-  "found": 25,
-  "total": 25,
+  "found": 35,
+  "total": 35,
   "missed": [],
   "fired": [],
   "by_kind": {
@@ -313,8 +361,12 @@
    "module": [
     8,
     8
+   ],
+   "violation:long-function": [
+    10,
+    10
    ]
   },
-  "expected": "f5d75ee86312719d"
+  "expected": "f03b09e004bfcef6"
  }
 }

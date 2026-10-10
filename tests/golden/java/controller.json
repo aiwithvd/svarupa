@@ -311,5 +311,46 @@
  "reexports": [],
  "diagnostics": [],
  "ctor_assigns": [],
- "namespace": "com.acme.shop"
+ "namespace": "com.acme.shop",
+ "functions": [
+  {
+   "name": "OrderController",
+   "evidence": {
+    "file": "src/main/java/com/acme/shop/OrderController.java",
+    "start_line": 13,
+    "end_line": 16,
+    "rev": null
+   },
+   "complexity": 1,
+   "params": 1,
+   "nesting": 0,
+   "lines": 4
+  },
+  {
+   "name": "list",
+   "evidence": {
+    "file": "src/main/java/com/acme/shop/OrderController.java",
+    "start_line": 18,
+    "end_line": 26,
+    "rev": null
+   },
+   "complexity": 1,
+   "params": 0,
+   "nesting": 0,
+   "lines": 9
+  },
+  {
+   "name": "own",
+   "evidence": {
+    "file": "src/main/java/com/acme/shop/OrderController.java",
+    "start_line": 28,
+    "end_line": 28,
+    "rev": null
+   },
+   "complexity": 1,
+   "params": 0,
+   "nesting": 0,
+   "lines": 1
+  }
+ ]
 }

@@ -113,3 +113,24 @@ why = "api/ holds only a shell script and a Postman collection, no Go source"
 [[must_not]]
 call = "hello.go -> articles/models.go#Update"
 why = "Update is a method on *ArticleModel, not a top-level function, and hello.go never calls it"
+
+# Health violations (counted by hand from source)
+[[must]]
+violation = "complex-function articles/models.go:177"
+why = "articles/models.go:177 func FindManyArticle(...): 13 ifs (including 2 else if), 3 for loops = complexity 17"
+
+[[must]]
+violation = "long-function articles/models.go:177"
+why = "articles/models.go:177 func FindManyArticle(...) runs from line 177 to line 264 = 88 lines"
+
+[[must_not]]
+violation = "complex-function articles/models.go:170"
+why = "articles/models.go:170 func getAllTags(): complexity 1, 6 lines, 0 parameters"
+
+[[must_not]]
+violation = "complex-function users/models.go:80"
+why = "users/models.go:80 func FindOneUser(condition): complexity 1, 6 lines, 1 parameter"
+
+[[must_not]]
+violation = "long-function users/models.go:57"
+why = "users/models.go:57 func (u *UserModel) setPassword(password): 10 lines, complexity 2"

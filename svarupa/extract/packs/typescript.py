@@ -29,6 +29,7 @@ from svarupa.extract.packs.model import (
     Grammar,
     Import,
     Maturity,
+    MetricsSpec,
     Pack,
 )
 from svarupa.extract.packs.walker import Ctx, Frame
@@ -521,6 +522,58 @@ RULES = {
     "call_expression": Call(hook=call),
 }
 
+
+def _count_params(fn: TSNode) -> int:
+    if fn.child_by_field_name("parameter") is not None:
+        return 1  # `x => x`
+    params = fn.child_by_field_name("parameters")
+    if params is None:
+        return 0
+    return sum(
+        1 for c in params.children if c.type in ("required_parameter", "optional_parameter")
+    )
+
+
+METRICS = MetricsSpec(
+    function_types=frozenset(
+        {
+            "function_declaration",
+            "generator_function_declaration",
+            "method_definition",
+            "arrow_function",
+            "function_expression",
+            "generator_function",
+        }
+    ),
+    branch_types=frozenset(
+        {
+            "if_statement",
+            "for_statement",
+            "for_in_statement",
+            "while_statement",
+            "do_statement",
+            "switch_case",
+            "catch_clause",
+            "ternary_expression",
+        }
+    ),
+    nesting_types=frozenset(
+        {
+            "if_statement",
+            "for_statement",
+            "for_in_statement",
+            "while_statement",
+            "do_statement",
+            "switch_statement",
+            "try_statement",
+        }
+    ),
+    count_params=_count_params,
+    boolean_ops=(("binary_expression", frozenset({"&&", "||", "??"})),),
+    else_if_parents=frozenset({"else_clause"}),
+)
+
+
 PACK = Pack(
     lang="typescript",
     grammar=Grammar(
@@ -531,6 +584,7 @@ PACK = Pack(
         by_suffix=((".tsx", "language_tsx"),),
     ),
     maturity=Maturity.STABLE,
+    metrics=METRICS,
     qualified_prefix=lambda path: path.rsplit(".", 1)[0].replace("/", "."),
     decorator=decorator,
     rules=RULES,

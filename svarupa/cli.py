@@ -15,6 +15,7 @@ from svarupa.detect import FileRole, ScanLimits, detect
 from svarupa.diagnostics import Diagnostic, DiagnosticError, Severity
 from svarupa.emit import OUTPUT_DIR, claim, emit
 from svarupa.extract import declared_dependencies, extract
+from svarupa.health import assess, source_texts
 from svarupa.lock import (
     LOCK_NAME,
     SCHEMA_MAJOR,
@@ -124,6 +125,20 @@ def _scan(
         for d in graph_errors[:5]:
             print("   " + d.render())
 
+    health = assess(graph, source_texts(scan, graph))
+    print()
+    print(
+        "  health: "
+        + ", ".join(f"{area} {letter or 'not assessed'}" for area, letter in health.ratings)
+    )
+    print(
+        f"    {health.ncloc} lines of code, {health.debt_minutes} min debt, "
+        f"ratio {health.debt_ratio:.1%}, {len(health.violations)} violation(s)"
+    )
+    for v in health.violations[:3]:
+        ev = v.evidence[0]
+        print(f"    {v.check:<18} {ev.file}:{ev.start_line}  {v.message}")
+
     clustering = cluster(graph)
     print()
     print(
@@ -157,7 +172,14 @@ def _scan(
     for note in notes:
         print(f"    - {note}")
 
-    artifact = emit(Path(scan.root), graph, produced, notes, out_dir=Path(out) if out else None)
+    artifact = emit(
+        Path(scan.root),
+        graph,
+        produced,
+        notes,
+        out_dir=Path(out) if out else None,
+        health=health,
+    )
     print()
     print(f"  wrote {artifact.directory.name}/")
     for name, size in artifact.files:

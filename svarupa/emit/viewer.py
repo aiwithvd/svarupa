@@ -22,6 +22,7 @@ from svarupa.derive.base import DiagramKind, DiagramSet
 from svarupa.emit.cards import Card, cards_for, chapters_for, render_cards, render_guided
 from svarupa.emit.markup import Markup, esc, join, raw, tag
 from svarupa.emit.svg import canvas_svg, evidence_ref, expanded_svg
+from svarupa.health import BY_ID, Health
 from svarupa.layout import LaidOutDiagram
 from svarupa.layout.geometry import Style
 from svarupa.layout.text import FONT_STACK
@@ -1561,6 +1562,49 @@ def _unavailable(notes: tuple[str, ...]) -> Markup:
     )
 
 
+def _health_tab(health: Health | None) -> Markup:
+    """Ratings, the fixes worth doing first, and every violation with its line."""
+    if health is None:
+        return raw("")
+    ratings = join(
+        tag("li", join((tag("strong", esc(area)), esc(" " + (letter or "not assessed yet")))))
+        for area, letter in health.ratings
+    )
+    items = join(
+        tag(
+            "li",
+            join(
+                (
+                    tag("code", esc(f"{v.evidence[0].file}:{v.evidence[0].start_line}")),
+                    esc(f" {BY_ID[v.check].title}: {v.message} ({v.minutes} min)"),
+                )
+            ),
+        )
+        for v in health.violations
+    )
+    return tag(
+        "section",
+        join(
+            (
+                tag("h2", esc("Health")),
+                tag(
+                    "p",
+                    esc(
+                        f"{health.ncloc} lines of code, {health.debt_minutes} minutes of "
+                        f"technical debt, debt ratio {health.debt_ratio:.1%} (SQALE)."
+                    ),
+                    class_="meta",
+                ),
+                tag("ul", ratings),
+                tag("h3", esc("Violations, highest impact first")),
+                tag("ol", items) if health.violations else tag("p", esc("No violations.")),
+            )
+        ),
+        class_="tab",
+        id="d-health",
+    )
+
+
 def render_viewer(
     root: str,
     produced: dict[DiagramKind, DiagramSet],
@@ -1569,12 +1613,14 @@ def render_viewer(
     style: Style,
     version: str,
     graph: Graph | None = None,
+    health: Health | None = None,
 ) -> str:
     """The whole document, as one self-contained string."""
     kinds = sorted(produced, key=lambda k: k.value)
     cards = cards_for(graph) if graph is not None else ()
     nav = join(
         [tag("a", esc(k.value), href=f"#d-{k.value}") for k in kinds]
+        + ([tag("a", esc("health"), href="#d-health")] if health is not None else [])
         + (
             [
                 tag(
@@ -1626,6 +1672,7 @@ def render_viewer(
             header,
             join(_tab(produced[k], laid_out[k], style, cards) for k in kinds),
             _unavailable(notes),
+            _health_tab(health),
             tag(
                 "aside",
                 join(

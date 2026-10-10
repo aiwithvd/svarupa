@@ -180,6 +180,7 @@ def extract(scan: Scan, declared_deps: frozenset[str] = frozenset()) -> ExtractR
             + tuple(crashes)
         ),
         routes=sem.routes,
+        functions=tuple(m for f in facts for m in f.functions),
         tasks=sem.tasks,
         entrypoints=sem.entrypoints,
         externals=sem.externals,

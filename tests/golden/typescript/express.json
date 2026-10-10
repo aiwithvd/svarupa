@@ -322,5 +322,33 @@
    "Router"
   ]
  ],
- "namespace": ""
+ "namespace": "",
+ "functions": [
+  {
+   "name": "(anonymous)",
+   "evidence": {
+    "file": "src/server.js",
+    "start_line": 8,
+    "end_line": 8,
+    "rev": null
+   },
+   "complexity": 1,
+   "params": 2,
+   "nesting": 0,
+   "lines": 1
+  },
+  {
+   "name": "(anonymous)",
+   "evidence": {
+    "file": "src/server.js",
+    "start_line": 17,
+    "end_line": 19,
+    "rev": null
+   },
+   "complexity": 1,
+   "params": 0,
+   "nesting": 0,
+   "lines": 3
+  }
+ ]
 }

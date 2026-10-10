@@ -37,6 +37,7 @@ __all__ = [
     "Extractor",
     "FieldType",
     "FileFacts",
+    "FunctionMetrics",
     "ImportRef",
     "RouteFact",
     "Scorecard",
@@ -200,6 +201,24 @@ class CallSite:
 
 
 @dataclass(frozen=True, slots=True)
+class FunctionMetrics:
+    """Size and shape of one function, measured from its syntax tree.
+
+    `complexity` is McCabe's cyclomatic complexity: 1 plus one per decision
+    point. A function nested inside this one is measured on its own and adds
+    nothing here. `nesting` is the deepest block nesting inside the body,
+    where an `else if` continues its chain rather than nesting deeper.
+    """
+
+    name: str  # "(anonymous)" when the language gives it none
+    evidence: Evidence  # the whole function
+    complexity: int
+    params: int
+    nesting: int
+    lines: int
+
+
+@dataclass(frozen=True, slots=True)
 class FileFacts:
     """Pass 1 output for a single file. Cacheable by content hash."""
 
@@ -217,6 +236,9 @@ class FileFacts:
     # The language's own namespace for the file (Java `package a.b;`), or "".
     # Languages whose imports name packages resolve through it.
     namespace: str = ""
+    # Per-function metrics, in document order; empty for packs without a
+    # MetricsSpec or a file whose tree nests past the depth cap.
+    functions: tuple[FunctionMetrics, ...] = ()
 
 
 def _d_counts() -> dict[tuple[str, str, Resolution], int]:
@@ -439,6 +461,7 @@ class ExtractResult:
     entrypoints: tuple[EntrypointFact, ...] = ()
     externals: tuple[ExternalFact, ...] = ()
     environments: tuple[EnvironmentFact, ...] = ()
+    functions: tuple[FunctionMetrics, ...] = ()
 
 
 # A syntax tree deeper than this is walked no further. Minified bundles nest

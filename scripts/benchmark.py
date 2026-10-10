@@ -25,6 +25,7 @@ from svarupa import __version__
 from svarupa.build import build
 from svarupa.detect import detect, load_toml
 from svarupa.extract import declared_dependencies, extract
+from svarupa.health import assess, source_texts
 from svarupa.lock import build_lock
 from svarupa.model import EdgeKind, Resolution
 
@@ -99,6 +100,9 @@ def _fact(entry: dict[str, object]) -> Fact:
     if "record" in entry:
         fields = [str(x) for x in entry["record"]]  # type: ignore[union-attr]
         return Fact("record:" + "\t".join(fields), fields[0], why)
+    if "violation" in entry:
+        text = str(entry["violation"]).strip()
+        return Fact("violation:" + text, "violation:" + text.split(" ", 1)[0], why)
     if "call" in entry:
         return Fact("call:" + str(entry["call"]).strip(), "call", why)
     raise BenchmarkError(f"a fact needs `record` or `call`: {entry}")
@@ -160,6 +164,11 @@ def observe(root: Path) -> tuple[set[str], set[str]]:
         seen.add(key)
         if e.resolution is Resolution.RESOLVED:
             resolved.add(key)
+    for v in assess(graph, source_texts(scan, graph)).violations:
+        ev = v.evidence[0]
+        key = f"violation:{v.check} {ev.file}:{ev.start_line}"
+        resolved.add(key)
+        seen.add(key)
     return resolved, seen
 
 
@@ -257,6 +266,22 @@ def stable_languages(corpus: list[Repo], accepted: dict[str, dict[str, object]])
         for lang in repo.languages:
             good[lang] = good.get(lang, 0) + 1
     return {lang for lang, n in good.items() if n >= STABLE_REPOS}
+
+
+def stable_checks(accepted: dict[str, dict[str, object]]) -> set[str]:
+    """Checks with expected violations found at >= 90% on at least two repos,
+    where no probe for that check fired."""
+    good: dict[str, int] = {}
+    for acc in accepted.values():
+        fired = {str(k).split(" ", 1)[0] for k in acc.get("fired", [])}  # type: ignore[union-attr]
+        for kind, pair in dict(acc.get("by_kind", {})).items():  # type: ignore[arg-type]
+            if not kind.startswith("violation:"):
+                continue
+            found, total = pair
+            if total and found / total >= STABLE_RECALL and kind not in fired:
+                check = kind.removeprefix("violation:")
+                good[check] = good.get(check, 0) + 1
+    return {c for c, n in good.items() if n >= STABLE_REPOS}
 
 
 def table(scores: dict[str, Score]) -> str:

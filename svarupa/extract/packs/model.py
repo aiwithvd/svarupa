@@ -41,7 +41,9 @@ __all__ = [
     "Import",
     "ImportHook",
     "Maturity",
+    "MetricsSpec",
     "Pack",
+    "ParamsHook",
     "Rule",
 ]
 
@@ -54,6 +56,7 @@ CustomHook = Callable[["Ctx", TSNode, "Frame", int], None]
 DecoratorHook = Callable[["Ctx", TSNode], DecoratorRef | None]
 BasesHook = Callable[["Ctx", TSNode], tuple[str, ...]]
 AfterHook = Callable[["Ctx", TSNode, "Frame", str], None]
+ParamsHook = Callable[[TSNode], int]
 ExportedHook = Callable[["Ctx", TSNode, str], bool]
 DecoratorsHook = Callable[["Ctx", TSNode], tuple[DecoratorRef, ...]]
 
@@ -144,6 +147,22 @@ class Grammar:
 
 
 @dataclass(frozen=True, slots=True)
+class MetricsSpec:
+    """Which syntax nodes are functions, decisions and nesting blocks."""
+
+    function_types: frozenset[str]
+    branch_types: frozenset[str]
+    nesting_types: frozenset[str]
+    count_params: ParamsHook
+    # Node type -> operator tokens that make it a decision (`a && b`).
+    boolean_ops: tuple[tuple[str, frozenset[str]], ...] = ()
+    # (node type, child token) pairs that are not a decision (`default:`).
+    not_branch: tuple[tuple[str, str], ...] = ()
+    # An `if` directly under one of these is an `else if`: no extra nesting.
+    else_if_parents: frozenset[str] = frozenset()
+
+
+@dataclass(frozen=True, slots=True)
 class Pack:
     lang: str  # the label every fact from this pack carries
     grammar: Grammar
@@ -154,3 +173,4 @@ class Pack:
     # Imports that name packages need their own resolver; None means the
     # language resolves in resolve.py (Python, TypeScript, JavaScript).
     modules: Callable[[ModuleContext], ModuleResolver] | None = None
+    metrics: MetricsSpec | None = None

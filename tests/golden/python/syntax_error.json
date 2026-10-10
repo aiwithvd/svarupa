@@ -66,5 +66,33 @@
   }
  ],
  "ctor_assigns": [],
- "namespace": ""
+ "namespace": "",
+ "functions": [
+  {
+   "name": "broken",
+   "evidence": {
+    "file": "src/bad.py",
+    "start_line": 1,
+    "end_line": 2,
+    "rev": null
+   },
+   "complexity": 1,
+   "params": 0,
+   "nesting": 0,
+   "lines": 2
+  },
+  {
+   "name": "fine",
+   "evidence": {
+    "file": "src/bad.py",
+    "start_line": 5,
+    "end_line": 6,
+    "rev": null
+   },
+   "complexity": 1,
+   "params": 0,
+   "nesting": 0,
+   "lines": 2
+  }
+ ]
 }

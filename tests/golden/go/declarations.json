@@ -128,5 +128,59 @@
   }
  ],
  "ctor_assigns": [],
- "namespace": ""
+ "namespace": "",
+ "functions": [
+  {
+   "name": "NewService",
+   "evidence": {
+    "file": "internal/orders/service.go",
+    "start_line": 13,
+    "end_line": 15,
+    "rev": null
+   },
+   "complexity": 1,
+   "params": 0,
+   "nesting": 0,
+   "lines": 3
+  },
+  {
+   "name": "Place",
+   "evidence": {
+    "file": "internal/orders/service.go",
+    "start_line": 17,
+    "end_line": 20,
+    "rev": null
+   },
+   "complexity": 1,
+   "params": 1,
+   "nesting": 0,
+   "lines": 4
+  },
+  {
+   "name": "(anonymous)",
+   "evidence": {
+    "file": "internal/orders/service.go",
+    "start_line": 18,
+    "end_line": 18,
+    "rev": null
+   },
+   "complexity": 1,
+   "params": 0,
+   "nesting": 0,
+   "lines": 1
+  },
+  {
+   "name": "save",
+   "evidence": {
+    "file": "internal/orders/service.go",
+    "start_line": 22,
+    "end_line": 22,
+    "rev": null
+   },
+   "complexity": 1,
+   "params": 0,
+   "nesting": 0,
+   "lines": 1
+  }
+ ]
 }

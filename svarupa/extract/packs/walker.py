@@ -31,6 +31,7 @@ from svarupa.extract.base import (
     Extractor,
     FieldType,
     FileFacts,
+    FunctionMetrics,
     ImportRef,
     SymbolRef,
     depth_capped,
@@ -44,6 +45,7 @@ from svarupa.extract.packs.model import (
     Field,
     Grammar,
     Import,
+    MetricsSpec,
     Pack,
 )
 from svarupa.model import Evidence
@@ -209,6 +211,60 @@ class Ctx:
             self.visit(child, replace(inner, decorators=tuple(pending)), depth + 1)
             pending = []
 
+    def measure(self, root: TSNode) -> list[FunctionMetrics]:
+        """Every function in document order. Iterative, so a deep file costs
+        no recursion; skipped when the tree already blew the depth cap."""
+        spec = self.pack.metrics
+        if spec is None or self.too_deep:
+            return []
+        out: list[FunctionMetrics] = []
+        stack = [root]
+        while stack:
+            node = stack.pop()
+            # Named nodes only: Python's `lambda` keyword token shares the
+            # node's type name and would be measured as a second function.
+            if node.is_named and node.type in spec.function_types:
+                out.append(self._measure(node, spec))
+            stack.extend(reversed(node.children))
+        return out
+
+    def _measure(self, fn: TSNode, spec: MetricsSpec) -> FunctionMetrics:
+        ops = dict(spec.boolean_ops)
+        excluded = set(spec.not_branch)
+        complexity, deepest = 1, 0
+        work = [(c, 0, fn.type) for c in reversed(fn.children)]
+        while work:
+            node, depth, parent = work.pop()
+            kind = node.type
+            if kind in spec.function_types and node.is_named:
+                continue  # measured on its own
+            if kind in spec.branch_types:
+                if not any((kind, c.type) in excluded for c in node.children):
+                    complexity += 1
+            elif kind in ops and any(c.type in ops[kind] for c in node.children):
+                complexity += 1
+            nests = kind in spec.nesting_types and not (
+                kind == "if_statement" and parent in spec.else_if_parents
+            )
+            here = depth + 1 if nests else depth
+            deepest = max(deepest, here)
+            work.extend((c, here, kind) for c in reversed(node.children))
+        start, end = fn.start_point[0], fn.end_point[0]
+        return FunctionMetrics(
+            name=self._function_name(fn),
+            evidence=self.evidence(start, end),
+            complexity=complexity,
+            params=spec.count_params(fn),
+            nesting=deepest,
+            lines=end - start + 1,
+        )
+
+    def _function_name(self, fn: TSNode) -> str:
+        name = fn.child_by_field_name("name")
+        if name is None and fn.parent is not None and fn.parent.type == "variable_declarator":
+            name = fn.parent.child_by_field_name("name")
+        return self.text(name) if name is not None else "(anonymous)"
+
     def run(self, tree: Tree) -> FileFacts:
         diags: list[Diagnostic] = []
         if tree.root_node.has_error:
@@ -224,6 +280,7 @@ class Ctx:
                 )
             )
         self.visit(tree.root_node, Frame(), 0)
+        functions = self.measure(tree.root_node)
         if self.too_deep:
             diags.append(depth_capped(self.path))
         return FileFacts(
@@ -237,6 +294,7 @@ class Ctx:
             diagnostics=tuple(diags),
             ctor_assigns=tuple(self.ctor_assigns),
             namespace=self.namespace,
+            functions=tuple(functions),
         )
 
 

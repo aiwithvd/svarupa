@@ -140,3 +140,28 @@ why = "migration directory"
 [[must_not]]
 call = "bakerydemo/search/views.py -> bakerydemo/blog/models.py#get_posts"
 why = "search/views.py only uses BlogPage.objects.live().search(...), it never calls get_posts"
+
+# Health violations (counted by hand from source)
+[[must]]
+violation = "long-function bakerydemo/base/management/commands/create_random_data.py:55"
+why = "bakerydemo/base/management/commands/create_random_data.py:55 def create_pages(self, page_count): runs to line 126, 72 lines"
+
+[[must]]
+violation = "module-cycle bakerydemo/base/models.py:149"
+why = "bakerydemo/base/models.py:149 from bakerydemo.blog.models import BlogPage (base -> blog), and bakerydemo/blog/models.py:15 from bakerydemo.base.blocks import BaseStreamBlock (blog -> base)"
+
+[[must_not]]
+violation = "complex-function bakerydemo/base/management/commands/create_random_data.py:46"
+why = "bakerydemo/base/management/commands/create_random_data.py:46 def fake_stream_field(self): complexity 1, 2 lines, no parameters"
+
+[[must_not]]
+violation = "complex-function bakerydemo/base/management/commands/create_random_data.py:49"
+why = "bakerydemo/base/management/commands/create_random_data.py:49 def get_random_model(self, model): complexity 1, 2 lines, 1 parameter"
+
+[[must_not]]
+violation = "complex-function bakerydemo/base/models.py:148"
+why = "bakerydemo/base/models.py:148 def get_preview_template(self, request, mode_name): 1 if = complexity 2, 6 lines, 2 parameters"
+
+[[must_not]]
+violation = "long-function bakerydemo/base/management/commands/create_random_data.py:172"
+why = "bakerydemo/base/management/commands/create_random_data.py:172 def handle(self, **options): 4 lines"

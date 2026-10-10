@@ -7,6 +7,7 @@ dep	scripts	svarupa/lock
 dep	svarupa	svarupa/derive
 dep	svarupa	svarupa/emit
 dep	svarupa	svarupa/extract
+dep	svarupa	svarupa/health
 dep	svarupa	svarupa/lock
 dep	svarupa	svarupa/query
 dep	svarupa	svarupa/setup
@@ -15,12 +16,15 @@ dep	svarupa/derive	svarupa/extract
 dep	svarupa/emit	svarupa
 dep	svarupa/emit	svarupa/derive
 dep	svarupa/emit	svarupa/extract
+dep	svarupa/emit	svarupa/health
 dep	svarupa/emit	svarupa/layout
 dep	svarupa/emit	svarupa/lock
 dep	svarupa/extract	svarupa
 dep	svarupa/extract	svarupa/extract/packs
 dep	svarupa/extract/packs	svarupa
 dep	svarupa/extract/packs	svarupa/extract
+dep	svarupa/health	svarupa
+dep	svarupa/health	svarupa/extract
 dep	svarupa/layout	svarupa
 dep	svarupa/layout	svarupa/derive
 dep	svarupa/lock	svarupa
@@ -35,6 +39,7 @@ module	svarupa/derive
 module	svarupa/emit
 module	svarupa/extract
 module	svarupa/extract/packs
+module	svarupa/health
 module	svarupa/layout
 module	svarupa/lock
 module	svarupa/query

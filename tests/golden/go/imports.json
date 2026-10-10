@@ -306,5 +306,20 @@
  "reexports": [],
  "diagnostics": [],
  "ctor_assigns": [],
- "namespace": ""
+ "namespace": "",
+ "functions": [
+  {
+   "name": "main",
+   "evidence": {
+    "file": "cmd/api/main.go",
+    "start_line": 14,
+    "end_line": 19,
+    "rev": null
+   },
+   "complexity": 1,
+   "params": 0,
+   "nesting": 0,
+   "lines": 6
+  }
+ ]
 }

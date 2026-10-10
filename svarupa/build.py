@@ -38,6 +38,7 @@ from svarupa.extract.base import (
     EnvironmentFact,
     ExternalFact,
     ExtractResult,
+    FunctionMetrics,
     RouteFact,
     Scorecard,
     TaskFact,
@@ -100,6 +101,8 @@ class Graph:
     entrypoints: tuple[EntrypointFact, ...] = ()
     externals: tuple[ExternalFact, ...] = ()
     environments: tuple[EnvironmentFact, ...] = ()
+    # Per-function metrics of architecture files, for health checks.
+    functions: tuple[FunctionMetrics, ...] = ()
 
     def nx(self, directed: bool = True) -> nx.DiGraph[str] | nx.Graph[str]:
         """A NetworkX view for the algorithms later stages need.
@@ -832,6 +835,12 @@ def build(scan: Scan, extracted: ExtractResult, strict: bool = True) -> Graph:
         entrypoints=entrypoints,
         externals=externals,
         environments=environments,
+        functions=tuple(
+            sorted(
+                (m for m in extracted.functions if m.evidence.file in eligible),
+                key=lambda m: (m.evidence.file, m.evidence.start_line, m.name),
+            )
+        ),
     )
 
 

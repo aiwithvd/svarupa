@@ -381,5 +381,111 @@
  "reexports": [],
  "diagnostics": [],
  "ctor_assigns": [],
- "namespace": ""
+ "namespace": "",
+ "functions": [
+  {
+   "name": "constructor",
+   "evidence": {
+    "file": "src/users/users.controller.ts",
+    "start_line": 11,
+    "end_line": 15,
+    "rev": null
+   },
+   "complexity": 1,
+   "params": 3,
+   "nesting": 0,
+   "lines": 5
+  },
+  {
+   "name": "findOne",
+   "evidence": {
+    "file": "src/users/users.controller.ts",
+    "start_line": 18,
+    "end_line": 20,
+    "rev": null
+   },
+   "complexity": 1,
+   "params": 0,
+   "nesting": 0,
+   "lines": 3
+  },
+  {
+   "name": "create",
+   "evidence": {
+    "file": "src/users/users.controller.ts",
+    "start_line": 23,
+    "end_line": 26,
+    "rev": null
+   },
+   "complexity": 1,
+   "params": 0,
+   "nesting": 0,
+   "lines": 4
+  },
+  {
+   "name": "list",
+   "evidence": {
+    "file": "src/users/users.controller.ts",
+    "start_line": 29,
+    "end_line": 31,
+    "rev": null
+   },
+   "complexity": 1,
+   "params": 0,
+   "nesting": 0,
+   "lines": 3
+  },
+  {
+   "name": "escaped",
+   "evidence": {
+    "file": "src/users/users.controller.ts",
+    "start_line": 34,
+    "end_line": 34,
+    "rev": null
+   },
+   "complexity": 1,
+   "params": 0,
+   "nesting": 0,
+   "lines": 1
+  },
+  {
+   "name": "templated",
+   "evidence": {
+    "file": "src/users/users.controller.ts",
+    "start_line": 37,
+    "end_line": 37,
+    "rev": null
+   },
+   "complexity": 1,
+   "params": 0,
+   "nesting": 0,
+   "lines": 1
+  },
+  {
+   "name": "_hidden",
+   "evidence": {
+    "file": "src/users/users.controller.ts",
+    "start_line": 39,
+    "end_line": 39,
+    "rev": null
+   },
+   "complexity": 1,
+   "params": 0,
+   "nesting": 0,
+   "lines": 1
+  },
+  {
+   "name": "run",
+   "evidence": {
+    "file": "src/users/users.controller.ts",
+    "start_line": 44,
+    "end_line": 44,
+    "rev": null
+   },
+   "complexity": 1,
+   "params": 0,
+   "nesting": 0,
+   "lines": 1
+  }
+ ]
 }

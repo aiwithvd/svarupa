@@ -255,3 +255,47 @@ def test_expected_fingerprint_follows_the_facts() -> None:
 def test_an_unknown_repo_name_is_an_error() -> None:
     with pytest.raises(bm.BenchmarkError, match="not in the corpus: gin-realwrld"):
         bm._score_all(["gin-realwrld"])
+
+
+def test_violation_facts_are_parsed_with_their_check_as_kind(tmp_path: Path) -> None:
+    _expected(
+        tmp_path,
+        "demo",
+        '[[must]]\nviolation = "complex-function api/handlers.py:4"\nwhy = "api/handlers.py:4 x"\n',
+    )
+    must, _ = bm.load_expected("demo", tmp_path)
+    assert must[0] == bm.Fact(
+        "violation:complex-function api/handlers.py:4",
+        "violation:complex-function",
+        must[0].why,
+    )
+
+
+def test_observe_reports_violations(tmp_path: Path) -> None:
+    body = "".join(f"    if a == {i}:\n        return {i}\n" for i in range(11))
+    (tmp_path / "app").mkdir()
+    (tmp_path / "app" / "m.py").write_text(f"def f(a):\n{body}", encoding="utf8")
+    resolved, _ = bm.observe(tmp_path)
+    assert "violation:complex-function app/m.py:1" in resolved
+
+
+def test_stable_checks_need_two_repos() -> None:
+    accepted = {
+        "a": {"by_kind": {"violation:complex-function": [3, 3]}, "fired": []},
+        "b": {"by_kind": {"violation:complex-function": [9, 10]}, "fired": []},
+        "c": {"by_kind": {"violation:large-file": [1, 1]}, "fired": []},
+        "d": {
+            "by_kind": {"violation:large-file": [1, 1]},
+            "fired": ["violation:large-file x:1"],
+        },
+    }
+    assert bm.stable_checks(accepted) == {"complex-function"}
+
+
+def test_check_maturity_follows_the_benchmark() -> None:
+    from svarupa.health import CATALOG
+
+    scores = ROOT / "benchmark" / "scores.json"
+    stable = bm.stable_checks(json.loads(scores.read_text(encoding="utf8")))
+    wrong = {c.id: c.maturity for c in CATALOG if (c.maturity == "stable") != (c.id in stable)}
+    assert not wrong, f"check maturity disagrees with the benchmark: {wrong}"
