@@ -291,3 +291,16 @@ def test_java_true_cases_are_recorded() -> None:
 
 def test_java_safe_twins_are_not_recorded() -> None:
     assert tags("java", "A.java", JAVA_SAFE) == []
+
+
+def test_java_cors_configuration_with_every_origin_is_recorded() -> None:
+    src = """class A {
+  CorsConfigurationSource f() {
+    configuration.setAllowedOrigins(asList("*"));
+    configuration.addAllowedOrigin("*");
+    configuration.setAllowedOrigins(List.of("https://a.example"));
+    return null;
+  }
+}
+"""
+    assert tags("java", "A.java", src) == [("cors-any-origin", 3), ("cors-any-origin", 4)]

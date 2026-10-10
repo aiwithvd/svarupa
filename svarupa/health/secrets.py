@@ -39,9 +39,10 @@ _NAME = (
     r"[\w.-]*?(?:password|passwd|pwd|secret|secret[_-]?key|api[_-]?key|access[_-]?key"
     r"|auth[_-]?token|access[_-]?token|private[_-]?key|client[_-]?secret|token)"
 )
-# Characters a key or password is made of; a value with spaces, pipes or
-# brackets is a sentence or a pattern, not a secret.
-_VALUE = r"[A-Za-z0-9_\-+/=.@!%*^~]{8,200}"
+# Characters a key or password is made of (Django keys use !@#$%^&*(-_=+));
+# a value with spaces, pipes, colons or square brackets is a sentence or a
+# pattern, not a secret.
+_VALUE = r"[A-Za-z0-9_\-+/=.@!%*^~#$&()]{8,200}"
 _QUOTED = re.compile(rf"(?i)(?<![\w.-])({_NAME})[\"']?\s*(?:=|:|=>|:=)\s*([\"'])({_VALUE})\2")
 _BARE = re.compile(
     rf"(?im)^[ \t]*(?:export[ \t]+)?({_NAME})[ \t]*[=:][ \t]*({_VALUE})[ \t]*(?:#.*)?$"

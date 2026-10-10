@@ -299,7 +299,7 @@ RISKS = RiskSpec(
         Unsafe("unsafe-deserialize", "ObjectInputStream", _NEW, _p(r"new (?:ObjectInputStream|XMLDecoder)\(.*")),
         Unsafe("weak-hash", "MD5 or SHA-1", _INVOKE, _p(r"MessageDigest\.getInstance\(\s*\"(?:MD5|MD2|SHA-?1)\".*")),
         Unsafe("tls-verify-off", "hostname verification off", _NEW, _p(r"new (?:NoopHostnameVerifier|TrustAllStrategy)\(.*")),
-        Unsafe("cors-any-origin", "CORS origin '*'", _INVOKE, _p(r".*\.allowedOrigins\(\s*\"\*\"\s*\)")),
+        Unsafe("cors-any-origin", "CORS origin '*'", _INVOKE, _p(r".*\.(?:allowedOrigins|setAllowedOrigins|addAllowedOrigin)\(\s*(?:(?:Arrays\.)?asList\(|List\.of\()?\s*\"\*\"\s*\)?\s*\)")),
         Unsafe("cors-any-origin", "@CrossOrigin allows every origin", frozenset({"marker_annotation"}), _p(r"@CrossOrigin")),
         Unsafe("cors-any-origin", "@CrossOrigin allows every origin", frozenset({"annotation"}), _p(r"@CrossOrigin\(\s*(?:origins\s*=\s*)?\"\*\"\s*\)")),
     ),

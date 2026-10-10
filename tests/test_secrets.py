@@ -92,3 +92,8 @@ def test_a_pattern_or_sentence_is_not_a_secret() -> None:
         )
     }
     assert hits(texts) == []
+
+
+def test_a_django_style_key_with_symbols_is_found() -> None:
+    key = "c6u0-9c!7nilj_ysat" + "sda0(f@e_2mws2f!6m0n^o*4#*q#kzp)"
+    assert [line for _, line, _ in hits({"settings.py": f'SECRET_KEY = "{key}"\n'})] == [1]
