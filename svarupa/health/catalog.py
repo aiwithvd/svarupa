@@ -44,6 +44,16 @@ CATALOG: tuple[Check, ...] = (
     Check("part-independence", "Independent parts import each other", 0, "the unit's design style (docs/design.md)", "maintainability", "major", 30),
     Check("public-entry", "Part imported past its public entry", 0, "the unit's design style (docs/design.md)", "maintainability", "minor", 10),
     Check("core-purity", "Core uses frameworks or I/O", 0, "the unit's design style (docs/design.md)", "maintainability", "major", 60),
+    Check("hardcoded-secret", "Secret committed in the repository", 0, "CWE-798; OWASP A07:2021; gitleaks default rules", "security", "blocker", 30),
+    Check("sql-injection", "SQL built from strings", 0, "CWE-89; OWASP A03:2021", "security", "critical", 30),
+    Check("command-injection", "Shell command built from strings", 0, "CWE-78; OWASP A03:2021", "security", "critical", 30),
+    Check("code-injection", "Code built from strings and run", 0, "CWE-94; OWASP A03:2021", "security", "critical", 30),
+    Check("tls-verify-off", "TLS certificate check turned off", 0, "CWE-295; OWASP A02:2021", "security", "critical", 10),
+    Check("unsafe-deserialize", "Unsafe deserialization", 0, "CWE-502; OWASP A08:2021", "security", "critical", 30),
+    Check("weak-hash", "Weak hash (MD5 or SHA-1)", 0, "CWE-327; OWASP A02:2021", "security", "major", 10),
+    Check("debug-enabled", "Debug mode turned on", 0, "CWE-489; OWASP A05:2021", "security", "major", 5),
+    Check("cors-any-origin", "CORS allows every origin", 0, "CWE-942; OWASP A05:2021", "security", "major", 10),
+    Check("endpoint-without-auth", "Write endpoint without auth", 0, "CWE-306; OWASP A01:2021", "security", "major", 20),
 )  # fmt: skip
 
 BY_ID = {c.id: c for c in CATALOG}

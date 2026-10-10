@@ -36,12 +36,14 @@ class DesignException:
     src: str
     dst: str
     reason: str
+    at: str = ""  # "path" or "path:line": excepts any check at that place
 
 
 @dataclass(frozen=True)
 class DesignFile:
     units: dict[str, UnitSpec]
     exceptions: list[DesignException]
+    auth_markers: list[str] = field(default_factory=list[str])
 
 
 def load_design(path: Path) -> tuple[DesignFile | None, str]:
@@ -90,9 +92,16 @@ def load_design(path: Path) -> tuple[DesignFile | None, str]:
                         str(e.get("from", "")),
                         str(e.get("to", "")),
                         str(e.get("reason", "")),
+                        at=str(e.get("at", "")),
                     )
                 )
-    return DesignFile(units, exceptions), ""
+    raw_markers: object = data.get("auth_markers") or []
+    markers = (
+        [str(m) for m in cast("list[object]", raw_markers)]
+        if isinstance(raw_markers, list)
+        else []
+    )
+    return DesignFile(units, exceptions, markers), ""
 
 
 def dump_design(
@@ -120,13 +129,17 @@ def dump_design(
             "parts": {p: sorted(ms) for p, ms in sorted(parts.items())},
         }
     exceptions = [
-        {"rule": e.rule, "from": e.src, "to": e.dst, "reason": e.reason}
+        {"rule": e.rule, "at": e.at, "reason": e.reason}
+        if e.at
+        else {"rule": e.rule, "from": e.src, "to": e.dst, "reason": e.reason}
         for e in (keep.exceptions if keep else [])
     ]
     header = (
         "# The target design for this repository, accepted with `svarupa design`.\n"
         "# Edit parts and add exceptions (each needs a reason); commit this file.\n"
     )
-    return header + yaml.safe_dump(
-        {"units": units, "exceptions": exceptions}, sort_keys=False, allow_unicode=True
-    )
+    doc: dict[str, object] = {"units": units}
+    if keep and keep.auth_markers:
+        doc["auth_markers"] = list(keep.auth_markers)
+    doc["exceptions"] = exceptions
+    return header + yaml.safe_dump(doc, sort_keys=False, allow_unicode=True)
