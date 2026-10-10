@@ -19,8 +19,10 @@ from __future__ import annotations
 
 from svarupa.build import Graph
 from svarupa.derive.base import DiagramKind, DiagramSet
+from svarupa.design import Design
 from svarupa.emit.cards import Card, cards_for, chapters_for, render_cards, render_guided
 from svarupa.emit.markup import Markup, esc, join, raw, tag
+from svarupa.emit.report import _design_lines  # pyright: ignore[reportPrivateUsage]
 from svarupa.emit.svg import canvas_svg, evidence_ref, expanded_svg
 from svarupa.health import BY_ID, Health
 from svarupa.layout import LaidOutDiagram
@@ -1562,7 +1564,7 @@ def _unavailable(notes: tuple[str, ...]) -> Markup:
     )
 
 
-def _health_tab(health: Health | None) -> Markup:
+def _health_tab(health: Health | None, design: Design | None = None) -> Markup:
     """Ratings, the fixes worth doing first, and every violation with its line."""
     if health is None:
         return raw("")
@@ -1596,6 +1598,10 @@ def _health_tab(health: Health | None) -> Markup:
                     class_="meta",
                 ),
                 tag("ul", ratings),
+                tag("h3", esc("Design")) if design is not None else raw(""),
+                tag("ul", join(tag("li", esc(line)) for line in _design_lines(design)))
+                if design is not None
+                else raw(""),
                 tag("h3", esc("Violations, highest impact first")),
                 tag("ol", items) if health.violations else tag("p", esc("No violations.")),
             )
@@ -1614,6 +1620,7 @@ def render_viewer(
     version: str,
     graph: Graph | None = None,
     health: Health | None = None,
+    design: Design | None = None,
 ) -> str:
     """The whole document, as one self-contained string."""
     kinds = sorted(produced, key=lambda k: k.value)
@@ -1672,7 +1679,7 @@ def render_viewer(
             header,
             join(_tab(produced[k], laid_out[k], style, cards) for k in kinds),
             _unavailable(notes),
-            _health_tab(health),
+            _health_tab(health, design),
             tag(
                 "aside",
                 join(

@@ -128,7 +128,20 @@ def _scan(
         for d in graph_errors[:5]:
             print("   " + d.render())
 
-    health = assess(graph, source_texts(scan, graph))
+    accepted, design_problem = load_design(Path(scan.root) / DESIGN_FILE)
+    design = design_for(scan, graph, accepted)
+    print()
+    if design_problem:
+        print(f"  design: {design_problem}")
+    for u in design.units:
+        if u.chosen is not None:
+            print(
+                f"  design: {u.unit.id or '.'} {u.chosen.style} ({u.source}), "
+                f"conformance {u.chosen.compliance:.0%}"
+            )
+        else:
+            print(f"  design: {u.unit.id or '.'} {u.note}")
+    health = assess(graph, source_texts(scan, graph), design, design.exceptions)
     print()
     print(
         "  health: "
@@ -182,6 +195,7 @@ def _scan(
         notes,
         out_dir=Path(out) if out else None,
         health=health,
+        design=design,
     )
     print()
     print(f"  wrote {artifact.directory.name}/")

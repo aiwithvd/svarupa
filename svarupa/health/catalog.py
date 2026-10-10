@@ -40,6 +40,10 @@ CATALOG: tuple[Check, ...] = (
     Check("duplicated-block", "Duplicated block", 9, "SonarQube CPD default (10 lines)", "maintainability", "major", 15),
     Check("module-cycle", "Module import cycle", 0, "Martin, Acyclic Dependencies Principle", "maintainability", "major", 60, maturity="stable"),
     Check("hub-module", "Hub module", 9, "Arcan hub-like dependency", "maintainability", "major", 60),
+    Check("layer-direction", "Layer imported the wrong way", 0, "the unit's design style (docs/design.md)", "maintainability", "major", 30),
+    Check("part-independence", "Independent parts import each other", 0, "the unit's design style (docs/design.md)", "maintainability", "major", 30),
+    Check("public-entry", "Part imported past its public entry", 0, "the unit's design style (docs/design.md)", "maintainability", "minor", 10),
+    Check("core-purity", "Core uses frameworks or I/O", 0, "the unit's design style (docs/design.md)", "maintainability", "major", 60),
 )  # fmt: skip
 
 BY_ID = {c.id: c for c in CATALOG}

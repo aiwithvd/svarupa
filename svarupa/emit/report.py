@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from svarupa.build import Graph
 from svarupa.derive.base import DiagramKind, DiagramSet
+from svarupa.design import Design
 from svarupa.diagnostics import Diagnostic, Severity
 from svarupa.health import BY_ID, Health
 from svarupa.layout import LaidOutDiagram, fits
@@ -38,6 +39,31 @@ def _listing(items: list[str], empty: str) -> str:
     if rest:
         out += f"\n- *... and {rest} more*"
     return out
+
+
+def _design_lines(design: Design) -> list[str]:
+    lines = [f"System: {', '.join(design.system)} ({'; '.join(design.system_evidence)})"]
+    for u in design.units:
+        key = u.unit.id or "."
+        if u.chosen is None:
+            lines.append(f"{key} ({u.unit.level}): {u.note}")
+            continue
+        lines.append(
+            f"{key} ({u.unit.level}): {u.chosen.style}, {u.source}, fit {u.chosen.fit:.2f}, "
+            f"conformance {u.chosen.compliance:.0%}"
+        )
+    return lines
+
+
+def _design_section(design: Design | None) -> list[str]:
+    if design is None:
+        return []
+    lines = ["## Design", ""]
+    lines += [f"- {line}" for line in _design_lines(design)]
+    if design.exceptions:
+        lines += ["", "Accepted exceptions:", ""]
+        lines += [f"- `{e.rule}` {e.src} -> {e.dst}: {e.reason}" for e in design.exceptions]
+    return [*lines, "", "See `docs/design.md` and `svarupa design`.", ""]
 
 
 def _health_section(health: Health | None) -> list[str]:
@@ -186,6 +212,7 @@ def render_report(
     diagnostics: tuple[Diagnostic, ...],
     graph_counts: tuple[int, int] | None = None,
     health: Health | None = None,
+    design: Design | None = None,
 ) -> str:
     """The whole report.
 
@@ -217,6 +244,7 @@ def render_report(
         *_semantics_scope(graph),
         *_environments_section(graph),
         *_health_section(health),
+        *_design_section(design),
         "## Resolution",
         "",
         "This table measures **pinning, not correctness.** A confidently wrong "

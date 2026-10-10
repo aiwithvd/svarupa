@@ -18,6 +18,7 @@ from pathlib import Path
 
 from svarupa.build import Graph
 from svarupa.derive.base import DiagramSet
+from svarupa.design import Design
 from svarupa.extract.rationale import RationaleFact
 from svarupa.health import Health
 from svarupa.layout.geometry import Canvas
@@ -366,6 +367,7 @@ def graph_json(
     built_at_commit: str | None = None,
     worktree_dirty: bool | None = None,
     health: Health | None = None,
+    design: Design | None = None,
 ) -> dict[str, object]:
     """The whole graph, evidence included.
 
@@ -439,6 +441,8 @@ def graph_json(
     }
     if health is not None:
         out["health"] = health.to_json()
+    if design is not None:
+        out["design"] = design.to_json()
     return out
 
 

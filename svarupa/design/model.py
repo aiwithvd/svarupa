@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from svarupa.model import Evidence
+
+if TYPE_CHECKING:
+    from svarupa.design.file import DesignException
 
 __all__ = [
     "Assignment",
@@ -117,9 +121,14 @@ class Design:
     system: tuple[str, ...]
     system_evidence: tuple[str, ...]
     units: tuple[UnitDesign, ...]
+    exceptions: tuple[DesignException, ...] = ()
 
     def to_json(self) -> dict[str, object]:
         return {
+            "exceptions": [
+                {"rule": e.rule, "from": e.src, "to": e.dst, "reason": e.reason}
+                for e in self.exceptions
+            ],
             "system": list(self.system),
             "system_evidence": list(self.system_evidence),
             "units": [

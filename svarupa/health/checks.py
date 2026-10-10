@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
+from typing import TYPE_CHECKING
 
 import networkx as nx
 
@@ -12,7 +13,17 @@ from svarupa.health.catalog import BY_ID
 from svarupa.health.model import Violation
 from svarupa.model import EdgeKind, Evidence
 
-__all__ = ["class_checks", "file_checks", "function_checks", "module_checks"]
+if TYPE_CHECKING:
+    from svarupa.design.file import DesignException
+    from svarupa.design.model import Design
+
+__all__ = [
+    "class_checks",
+    "design_checks",
+    "file_checks",
+    "function_checks",
+    "module_checks",
+]
 
 
 def _symbol_ids(graph: Graph) -> dict[tuple[str, int, str], str]:
@@ -168,4 +179,32 @@ def module_checks(graph: Graph) -> list[Violation]:
                         minutes=hub.minutes,
                     )
                 )
+    return out
+
+
+def design_checks(
+    design: Design | None, exceptions: Sequence[DesignException] = ()
+) -> list[Violation]:
+    """Imports that break each unit's chosen style; excepted ones are left out."""
+    if design is None:
+        return []
+    excused = {(e.rule, e.src, e.dst) for e in exceptions}
+    out: list[Violation] = []
+    for u in design.units:
+        if u.chosen is None:
+            continue
+        for v in u.chosen.violations:
+            if (v.rule, v.src, v.dst) in excused:
+                continue
+            check = BY_ID[v.rule]
+            out.append(
+                Violation(
+                    check=v.rule,
+                    message=f"{u.chosen.style}: {v.message}",
+                    evidence=(v.evidence,),
+                    module=v.src,
+                    value=1,
+                    minutes=check.minutes,
+                )
+            )
     return out

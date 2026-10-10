@@ -23,7 +23,7 @@ import json
 import re
 from collections import deque
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from svarupa.diagnostics import Diagnostic, DiagnosticError, Severity
 
@@ -31,6 +31,7 @@ __all__ = [
     "FUNCTIONS",
     "GraphIndex",
     "affected",
+    "get_design_rules",
     "get_health",
     "get_neighbors",
     "get_node",
@@ -49,6 +50,7 @@ FUNCTIONS = (
     "god_nodes",
     "graph_stats",
     "get_health",
+    "get_design_rules",
 )
 
 Node = dict[str, Any]
@@ -472,3 +474,43 @@ def get_health(index: GraphIndex) -> dict[str, Any]:
     if not isinstance(health, dict):
         return {"available": False, "reason": "this artifact was built without health"}
     return {"available": True, **health}
+
+
+def get_design_rules(index: GraphIndex) -> dict[str, Any]:
+    """What an agent must follow: per unit, parts, allowed and forbidden directions."""
+    from svarupa.design import BY_ID as STYLES
+
+    raw: Any = index.data.get("design")
+    if not isinstance(raw, dict):
+        return {"available": False, "reason": "this artifact was built without design"}
+    design = cast("dict[str, Any]", raw)
+    units: list[dict[str, Any]] = []
+    for u in cast("list[dict[str, Any]]", design.get("units", [])):
+        chosen = cast("dict[str, Any] | None", u.get("chosen"))
+        if not chosen:
+            units.append({"unit": u["unit"], "style": None, "note": u.get("note", "")})
+            continue
+        style = STYLES[str(chosen["style"])]
+        parts: dict[str, list[str]] = {}
+        for p in cast("list[dict[str, Any]]", chosen["parts"]):
+            parts.setdefault(str(p["part"]), []).append(str(p["module"]))
+        order = list(style.order)
+        forbidden = [
+            {"from": order[j], "to": order[i]}
+            for i in range(len(order))
+            for j in range(i + 1, len(order))
+        ] + [{"from": a, "to": b} for a, b in style.forbidden]
+        units.append(
+            {
+                "unit": u["unit"],
+                "style": style.id,
+                "source": u["source"],
+                "parts": parts,
+                "order_top_to_bottom": order,
+                "forbidden": forbidden,
+                "independent_slices": list(style.independent),
+                "public_entry_only": list(style.public_entry),
+                "must_stay_pure": list(style.pure),
+            }
+        )
+    return {"available": True, "units": units, "exceptions": design.get("exceptions", [])}

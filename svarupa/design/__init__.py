@@ -71,7 +71,10 @@ def design_for(scan: Scan, graph: Graph, accepted: object | None = None) -> Desi
                 )
             )
     system, why = classify_system(scan, graph, units)
-    return Design(system, why, tuple(out))
+    from svarupa.design.file import DesignFile
+
+    excepted = tuple(accepted.exceptions) if isinstance(accepted, DesignFile) else ()
+    return Design(system, why, tuple(out), excepted)
 
 
 def _filled(fit: Fit) -> float:

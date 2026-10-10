@@ -7,15 +7,26 @@ the CLI and the benchmark.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
+from typing import TYPE_CHECKING
 
 from svarupa.build import Graph
 from svarupa.detect import Scan, read_text
 from svarupa.health.catalog import AREAS, BY_ID, CATALOG, Check
-from svarupa.health.checks import class_checks, file_checks, function_checks, module_checks
+from svarupa.health.checks import (
+    class_checks,
+    design_checks,
+    file_checks,
+    function_checks,
+    module_checks,
+)
 from svarupa.health.duplication import duplicated_blocks
 from svarupa.health.model import Health, Violation
 from svarupa.health.score import grade
+
+if TYPE_CHECKING:
+    from svarupa.design.file import DesignException
+    from svarupa.design.model import Design
 
 __all__ = [
     "AREAS",
@@ -44,12 +55,18 @@ def source_texts(scan: Scan, graph: Graph) -> dict[str, str]:
     return out
 
 
-def assess(graph: Graph, texts: Mapping[str, str]) -> Health:
+def assess(
+    graph: Graph,
+    texts: Mapping[str, str],
+    design: Design | None = None,
+    exceptions: Sequence[DesignException] = (),
+) -> Health:
     violations = [
         *function_checks(graph),
         *file_checks(texts),
         *class_checks(graph),
         *duplicated_blocks(texts),
         *module_checks(graph),
+        *design_checks(design, exceptions),
     ]
     return grade(graph, texts, violations)

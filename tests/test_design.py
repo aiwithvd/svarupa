@@ -187,3 +187,10 @@ def test_a_purity_breach_lowers_compliance(tmp_path: Path) -> None:
         if f and f.style == "hexagonal"
     )
     assert fit.compliance == 0.5  # one clean import, one purity breach
+
+
+def test_every_style_is_documented() -> None:
+    doc = (Path(__file__).resolve().parents[1] / "docs" / "design.md").read_text(
+        encoding="utf8"
+    )
+    assert all(f"`{s.id}`" in doc for s in CATALOG)
