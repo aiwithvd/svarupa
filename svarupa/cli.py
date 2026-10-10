@@ -11,6 +11,9 @@ from svarupa.build import Graph, build
 from svarupa.cluster import cluster
 from svarupa.derive import derive_all
 from svarupa.derive.architecture import top_box_labels
+from svarupa.design import BY_ID as DESIGN_STYLES
+from svarupa.design import Design, design_for
+from svarupa.design.file import DESIGN_FILE, dump_design, load_design
 from svarupa.detect import FileRole, ScanLimits, detect
 from svarupa.diagnostics import Diagnostic, DiagnosticError, Severity
 from svarupa.emit import OUTPUT_DIR, claim, emit
@@ -344,6 +347,93 @@ def _lockfile(
     return failed, False
 
 
+def _design(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(
+        prog="svarupa design",
+        description=(
+            "Propose the design style of each app unit and, on accept, write "
+            ".svarupa/design.yaml, the target design every scan checks against."
+        ),
+    )
+    parser.add_argument("path", nargs="?", default=".", help="repository root (default: .)")
+    parser.add_argument(
+        "--accept", action="store_true", help="write the proposal without asking"
+    )
+    parser.add_argument(
+        "--style",
+        action="append",
+        default=[],
+        metavar="UNIT=STYLE",
+        help="use STYLE for UNIT ('.' is the repository root); repeatable",
+    )
+    parser.add_argument(
+        "--print", action="store_true", help="print the proposal and write nothing"
+    )
+    args = parser.parse_args(argv)
+
+    root = Path(args.path)
+    scan = detect(str(root))
+    graph = build(scan, extract(scan, declared_dependencies(scan)), strict=False)
+    path = root / DESIGN_FILE
+    accepted, problem = load_design(path)
+    if problem:
+        print(f"  note: {problem}")
+    design = design_for(scan, graph, None)
+    overrides = dict(s.split("=", 1) for s in args.style if "=" in s)
+    unknown = sorted(v for v in overrides.values() if v not in DESIGN_STYLES)
+    if unknown:
+        print(f"  unknown style(s): {', '.join(unknown)}; see docs/design.md")
+        return 2
+
+    print(f"  system: {', '.join(design.system)}  ({'; '.join(design.system_evidence)})")
+    for u in design.units:
+        key = u.unit.id or "."
+        print()
+        print(f"  unit {key} ({u.unit.level}, {u.unit.manifest or 'no manifest'})")
+        if u.chosen is not None:
+            print(
+                f"    proposed: {u.chosen.style}  fit {u.chosen.fit:.2f} "
+                f"(coverage {u.chosen.coverage:.0%}, compliance {u.chosen.compliance:.0%})"
+            )
+            for a in u.chosen.assignments:
+                print(f"      {a.part:<14} {a.module}  ({a.reason})")
+        else:
+            print(f"    {u.note}")
+        if u.runners_up:
+            print("    also: " + ", ".join(f"{f.style} {f.fit:.2f}" for f in u.runners_up))
+
+    if args.print:
+        return 0
+    if not args.accept:
+        if not sys.stdin.isatty():
+            print()
+            print(
+                "  not written (no terminal); run with --accept to write .svarupa/design.yaml"
+            )
+            return 0
+        for u in design.units:
+            key = u.unit.id or "."
+            if key in overrides:
+                continue
+            answer = input(f"  unit {key}: [a]ccept, [s]tyle <name>, s[k]ip? ").strip()
+            if answer.startswith("s ") and answer[2:].strip() in DESIGN_STYLES:
+                overrides[key] = answer[2:].strip()
+            elif answer not in ("a", "accept", ""):
+                overrides[key] = ""
+    chosen = {k: v for k, v in overrides.items() if v}
+    skipped = {k for k, v in overrides.items() if not v}
+    kept = Design(
+        design.system,
+        design.system_evidence,
+        tuple(u for u in design.units if (u.unit.id or ".") not in skipped),
+    )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(dump_design(kept, chosen, accepted), encoding="utf8")
+    print()
+    print(f"  wrote {DESIGN_FILE}; commit it so every scan and CI run checks against it")
+    return 0
+
+
 def _setup(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(
         prog="svarupa setup",
@@ -384,7 +474,9 @@ def main(argv: list[str] | None = None) -> int:
             "derived from your codebase. Every box points at a line of code."
         ),
         epilog=(
-            'Also: "svarupa setup skill", "svarupa setup ci_github" and '
+            'Also: "svarupa design <repo>" proposes the design style of each app '
+            "unit and writes .svarupa/design.yaml on accept; "
+            '"svarupa setup skill", "svarupa setup ci_github" and '
             '"svarupa setup ci_gitlab" install '
             'integration files (see: svarupa setup --help), and "svarupa query '
             '<artifact> <function> ..." answers questions from graph.json (see: '
@@ -442,6 +534,8 @@ def main(argv: list[str] | None = None) -> int:
         # so `svarupa <path>` keeps working with no subcommand. The cost is
         # that a repository named `setup` needs `./setup`, which the epilog
         # says out loud.
+        if argv[:1] == ["design"]:
+            return _design(argv[1:])
         if argv[:1] == ["setup"]:
             return _setup(argv[1:])
         if argv[:1] == ["query"]:

@@ -24,6 +24,7 @@ from pathlib import Path
 from svarupa import __version__
 from svarupa.build import Graph
 from svarupa.derive.base import DiagramKind, DiagramSet
+from svarupa.design.file import DESIGN_NAME
 from svarupa.diagnostics import Diagnostic, DiagnosticError, Severity
 from svarupa.emit.data import diagram_json, graph_json, write_json
 from svarupa.emit.report import render_report
@@ -56,7 +57,8 @@ OWNED_DIRS = ("diagrams",)
 # marker. Counting it as foreign made the product's own CI workflow refuse on
 # every PR of an adopted repository, and made every other contributor's first
 # run refuse the same way, after the full scan.
-TOLERATED_FILES = (LOCK_NAME,)
+# The target design is committed too, like the lockfile.
+TOLERATED_FILES = (LOCK_NAME, DESIGN_NAME)
 
 
 @dataclass(frozen=True, slots=True)

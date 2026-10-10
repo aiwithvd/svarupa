@@ -12,6 +12,7 @@ from svarupa.design.model import Design
 
 __all__ = [
     "DESIGN_FILE",
+    "DESIGN_NAME",
     "DesignException",
     "DesignFile",
     "UnitSpec",
@@ -19,7 +20,8 @@ __all__ = [
     "load_design",
 ]
 
-DESIGN_FILE = ".svarupa/design.yaml"
+DESIGN_NAME = "design.yaml"
+DESIGN_FILE = f".svarupa/{DESIGN_NAME}"
 
 
 @dataclass(frozen=True)
