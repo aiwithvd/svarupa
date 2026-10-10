@@ -204,3 +204,43 @@ def test_javascript_safe_twins_are_not_recorded() -> None:
 def test_typescript_shares_the_rules() -> None:
     src = "async function f(x: string) {\n  await db.query(`SELECT ${x}`);\n}\n"
     assert tags("typescript", "m.ts", src) == [("sql", 2)]
+
+
+GO_TRUE = """package m
+func f(x string) {
+\tdb.Query("SELECT * FROM t WHERE id = " + x)
+\tq := fmt.Sprintf("SELECT %s", x)
+\tdb.Exec(q)
+\texec.Command("sh", "-c", "ls "+x)
+\tc := &tls.Config{InsecureSkipVerify: true}
+\th := md5.Sum([]byte(x))
+\tgin.SetMode(gin.DebugMode)
+\tcfg := cors.Config{AllowAllOrigins: true}
+}
+"""
+
+GO_SAFE = """package m
+func f(x string) {
+\tdb.Query("SELECT * FROM t WHERE id = $1", x)
+\texec.Command("ls", x)
+\tc := &tls.Config{InsecureSkipVerify: false}
+\th := sha256.Sum256([]byte(x))
+\tgin.SetMode(gin.ReleaseMode)
+}
+"""
+
+
+def test_go_true_cases_are_recorded() -> None:
+    assert tags("go", "m.go", GO_TRUE) == [
+        ("sql", 3),
+        ("sql", 5),
+        ("shell", 6),
+        ("tls-verify-off", 7),
+        ("weak-hash", 8),
+        ("debug-enabled", 9),
+        ("cors-any-origin", 10),
+    ]
+
+
+def test_go_safe_twins_are_not_recorded() -> None:
+    assert tags("go", "m.go", GO_SAFE) == []
