@@ -360,5 +360,72 @@
  "reexports": [],
  "diagnostics": [],
  "ctor_assigns": [],
- "namespace": ""
+ "namespace": "",
+ "functions": [
+  {
+   "name": "run",
+   "evidence": {
+    "file": "src/svc/service.py",
+    "start_line": 5,
+    "end_line": 12,
+    "rev": null
+   },
+   "complexity": 1,
+   "params": 1,
+   "nesting": 0,
+   "lines": 8
+  },
+  {
+   "name": "handle",
+   "evidence": {
+    "file": "src/svc/service.py",
+    "start_line": 18,
+    "end_line": 24,
+    "rev": null
+   },
+   "complexity": 1,
+   "params": 0,
+   "nesting": 0,
+   "lines": 7
+  },
+  {
+   "name": "(anonymous)",
+   "evidence": {
+    "file": "src/svc/service.py",
+    "start_line": 23,
+    "end_line": 23,
+    "rev": null
+   },
+   "complexity": 1,
+   "params": 1,
+   "nesting": 0,
+   "lines": 1
+  },
+  {
+   "name": "(anonymous)",
+   "evidence": {
+    "file": "src/svc/service.py",
+    "start_line": 23,
+    "end_line": 23,
+    "rev": null
+   },
+   "complexity": 1,
+   "params": 0,
+   "nesting": 0,
+   "lines": 1
+  },
+  {
+   "name": "wrapped",
+   "evidence": {
+    "file": "src/svc/service.py",
+    "start_line": 28,
+    "end_line": 29,
+    "rev": null
+   },
+   "complexity": 1,
+   "params": 0,
+   "nesting": 0,
+   "lines": 2
+  }
+ ]
 }

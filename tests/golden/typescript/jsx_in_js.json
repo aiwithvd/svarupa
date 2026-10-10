@@ -59,5 +59,33 @@
  "reexports": [],
  "diagnostics": [],
  "ctor_assigns": [],
- "namespace": ""
+ "namespace": "",
+ "functions": [
+  {
+   "name": "Button",
+   "evidence": {
+    "file": "src/Button.jsx",
+    "start_line": 3,
+    "end_line": 5,
+    "rev": null
+   },
+   "complexity": 1,
+   "params": 1,
+   "nesting": 0,
+   "lines": 3
+  },
+  {
+   "name": "Icon",
+   "evidence": {
+    "file": "src/Button.jsx",
+    "start_line": 7,
+    "end_line": 7,
+    "rev": null
+   },
+   "complexity": 1,
+   "params": 0,
+   "nesting": 0,
+   "lines": 1
+  }
+ ]
 }

@@ -426,5 +426,150 @@
  "reexports": [],
  "diagnostics": [],
  "ctor_assigns": [],
- "namespace": ""
+ "namespace": "",
+ "functions": [
+  {
+   "name": "list_items",
+   "evidence": {
+    "file": "src/api/routes.py",
+    "start_line": 11,
+    "end_line": 12,
+    "rev": null
+   },
+   "complexity": 1,
+   "params": 0,
+   "nesting": 0,
+   "lines": 2
+  },
+  {
+   "name": "create_item",
+   "evidence": {
+    "file": "src/api/routes.py",
+    "start_line": 16,
+    "end_line": 17,
+    "rev": null
+   },
+   "complexity": 1,
+   "params": 0,
+   "nesting": 0,
+   "lines": 2
+  },
+  {
+   "name": "fstring_path",
+   "evidence": {
+    "file": "src/api/routes.py",
+    "start_line": 21,
+    "end_line": 22,
+    "rev": null
+   },
+   "complexity": 1,
+   "params": 0,
+   "nesting": 0,
+   "lines": 2
+  },
+  {
+   "name": "orders",
+   "evidence": {
+    "file": "src/api/routes.py",
+    "start_line": 26,
+    "end_line": 27,
+    "rev": null
+   },
+   "complexity": 1,
+   "params": 0,
+   "nesting": 0,
+   "lines": 2
+  },
+  {
+   "name": "dynamic_methods",
+   "evidence": {
+    "file": "src/api/routes.py",
+    "start_line": 31,
+    "end_line": 32,
+    "rev": null
+   },
+   "complexity": 1,
+   "params": 0,
+   "nesting": 0,
+   "lines": 2
+  },
+  {
+   "name": "mixed_methods",
+   "evidence": {
+    "file": "src/api/routes.py",
+    "start_line": 36,
+    "end_line": 37,
+    "rev": null
+   },
+   "complexity": 1,
+   "params": 0,
+   "nesting": 0,
+   "lines": 2
+  },
+  {
+   "name": "plain_route",
+   "evidence": {
+    "file": "src/api/routes.py",
+    "start_line": 41,
+    "end_line": 42,
+    "rev": null
+   },
+   "complexity": 1,
+   "params": 0,
+   "nesting": 0,
+   "lines": 2
+  },
+  {
+   "name": "build",
+   "evidence": {
+    "file": "src/api/routes.py",
+    "start_line": 47,
+    "end_line": 48,
+    "rev": null
+   },
+   "complexity": 1,
+   "params": 0,
+   "nesting": 0,
+   "lines": 2
+  },
+  {
+   "name": "name",
+   "evidence": {
+    "file": "src/api/routes.py",
+    "start_line": 51,
+    "end_line": 52,
+    "rev": null
+   },
+   "complexity": 1,
+   "params": 0,
+   "nesting": 0,
+   "lines": 2
+  },
+  {
+   "name": "job",
+   "evidence": {
+    "file": "src/api/routes.py",
+    "start_line": 56,
+    "end_line": 57,
+    "rev": null
+   },
+   "complexity": 1,
+   "params": 0,
+   "nesting": 0,
+   "lines": 2
+  },
+  {
+   "name": "keyword_only",
+   "evidence": {
+    "file": "src/api/routes.py",
+    "start_line": 61,
+    "end_line": 62,
+    "rev": null
+   },
+   "complexity": 1,
+   "params": 0,
+   "nesting": 0,
+   "lines": 2
+  }
+ ]
 }

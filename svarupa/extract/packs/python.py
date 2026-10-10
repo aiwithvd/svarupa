@@ -25,6 +25,7 @@ from svarupa.extract.packs.model import (
     Grammar,
     Import,
     Maturity,
+    MetricsSpec,
     Pack,
 )
 from svarupa.extract.packs.walker import Ctx, Frame
@@ -239,6 +240,59 @@ def bases(ctx: Ctx, node: TSNode) -> tuple[str, ...]:
     )
 
 
+_PARAM_KINDS = frozenset(
+    {
+        "identifier",
+        "typed_parameter",
+        "default_parameter",
+        "typed_default_parameter",
+        "list_splat_pattern",
+        "dictionary_splat_pattern",
+    }
+)
+
+
+def _count_params(fn: TSNode) -> int:
+    params = fn.child_by_field_name("parameters")
+    if params is None:
+        return 0
+    names = [c for c in params.children if c.type in _PARAM_KINDS]
+    # `self` and `cls` are the receiver, not an argument a caller passes.
+    if names and names[0].type == "identifier" and names[0].text in (b"self", b"cls"):
+        names = names[1:]
+    return len(names)
+
+
+METRICS = MetricsSpec(
+    function_types=frozenset({"function_definition", "lambda"}),
+    branch_types=frozenset(
+        {
+            "if_statement",
+            "elif_clause",
+            "for_statement",
+            "while_statement",
+            "except_clause",
+            "conditional_expression",
+            "boolean_operator",
+            "for_in_clause",
+            "if_clause",
+            "case_clause",
+        }
+    ),
+    nesting_types=frozenset(
+        {
+            "if_statement",
+            "for_statement",
+            "while_statement",
+            "try_statement",
+            "with_statement",
+            "match_statement",
+        }
+    ),
+    count_params=_count_params,
+)
+
+
 PACK = Pack(
     lang="python",
     grammar=Grammar(
@@ -248,6 +302,7 @@ PACK = Pack(
         default="language",
     ),
     maturity=Maturity.STABLE,
+    metrics=METRICS,
     qualified_prefix=lambda path: qualified_prefix(path, "python"),
     decorator=decorator,
     rules={

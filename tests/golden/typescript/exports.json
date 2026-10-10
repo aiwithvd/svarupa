@@ -198,5 +198,59 @@
  ],
  "diagnostics": [],
  "ctor_assigns": [],
- "namespace": ""
+ "namespace": "",
+ "functions": [
+  {
+   "name": "handler",
+   "evidence": {
+    "file": "src/app/index.ts",
+    "start_line": 3,
+    "end_line": 3,
+    "rev": null
+   },
+   "complexity": 1,
+   "params": 0,
+   "nesting": 0,
+   "lines": 1
+  },
+  {
+   "name": "boot",
+   "evidence": {
+    "file": "src/app/index.ts",
+    "start_line": 5,
+    "end_line": 7,
+    "rev": null
+   },
+   "complexity": 1,
+   "params": 0,
+   "nesting": 0,
+   "lines": 3
+  },
+  {
+   "name": "_internal",
+   "evidence": {
+    "file": "src/app/index.ts",
+    "start_line": 13,
+    "end_line": 13,
+    "rev": null
+   },
+   "complexity": 1,
+   "params": 0,
+   "nesting": 0,
+   "lines": 1
+  },
+  {
+   "name": "local",
+   "evidence": {
+    "file": "src/app/index.ts",
+    "start_line": 14,
+    "end_line": 14,
+    "rev": null
+   },
+   "complexity": 1,
+   "params": 0,
+   "nesting": 0,
+   "lines": 1
+  }
+ ]
 }

@@ -230,5 +230,85 @@
  "reexports": [],
  "diagnostics": [],
  "ctor_assigns": [],
- "namespace": ""
+ "namespace": "",
+ "functions": [
+  {
+   "name": "total",
+   "evidence": {
+    "file": "src/shop/orders.py",
+    "start_line": 13,
+    "end_line": 16,
+    "rev": null
+   },
+   "complexity": 1,
+   "params": 0,
+   "nesting": 0,
+   "lines": 4
+  },
+  {
+   "name": "helper",
+   "evidence": {
+    "file": "src/shop/orders.py",
+    "start_line": 14,
+    "end_line": 15,
+    "rev": null
+   },
+   "complexity": 1,
+   "params": 1,
+   "nesting": 0,
+   "lines": 2
+  },
+  {
+   "name": "_private",
+   "evidence": {
+    "file": "src/shop/orders.py",
+    "start_line": 18,
+    "end_line": 19,
+    "rev": null
+   },
+   "complexity": 1,
+   "params": 0,
+   "nesting": 0,
+   "lines": 2
+  },
+  {
+   "name": "make_order",
+   "evidence": {
+    "file": "src/shop/orders.py",
+    "start_line": 27,
+    "end_line": 28,
+    "rev": null
+   },
+   "complexity": 1,
+   "params": 0,
+   "nesting": 0,
+   "lines": 2
+  },
+  {
+   "name": "fetch",
+   "evidence": {
+    "file": "src/shop/orders.py",
+    "start_line": 31,
+    "end_line": 32,
+    "rev": null
+   },
+   "complexity": 1,
+   "params": 0,
+   "nesting": 0,
+   "lines": 2
+  },
+  {
+   "name": "_hidden",
+   "evidence": {
+    "file": "src/shop/orders.py",
+    "start_line": 35,
+    "end_line": 36,
+    "rev": null
+   },
+   "complexity": 1,
+   "params": 0,
+   "nesting": 0,
+   "lines": 2
+  }
+ ]
 }

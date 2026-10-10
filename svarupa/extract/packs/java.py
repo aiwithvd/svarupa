@@ -20,6 +20,7 @@ from svarupa.extract.packs.model import (
     Grammar,
     Import,
     Maturity,
+    MetricsSpec,
     Pack,
 )
 from svarupa.extract.packs.modules import JvmPackages
@@ -204,6 +205,53 @@ def _type_rule(kind: str) -> Define:
     )
 
 
+def _count_params(fn: TSNode) -> int:
+    params = fn.child_by_field_name("parameters")
+    if params is None:
+        return 0
+    if params.type == "identifier":
+        return 1  # `x -> x`
+    return sum(
+        1
+        for c in params.children
+        if c.type in ("formal_parameter", "spread_parameter", "identifier")
+    )
+
+
+METRICS = MetricsSpec(
+    function_types=frozenset(
+        {"method_declaration", "constructor_declaration", "lambda_expression"}
+    ),
+    branch_types=frozenset(
+        {
+            "if_statement",
+            "for_statement",
+            "enhanced_for_statement",
+            "while_statement",
+            "do_statement",
+            "catch_clause",
+            "ternary_expression",
+            "switch_label",
+        }
+    ),
+    nesting_types=frozenset(
+        {
+            "if_statement",
+            "for_statement",
+            "enhanced_for_statement",
+            "while_statement",
+            "do_statement",
+            "switch_expression",
+            "try_statement",
+        }
+    ),
+    count_params=_count_params,
+    boolean_ops=(("binary_expression", frozenset({"&&", "||"})),),
+    not_branch=(("switch_label", "default"),),
+    else_if_parents=frozenset({"if_statement"}),
+)
+
+
 PACK = Pack(
     lang="java",
     grammar=Grammar(
@@ -213,6 +261,7 @@ PACK = Pack(
         default="language",
     ),
     maturity=Maturity.STABLE,
+    metrics=METRICS,
     rules={
         "package_declaration": Custom(hook=package_declaration),
         "import_declaration": Import(hook=import_),
