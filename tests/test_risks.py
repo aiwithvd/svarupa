@@ -152,3 +152,55 @@ def test_python_pack_names_auth_markers() -> None:
     from svarupa.extract.packs import python
 
     assert {"login_required", "get_current_user", "CurrentUser"} <= python.RISKS.auth_markers
+
+
+JS_TRUE = """const cp = require('child_process');
+function f(x, db) {
+  db.query(`SELECT * FROM t WHERE id = ${x}`);
+  let q = "SELECT " + x;
+  db.query(q);
+  cp.exec("ls " + x);
+  eval("1+" + x);
+  new Function("return " + x);
+  https.request({ host: x, rejectUnauthorized: false });
+  crypto.createHash('md5');
+  app.use(cors());
+  app.use(cors({ origin: '*' }));
+  res.setHeader('Access-Control-Allow-Origin', '*');
+}
+"""
+
+JS_SAFE = """function f(x, db) {
+  db.query('SELECT * FROM t WHERE id = $1', [x]);
+  cp.execFile('ls', [x]);
+  cp.spawn('ls', [x]);
+  https.request({ host: x, rejectUnauthorized: true });
+  crypto.createHash('sha256');
+  app.use(cors({ origin: 'https://a.example' }));
+  /a/.exec(x);
+}
+"""
+
+
+def test_javascript_true_cases_are_recorded() -> None:
+    assert tags("javascript", "m.js", JS_TRUE) == [
+        ("sql", 3),
+        ("sql", 5),
+        ("shell", 6),
+        ("code", 7),
+        ("code", 8),
+        ("tls-verify-off", 9),
+        ("weak-hash", 10),
+        ("cors-any-origin", 11),
+        ("cors-any-origin", 12),
+        ("cors-any-origin", 13),
+    ]
+
+
+def test_javascript_safe_twins_are_not_recorded() -> None:
+    assert tags("javascript", "m.js", JS_SAFE) == []
+
+
+def test_typescript_shares_the_rules() -> None:
+    src = "async function f(x: string) {\n  await db.query(`SELECT ${x}`);\n}\n"
+    assert tags("typescript", "m.ts", src) == [("sql", 2)]

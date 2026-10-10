@@ -10,6 +10,8 @@ tests/golden/typescript pins that nothing moved.
 
 from __future__ import annotations
 
+import re
+
 from tree_sitter import Node as TSNode
 
 from svarupa.extract.base import (
@@ -31,6 +33,9 @@ from svarupa.extract.packs.model import (
     Maturity,
     MetricsSpec,
     Pack,
+    RiskSpec,
+    Sink,
+    Unsafe,
 )
 from svarupa.extract.packs.walker import Ctx, Frame
 
@@ -574,6 +579,62 @@ METRICS = MetricsSpec(
 )
 
 
+def risk_callee(ctx: Ctx, node: TSNode) -> str | None:
+    if node.type == "new_expression":
+        ctor = node.child_by_field_name("constructor")
+        return f"new {ctx.text(ctor)}" if ctor is not None else None
+    fn = node.child_by_field_name("function")
+    if fn is None or fn.end_byte - fn.start_byte > 200:
+        return None
+    return ctx.text(fn)
+
+
+def _p(pattern: str) -> re.Pattern[str]:
+    return re.compile(pattern, re.DOTALL)
+
+
+_CALL = frozenset({"call_expression"})
+_PAIR = frozenset({"pair"})
+
+# fmt: off
+RISKS = RiskSpec(
+    call_types=frozenset({"call_expression", "new_expression"}),
+    callee=risk_callee,
+    string_types=frozenset({"string", "template_string"}),
+    interpolations=(("template_string", "template_substitution"),),
+    concat=(("binary_expression", frozenset({"+"})),),
+    format_callee=re.compile(r"(?:^|\.)format$"),
+    assigns=(
+        ("variable_declarator", "name", "value"),
+        ("assignment_expression", "left", "right"),
+        ("augmented_assignment_expression", "left", "right"),
+    ),
+    unwrap=frozenset({"parenthesized_expression", "await_expression"}),
+    sinks=(
+        Sink("sql", re.compile(r"(?:^|\.)(?:query|execute|raw|\$queryRawUnsafe|\$executeRawUnsafe|unsafe)$")),
+        Sink("shell", re.compile(r"^(?:child_process\.|cp\.)?(?:exec|execSync)$")),
+        Sink("shell", re.compile(r"^(?:child_process\.|cp\.)?spawn(?:Sync)?$"), re.compile(r"shell\s*:\s*true")),
+        Sink("code", re.compile(r"^eval$|^new Function$|^vm\.run(?:InNewContext|InThisContext|InContext)$")),
+    ),
+    unsafe=(
+        Unsafe("tls-verify-off", "rejectUnauthorized: false", _PAIR, _p(r"rejectUnauthorized\s*:\s*false")),
+        Unsafe("tls-verify-off", "NODE_TLS_REJECT_UNAUTHORIZED = 0", frozenset({"assignment_expression"}), _p(r"process\.env\.NODE_TLS_REJECT_UNAUTHORIZED\s*=\s*[\"']?0[\"']?")),
+        Unsafe("unsafe-deserialize", "node-serialize unserialize", _CALL, _p(r"\w+\.unserialize\(.*")),
+        Unsafe("weak-hash", "MD5 or SHA-1", _CALL, _p(r"(?:crypto\.)?createHash\(\s*[\"'](?:md5|sha1)[\"']\s*\)")),
+        Unsafe("cors-any-origin", "CORS with default origins (*)", _CALL, _p(r"cors\(\s*\)")),
+        Unsafe("cors-any-origin", "CORS origin '*'", _PAIR, _p(r"origin\s*:\s*[\"']\*[\"']")),
+        Unsafe("cors-any-origin", "Access-Control-Allow-Origin: *", _CALL, _p(r"\w+\.(?:setHeader|header|set)\(\s*[\"']Access-Control-Allow-Origin[\"']\s*,\s*[\"']\*[\"']\s*\)")),
+    ),
+    auth_markers=frozenset({
+        "authenticate", "isAuthenticated", "ensureAuthenticated", "ensureLoggedIn",
+        "requireAuth", "requireLogin", "verifyToken", "checkJwt", "jwtCheck", "auth",
+        "protect", "authorize", "UseGuards", "AuthGuard", "JwtAuthGuard", "GqlAuthGuard",
+        "withAuth", "getServerSession", "currentUser",
+    }),
+)
+# fmt: on
+
+
 PACK = Pack(
     lang="typescript",
     grammar=Grammar(
@@ -585,6 +646,7 @@ PACK = Pack(
     ),
     maturity=Maturity.STABLE,
     metrics=METRICS,
+    risks=RISKS,
     qualified_prefix=lambda path: path.rsplit(".", 1)[0].replace("/", "."),
     decorator=decorator,
     rules=RULES,
