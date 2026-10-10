@@ -24,6 +24,8 @@ from pathlib import Path
 from svarupa import __version__
 from svarupa.build import Graph
 from svarupa.derive.base import DiagramKind, DiagramSet
+from svarupa.design import Design
+from svarupa.design.file import DESIGN_NAME
 from svarupa.diagnostics import Diagnostic, DiagnosticError, Severity
 from svarupa.emit.data import diagram_json, graph_json, write_json
 from svarupa.emit.report import render_report
@@ -56,7 +58,8 @@ OWNED_DIRS = ("diagrams",)
 # marker. Counting it as foreign made the product's own CI workflow refuse on
 # every PR of an adopted repository, and made every other contributor's first
 # run refuse the same way, after the full scan.
-TOLERATED_FILES = (LOCK_NAME,)
+# The target design is committed too, like the lockfile.
+TOLERATED_FILES = (LOCK_NAME, DESIGN_NAME)
 
 
 @dataclass(frozen=True, slots=True)
@@ -88,6 +91,7 @@ def emit(
     style: Style | None = None,
     display_root: str | None = None,
     health: Health | None = None,
+    design: Design | None = None,
 ) -> Artifact:
     """Lay every diagram out and write the artifact directory.
 
@@ -121,7 +125,7 @@ def emit(
     head, dirty = git_state(root)
     # graph.json is built once: the report quotes its counts (review #23 F5:
     # REPORT.md said 132 nodes where graph.json held 184).
-    gj = graph_json(graph, rationale, head, dirty, health)
+    gj = graph_json(graph, rationale, head, dirty, health, design)
     written.append(
         (
             "graph.json",
@@ -137,7 +141,9 @@ def emit(
         written.append((name, size))
 
     shown = display_root if display_root is not None else root.name
-    html = render_viewer(shown, produced, laid_out, notes, style, __version__, graph, health)
+    html = render_viewer(
+        shown, produced, laid_out, notes, style, __version__, graph, health, design
+    )
     written.append(("index.html", _write_text(directory / "index.html", html)))
 
     report = render_report(
@@ -149,6 +155,7 @@ def emit(
         tuple(problems),
         graph_counts=(len(gj["nodes"]), len(gj["edges"])),  # type: ignore[arg-type]
         health=health,
+        design=design,
     )
     written.append(("REPORT.md", _write_text(directory / "REPORT.md", report)))
 

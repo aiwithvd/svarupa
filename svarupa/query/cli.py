@@ -20,6 +20,7 @@ from svarupa.query import (
     FUNCTIONS,
     GraphIndex,
     affected,
+    get_design_rules,
     get_health,
     get_neighbors,
     get_node,
@@ -40,6 +41,7 @@ _ARITY = {
     "god_nodes": (0, ""),
     "graph_stats": (0, ""),
     "get_health": (0, ""),
+    "get_design_rules": (0, ""),
 }
 
 
@@ -70,6 +72,8 @@ def run_query(
         return affected(index, args[0], relation=relation, depth=3 if depth is None else depth)
     if function == "god_nodes":
         return god_nodes(index, top_n=top)
+    if function == "get_design_rules":
+        return get_design_rules(index)
     if function == "get_health":
         return get_health(index)
     return graph_stats(index)

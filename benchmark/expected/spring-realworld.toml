@@ -200,3 +200,38 @@ why = "src/main/java/io/spring/graphql/ArticleDatafetcher.java:371 private Artic
 [[must_not]]
 violation = "long-function src/main/java/io/spring/graphql/ArticleDatafetcher.java:359"
 why = "src/main/java/io/spring/graphql/ArticleDatafetcher.java:359 private DefaultPageInfo buildArticlePageInfo(...): 11 lines"
+
+# Design (decided by reading source)
+# Onion: api, graphql and infrastructure are the outer ring (README: REST and
+# GraphQL are adapters, infrastructure holds the technical details);
+# application holds the services; core is the domain (entities and repository
+# interfaces) and imports only io.spring.Util. infrastructure implements the
+# core interfaces. The query services in application import the MyBatis read
+# mappers in infrastructure, which goes against the onion direction.
+[[must]]
+design = ". onion"
+why = "src/main/java/io/spring/infrastructure/repository/MyBatisArticleRepository.java:12 public class MyBatisArticleRepository implements ArticleRepository {"
+
+[[must_not]]
+design = ". vertical-slice"
+why = "code is split by layer at the top (api, graphql, application, core, infrastructure), not by feature; one feature such as article spans api, application, core and infrastructure"
+
+[[must]]
+violation = "layer-direction src/main/java/io/spring/application/TagsQueryService.java:3"
+why = "src/main/java/io/spring/application/TagsQueryService.java:3 import io.spring.infrastructure.mybatis.readservice.TagReadService;"
+
+[[must]]
+violation = "layer-direction src/main/java/io/spring/application/ProfileQueryService.java:6"
+why = "src/main/java/io/spring/application/ProfileQueryService.java:6 import io.spring.infrastructure.mybatis.readservice.UserReadService;"
+
+[[must]]
+violation = "layer-direction src/main/java/io/spring/application/ArticleQueryService.java:9"
+why = "src/main/java/io/spring/application/ArticleQueryService.java:9 import io.spring.infrastructure.mybatis.readservice.ArticleFavoritesReadService;"
+
+[[must]]
+violation = "layer-direction src/main/java/io/spring/application/UserQueryService.java:4"
+why = "src/main/java/io/spring/application/UserQueryService.java:4 import io.spring.infrastructure.mybatis.readservice.UserReadService;"
+
+[[must]]
+violation = "layer-direction src/main/java/io/spring/application/CommentQueryService.java:5"
+why = "src/main/java/io/spring/application/CommentQueryService.java:5 import io.spring.infrastructure.mybatis.readservice.CommentReadService;"

@@ -144,3 +144,15 @@ why = "src/main/java/org/springframework/samples/petclinic/vet/VetController.jav
 [[must_not]]
 violation = "long-function src/main/java/org/springframework/samples/petclinic/vet/VetController.java:56"
 why = "src/main/java/org/springframework/samples/petclinic/vet/VetController.java:56 private String addPaginationModel(...): 8 lines"
+
+# Design (decided by reading source)
+# Package by feature: owner and vet each hold their own controller,
+# repository and entities and never import each other; model holds the shared
+# base entities; system holds shared config and the welcome/error pages.
+[[must]]
+design = ". vertical-slice"
+why = "src/main/java/org/springframework/samples/petclinic/owner/Owner.java:23 import org.springframework.samples.petclinic.model.Person;"
+
+[[must_not]]
+design = ". cqrs"
+why = "there is no command or query split; each controller reads and writes through the same Spring Data repository (OwnerController uses OwnerRepository for both)"

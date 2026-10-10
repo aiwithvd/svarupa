@@ -148,3 +148,16 @@ why = "internal/repository/mysql/author.go:38 func (m *AuthorRepository) GetByID
 [[must_not]]
 violation = "long-function article/service.go:38"
 why = "article/service.go:38 func NewService(a, ar): 6 lines, complexity 1"
+
+# Design (decided by reading source)
+# clean: entities = domain; usecases = article (service); adapters =
+# internal/rest, internal/rest/middleware, internal/repository,
+# internal/repository/mysql; app wires them. The service and both adapters
+# import only domain; the service declares its repository interfaces itself.
+[[must]]
+design = ". clean"
+why = "article/service.go:10 \"github.com/bxcodec/go-clean-arch/domain\" (the use case imports only the domain entities, never rest or mysql)"
+
+[[must_not]]
+design = ". mvc"
+why = "no views and no controller/model split; the code is split into domain, a service and rest/mysql adapters"

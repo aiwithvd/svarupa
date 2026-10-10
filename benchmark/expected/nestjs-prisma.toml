@@ -137,3 +137,12 @@ why = "src/auth/auth.service.ts:84 generateTokens(payload): returns an object li
 [[must_not]]
 violation = "long-function src/auth/auth.service.ts:91"
 why = "src/auth/auth.service.ts:91 generateAccessToken(payload): 3 lines (91 to 93)"
+
+# Design (decided by reading source)
+# Unit "." left out: src is split into NestJS feature modules (auth, users,
+# posts, common) that each hold resolver, service, dto and models, and the
+# feature modules import each other (users -> auth, posts -> users, a
+# posts/models <-> users/models cycle), so no style fits clearly.
+[[must_not]]
+design = ". cqrs"
+why = "no commands or queries directories and no @nestjs/cqrs in package.json; resolvers call services and PrismaService directly"

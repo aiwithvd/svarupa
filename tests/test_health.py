@@ -44,6 +44,10 @@ def test_catalog_matches_the_spec() -> None:
         "duplicated-block",
         "module-cycle",
         "hub-module",
+        "layer-direction",
+        "part-independence",
+        "public-entry",
+        "core-purity",
     ]
     assert all(c.area == "maintainability" and c.source for c in CATALOG)
     assert BY_ID["complex-function"].threshold == 10

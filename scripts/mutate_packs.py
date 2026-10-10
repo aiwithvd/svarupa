@@ -40,6 +40,9 @@ SUITE = [
     "tests/test_metrics.py",
     "tests/test_health.py",
     "tests/test_health_outputs.py",
+    "tests/test_design.py",
+    "tests/test_design_cli.py",
+    "tests/test_design_outputs.py",
 ]
 
 MUTATIONS: list[tuple[str, str, str, str]] = [
@@ -174,6 +177,36 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
         "svarupa/health/score.py",
         "    ratio = debt / (lines * MINUTES_PER_LINE) if lines else 0.0\n",
         "    ratio = debt / MINUTES_PER_LINE if lines else 0.0\n",
+    ),
+    (
+        "upward imports are allowed",
+        "svarupa/design/match.py",
+        "order[dst.part] < order[src.part]",
+        "order[dst.part] > order[src.part] + 99",
+    ),
+    (
+        "exceptions stop being honored",
+        "svarupa/design/match.py",
+        "            if (rule, a, b) in excused:",
+        "            if False:",
+    ),
+    (
+        "a low fit is proposed anyway",
+        "svarupa/design/__init__.py",
+        "        if fits and fits[0].fit >= MIN_FIT:",
+        "        if fits:",
+    ),
+    (
+        "design writes the file without a terminal",
+        "svarupa/cli.py",
+        "        if not sys.stdin.isatty():\n",
+        "        if False:\n",
+    ),
+    (
+        "utility folders count against a style again",
+        "svarupa/design/match.py",
+        "        if _neutral(segs, style):\n            continue\n",
+        "",
     ),
 ]
 

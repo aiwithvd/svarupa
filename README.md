@@ -40,7 +40,7 @@ somewhere other than `<repo>/.svarupa/`. The artifact holds:
   (kind, connections, reach, cited source lines); double-click a drillable box,
   or click its chevron, to open it in place down to component and code level.
 - `graph.json`: the knowledge graph. `svarupa query <dir> get_node <label>`,
-  `get_neighbors`, `shortest_path`, `affected`, `god_nodes`, `graph_stats`, `get_health`,
+  `get_neighbors`, `shortest_path`, `affected`, `god_nodes`, `graph_stats`, `get_health`, `get_design_rules`,
   `query_graph`; `svarupa mcp <dir>` serves the same over MCP.
 - `REPORT.md`: the resolution scorecard and every finding, with its code.
 - Health: nine maintainability checks with published thresholds (complexity,

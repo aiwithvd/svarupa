@@ -161,3 +161,15 @@ why = "src/services/user.service.js:36 getUserById(id): one return, complexity 1
 [[must_not]]
 violation = "long-function src/services/auth.service.js:27"
 why = "src/services/auth.service.js:27 logout(refreshToken): 7 lines (27 to 33)"
+
+# Design (decided by reading source)
+# Layered: src/routes/v1 is the api layer, src/controllers sits under it and
+# hands off to src/services (service), which use the mongoose models in
+# src/models (data). Imports only run routes -> controllers -> services ->
+# models; config, middlewares, utils and validations are shared helpers.
+[[must]]
+design = ". layered"
+why = "src/controllers/user.controller.js:5 const { userService } = require('../services');"
+[[must_not]]
+design = ". clean"
+why = "no entities or usecases directories; business logic in src/services talks to mongoose models directly, so there is no pure core"

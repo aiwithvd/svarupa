@@ -187,3 +187,11 @@ why = "app/models.py:54 def reindex(cls): 1 for = complexity 2, 3 lines, no para
 [[must_not]]
 violation = "long-function microblog.py:10"
 why = "microblog.py:10 def make_shell_context(): 3 lines"
+
+# Design (decided by reading source)
+# Unit "." left out: Flask blueprints (main, auth, api, errors) are feature
+# folders, but errors imports api (app/errors/handlers.py:4) and the shared
+# app package imports every blueprint in create_app, so no style is clear.
+[[must_not]]
+design = ". clean"
+why = "no use case or entity layers: blueprint routes query SQLAlchemy models in app/models.py directly, and models.py itself does I/O (db session, search index)"

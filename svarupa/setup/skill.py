@@ -93,6 +93,7 @@ svarupa query <artifact-dir> affected <label> [--depth 3]  # what depends on it,
 svarupa query <artifact-dir> god_nodes [--top 10]
 svarupa query <artifact-dir> graph_stats
 svarupa query <artifact-dir> get_health
+svarupa query <artifact-dir> get_design_rules
 svarupa query <artifact-dir> query_graph "<question>" [--depth 1] [--budget 2000]
 ```
 

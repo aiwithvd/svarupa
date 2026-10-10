@@ -18,11 +18,12 @@ import os
 import shutil
 import subprocess
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from svarupa import __version__
 from svarupa.build import build
+from svarupa.design import design_for
 from svarupa.detect import detect, load_toml
 from svarupa.extract import declared_dependencies, extract
 from svarupa.health import assess, source_texts
@@ -66,6 +67,8 @@ class Score:
     # Fingerprint of the expected fact keys: a changed expectation must be
     # accepted, even when every new fact happens to be found.
     expected: str = ""
+    # Style ids of the expected designs that were found.
+    design_found: list[str] = field(default_factory=list[str])
 
     @property
     def found(self) -> int:
@@ -100,6 +103,8 @@ def _fact(entry: dict[str, object]) -> Fact:
     if "record" in entry:
         fields = [str(x) for x in entry["record"]]  # type: ignore[union-attr]
         return Fact("record:" + "\t".join(fields), fields[0], why)
+    if "design" in entry:
+        return Fact("design:" + str(entry["design"]).strip(), "design", why)
     if "violation" in entry:
         text = str(entry["violation"]).strip()
         return Fact("violation:" + text, "violation:" + text.split(" ", 1)[0], why)
@@ -164,7 +169,13 @@ def observe(root: Path) -> tuple[set[str], set[str]]:
         seen.add(key)
         if e.resolution is Resolution.RESOLVED:
             resolved.add(key)
-    for v in assess(graph, source_texts(scan, graph)).violations:
+    design = design_for(scan, graph)
+    for u in design.units:
+        if u.chosen is not None:
+            key = f"design:{u.unit.id or '.'} {u.chosen.style}"
+            resolved.add(key)
+            seen.add(key)
+    for v in assess(graph, source_texts(scan, graph), design).violations:
         ev = v.evidence[0]
         key = f"violation:{v.check} {ev.file}:{ev.start_line}"
         resolved.add(key)
@@ -186,6 +197,9 @@ def score(
         sorted(f.key for f in must_not if f.key in seen),
         dict(sorted(by_kind.items())),
         _fingerprint(must, must_not),
+        sorted(
+            {f.key.rsplit(" ", 1)[-1] for f in must if f.kind == "design" and f.key in resolved}
+        ),
     )
 
 
@@ -204,6 +218,7 @@ def to_json(scores: dict[str, Score]) -> dict[str, dict[str, object]]:
             "fired": s.fired,
             "by_kind": {k: list(v) for k, v in s.by_kind.items()},
             "expected": s.expected,
+            "design_found": s.design_found,
         }
         for name, s in sorted(scores.items())
     }
@@ -282,6 +297,15 @@ def stable_checks(accepted: dict[str, dict[str, object]]) -> set[str]:
                 check = kind.removeprefix("violation:")
                 good[check] = good.get(check, 0) + 1
     return {c for c, n in good.items() if n >= STABLE_REPOS}
+
+
+def stable_styles(accepted: dict[str, dict[str, object]]) -> set[str]:
+    """Styles found as expected on at least two repos."""
+    count: dict[str, int] = {}
+    for acc in accepted.values():
+        for style in set(acc.get("design_found", [])):  # type: ignore[arg-type]
+            count[style] = count.get(style, 0) + 1
+    return {s for s, n in count.items() if n >= STABLE_REPOS}
 
 
 def table(scores: dict[str, Score]) -> str:

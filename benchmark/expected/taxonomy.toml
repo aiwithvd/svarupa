@@ -156,3 +156,14 @@ why = "components/ui/use-toast.ts:25 genId(): no branches, complexity 1, 4 lines
 [[must_not]]
 violation = "long-function lib/utils.ts:10"
 why = "lib/utils.ts:10 formatDate(input): 8 lines (10 to 17)"
+
+# Design (decided by reading source)
+# Frontend layers: app/ route pages (plus pages/api) at the top import
+# components/, components import hooks/ (state) and lib/ plus config/
+# (shared). Nothing in lib, hooks or config imports components or app.
+[[must]]
+design = ". frontend-layers"
+why = "app/(dashboard)/dashboard/page.tsx:7 import { DashboardHeader } from \"@/components/header\""
+[[must_not]]
+design = ". feature-sliced"
+why = "no features, entities, widgets or shared directories; app/ is the Next.js router, not an FSD app layer"

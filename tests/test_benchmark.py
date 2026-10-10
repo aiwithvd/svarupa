@@ -299,3 +299,34 @@ def test_check_maturity_follows_the_benchmark() -> None:
     stable = bm.stable_checks(json.loads(scores.read_text(encoding="utf8")))
     wrong = {c.id: c.maturity for c in CATALOG if (c.maturity == "stable") != (c.id in stable)}
     assert not wrong, f"check maturity disagrees with the benchmark: {wrong}"
+
+
+def test_design_facts_are_parsed(tmp_path: Path) -> None:
+    _expected(tmp_path, "demo", '[[must]]\ndesign = ". layered"\nwhy = "api/handlers.py:1 x"\n')
+    must, _ = bm.load_expected("demo", tmp_path)
+    assert must[0].key == "design:. layered" and must[0].kind == "design"
+
+
+def test_observe_reports_the_chosen_design(tmp_path: Path) -> None:
+    from tests.test_design import layered
+
+    layered(tmp_path)
+    resolved, _ = bm.observe(tmp_path)
+    assert "design:. layered" in resolved
+
+
+def test_stable_styles_need_two_repos() -> None:
+    accepted = {
+        "a": {"missed": [], "fired": [], "design_found": ["layered"]},
+        "b": {"missed": [], "fired": [], "design_found": ["layered", "clean"]},
+    }
+    assert bm.stable_styles(accepted) == {"layered"}
+
+
+def test_style_maturity_follows_the_benchmark() -> None:
+    from svarupa.design import CATALOG as STYLES
+
+    scores = ROOT / "benchmark" / "scores.json"
+    stable = bm.stable_styles(json.loads(scores.read_text(encoding="utf8")))
+    wrong = {s.id: s.maturity for s in STYLES if (s.maturity == "stable") != (s.id in stable)}
+    assert not wrong, f"style maturity disagrees with the benchmark: {wrong}"

@@ -5,6 +5,7 @@
 # directory would ignore the one file the design says to commit.
 .svarupa/*
 !.svarupa/architecture.lock
+!.svarupa/design.yaml
 
 *.egg-info/
 *.pyc
