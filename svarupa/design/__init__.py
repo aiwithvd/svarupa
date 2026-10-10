@@ -36,7 +36,10 @@ def design_for(scan: Scan, graph: Graph, accepted: object | None = None) -> Desi
     chosen_by_file = _accepted_units(accepted)
     out: list[UnitDesign] = []
     for unit in units:
-        candidates = [s for s in CATALOG if s.level == unit.level]
+        # A unit with no proven level may be a backend whose framework routes
+        # are not read yet (Gin, Echo, Spring): compare it with both.
+        levels = {"backend", "library"} if unit.level == "library" else {unit.level}
+        candidates = [s for s in CATALOG if s.level in levels]
         # Ties go to the style whose parts the code actually fills: layered
         # with api, service and data all present explains code better than
         # clean with two modules in one adapters ring.

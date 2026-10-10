@@ -2,6 +2,7 @@
 # schema 1.7
 # grammars python@0.25.0
 dep	scripts	svarupa
+dep	scripts	svarupa/design
 dep	scripts	svarupa/extract
 dep	scripts	svarupa/health
 dep	scripts	svarupa/lock

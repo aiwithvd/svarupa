@@ -165,3 +165,12 @@ why = "bakerydemo/base/models.py:148 def get_preview_template(self, request, mod
 [[must_not]]
 violation = "long-function bakerydemo/base/management/commands/create_random_data.py:172"
 why = "bakerydemo/base/management/commands/create_random_data.py:172 def handle(self, **options): 4 lines"
+
+# Design (decided by reading source)
+# Unit "." left out: Django/Wagtail apps (base, blog, breads, locations,
+# people, recipes, search) split by content type, but they import each other
+# (base <-> blog, people -> breads, search -> blog/breads/recipes), so they
+# are not independent slices, and no layer directories exist.
+[[must_not]]
+design = ". hexagonal"
+why = "no ports, adapters or pure core: each Django app keeps Wagtail page models (database) and views together, with no interface layer between them"

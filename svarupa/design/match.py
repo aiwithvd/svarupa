@@ -10,6 +10,28 @@ from svarupa.model import EdgeKind, Evidence
 __all__ = ["assign", "fit_assigned", "fit_style"]
 
 _IO = frozenset({"routes", "datastore", "messagebus", "cloud", "ui"})
+# Cross-cutting helpers and composition roots exist in every style. They are
+# left out of a style's score unless one of its parts names them (for
+# example Feature-Sliced Design's `shared`).
+# fmt: off
+_UTILITY = frozenset(
+    {
+        "config", "configs", "utils", "util", "helpers", "helper", "lib", "libs",
+        "common", "shared", "types", "constants", "docs", "scripts", "validations",
+        "validators", "middleware", "middlewares", "errors", "exceptions",
+    }
+)
+# fmt: on
+_COMPOSITION = frozenset({"src", "cmd", "bin", "main"})
+
+
+def _neutral(segs: list[str], style: Style) -> bool:
+    if not segs:
+        return True  # the unit root wires everything together
+    last = segs[-1]
+    if last not in _UTILITY and last not in _COMPOSITION:
+        return False
+    return not any(last in p.names for p in style.parts)
 
 
 def _segments(module: str, unit: str) -> list[str]:
@@ -21,6 +43,8 @@ def assign(unit: Unit, style: Style, sig: dict[str, frozenset[str]]) -> list[Ass
     out: list[Assignment] = []
     for module in unit.modules:
         segs = _segments(module, unit.id)
+        if _neutral(segs, style):
+            continue
         best: tuple[int, int, Assignment] | None = None
         for rank, part in enumerate(style.parts):
             score, reason, at = 0, "", -1
@@ -49,18 +73,18 @@ def assign(unit: Unit, style: Style, sig: dict[str, frozenset[str]]) -> list[Ass
     return out
 
 
-def _import_evidence(graph: Graph) -> dict[tuple[str, str], Evidence]:
-    first: dict[tuple[str, str], Evidence] = {}
+def _import_evidence(graph: Graph) -> dict[tuple[str, str], dict[str, Evidence]]:
+    """(source module, target module) -> importing file -> its first import line."""
+    first: dict[tuple[str, str], dict[str, Evidence]] = {}
     for e in graph.edges:
         if e.kind is not EdgeKind.IMPORTS or not e.evidence:
             continue
-        key = (module_of(e.src.split("#", 1)[0]), module_of(e.dst.split("#", 1)[0]))
+        src_file = e.src.split("#", 1)[0]
+        key = (module_of(src_file), module_of(e.dst.split("#", 1)[0]))
         ev = e.evidence[0]
-        if key not in first or (ev.file, ev.start_line) < (
-            first[key].file,
-            first[key].start_line,
-        ):
-            first[key] = ev
+        files = first.setdefault(key, {})
+        if src_file not in files or ev.start_line < files[src_file].start_line:
+            files[src_file] = ev
     return first
 
 
@@ -90,10 +114,11 @@ def fit_assigned(
     )
     violations: list[DesignViolation] = []
     checked = 0
+    bad = 0
     for a, b in deps:
         src, dst = by_module[a], by_module[b]
-        ev = evidence.get((a, b))
-        if ev is None:
+        files = evidence.get((a, b))
+        if not files:
             continue
         checked += 1
         rule, why = None, ""
@@ -128,11 +153,15 @@ def fit_assigned(
                     f"import {dst.part} '{dst.slice}' through its root {root}, not {b}",
                 )
         if rule is not None:
-            violations.append(DesignViolation(rule, a, b, ev, why))
+            bad += 1  # compliance counts module pairs; violations count importing files
+            violations.extend(
+                DesignViolation(rule, a, b, ev, why) for _, ev in sorted(files.items())
+            )
     for a in sorted(by_module):
         # A breach counts; a pure module is not a free pass.
         if by_module[a].part in style.pure and sig.get(a, frozenset()) & _IO:
             checked += 1
+            bad += 1
             ev = _purity_evidence(graph, a)
             if ev is not None:
                 violations.append(
@@ -144,8 +173,14 @@ def fit_assigned(
                         f"the {by_module[a].part} part must not use frameworks or I/O",
                     )
                 )
-    bad = len(violations)
-    coverage = len(by_module) / len(unit.modules) if unit.modules else 0.0
+    scored = [
+        m for m in unit.modules if m in by_module or not _neutral(_segments(m, unit.id), style)
+    ]
+    coverage = len(by_module) / len(scored) if scored else 0.0
+    # A style is relations between parts: with one filled part no structure
+    # was recognised, however many modules landed in it.
+    if len(style.parts) > 1 and len({x.part for x in by_module.values()}) < 2:
+        coverage = 0.0
     compliance = (checked - bad) / checked if checked else 1.0
     return Fit(
         unit.id,

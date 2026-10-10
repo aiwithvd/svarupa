@@ -223,3 +223,18 @@ why = "pkg/rabbitmq/rmq_rpc/connection.go:28 func New(consumerExchange, cfg): co
 [[must_not]]
 violation = "long-function pkg/rabbitmq/rmq_rpc/connection.go:38"
 why = "pkg/rabbitmq/rmq_rpc/connection.go:38 func (c *Connection) AttemptConnect(): 17 lines, complexity 4"
+
+# Design (decided by reading source)
+# clean: entities = internal/entity; usecases = internal/usecase/** (with the
+# repo contracts in internal/repo); adapters = internal/controller/**
+# (restapi, grpc, amqp_rpc, nats_rpc) and internal/repo/persistent/**,
+# internal/repo/webapi. Controllers import usecase contracts, use cases import
+# internal/repo contracts and internal/entity, never a controller or a repo
+# implementation. README.md:424 "## Clean Architecture".
+[[must]]
+design = ". clean"
+why = "internal/controller/restapi/v1/controller.go:4 \"github.com/evrone/go-clean-template/internal/usecase\" (the handler depends on the use case contracts)"
+
+[[must_not]]
+design = ". cqrs"
+why = "no commands/queries split; internal/usecase/contracts.go mixes reads and writes in one interface per use case"

@@ -49,7 +49,8 @@ def test_catalog_covers_every_level() -> None:
     )
     assert {"feature-sliced", "frontend-layers", "mvvm", "mvi", "mobile-clean"} <= set(BY_ID)
     assert {"pipeline-stages", "dbt-layers", "medallion", "public-api", "plugin"} <= set(BY_ID)
-    assert all(s.maturity == "experimental" and s.source for s in CATALOG)
+    # Maturity comes from the benchmark (test_style_maturity_follows_the_benchmark).
+    assert all(s.maturity in ("experimental", "stable") and s.source for s in CATALOG)
 
 
 def test_a_layered_service_is_proposed_as_layered(tmp_path: Path) -> None:
@@ -194,3 +195,76 @@ def test_every_style_is_documented() -> None:
         encoding="utf8"
     )
     assert all(f"`{s.id}`" in doc for s in CATALOG)
+
+
+def test_a_backend_without_supported_routes_is_still_compared_with_backend_styles(
+    tmp_path: Path,
+) -> None:
+    # Gin, Echo and Spring routes are not read yet, so nothing proves this is a
+    # backend; it must still be compared with the backend styles.
+    write(tmp_path, "go.mod", "module github.com/acme/shop\n")
+    write(
+        tmp_path,
+        "delivery/http/handler.go",
+        'package http\n\nimport "github.com/acme/shop/usecase"\n\nfunc H() { usecase.Do() }\n',
+    )
+    write(
+        tmp_path,
+        "usecase/do.go",
+        'package usecase\n\nimport "github.com/acme/shop/domain"\n\nfunc Do() { domain.New() }\n',
+    )
+    write(tmp_path, "domain/order.go", "package domain\n\nfunc New() {}\n")
+    unit = run(tmp_path).units[0]
+    assert unit.chosen is not None and unit.chosen.style == "clean"
+
+
+def test_a_style_must_fill_at_least_two_parts(tmp_path: Path) -> None:
+    # Every module uses a database, so every module could land in one part;
+    # one filled part is not a recognised structure.
+    write(tmp_path, "pyproject.toml", '[project]\nname = "x"\ndependencies = ["sqlalchemy"]\n')
+    for name in ("articles", "users", "common"):
+        write(tmp_path, f"{name}/models.py", "import sqlalchemy\n")
+    unit = run(tmp_path).units[0]
+    assert unit.chosen is None or len({a.part for a in unit.chosen.assignments}) >= 2
+
+
+def test_utility_folders_and_composition_roots_do_not_count(tmp_path: Path) -> None:
+    write(tmp_path, "package.json", '{"name": "api", "dependencies": {"express": "4"}}\n')
+    write(
+        tmp_path,
+        "src/app.js",
+        "const routes = require('./routes/v1');\nmodule.exports = routes;\n",
+    )
+    write(
+        tmp_path,
+        "src/routes/v1/user.js",
+        "const c = require('../../controllers/user');\nmodule.exports = c;\n",
+    )
+    write(
+        tmp_path,
+        "src/controllers/user.js",
+        "const s = require('../services/user');\nmodule.exports = s;\n",
+    )
+    write(
+        tmp_path,
+        "src/services/user.js",
+        "const m = require('../models/user');\nmodule.exports = m;\n",
+    )
+    write(tmp_path, "src/models/user.js", "module.exports = {};\n")
+    for helper in ("config", "utils", "validations", "middlewares"):
+        write(tmp_path, f"src/{helper}/x.js", "module.exports = {};\n")
+    unit = run(tmp_path).units[0]
+    assert unit.chosen is not None and unit.chosen.style == "layered"
+    assert unit.chosen.coverage == 1.0
+
+
+def test_one_violation_per_importing_file(tmp_path: Path) -> None:
+    layered(tmp_path)
+    for i in range(3):
+        write(tmp_path, f"shop/repository/r{i}.py", "from shop.api.routes import create\n")
+    unit = run(tmp_path).units[0]
+    assert unit.chosen is not None
+    files = sorted(
+        v.evidence.file for v in unit.chosen.violations if v.rule == "layer-direction"
+    )
+    assert files == [f"shop/repository/r{i}.py" for i in range(3)]

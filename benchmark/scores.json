@@ -35,12 +35,13 @@
     1
    ]
   },
-  "expected": "0a136bd0c28bf519"
+  "expected": "dd7f6658b5242a15",
+  "design_found": []
  },
  "express-boilerplate": {
-  "recall": 0.9706,
-  "found": 33,
-  "total": 34,
+  "recall": 0.9714,
+  "found": 34,
+  "total": 35,
   "missed": [
    "call:src/controllers/user.controller.js -> src/services/user.service.js#queryUsers"
   ],
@@ -57,6 +58,10 @@
    "dep": [
     11,
     11
+   ],
+   "design": [
+    1,
+    1
    ],
    "endpoint": [
     8,
@@ -75,12 +80,15 @@
     1
    ]
   },
-  "expected": "c1b4b34e9d5a296c"
+  "expected": "9dc8499b9b3d9a60",
+  "design_found": [
+   "layered"
+  ]
  },
  "fastapi-template": {
   "recall": 1.0,
-  "found": 32,
-  "total": 32,
+  "found": 33,
+  "total": 33,
   "missed": [],
   "fired": [],
   "by_kind": {
@@ -96,6 +104,10 @@
     9,
     9
    ],
+   "design": [
+    1,
+    1
+   ],
    "endpoint": [
     8,
     8
@@ -109,7 +121,10 @@
     3
    ]
   },
-  "expected": "3d43d974aaffe19b"
+  "expected": "a6afa2967d995330",
+  "design_found": [
+   "frontend-layers"
+  ]
  },
  "gin-realworld": {
   "recall": 1.0,
@@ -139,13 +154,16 @@
     1
    ]
   },
-  "expected": "36872b5ce19e6da9"
+  "expected": "da207c97be90593d",
+  "design_found": []
  },
  "go-clean-arch": {
-  "recall": 1.0,
+  "recall": 0.9583,
   "found": 23,
-  "total": 23,
-  "missed": [],
+  "total": 24,
+  "missed": [
+   "design:. clean"
+  ],
   "fired": [],
   "by_kind": {
    "call": [
@@ -160,6 +178,10 @@
     8,
     8
    ],
+   "design": [
+    0,
+    1
+   ],
    "module": [
     7,
     7
@@ -169,13 +191,16 @@
     1
    ]
   },
-  "expected": "ba0f746f96fcc213"
+  "expected": "c846a494aa90a4fc",
+  "design_found": []
  },
  "go-clean-template": {
-  "recall": 1.0,
+  "recall": 0.975,
   "found": 39,
-  "total": 39,
-  "missed": [],
+  "total": 40,
+  "missed": [
+   "design:. clean"
+  ],
   "fired": [],
   "by_kind": {
    "call": [
@@ -189,6 +214,10 @@
    "dep": [
     13,
     13
+   ],
+   "design": [
+    0,
+    1
    ],
    "module": [
     11,
@@ -211,7 +240,8 @@
     1
    ]
   },
-  "expected": "20b6c96a78b8f5f5"
+  "expected": "d6199b322eff7a55",
+  "design_found": []
  },
  "microblog": {
   "recall": 0.9688,
@@ -247,7 +277,8 @@
     1
    ]
   },
-  "expected": "0fb3c38614a35344"
+  "expected": "ce0d9fa53e8868a1",
+  "design_found": []
  },
  "nestjs-prisma": {
   "recall": 1.0,
@@ -285,13 +316,16 @@
     1
    ]
   },
-  "expected": "3002b105ba1081bf"
+  "expected": "a7111ae3b2ce5749",
+  "design_found": []
  },
  "petclinic": {
-  "recall": 1.0,
+  "recall": 0.9524,
   "found": 20,
-  "total": 20,
-  "missed": [],
+  "total": 21,
+  "missed": [
+   "design:. vertical-slice"
+  ],
   "fired": [],
   "by_kind": {
    "call": [
@@ -306,17 +340,22 @@
     4,
     4
    ],
+   "design": [
+    0,
+    1
+   ],
    "module": [
     5,
     5
    ]
   },
-  "expected": "89c0e2c1d6095c4f"
+  "expected": "1e15112233fcd85c",
+  "design_found": []
  },
  "spring-realworld": {
   "recall": 1.0,
-  "found": 33,
-  "total": 33,
+  "found": 39,
+  "total": 39,
   "missed": [],
   "fired": [],
   "by_kind": {
@@ -328,9 +367,17 @@
     12,
     12
    ],
+   "design": [
+    1,
+    1
+   ],
    "module": [
     10,
     10
+   ],
+   "violation:layer-direction": [
+    5,
+    5
    ],
    "violation:many-parameters": [
     1,
@@ -341,12 +388,15 @@
     1
    ]
   },
-  "expected": "d73f07c4ba19cfa7"
+  "expected": "8cd0e3f2034a21e9",
+  "design_found": [
+   "onion"
+  ]
  },
  "taxonomy": {
   "recall": 1.0,
-  "found": 35,
-  "total": 35,
+  "found": 36,
+  "total": 36,
   "missed": [],
   "fired": [],
   "by_kind": {
@@ -358,6 +408,10 @@
     12,
     12
    ],
+   "design": [
+    1,
+    1
+   ],
    "module": [
     8,
     8
@@ -367,6 +421,9 @@
     10
    ]
   },
-  "expected": "f03b09e004bfcef6"
+  "expected": "1250788507dc8cff",
+  "design_found": [
+   "frontend-layers"
+  ]
  }
 }

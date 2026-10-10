@@ -132,6 +132,7 @@ CATALOG: tuple[Style, ...] = (
         ),
         order=("pages", "components", "state", "api", "shared"),
         source="React and Next.js project structure guidance",
+        maturity="stable",
     ),
     Style(
         "mvvm", "Model-View-ViewModel", "frontend",

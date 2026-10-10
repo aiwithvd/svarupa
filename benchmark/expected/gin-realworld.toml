@@ -134,3 +134,12 @@ why = "users/models.go:80 func FindOneUser(condition): complexity 1, 6 lines, 1 
 [[must_not]]
 violation = "long-function users/models.go:57"
 why = "users/models.go:57 func (u *UserModel) setPassword(password): 10 lines, complexity 2"
+
+# Design (decided by reading source)
+# No design fact for ".": articles and users look like feature slices over a
+# shared common package, but articles imports users in every source file
+# (models, routers, serializers, validators), so the slices are not
+# independent and vertical-slice is a borderline call.
+[[must_not]]
+design = ". clean"
+why = "no usecase or entity layer: articles/models.go and users/models.go hold GORM models and DB calls in the same package as the Gin routers"

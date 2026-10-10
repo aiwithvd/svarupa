@@ -187,3 +187,17 @@ why = "scripts/prepare_release.py:33 def bump_version(version, bump): 2 ifs = co
 [[must_not]]
 violation = "long-function backend/app/crud.py:34"
 why = "backend/app/crud.py:34 def get_user_by_email(*, session, email): 4 lines"
+
+# Design (decided by reading source)
+# frontend: routes (pages) > components > hooks (state) > client (API client)
+# > lib (shared); every @/ import points down.
+# backend left out: no service layer (routes call crud directly), and
+# backend/app (crud, models) and backend/app/core (db, security) import each
+# other, so no style is clear.
+[[must]]
+design = "frontend frontend-layers"
+why = "frontend/src/routes/_layout/items.tsx:8 import AddItem from \"@/components/Items/AddItem\" (page importing a component; hooks/useAuth.ts:4 imports the @/client API client)"
+
+[[must_not]]
+design = "backend cqrs"
+why = "no command or query split: routes in backend/app/api/routes both read and write through the same crud.py functions and SQLModel models"

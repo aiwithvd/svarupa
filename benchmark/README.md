@@ -28,6 +28,8 @@ says in its top comment what was deliberately left out.
   function's first line, the class line, line 1 for a large file, the first
   import line of a cycle, the first line of the first copy of a duplicated
   block.
+- `design = "<unit> <style>"` is the design style a unit follows (`.` is
+  the repository root; styles in `docs/design.md`).
 
 Rules:
 
