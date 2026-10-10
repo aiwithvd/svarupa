@@ -15,6 +15,7 @@ recursion limit does.
 from __future__ import annotations
 
 import importlib
+import re
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from functools import cache
@@ -33,6 +34,7 @@ from svarupa.extract.base import (
     FileFacts,
     FunctionMetrics,
     ImportRef,
+    RiskFact,
     SymbolRef,
     depth_capped,
 )
@@ -47,10 +49,15 @@ from svarupa.extract.packs.model import (
     Import,
     MetricsSpec,
     Pack,
+    RiskSpec,
+    Unsafe,
 )
 from svarupa.model import Evidence
 
 __all__ = ["Ctx", "Frame", "PackExtractor", "language_for"]
+
+_IDENT = re.compile(r"[A-Za-z_$][\w$]*")
+_MAX_NODE = 2000  # bytes: longer nodes are never an unsafe one-liner
 
 
 @dataclass(frozen=True, slots=True)
@@ -265,6 +272,118 @@ class Ctx:
             name = fn.parent.child_by_field_name("name")
         return self.text(name) if name is not None else "(anonymous)"
 
+    def scan_risks(self, root: TSNode) -> list[RiskFact]:
+        """Sinks fed by built strings and unsafe settings, per function.
+
+        Each function is its own scope: a variable built in one function is
+        never the same variable in another. Iterative, like `measure`.
+        """
+        spec = self.pack.risks
+        if spec is None or self.too_deep:
+            return []
+        fn_types = self.pack.metrics.function_types if self.pack.metrics else frozenset[str]()
+        by_type: dict[str, list[Unsafe]] = {}
+        for rule in spec.unsafe:
+            for t in rule.node_types:
+                by_type.setdefault(t, []).append(rule)
+        out: list[RiskFact] = []
+        scopes: list[tuple[TSNode, str]] = [(root, "")]
+        while scopes:
+            scope, name = scopes.pop()
+            built: set[str] = set()
+            work = list(reversed(scope.children))
+            while work:
+                node = work.pop()
+                if node.is_named and node.type in fn_types:
+                    scopes.append((node, self._function_name(node)))
+                    continue
+                self._risk_node(node, spec, by_type, built, name, out)
+                work.extend(reversed(node.children))
+        return sorted(out, key=lambda r: (r.evidence.start_line, r.kind, r.tag, r.detail))
+
+    def _risk_node(
+        self,
+        node: TSNode,
+        spec: RiskSpec,
+        by_type: dict[str, list[Unsafe]],
+        built: set[str],
+        scope: str,
+        out: list[RiskFact],
+    ) -> None:
+        t = node.type
+        for kind, left_field, right_field in spec.assigns:
+            if t != kind:
+                continue
+            left = node.child_by_field_name(left_field)
+            right = node.child_by_field_name(right_field)
+            if left is None or right is None or not _IDENT.fullmatch(self.text(left)):
+                break
+            name = self.text(left)
+            augment = any(not c.is_named and c.type == "+=" for c in node.children)
+            if self._built(right, spec, built) or (
+                augment and right.type not in spec.string_types
+            ):
+                built.add(name)
+            elif not augment:
+                built.discard(name)
+            break
+        if t in spec.call_types:
+            callee = spec.callee(self, node)
+            args = node.child_by_field_name("arguments")
+            if callee is not None and args is not None:
+                for sink in spec.sinks:
+                    if not sink.callee.search(callee):
+                        continue
+                    if sink.requires is not None and not sink.requires.search(self.text(args)):
+                        continue
+                    if any(self._built(a, spec, built) for a in args.named_children):
+                        out.append(
+                            RiskFact(
+                                "sink-built",
+                                sink.tag,
+                                callee[:80],
+                                self.node_evidence(node),
+                                scope,
+                            )
+                        )
+                    break
+        rules = by_type.get(t)
+        if rules and node.end_byte - node.start_byte <= _MAX_NODE:
+            text = " ".join(self.text(node).split())
+            for rule in rules:
+                if rule.pattern.fullmatch(text):
+                    out.append(
+                        RiskFact(
+                            "unsafe", rule.check, rule.label, self.node_evidence(node), scope
+                        )
+                    )
+
+    def _built(self, node: TSNode, spec: RiskSpec, built: set[str]) -> bool:
+        """Whether this expression is a string built at runtime."""
+        t = node.type
+        if t in spec.unwrap:
+            kids = node.named_children
+            return bool(kids) and self._built(kids[-1], spec, built)
+        if t in spec.string_types:
+            inner = dict(spec.interpolations).get(t)
+            return any(c.type == inner for c in node.children) or any(
+                self._built(c, spec, built)
+                for c in node.named_children
+                if c.type in spec.string_types
+            )
+        ops = dict(spec.concat).get(t)
+        if ops is not None and any(not c.is_named and c.type in ops for c in node.children):
+            return any(
+                c.type in spec.string_types or self._built(c, spec, built)
+                for c in node.named_children
+            )
+        if t in spec.call_types:
+            callee = spec.callee(self, node)
+            return callee is not None and spec.format_callee.search(callee) is not None
+        if t == "identifier":
+            return self.text(node) in built
+        return False
+
     def run(self, tree: Tree) -> FileFacts:
         diags: list[Diagnostic] = []
         if tree.root_node.has_error:
@@ -281,6 +400,7 @@ class Ctx:
             )
         self.visit(tree.root_node, Frame(), 0)
         functions = self.measure(tree.root_node)
+        risks = self.scan_risks(tree.root_node)
         if self.too_deep:
             diags.append(depth_capped(self.path))
         return FileFacts(
@@ -295,6 +415,7 @@ class Ctx:
             ctor_assigns=tuple(self.ctor_assigns),
             namespace=self.namespace,
             functions=tuple(functions),
+            risks=tuple(risks),
         )
 
 

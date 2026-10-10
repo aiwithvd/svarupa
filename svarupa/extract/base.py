@@ -39,6 +39,7 @@ __all__ = [
     "FileFacts",
     "FunctionMetrics",
     "ImportRef",
+    "RiskFact",
     "RouteFact",
     "Scorecard",
     "SymbolRef",
@@ -219,6 +220,21 @@ class FunctionMetrics:
 
 
 @dataclass(frozen=True, slots=True)
+class RiskFact:
+    """A security-relevant shape in one function, before any judgement.
+
+    `detail` is the callee or the unsafe rule's label, never a literal from
+    the source, so a fact can be printed anywhere.
+    """
+
+    kind: str  # "sink-built" | "unsafe"
+    tag: str  # sink tag (sql/shell/code) or the unsafe check id
+    detail: str
+    evidence: Evidence
+    function: str  # enclosing function name, "" at module level
+
+
+@dataclass(frozen=True, slots=True)
 class FileFacts:
     """Pass 1 output for a single file. Cacheable by content hash."""
 
@@ -239,6 +255,8 @@ class FileFacts:
     # Per-function metrics, in document order; empty for packs without a
     # MetricsSpec or a file whose tree nests past the depth cap.
     functions: tuple[FunctionMetrics, ...] = ()
+    # Security facts in document order; empty for packs without a RiskSpec.
+    risks: tuple[RiskFact, ...] = ()
 
 
 def _d_counts() -> dict[tuple[str, str, Resolution], int]:
@@ -462,6 +480,7 @@ class ExtractResult:
     externals: tuple[ExternalFact, ...] = ()
     environments: tuple[EnvironmentFact, ...] = ()
     functions: tuple[FunctionMetrics, ...] = ()
+    risks: tuple[RiskFact, ...] = ()
 
 
 # A syntax tree deeper than this is walked no further. Minified bundles nest

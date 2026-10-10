@@ -168,5 +168,6 @@
  "diagnostics": [],
  "ctor_assigns": [],
  "namespace": "",
- "functions": []
+ "functions": [],
+ "risks": []
 }

@@ -9,6 +9,8 @@ nothing moved.
 
 from __future__ import annotations
 
+import re
+
 from tree_sitter import Node as TSNode
 
 from svarupa.extract.base import (
@@ -27,6 +29,8 @@ from svarupa.extract.packs.model import (
     Maturity,
     MetricsSpec,
     Pack,
+    RiskSpec,
+    Sink,
 )
 from svarupa.extract.packs.walker import Ctx, Frame
 
@@ -293,6 +297,30 @@ METRICS = MetricsSpec(
 )
 
 
+def risk_callee(ctx: Ctx, node: TSNode) -> str | None:
+    fn = node.child_by_field_name("function")
+    if fn is None or fn.end_byte - fn.start_byte > 200:
+        return None
+    return ctx.text(fn)
+
+
+RISKS = RiskSpec(
+    call_types=frozenset({"call"}),
+    callee=risk_callee,
+    string_types=frozenset({"string", "concatenated_string"}),
+    interpolations=(("string", "interpolation"),),
+    concat=(("binary_operator", frozenset({"+", "%"})),),
+    format_callee=re.compile(r"\.format$"),
+    assigns=(("assignment", "left", "right"), ("augmented_assignment", "left", "right")),
+    unwrap=frozenset({"parenthesized_expression", "keyword_argument", "await"}),
+    sinks=(
+        Sink(
+            "sql", re.compile(r"(?:^|\.)(?:execute|executemany|executescript|raw|extra|text)$")
+        ),
+    ),
+)
+
+
 PACK = Pack(
     lang="python",
     grammar=Grammar(
@@ -303,6 +331,7 @@ PACK = Pack(
     ),
     maturity=Maturity.STABLE,
     metrics=METRICS,
+    risks=RISKS,
     qualified_prefix=lambda path: qualified_prefix(path, "python"),
     decorator=decorator,
     rules={
