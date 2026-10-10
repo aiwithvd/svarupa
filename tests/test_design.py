@@ -229,7 +229,11 @@ def test_a_style_must_fill_at_least_two_parts(tmp_path: Path) -> None:
 
 
 def test_utility_folders_and_composition_roots_do_not_count(tmp_path: Path) -> None:
-    write(tmp_path, "package.json", '{"name": "api", "dependencies": {"express": "4"}}\n')
+    write(
+        tmp_path,
+        "package.json",
+        '{"name": "api", "dependencies": {"express": "4", "mongoose": "8"}}\n',
+    )
     write(
         tmp_path,
         "src/app.js",
@@ -253,9 +257,16 @@ def test_utility_folders_and_composition_roots_do_not_count(tmp_path: Path) -> N
     write(tmp_path, "src/models/user.js", "module.exports = {};\n")
     for helper in ("config", "utils", "validations", "middlewares"):
         write(tmp_path, f"src/{helper}/x.js", "module.exports = {};\n")
+    # A helper with real database use must still not be taken for a layer.
+    write(
+        tmp_path,
+        "src/config/db.js",
+        "const mongoose = require('mongoose');\nmodule.exports = mongoose;\n",
+    )
     unit = run(tmp_path).units[0]
     assert unit.chosen is not None and unit.chosen.style == "layered"
     assert unit.chosen.coverage == 1.0
+    assert not [a.module for a in unit.chosen.assignments if a.module.startswith("src/config")]
 
 
 def test_one_violation_per_importing_file(tmp_path: Path) -> None:
