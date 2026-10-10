@@ -9,6 +9,8 @@ statically imported that name.
 
 from __future__ import annotations
 
+import re
+
 from tree_sitter import Node as TSNode
 
 from svarupa.extract.base import CallShape, CallSite, DecoratorRef, FieldType, ImportRef
@@ -22,6 +24,9 @@ from svarupa.extract.packs.model import (
     Maturity,
     MetricsSpec,
     Pack,
+    RiskSpec,
+    Sink,
+    Unsafe,
 )
 from svarupa.extract.packs.modules import JvmPackages
 from svarupa.extract.packs.walker import Ctx, Frame
@@ -252,6 +257,57 @@ METRICS = MetricsSpec(
 )
 
 
+def risk_callee(ctx: Ctx, node: TSNode) -> str | None:
+    if node.type == "object_creation_expression":
+        typ = node.child_by_field_name("type")
+        return f"new {ctx.text(typ)}" if typ is not None else None
+    name = node.child_by_field_name("name")
+    if name is None:
+        return None
+    obj = node.child_by_field_name("object")
+    if obj is not None and obj.end_byte - obj.start_byte > 200:
+        return None
+    return f"{ctx.text(obj)}.{ctx.text(name)}" if obj is not None else ctx.text(name)
+
+
+def _p(pattern: str) -> re.Pattern[str]:
+    return re.compile(pattern, re.DOTALL)
+
+
+_INVOKE = frozenset({"method_invocation"})
+_NEW = frozenset({"object_creation_expression"})
+
+# fmt: off
+RISKS = RiskSpec(
+    call_types=frozenset({"method_invocation", "object_creation_expression"}),
+    callee=risk_callee,
+    string_types=frozenset({"string_literal"}),
+    interpolations=(),
+    concat=(("binary_expression", frozenset({"+"})),),
+    format_callee=re.compile(r"^String\.format$|\.formatted$"),
+    assigns=(
+        ("variable_declarator", "name", "value"),
+        ("assignment_expression", "left", "right"),
+    ),
+    unwrap=frozenset({"parenthesized_expression"}),
+    sinks=(
+        Sink("sql", re.compile(r"(?:^|\.)(?:executeQuery|executeUpdate|executeLargeUpdate|execute|addBatch|prepareStatement|prepareCall|createQuery|createNativeQuery|queryForList|queryForObject|queryForMap|query|update|batchUpdate)$")),
+        Sink("shell", re.compile(r"getRuntime\(\)\.exec$|^new ProcessBuilder$")),
+        Sink("code", re.compile(r"(?:^|\.)(?:eval|parseExpression)$")),
+    ),
+    unsafe=(
+        Unsafe("unsafe-deserialize", "ObjectInputStream", _NEW, _p(r"new (?:ObjectInputStream|XMLDecoder)\(.*")),
+        Unsafe("weak-hash", "MD5 or SHA-1", _INVOKE, _p(r"MessageDigest\.getInstance\(\s*\"(?:MD5|MD2|SHA-?1)\".*")),
+        Unsafe("tls-verify-off", "hostname verification off", _NEW, _p(r"new (?:NoopHostnameVerifier|TrustAllStrategy)\(.*")),
+        Unsafe("cors-any-origin", "CORS origin '*'", _INVOKE, _p(r".*\.allowedOrigins\(\s*\"\*\"\s*\)")),
+        Unsafe("cors-any-origin", "@CrossOrigin allows every origin", frozenset({"marker_annotation"}), _p(r"@CrossOrigin")),
+        Unsafe("cors-any-origin", "@CrossOrigin allows every origin", frozenset({"annotation"}), _p(r"@CrossOrigin\(\s*(?:origins\s*=\s*)?\"\*\"\s*\)")),
+    ),
+    auth_markers=frozenset({"PreAuthorize", "Secured", "RolesAllowed", "PostAuthorize"}),
+)
+# fmt: on
+
+
 PACK = Pack(
     lang="java",
     grammar=Grammar(
@@ -262,6 +318,7 @@ PACK = Pack(
     ),
     maturity=Maturity.STABLE,
     metrics=METRICS,
+    risks=RISKS,
     rules={
         "package_declaration": Custom(hook=package_declaration),
         "import_declaration": Import(hook=import_),

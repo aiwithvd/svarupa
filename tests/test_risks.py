@@ -244,3 +244,50 @@ def test_go_true_cases_are_recorded() -> None:
 
 def test_go_safe_twins_are_not_recorded() -> None:
     assert tags("go", "m.go", GO_SAFE) == []
+
+
+JAVA_TRUE = """class A {
+  void f(String x) throws Exception {
+    stmt.executeQuery("SELECT * FROM t WHERE id = " + x);
+    String q = String.format("SELECT %s", x);
+    jdbc.queryForList(q);
+    Runtime.getRuntime().exec("ls " + x);
+    new ObjectInputStream(in);
+    MessageDigest.getInstance("MD5");
+    new NoopHostnameVerifier();
+    registry.addMapping("/**").allowedOrigins("*");
+  }
+  @CrossOrigin
+  void g() {}
+}
+"""
+
+JAVA_SAFE = """class A {
+  void f(String x) throws Exception {
+    PreparedStatement p = conn.prepareStatement("SELECT * FROM t WHERE id = ?");
+    p.setString(1, x);
+    new ProcessBuilder("ls", x);
+    MessageDigest.getInstance("SHA-256");
+    registry.addMapping("/**").allowedOrigins("https://a.example");
+  }
+  @CrossOrigin(origins = "https://a.example")
+  void g() {}
+}
+"""
+
+
+def test_java_true_cases_are_recorded() -> None:
+    assert tags("java", "A.java", JAVA_TRUE) == [
+        ("sql", 3),
+        ("sql", 5),
+        ("shell", 6),
+        ("unsafe-deserialize", 7),
+        ("weak-hash", 8),
+        ("tls-verify-off", 9),
+        ("cors-any-origin", 10),
+        ("cors-any-origin", 12),
+    ]
+
+
+def test_java_safe_twins_are_not_recorded() -> None:
+    assert tags("java", "A.java", JAVA_SAFE) == []
