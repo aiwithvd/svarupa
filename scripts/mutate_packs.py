@@ -186,9 +186,9 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ),
     (
         "exceptions stop being honored",
-        "svarupa/health/checks.py",
-        "            if (v.rule, v.src, v.dst) in excused:\n                continue\n",
-        "",
+        "svarupa/design/match.py",
+        "            if (rule, a, b) in excused:",
+        "            if False:",
     ),
     (
         "a low fit is proposed anyway",

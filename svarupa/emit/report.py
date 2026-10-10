@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from svarupa.build import Graph
 from svarupa.derive.base import DiagramKind, DiagramSet
-from svarupa.design import Design
+from svarupa.design import Design, conformance
 from svarupa.diagnostics import Diagnostic, Severity
 from svarupa.health import BY_ID, Health
 from svarupa.layout import LaidOutDiagram, fits
@@ -47,11 +47,14 @@ def _design_lines(design: Design) -> list[str]:
         key = u.unit.id or "."
         if u.chosen is None:
             lines.append(f"{key} ({u.unit.level}): {u.note}")
+            lines += [f"{key} move: {m}" for m in u.moves]
             continue
         lines.append(
             f"{key} ({u.unit.level}): {u.chosen.style}, {u.source}, fit {u.chosen.fit:.2f}, "
-            f"conformance {u.chosen.compliance:.0%}"
+            f"{conformance(u.chosen)}"
         )
+        if u.note:
+            lines.append(f"{key} note: {u.note}")
     return lines
 
 

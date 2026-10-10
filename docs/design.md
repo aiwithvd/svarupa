@@ -26,12 +26,24 @@ joins a part when its last directory name is one of the part's names (score
 part's evidence in it, such as HTTP routes or a database client (score 2).
 The highest score wins; every assignment says why.
 
-- **Coverage**: the share of the unit's modules that joined a part.
+Helper folders (`config`, `utils`, `lib`, `common`, `middlewares`,
+`validations` and similar) and composition roots (the unit root, `src`,
+`cmd`, `bin`, `main`) are left out of a style's score, unless one of its
+parts names them (Feature-Sliced Design's `shared`, for example).
+
+- **Coverage**: the share of the remaining modules that joined a part. A
+  module placed only by evidence counts half; a directory named for the
+  part counts fully.
 - **Compliance**: the share of imports between those modules that follow
-  the style's rules (and, for pure parts, the share without I/O).
-- **Fit** = coverage x compliance. A style is proposed at fit 0.5 or more;
-  otherwise the unit has no clear design and the closest style is named.
-  Ties go to the style whose parts the code fills most.
+  the style's rules (and, for pure parts, the share without I/O). Imports
+  the team excepted in design.yaml do not lower it.
+- **Fit** = coverage x compliance. A style needs at least two of its parts
+  named by directories in the code; evidence alone never makes a style. A
+  style is proposed at fit 0.5 or more. Ties go to the style whose parts the
+  code fills most.
+- **No clear design**: when no style reaches 0.5, Svarupa names the closest
+  style and the moves that would bring the code to it (imports to fix,
+  modules to place). When no style's parts are found at all, it says so.
 
 ## Rules and the checks they raise
 
@@ -54,7 +66,9 @@ svarupa design . --style .=clean --accept
 svarupa design . --print       # only print
 ```
 
-Without a terminal (CI) and without `--accept`, nothing is written. Commit
+Without a terminal (CI) and without `--accept`, nothing is written. Units
+already in design.yaml keep the style and parts the team wrote; only
+`--style` changes them. Commit
 `.svarupa/design.yaml`; every scan then checks against it instead of the
 inferred proposal:
 
@@ -73,7 +87,9 @@ exceptions:
   reason: legacy import, removing in Q4
 ```
 
-An exception needs a reason. Excepted imports are listed, not counted.
+An exception needs a reason. Excepted imports are listed, not counted: they
+add no debt and do not lower conformance. An accepted design whose listed
+modules no longer exist reports "nothing to check" instead of a score.
 Agents read the same rules through `get_design_rules` (query and MCP).
 
 ## Styles

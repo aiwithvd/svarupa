@@ -59,6 +59,7 @@ class Assignment:
     part: str
     slice: str | None
     reason: str
+    by_name: bool = True  # False when only evidence (routes, datastore...) placed it
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,6 +71,17 @@ class DesignViolation:
     message: str
 
 
+def _violation_json(v: DesignViolation) -> dict[str, object]:
+    return {
+        "rule": v.rule,
+        "from": v.src,
+        "to": v.dst,
+        "file": v.evidence.file,
+        "line": v.evidence.start_line,
+        "message": v.message,
+    }
+
+
 @dataclass(frozen=True, slots=True)
 class Fit:
     unit: str
@@ -78,6 +90,8 @@ class Fit:
     compliance: float
     assignments: tuple[Assignment, ...]
     violations: tuple[DesignViolation, ...]
+    # Violations the team accepted in design.yaml: listed, not counted.
+    excepted: tuple[DesignViolation, ...] = ()
 
     @property
     def fit(self) -> float:
@@ -93,18 +107,15 @@ class Fit:
                 {"module": a.module, "part": a.part, "slice": a.slice, "reason": a.reason}
                 for a in self.assignments
             ],
-            "violations": [
-                {
-                    "rule": v.rule,
-                    "from": v.src,
-                    "to": v.dst,
-                    "file": v.evidence.file,
-                    "line": v.evidence.start_line,
-                    "message": v.message,
-                }
-                for v in self.violations
-            ],
+            "violations": [_violation_json(v) for v in self.violations],
+            "excepted": [_violation_json(v) for v in self.excepted],
         }
+
+
+def conformance(fit: Fit) -> str:
+    """Conformance as a reader should see it: an accepted design that matches
+    no current module checks nothing, which is not 100%."""
+    return "nothing to check" if fit.coverage == 0.0 else f"conformance {fit.compliance:.0%}"
 
 
 @dataclass(frozen=True, slots=True)
@@ -114,6 +125,8 @@ class UnitDesign:
     source: str  # accepted | inferred | none
     runners_up: tuple[Fit, ...]
     note: str = ""
+    # For a unit without a clear design: what would bring it to the closest style.
+    moves: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -138,6 +151,7 @@ class Design:
                     "manifest": u.unit.manifest,
                     "source": u.source,
                     "note": u.note,
+                    "moves": list(u.moves),
                     "chosen": u.chosen.to_json() if u.chosen else None,
                     "runners_up": [
                         {"style": f.style, "fit": round(f.fit, 4)} for f in u.runners_up

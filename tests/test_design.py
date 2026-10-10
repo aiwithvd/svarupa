@@ -279,3 +279,35 @@ def test_one_violation_per_importing_file(tmp_path: Path) -> None:
         v.evidence.file for v in unit.chosen.violations if v.rule == "layer-direction"
     )
     assert files == [f"shop/repository/r{i}.py" for i in range(3)]
+
+
+def test_evidence_alone_never_makes_a_style(tmp_path: Path) -> None:
+    # Feature apps: one declares routes, one uses a database. Nothing is named
+    # like a layer, so no layered structure was recognised.
+    write(
+        tmp_path,
+        "pyproject.toml",
+        '[project]\nname = "x"\ndependencies = ["fastapi", "sqlalchemy"]\n',
+    )
+    write(
+        tmp_path,
+        "shop/users/views.py",
+        'from fastapi import APIRouter\nfrom shop.orders.store import save\n\nr = APIRouter()\n\n\n@r.get("/u")\ndef u():\n    return save()\n',
+    )
+    write(
+        tmp_path, "shop/orders/store.py", "import sqlalchemy\n\n\ndef save():\n    return 1\n"
+    )
+    unit = run(tmp_path).units[0]
+    assert unit.chosen is None
+    assert "no style's parts were found" in unit.note
+
+
+def test_a_unit_without_a_clear_design_gets_migration_moves(tmp_path: Path) -> None:
+    layered(tmp_path, back_edge=True)
+    write(tmp_path, "shop/misc/thing.py", "def t():\n    return 1\n")
+    write(tmp_path, "shop/other/more.py", "def m():\n    return 1\n")
+    write(tmp_path, "shop/extra/x.py", "def x():\n    return 1\n")
+    unit = run(tmp_path).units[0]
+    assert unit.chosen is None
+    assert any("shop/repository/store.py:1" in move for move in unit.moves)
+    assert any("shop/misc" in move for move in unit.moves)

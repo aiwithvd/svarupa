@@ -67,7 +67,11 @@ def assign(unit: Unit, style: Style, sig: dict[str, frozenset[str]]) -> list[Ass
                 )
             if score and (best is None or (score, -rank) > (best[0], best[1])):
                 slice_ = segs[at + 1] if part.slices and 0 <= at < len(segs) - 1 else None
-                best = (score, -rank, Assignment(module, part.id, slice_, reason))
+                best = (
+                    score,
+                    -rank,
+                    Assignment(module, part.id, slice_, reason, by_name=at >= 0),
+                )
         if best is not None:
             out.append(best[2])
     return out
@@ -105,6 +109,7 @@ def fit_assigned(
     assignments: list[Assignment],
     graph: Graph,
     sig: dict[str, frozenset[str]],
+    excused: frozenset[tuple[str, str, str]] = frozenset(),
 ) -> Fit:
     by_module = {a.module: a for a in assignments}
     order = {p: i for i, p in enumerate(style.order)}
@@ -113,6 +118,7 @@ def fit_assigned(
         (a, b) for a, b in graph.module_deps if a in by_module and b in by_module and a != b
     )
     violations: list[DesignViolation] = []
+    excepted: list[DesignViolation] = []
     checked = 0
     bad = 0
     for a, b in deps:
@@ -153,18 +159,22 @@ def fit_assigned(
                     f"import {dst.part} '{dst.slice}' through its root {root}, not {b}",
                 )
         if rule is not None:
-            bad += 1  # compliance counts module pairs; violations count importing files
-            violations.extend(
-                DesignViolation(rule, a, b, ev, why) for _, ev in sorted(files.items())
-            )
+            found = [DesignViolation(rule, a, b, ev, why) for _, ev in sorted(files.items())]
+            if (rule, a, b) in excused:
+                excepted.extend(found)  # accepted with a reason: listed, not counted
+            else:
+                bad += 1  # compliance counts module pairs; violations count importing files
+                violations.extend(found)
     for a in sorted(by_module):
         # A breach counts; a pure module is not a free pass.
         if by_module[a].part in style.pure and sig.get(a, frozenset()) & _IO:
             checked += 1
-            bad += 1
             ev = _purity_evidence(graph, a)
+            target = excepted if ("core-purity", a, "") in excused else violations
+            if target is violations:
+                bad += 1
             if ev is not None:
-                violations.append(
+                target.append(
                     DesignViolation(
                         "core-purity",
                         a,
@@ -176,10 +186,14 @@ def fit_assigned(
     scored = [
         m for m in unit.modules if m in by_module or not _neutral(_segments(m, unit.id), style)
     ]
-    coverage = len(by_module) / len(scored) if scored else 0.0
-    # A style is relations between parts: with one filled part no structure
-    # was recognised, however many modules landed in it.
-    if len(style.parts) > 1 and len({x.part for x in by_module.values()}) < 2:
+    # Evidence alone (routes, a database) is weaker than a directory named
+    # for the part: it counts half.
+    weight = sum(1.0 if x.by_name else 0.5 for x in by_module.values())
+    coverage = weight / len(scored) if scored else 0.0
+    # A style is relations between parts named in the code: with fewer than
+    # two parts filled by name, no structure was recognised, however many
+    # modules evidence placed.
+    if len(style.parts) > 1 and len({x.part for x in by_module.values() if x.by_name}) < 2:
         coverage = 0.0
     compliance = (checked - bad) / checked if checked else 1.0
     return Fit(
@@ -191,6 +205,7 @@ def fit_assigned(
         tuple(
             sorted(violations, key=lambda v: (v.rule, v.evidence.file, v.evidence.start_line))
         ),
+        tuple(sorted(excepted, key=lambda v: (v.rule, v.evidence.file, v.evidence.start_line))),
     )
 
 
@@ -199,5 +214,21 @@ def _slice_root(module: str, slice_: str) -> str:
     return "/".join(parts[: parts.index(slice_) + 1]) if slice_ in parts else module
 
 
-def fit_style(unit: Unit, style: Style, graph: Graph, sig: dict[str, frozenset[str]]) -> Fit:
-    return fit_assigned(unit, style, assign(unit, style, sig), graph, sig)
+def fit_style(
+    unit: Unit,
+    style: Style,
+    graph: Graph,
+    sig: dict[str, frozenset[str]],
+    excused: frozenset[tuple[str, str, str]] = frozenset(),
+) -> Fit:
+    return fit_assigned(unit, style, assign(unit, style, sig), graph, sig, excused)
+
+
+def unplaced(unit: Unit, style: Style, fit: Fit) -> list[str]:
+    """Modules that count for the style but landed in none of its parts."""
+    placed = {a.module for a in fit.assignments}
+    return [
+        m
+        for m in unit.modules
+        if m not in placed and not _neutral(_segments(m, unit.id), style)
+    ]

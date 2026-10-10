@@ -12,7 +12,7 @@ from svarupa.cluster import cluster
 from svarupa.derive import derive_all
 from svarupa.derive.architecture import top_box_labels
 from svarupa.design import BY_ID as DESIGN_STYLES
-from svarupa.design import Design, design_for
+from svarupa.design import Design, conformance, design_for
 from svarupa.design.file import DESIGN_FILE, dump_design, load_design
 from svarupa.detect import FileRole, ScanLimits, detect
 from svarupa.diagnostics import Diagnostic, DiagnosticError, Severity
@@ -137,10 +137,14 @@ def _scan(
         if u.chosen is not None:
             print(
                 f"  design: {u.unit.id or '.'} {u.chosen.style} ({u.source}), "
-                f"conformance {u.chosen.compliance:.0%}"
+                f"{conformance(u.chosen)}"
             )
+            if u.note:
+                print(f"    note: {u.note}")
         else:
             print(f"  design: {u.unit.id or '.'} {u.note}")
+            for move in u.moves:
+                print(f"    move: {move}")
     health = assess(graph, source_texts(scan, graph), design, design.exceptions)
     print()
     print(
@@ -392,7 +396,8 @@ def _design(argv: list[str]) -> int:
     accepted, problem = load_design(path)
     if problem:
         print(f"  note: {problem}")
-    design = design_for(scan, graph, None)
+    # Start from the accepted design, so re-accepting never drops a team's edits.
+    design = design_for(scan, graph, accepted)
     overrides = dict(s.split("=", 1) for s in args.style if "=" in s)
     unknown = sorted(v for v in overrides.values() if v not in DESIGN_STYLES)
     if unknown:
@@ -405,10 +410,13 @@ def _design(argv: list[str]) -> int:
         print()
         print(f"  unit {key} ({u.unit.level}, {u.unit.manifest or 'no manifest'})")
         if u.chosen is not None:
+            label = "accepted" if u.source == "accepted" else "proposed"
             print(
-                f"    proposed: {u.chosen.style}  fit {u.chosen.fit:.2f} "
+                f"    {label}: {u.chosen.style}  fit {u.chosen.fit:.2f} "
                 f"(coverage {u.chosen.coverage:.0%}, compliance {u.chosen.compliance:.0%})"
             )
+            if u.note:
+                print(f"    note: {u.note}")
             for a in u.chosen.assignments:
                 print(f"      {a.part:<14} {a.module}  ({a.reason})")
         else:
@@ -427,7 +435,8 @@ def _design(argv: list[str]) -> int:
             return 0
         for u in design.units:
             key = u.unit.id or "."
-            if key in overrides:
+            # An accepted unit stays as the team wrote it unless --style says otherwise.
+            if key in overrides or u.source == "accepted":
                 continue
             answer = input(f"  unit {key}: [a]ccept, [s]tyle <name>, s[k]ip? ").strip()
             if answer.startswith("s ") and answer[2:].strip() in DESIGN_STYLES:
