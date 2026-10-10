@@ -201,3 +201,28 @@ why = "frontend/src/routes/_layout/items.tsx:8 import AddItem from \"@/component
 [[must_not]]
 design = "backend cqrs"
 why = "no command or query split: routes in backend/app/api/routes both read and write through the same crud.py functions and SQLModel models"
+
+# Security (read from source before running)
+[[must]]
+violation = "endpoint-without-auth backend/app/api/routes/private.py:23"
+why = "backend/app/api/routes/private.py:23 @router.post(\"/users/\") creates a user with no auth dependency (the router is mounted only locally, but the route itself has none)"
+
+[[must_not]]
+violation = "endpoint-without-auth backend/app/api/routes/items.py:61"
+why = "backend/app/api/routes/items.py:61 @router.post(\"/\"); line 63 current_user: CurrentUser"
+
+[[must_not]]
+violation = "endpoint-without-auth backend/app/api/routes/users.py:54"
+why = "backend/app/api/routes/users.py:54 @router.post; line 55 dependencies=[Depends(get_current_active_superuser)]"
+
+[[must_not]]
+violation = "endpoint-without-auth backend/app/api/routes/users.py:146"
+why = "backend/app/api/routes/users.py:146 @router.post(\"/signup\"): public by design"
+
+[[must_not]]
+violation = "endpoint-without-auth backend/app/api/routes/utils.py:11"
+why = "backend/app/api/routes/utils.py:11 @router.post; line 13 dependencies=[Depends(get_current_active_superuser)]"
+
+[[must_not]]
+violation = "cors-any-origin backend/app/main.py:29"
+why = "backend/app/main.py:29 allow_origins=[settings.FRONTEND_HOST]: configured origins, not every origin"

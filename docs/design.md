@@ -92,6 +92,16 @@ add no debt and do not lower conformance. An accepted design whose listed
 modules no longer exist reports "nothing to check" instead of a score.
 Agents read the same rules through `get_design_rules` (query and MCP).
 
+## Security settings in design.yaml
+
+`auth_markers` lists your own auth decorators, guards or middleware names
+for the `endpoint-without-auth` check, and an exception can name a place
+instead of an import (`at: path` or `at: path:line`). See `docs/health.md`.
+
+```yaml
+auth_markers: [require_session, AdminGuard]
+```
+
 ## Styles
 
 Parts are listed top to bottom; imports may point down, never up. Every

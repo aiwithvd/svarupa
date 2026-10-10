@@ -13,7 +13,13 @@ Each entry breaks one promise of the walker; a test must go red:
 * Go test files are never import targets;
 * a dotless Go module path is never the standard library;
 * Maven placeholders are never dependencies;
-* a pom that declares entities is refused.
+* a pom that declares entities is refused;
+* a reassigned variable stops counting as a built string;
+* interpolated strings count as built;
+* a sink that needs `shell=True` fires only with it;
+* placeholders are never secrets;
+* an import line never counts as auth;
+* a location exception moves a violation to accepted.
 """
 
 from __future__ import annotations
@@ -43,6 +49,10 @@ SUITE = [
     "tests/test_design.py",
     "tests/test_design_cli.py",
     "tests/test_design_outputs.py",
+    "tests/test_risks.py",
+    "tests/test_security.py",
+    "tests/test_secrets.py",
+    "tests/test_auth.py",
 ]
 
 MUTATIONS: list[tuple[str, str, str, str]] = [
@@ -207,6 +217,42 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
         "svarupa/design/match.py",
         "        if _neutral(segs, style):\n            continue\n",
         "",
+    ),
+    (
+        "a reassigned variable stays built",
+        "svarupa/extract/packs/walker.py",
+        "            elif not augment:\n                built.discard(name)\n",
+        "",
+    ),
+    (
+        "interpolated strings are not built",
+        "svarupa/extract/packs/walker.py",
+        "            return any(c.type == inner for c in node.children) or any(",
+        "            return False or any(",
+    ),
+    (
+        "a sink's required argument is ignored",
+        "svarupa/extract/packs/walker.py",
+        "                    if sink.requires is not None and not sink.requires.search(self.text(args)):\n                        continue\n",
+        "",
+    ),
+    (
+        "placeholders count as secrets",
+        "svarupa/health/secrets.py",
+        "            if _PLACEHOLDER.search(value) or _entropy(value) < _MIN_ENTROPY:\n",
+        "            if False:\n",
+    ),
+    (
+        "import lines count as auth",
+        "svarupa/health/auth.py",
+        '    return _IMPORT.sub(lambda m: "\\n" * m.group(0).count("\\n"), text).split("\\n")\n',
+        '    return text.split("\\n")\n',
+    ),
+    (
+        "location exceptions are ignored",
+        "svarupa/health/__init__.py",
+        "    return any(e.at and e.rule == v.check and e.at in places for e in exceptions)\n",
+        "    return False\n",
     ),
 ]
 

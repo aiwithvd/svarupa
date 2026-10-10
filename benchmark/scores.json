@@ -1,8 +1,8 @@
 {
  "bakerydemo": {
   "recall": 1.0,
-  "found": 26,
-  "total": 26,
+  "found": 30,
+  "total": 30,
   "missed": [],
   "fired": [],
   "by_kind": {
@@ -26,6 +26,14 @@
     1,
     1
    ],
+   "violation:debug-enabled": [
+    2,
+    2
+   ],
+   "violation:hardcoded-secret": [
+    2,
+    2
+   ],
    "violation:long-function": [
     1,
     1
@@ -35,13 +43,13 @@
     1
    ]
   },
-  "expected": "dd7f6658b5242a15",
+  "expected": "0224bc4f5448725f",
   "design_found": []
  },
  "express-boilerplate": {
-  "recall": 0.9714,
-  "found": 34,
-  "total": 35,
+  "recall": 0.973,
+  "found": 36,
+  "total": 37,
   "missed": [
    "call:src/controllers/user.controller.js -> src/services/user.service.js#queryUsers"
   ],
@@ -75,20 +83,24 @@
     1,
     1
    ],
+   "violation:cors-any-origin": [
+    2,
+    2
+   ],
    "violation:module-cycle": [
     1,
     1
    ]
   },
-  "expected": "9dc8499b9b3d9a60",
+  "expected": "c9717e1b21bfbfd7",
   "design_found": [
    "layered"
   ]
  },
  "fastapi-template": {
   "recall": 1.0,
-  "found": 33,
-  "total": 33,
+  "found": 34,
+  "total": 34,
   "missed": [],
   "fired": [],
   "by_kind": {
@@ -119,9 +131,13 @@
    "service": [
     3,
     3
+   ],
+   "violation:endpoint-without-auth": [
+    1,
+    1
    ]
   },
-  "expected": "a6afa2967d995330",
+  "expected": "a6b3447fe68a9b25",
   "design_found": [
    "frontend-layers"
   ]
@@ -195,9 +211,9 @@
   "design_found": []
  },
  "go-clean-template": {
-  "recall": 0.975,
-  "found": 39,
-  "total": 40,
+  "recall": 0.9756,
+  "found": 40,
+  "total": 41,
   "missed": [
    "design:. clean"
   ],
@@ -231,6 +247,10 @@
     3,
     3
    ],
+   "violation:hardcoded-secret": [
+    1,
+    1
+   ],
    "violation:long-function": [
     2,
     2
@@ -240,13 +260,13 @@
     1
    ]
   },
-  "expected": "d6199b322eff7a55",
+  "expected": "0a6aa54e3a909cec",
   "design_found": []
  },
  "microblog": {
-  "recall": 0.9688,
-  "found": 31,
-  "total": 32,
+  "recall": 0.9697,
+  "found": 32,
+  "total": 33,
   "missed": [
    "record:endpoint\tPOST /tokens\tapp/api"
   ],
@@ -268,6 +288,10 @@
     6,
     6
    ],
+   "violation:command-injection": [
+    1,
+    1
+   ],
    "violation:long-function": [
     1,
     1
@@ -277,7 +301,7 @@
     1
    ]
   },
-  "expected": "ce0d9fa53e8868a1",
+  "expected": "46aa60b06730bc02",
   "design_found": []
  },
  "nestjs-prisma": {
@@ -354,8 +378,8 @@
  },
  "spring-realworld": {
   "recall": 1.0,
-  "found": 39,
-  "total": 39,
+  "found": 41,
+  "total": 41,
   "missed": [],
   "fired": [],
   "by_kind": {
@@ -375,6 +399,14 @@
     10,
     10
    ],
+   "violation:cors-any-origin": [
+    1,
+    1
+   ],
+   "violation:hardcoded-secret": [
+    1,
+    1
+   ],
    "violation:layer-direction": [
     5,
     5
@@ -388,7 +420,7 @@
     1
    ]
   },
-  "expected": "8cd0e3f2034a21e9",
+  "expected": "143ca5c225bc9fb7",
   "design_found": [
    "onion"
   ]

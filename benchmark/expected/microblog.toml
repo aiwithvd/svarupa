@@ -195,3 +195,16 @@ why = "microblog.py:10 def make_shell_context(): 3 lines"
 [[must_not]]
 design = ". clean"
 why = "no use case or entity layers: blueprint routes query SQLAlchemy models in app/models.py directly, and models.py itself does I/O (db session, search index)"
+
+# Security (read from source before running)
+[[must]]
+violation = "command-injection app/cli.py:20"
+why = "app/cli.py:20 os.system('pybabel init ... -l ' + lang): a shell command built from the CLI argument"
+
+[[must_not]]
+violation = "command-injection app/cli.py:18"
+why = "app/cli.py:18 os.system('pybabel extract ...'): a literal command, nothing built"
+
+[[must_not]]
+violation = "sql-injection app/models.py:203"
+why = "app/models.py:203 db.session.execute(self.notifications.delete()...): an ORM expression, not a string"

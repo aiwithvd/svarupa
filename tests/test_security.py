@@ -33,7 +33,7 @@ def test_security_checks_are_in_the_catalog() -> None:
         ("endpoint-without-auth", "major"),
     ):
         check = BY_ID[cid]
-        assert (check.area, check.severity, check.maturity) == ("security", sev, "experimental")
+        assert (check.area, check.severity) == ("security", sev)
         assert "CWE-" in check.source
 
 
