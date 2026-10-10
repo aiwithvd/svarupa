@@ -31,6 +31,7 @@ from svarupa.extract.packs.model import (
     Pack,
     RiskSpec,
     Sink,
+    Unsafe,
 )
 from svarupa.extract.packs.walker import Ctx, Frame
 
@@ -304,6 +305,16 @@ def risk_callee(ctx: Ctx, node: TSNode) -> str | None:
     return ctx.text(fn)
 
 
+_KW = frozenset({"keyword_argument"})
+_CALL = frozenset({"call"})
+_ASSIGN = frozenset({"assignment"})
+
+
+def _p(pattern: str) -> re.Pattern[str]:
+    return re.compile(pattern, re.DOTALL)
+
+
+# fmt: off
 RISKS = RiskSpec(
     call_types=frozenset({"call"}),
     callee=risk_callee,
@@ -314,11 +325,38 @@ RISKS = RiskSpec(
     assigns=(("assignment", "left", "right"), ("augmented_assignment", "left", "right")),
     unwrap=frozenset({"parenthesized_expression", "keyword_argument", "await"}),
     sinks=(
+        Sink("sql", re.compile(r"(?:^|\.)(?:execute|executemany|executescript|raw|extra|text)$")),
+        Sink("shell", re.compile(r"^os\.(?:system|popen)$|^subprocess\.(?:getoutput|getstatusoutput)$")),
         Sink(
-            "sql", re.compile(r"(?:^|\.)(?:execute|executemany|executescript|raw|extra|text)$")
+            "shell",
+            re.compile(r"^subprocess\.(?:run|call|check_call|check_output|Popen)$"),
+            re.compile(r"shell\s*=\s*True"),
         ),
+        Sink("code", re.compile(r"^(?:eval|exec)$")),
     ),
+    unsafe=(
+        Unsafe("tls-verify-off", "verify=False", _KW, _p(r"verify\s*=\s*False")),
+        Unsafe("tls-verify-off", "unverified SSL context", _CALL, _p(r"ssl\._create_unverified_context\(.*")),
+        Unsafe("unsafe-deserialize", "pickle load", _CALL, _p(r"(?:c?[pP]ickle|dill|marshal|shelve|jsonpickle)\.(?:loads?|open|decode)\(.*")),
+        Unsafe("unsafe-deserialize", "yaml.load without a safe loader", _CALL, _p(r"yaml\.(?:unsafe_)?load(?:_all)?\((?!.*Safe).*")),
+        Unsafe("weak-hash", "MD5 or SHA-1", _CALL, _p(r"hashlib\.(?:md5|sha1)\((?!.*usedforsecurity\s*=\s*False).*")),
+        Unsafe("weak-hash", "MD5 or SHA-1", _CALL, _p(r"hashlib\.new\(\s*[\"'](?:md5|sha1)[\"'](?!.*usedforsecurity\s*=\s*False).*")),
+        Unsafe("debug-enabled", "DEBUG = True", _ASSIGN, _p(r"DEBUG\s*=\s*True")),
+        Unsafe("debug-enabled", "debug=True", _KW, _p(r"debug\s*=\s*True")),
+        Unsafe("cors-any-origin", "CORS allows every origin", _KW, _p(r"(?:allow_origins|origins)\s*=\s*(?:\[\s*)?[\"']\*[\"']\s*\]?")),
+        Unsafe("cors-any-origin", "CORS allows every origin", _ASSIGN, _p(r"CORS_(?:ORIGIN_ALLOW_ALL|ALLOW_ALL_ORIGINS)\s*=\s*True")),
+        Unsafe("cors-any-origin", "CORS with default origins (*)", _CALL, _p(r"CORS\(\s*\w+\s*\)")),
+    ),
+    auth_markers=frozenset({
+        "login_required", "permission_required", "user_passes_test", "jwt_required",
+        "auth_required", "requires_auth", "token_required", "fresh_jwt_required",
+        "get_current_user", "get_current_active_user", "get_current_active_superuser",
+        "CurrentUser", "OAuth2PasswordBearer", "HTTPBearer", "APIKeyHeader",
+        "Security", "permission_classes", "IsAuthenticated", "LoginRequiredMixin",
+        "PermissionRequiredMixin", "verify_token",
+    }),
 )
+# fmt: on
 
 
 PACK = Pack(
