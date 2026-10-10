@@ -37,6 +37,9 @@ SUITE = [
     "tests/test_extract_java.py",
     "tests/test_golden_repos.py",
     "tests/test_detect.py",
+    "tests/test_metrics.py",
+    "tests/test_health.py",
+    "tests/test_health_outputs.py",
 ]
 
 MUTATIONS: list[tuple[str, str, str, str]] = [
@@ -135,6 +138,42 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
         "svarupa/extract/resolve.py",
         "                and module.fields_without_this\n",
         "                and False\n",
+    ),
+    (
+        "nested functions add to the outer complexity",
+        "svarupa/extract/packs/walker.py",
+        "            if kind in spec.function_types:\n                continue  # measured on its own\n",
+        "",
+    ),
+    (
+        "else if nests deeper again",
+        "svarupa/extract/packs/walker.py",
+        '                kind == "if_statement" and parent in spec.else_if_parents\n',
+        "                False\n",
+    ),
+    (
+        "the complexity limit is inclusive",
+        "svarupa/health/checks.py",
+        "            if value <= check.threshold:\n",
+        "            if value < check.threshold:\n",
+    ),
+    (
+        "import lines count as duplication",
+        "svarupa/health/duplication.py",
+        '"import ", "from ", "package ", "using ", "require(")',
+        ")",
+    ),
+    (
+        "unassessed areas get a free grade",
+        "svarupa/health/score.py",
+        "        return None  # not assessed yet: no grade is better than a free A\n",
+        '        return "A"\n',
+    ),
+    (
+        "debt ignores code size",
+        "svarupa/health/score.py",
+        "    ratio = debt / (lines * MINUTES_PER_LINE) if lines else 0.0\n",
+        "    ratio = debt / MINUTES_PER_LINE if lines else 0.0\n",
     ),
 ]
 
