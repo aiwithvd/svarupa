@@ -26,7 +26,7 @@ from svarupa.build import build
 from svarupa.design import design_for
 from svarupa.detect import detect, load_toml
 from svarupa.extract import declared_dependencies, extract
-from svarupa.health import assess, source_texts
+from svarupa.health import assess, secret_texts, source_texts
 from svarupa.lock import build_lock
 from svarupa.model import EdgeKind, Resolution
 
@@ -175,7 +175,8 @@ def observe(root: Path) -> tuple[set[str], set[str]]:
             key = f"design:{u.unit.id or '.'} {u.chosen.style}"
             resolved.add(key)
             seen.add(key)
-    for v in assess(graph, source_texts(scan, graph), design).violations:
+    health = assess(graph, source_texts(scan, graph), design, secrets=secret_texts(scan))
+    for v in health.violations:
         ev = v.evidence[0]
         key = f"violation:{v.check} {ev.file}:{ev.start_line}"
         resolved.add(key)

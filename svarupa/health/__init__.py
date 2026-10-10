@@ -24,6 +24,7 @@ from svarupa.health.checks import (
 from svarupa.health.duplication import duplicated_blocks
 from svarupa.health.model import Health, Violation
 from svarupa.health.score import grade
+from svarupa.health.secrets import secret_checks, secret_texts
 from svarupa.health.security import security_checks
 
 if TYPE_CHECKING:
@@ -38,6 +39,7 @@ __all__ = [
     "Health",
     "Violation",
     "assess",
+    "secret_texts",
     "source_texts",
 ]
 
@@ -68,6 +70,8 @@ def assess(
     texts: Mapping[str, str],
     design: Design | None = None,
     exceptions: Sequence[DesignException] = (),
+    *,
+    secrets: Mapping[str, str] | None = None,
 ) -> Health:
     found = [
         *function_checks(graph),
@@ -77,6 +81,7 @@ def assess(
         *module_checks(graph),
         *design_checks(design, exceptions),
         *security_checks(graph),
+        *secret_checks(secrets or {}),
     ]
     kept = [v for v in found if not _excepted(v, exceptions)]
     accepted = sorted(
