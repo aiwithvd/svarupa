@@ -22,6 +22,8 @@ from svarupa.model import Evidence
 
 __all__ = ["secret_checks", "secret_texts"]
 
+# A JSON Web Token is left out on purpose: the ones committed are signed,
+# usually expired samples in API docs and tests, not credentials.
 # fmt: off
 _KEYS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("AWS access key", re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b")),
@@ -32,7 +34,6 @@ _KEYS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("Anthropic API key", re.compile(r"\bsk-ant-[0-9A-Za-z_-]{32,}")),
     ("OpenAI API key", re.compile(r"\bsk-(?:proj-)?[0-9A-Za-z_-]{40,}")),
     ("Private key", re.compile(r"-----BEGIN (?:[A-Z]+ )?PRIVATE KEY-----[A-Za-z0-9+/=\s]{0,64}")),
-    ("JSON Web Token", re.compile(r"\beyJ[0-9A-Za-z_-]{10,}\.eyJ[0-9A-Za-z_-]{10,}\.[0-9A-Za-z_-]{10,}")),
 )
 # fmt: on
 _NAME = (
@@ -48,9 +49,14 @@ _BARE = re.compile(
     rf"(?im)^[ \t]*(?:export[ \t]+)?({_NAME})[ \t]*[=:][ \t]*({_VALUE})[ \t]*(?:#.*)?$"
 )
 _CONFIG = (".env", ".properties", ".ini", ".cfg", ".conf", ".yaml", ".yml")
+# A value that names itself (`email-server-password`, `changethis`) is a
+# placeholder; a password hash (`pbkdf2_sha256$...`, `$2b$...`) or a sample
+# JSON Web Token (`eyJ...`) is not a secret.
 _PLACEHOLDER = re.compile(
-    r"(?i)change.?me|example|sample|dummy|placeholder|your|xxx|\*\*\*|redacted|fake|test"
+    r"(?i)change|example|sample|dummy|placeholder|your|xxx|\*\*\*|redacted|fake|test"
     r"|todo|^none$|^null$|^undefined$|^<|^\$|^\{\{|^%\(|environ|getenv"
+    r"|passw|secret|token|api.?key"
+    r"|^(?:pbkdf2|argon2|bcrypt|scrypt|sha\d*|md5)[_$]|^eyJ|^\d+$"
 )
 _SKIP_NAMES = frozenset(
     {

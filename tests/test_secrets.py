@@ -97,3 +97,22 @@ def test_a_pattern_or_sentence_is_not_a_secret() -> None:
 def test_a_django_style_key_with_symbols_is_found() -> None:
     key = "c6u0-9c!7nilj_ysat" + "sda0(f@e_2mws2f!6m0n^o*4#*q#kzp)"
     assert [line for _, line, _ in hits({"settings.py": f'SECRET_KEY = "{key}"\n'})] == [1]
+
+
+def test_values_that_name_themselves_or_are_hashes_are_not_secrets() -> None:
+    texts = {
+        ".env.example": (
+            "SMTP_PASSWORD=email-server-password\n"
+            "JWT_ACCESS_SECRET=nestjsPrismaAccessSecret\n"
+            "SECRET_KEY=changethis\n"
+        ),
+        "tokens.js": "  RESET_PASSWORD: 'resetPassword',\n",
+        "t.py": 'data = {"password": "password123"}\n',
+        "fixture.json": '  "password": "pbkdf2_sha256$600000$yzcRrbI8n9abcDEF$Q1w2E3r4"\n',
+        "docs.yml": "  token: eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.abcdefghijKLMNOP\n",
+    }
+    assert hits(texts) == []
+
+
+def test_digit_only_values_are_not_secrets() -> None:
+    assert hits({"t.go": '`{"username": "u", "password": "0123456789"}`\n'}) == []
