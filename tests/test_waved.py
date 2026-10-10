@@ -125,6 +125,7 @@ def test_mcp_server_exposes_graphifys_seven_tools_over_run_query(tmp_path: Path)
     names = sorted(t.name for t in tools)
     assert names == [
         "affected",
+        "get_health",
         "get_neighbors",
         "get_node",
         "god_nodes",

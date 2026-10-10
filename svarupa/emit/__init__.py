@@ -29,6 +29,7 @@ from svarupa.emit.data import diagram_json, graph_json, write_json
 from svarupa.emit.report import render_report
 from svarupa.emit.viewer import render_viewer
 from svarupa.extract.rationale import rationale_facts
+from svarupa.health import Health
 from svarupa.layout import LaidOutDiagram, lay_out_set
 from svarupa.layout.geometry import Style
 from svarupa.lock import LOCK_NAME
@@ -86,6 +87,7 @@ def emit(
     out_dir: Path | None = None,
     style: Style | None = None,
     display_root: str | None = None,
+    health: Health | None = None,
 ) -> Artifact:
     """Lay every diagram out and write the artifact directory.
 
@@ -119,7 +121,7 @@ def emit(
     head, dirty = git_state(root)
     # graph.json is built once: the report quotes its counts (review #23 F5:
     # REPORT.md said 132 nodes where graph.json held 184).
-    gj = graph_json(graph, rationale, head, dirty)
+    gj = graph_json(graph, rationale, head, dirty, health)
     written.append(
         (
             "graph.json",
@@ -135,7 +137,7 @@ def emit(
         written.append((name, size))
 
     shown = display_root if display_root is not None else root.name
-    html = render_viewer(shown, produced, laid_out, notes, style, __version__, graph)
+    html = render_viewer(shown, produced, laid_out, notes, style, __version__, graph, health)
     written.append(("index.html", _write_text(directory / "index.html", html)))
 
     report = render_report(
@@ -146,6 +148,7 @@ def emit(
         notes,
         tuple(problems),
         graph_counts=(len(gj["nodes"]), len(gj["edges"])),  # type: ignore[arg-type]
+        health=health,
     )
     written.append(("REPORT.md", _write_text(directory / "REPORT.md", report)))
 

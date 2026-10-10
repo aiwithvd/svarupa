@@ -31,6 +31,7 @@ __all__ = [
     "FUNCTIONS",
     "GraphIndex",
     "affected",
+    "get_health",
     "get_neighbors",
     "get_node",
     "god_nodes",
@@ -47,6 +48,7 @@ FUNCTIONS = (
     "affected",
     "god_nodes",
     "graph_stats",
+    "get_health",
 )
 
 Node = dict[str, Any]
@@ -462,3 +464,11 @@ def query_graph(
             f"{len(ordered)} nodes and {len(shown_edges)} of {len(edges)} edges"
         )
     return result
+
+
+def get_health(index: GraphIndex) -> dict[str, Any]:
+    """Ratings, debt and violations; empty when the artifact predates health."""
+    health = index.data.get("health")
+    if not isinstance(health, dict):
+        return {"available": False, "reason": "this artifact was built without health"}
+    return {"available": True, **health}

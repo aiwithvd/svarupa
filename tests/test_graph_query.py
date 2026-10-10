@@ -292,7 +292,7 @@ def test_every_tab_carries_the_explorer_controls(artifact) -> None:  # type: ign
     html = (out / "index.html").read_text(encoding="utf8")
     import re
 
-    diagram_tabs = re.findall(r'class="tab" id="d-(?!unavailable)', html)
+    diagram_tabs = re.findall(r'class="tab" id="d-(?!unavailable|health)', html)
     assert diagram_tabs, "the fixture produced no diagram tab"
     assert html.count('<div class="explore">') == len(diagram_tabs), (
         "one toolbar per diagram tab"

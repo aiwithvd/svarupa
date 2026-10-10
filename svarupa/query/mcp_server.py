@@ -44,7 +44,7 @@ def _sdk() -> Any:
 
 
 def build_server(index: GraphIndex, name: str = "svarupa") -> Any:
-    """An MCPServer exposing the seven query tools over `index`."""
+    """An MCPServer exposing the eight query tools over `index`."""
     server = _sdk()(
         name=name,
         instructions=(
@@ -103,9 +103,24 @@ def build_server(index: GraphIndex, name: str = "svarupa") -> Any:
     def graph_stats() -> dict[str, Any]:
         return run_query(index, "graph_stats", [])
 
+    @server.tool(
+        description="Codebase health: SQALE ratings per area, technical debt, and every violation with file:line, highest impact first."
+    )
+    def get_health() -> dict[str, Any]:
+        return run_query(index, "get_health", [])
+
     # Registered through the decorator; named here so a type checker sees
     # them used and a reader sees the whole tool list in one place.
-    _ = (query_graph, get_node, get_neighbors, shortest_path, affected, god_nodes, graph_stats)
+    _ = (
+        query_graph,
+        get_node,
+        get_neighbors,
+        shortest_path,
+        affected,
+        god_nodes,
+        graph_stats,
+        get_health,
+    )
     return server
 
 

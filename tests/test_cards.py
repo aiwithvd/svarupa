@@ -143,7 +143,7 @@ def test_viewer_carries_the_strip_and_the_cards_once_per_tab(tmp_path: Path) -> 
     out = tmp_path / "out"
     assert main([str(tmp_path), "--out", str(out)]) == 0
     html = (out / "index.html").read_text(encoding="utf8")
-    tabs = len(re.findall(r'class="tab" id="d-(?!unavailable)', html))
+    tabs = len(re.findall(r'class="tab" id="d-(?!unavailable|health)', html))
     strips = html.count('<div class="guided"')
     # Every root has arrows here: the one request story is the request-flow
     # root itself (review #20 C10), so it has a strip like the others. A

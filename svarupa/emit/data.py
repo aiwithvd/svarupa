@@ -19,6 +19,7 @@ from pathlib import Path
 from svarupa.build import Graph
 from svarupa.derive.base import DiagramSet
 from svarupa.extract.rationale import RationaleFact
+from svarupa.health import Health
 from svarupa.layout.geometry import Canvas
 from svarupa.model import Evidence, evidence_order
 
@@ -364,6 +365,7 @@ def graph_json(
     rationale: tuple[RationaleFact, ...] = (),
     built_at_commit: str | None = None,
     worktree_dirty: bool | None = None,
+    health: Health | None = None,
 ) -> dict[str, object]:
     """The whole graph, evidence included.
 
@@ -389,7 +391,7 @@ def graph_json(
     if len(set(ids)) != len(ids):  # pragma: no cover - guarded by _fresh; a defect if reached
         dup = sorted({i for i in ids if ids.count(i) > 1})
         raise ValueError(f"graph.json would carry duplicate node ids: {dup[:5]}")
-    return {
+    out: dict[str, object] = {
         "schema": 2,
         # The graph describes the WORKING TREE. `built_at_commit` is HEAD,
         # and `worktree_dirty` says whether tracked files differed from it
@@ -435,6 +437,9 @@ def graph_json(
         "module_deps": sorted([a, b] for a, b in graph.module_deps),
         "scorecard": graph.scorecard.to_json_obj(),
     }
+    if health is not None:
+        out["health"] = health.to_json()
+    return out
 
 
 def canvas_json(canvas: Canvas) -> dict[str, object]:

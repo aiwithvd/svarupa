@@ -14,6 +14,7 @@ from __future__ import annotations
 from svarupa.build import Graph
 from svarupa.derive.base import DiagramKind, DiagramSet
 from svarupa.diagnostics import Diagnostic, Severity
+from svarupa.health import BY_ID, Health
 from svarupa.layout import LaidOutDiagram, fits
 
 __all__ = ["MAX_LISTED", "render_report"]
@@ -37,6 +38,49 @@ def _listing(items: list[str], empty: str) -> str:
     if rest:
         out += f"\n- *... and {rest} more*"
     return out
+
+
+def _health_section(health: Health | None) -> list[str]:
+    if health is None:
+        return []
+    lines = [
+        "## Health",
+        "",
+        "Graded with the SQALE model. Maintainability uses the technical debt "
+        "ratio (remediation time over development time at 30 minutes per line); "
+        "other areas use the worst severity found.",
+        "",
+        "| Area | Rating |",
+        "|---|---|",
+    ]
+    for area, letter in health.ratings:
+        lines.append(f"| {area} | {letter or 'not assessed yet'} |")
+    lines += [
+        "",
+        f"- **{health.ncloc}** lines of code, **{health.debt_minutes}** minutes of "
+        f"technical debt, debt ratio **{health.debt_ratio:.1%}**",
+        "",
+    ]
+    if not health.violations:
+        return [*lines, "No violations.", ""]
+    lines += ["### Fix first", ""]
+    for v in health.violations[:10]:
+        ev = v.evidence[0]
+        lines.append(
+            f"- `{ev.file}:{ev.start_line}` {BY_ID[v.check].title}: {v.message} "
+            f"({v.minutes} min, impact {v.impact})"
+        )
+    lines += ["", "### All violations", ""]
+    lines.append(
+        _listing(
+            [
+                f"`{v.evidence[0].file}:{v.evidence[0].start_line}` `{v.check}` {v.message}"
+                for v in health.violations
+            ],
+            "No violations.",
+        )
+    )
+    return [*lines, ""]
 
 
 def _grouped(diags: list[Diagnostic]) -> list[str]:
@@ -141,6 +185,7 @@ def render_report(
     notes: tuple[str, ...],
     diagnostics: tuple[Diagnostic, ...],
     graph_counts: tuple[int, int] | None = None,
+    health: Health | None = None,
 ) -> str:
     """The whole report.
 
@@ -171,6 +216,7 @@ def render_report(
         "",
         *_semantics_scope(graph),
         *_environments_section(graph),
+        *_health_section(health),
         "## Resolution",
         "",
         "This table measures **pinning, not correctness.** A confidently wrong "
