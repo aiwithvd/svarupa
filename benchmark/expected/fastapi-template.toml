@@ -170,3 +170,20 @@ why = "the /items prefix comes from APIRouter(prefix=...), the decorator path is
 [[must_not]]
 call = "backend/app/api/routes/items.py -> backend/app/crud.py#create_item"
 why = "items.py does not import crud; create_item builds the Item inline with Item.model_validate"
+
+# Health violations (counted by hand from source)
+[[must_not]]
+violation = "complex-function backend/app/crud.py:10"
+why = "backend/app/crud.py:10 def create_user(*, session, user_create): complexity 1, 8 lines, 2 parameters"
+
+[[must_not]]
+violation = "complex-function backend/app/crud.py:20"
+why = "backend/app/crud.py:20 def update_user(*, session, db_user, user_in): 1 if = complexity 2, 12 lines, 3 parameters"
+
+[[must_not]]
+violation = "complex-function scripts/prepare_release.py:33"
+why = "scripts/prepare_release.py:33 def bump_version(version, bump): 2 ifs = complexity 3, 7 lines, 2 parameters"
+
+[[must_not]]
+violation = "long-function backend/app/crud.py:34"
+why = "backend/app/crud.py:34 def get_user_by_email(*, session, email): 4 lines"

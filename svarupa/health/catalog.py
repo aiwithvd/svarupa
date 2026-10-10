@@ -32,13 +32,13 @@ class Check:
 
 CATALOG: tuple[Check, ...] = (
     Check("complex-function", "Complex function", 10, "McCabe 1976; NIST SP 500-235", "maintainability", "major", 10, 1),
-    Check("long-function", "Long function", 50, "Fowler, Refactoring: Long Method", "maintainability", "minor", 10),
-    Check("many-parameters", "Too many parameters", 5, "pylint max-args default", "maintainability", "minor", 5),
+    Check("long-function", "Long function", 50, "Fowler, Refactoring: Long Method", "maintainability", "minor", 10, maturity="stable"),
+    Check("many-parameters", "Too many parameters", 5, "pylint max-args default", "maintainability", "minor", 5, maturity="stable"),
     Check("deep-nesting", "Deep nesting", 4, "ESLint max-depth default", "maintainability", "minor", 10),
     Check("large-file", "Large file", 1000, "pylint max-module-lines default", "maintainability", "minor", 30),
     Check("large-class", "Large class", 47, "Lanza and Marinescu, WMC", "maintainability", "major", 60),
     Check("duplicated-block", "Duplicated block", 9, "SonarQube CPD default (10 lines)", "maintainability", "major", 15),
-    Check("module-cycle", "Module import cycle", 0, "Martin, Acyclic Dependencies Principle", "maintainability", "major", 60),
+    Check("module-cycle", "Module import cycle", 0, "Martin, Acyclic Dependencies Principle", "maintainability", "major", 60, maturity="stable"),
     Check("hub-module", "Hub module", 9, "Arcan hub-like dependency", "maintainability", "major", 60),
 )  # fmt: skip
 

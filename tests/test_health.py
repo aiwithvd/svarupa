@@ -183,3 +183,15 @@ def test_violations_are_ranked_by_impact_and_deterministic(tmp_path: Path) -> No
 def test_test_files_are_not_assessed(tmp_path: Path) -> None:
     write(tmp_path, "tests/test_m.py", "def test(a, b, c, d, e, f):\n    return a\n")
     assert health(tmp_path).violations == ()
+
+
+def test_cycle_evidence_is_ordered_by_file_and_line(tmp_path: Path) -> None:
+    write(tmp_path, "a/x.py", "import os\nfrom b.z import h\nfrom b.y import g\n")
+    write(tmp_path, "b/y.py", "def g():\n    return 1\n")
+    write(tmp_path, "b/z.py", "from a.x import g\n\n\ndef h():\n    return 2\n")
+    cycle = next(v for v in health(tmp_path).violations if v.check == "module-cycle")
+    assert [(e.file, e.start_line) for e in cycle.evidence] == [
+        ("a/x.py", 2),
+        ("a/x.py", 3),
+        ("b/z.py", 1),
+    ]

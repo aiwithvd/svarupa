@@ -110,6 +110,10 @@ def class_checks(graph: Graph) -> list[Violation]:
     return out
 
 
+def _line_order(ev: Evidence) -> tuple[str, int, int]:
+    return (ev.file, ev.start_line, ev.end_line)
+
+
 def module_checks(graph: Graph) -> list[Violation]:
     out: list[Violation] = []
     g: nx.DiGraph[str] = nx.DiGraph()
@@ -121,13 +125,17 @@ def module_checks(graph: Graph) -> list[Violation]:
     cycle = BY_ID["module-cycle"]
     for scc in sorted(sorted(c) for c in nx.strongly_connected_components(g) if len(c) > 1):
         members = set(scc)
-        cited = [
-            e.evidence[0]
-            for e in imports
-            if module_of(e.src) in members
-            and module_of(e.dst) in members
-            and module_of(e.src) != module_of(e.dst)
-        ]
+        # Earliest import first, file by file: the line a reader starts from.
+        cited = sorted(
+            {
+                e.evidence[0]
+                for e in imports
+                if module_of(e.src) in members
+                and module_of(e.dst) in members
+                and module_of(e.src) != module_of(e.dst)
+            },
+            key=_line_order,
+        )
         if not cited:
             continue
         out.append(
@@ -144,7 +152,9 @@ def module_checks(graph: Graph) -> list[Violation]:
     for module in sorted(g.nodes):
         fan_in, fan_out = g.in_degree(module), g.out_degree(module)
         if fan_in > hub.threshold and fan_out > hub.threshold:
-            cited = [e.evidence[0] for e in imports if module_of(e.src) == module][:5]
+            cited = sorted(
+                {e.evidence[0] for e in imports if module_of(e.src) == module}, key=_line_order
+            )[:5]
             if cited:
                 out.append(
                     Violation(

@@ -175,3 +175,28 @@ why = "DGS codegen output is generated at build time and is not in the repo"
 [[must_not]]
 call = "src/main/java/io/spring/api/TagsApi.java -> src/main/java/io/spring/application/TagsQueryService.java#findAll"
 why = "TagsQueryService only declares allTags()"
+
+# Health violations (counted by hand from source)
+[[must]]
+violation = "many-parameters src/main/java/io/spring/graphql/ArticleDatafetcher.java:245"
+why = "src/main/java/io/spring/graphql/ArticleDatafetcher.java:245 @DgsData getArticles(first, after, last, before, authoredBy, favoritedBy, withTag, dfe): 8 parameters"
+
+[[must]]
+violation = "module-cycle src/main/java/io/spring/application/ArticleQueryService.java:5"
+why = "src/main/java/io/spring/application/ArticleQueryService.java:5 application imports application.data.ArticleData, while application/data/ArticleData.java:4 imports application.DateTimeCursor, so the two packages import each other"
+
+[[must_not]]
+violation = "complex-function src/main/java/io/spring/core/article/Tag.java:15"
+why = "src/main/java/io/spring/core/article/Tag.java:15 public Tag(String name): complexity 1, 4 lines, 1 parameter"
+
+[[must_not]]
+violation = "complex-function src/main/java/io/spring/api/ArticlesApi.java:40"
+why = "src/main/java/io/spring/api/ArticlesApi.java:40 @GetMapping public ResponseEntity getFeed(offset, limit, user): complexity 1, 7 lines, 3 parameters"
+
+[[must_not]]
+violation = "complex-function src/main/java/io/spring/graphql/ArticleDatafetcher.java:371"
+why = "src/main/java/io/spring/graphql/ArticleDatafetcher.java:371 private Article buildArticleResult(ArticleData): complexity 1, 13 lines, 1 parameter"
+
+[[must_not]]
+violation = "long-function src/main/java/io/spring/graphql/ArticleDatafetcher.java:359"
+why = "src/main/java/io/spring/graphql/ArticleDatafetcher.java:359 private DefaultPageInfo buildArticlePageInfo(...): 11 lines"

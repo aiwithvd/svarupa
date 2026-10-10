@@ -162,3 +162,28 @@ why = "/tokens only allows POST and DELETE"
 [[must_not]]
 call = "app/main/routes.py -> app/search.py#query_index"
 why = "routes search through Post.search in models.py; routes.py does not import app.search"
+
+# Health violations (counted by hand from source)
+[[must]]
+violation = "long-function app/__init__.py:31"
+why = "app/__init__.py:31 def create_app(config_class=Config): runs to line 96, 66 lines"
+
+[[must]]
+violation = "module-cycle app/__init__.py:14"
+why = "app/__init__.py:14 from config import Config (app -> root), and microblog.py:3 from app import create_app, db (root -> app); app/__init__.py is the alphabetically first file involved"
+
+[[must_not]]
+violation = "complex-function app/main/routes.py:91"
+why = "app/main/routes.py:91 def user_popup(username): complexity 1, 4 lines, 1 parameter"
+
+[[must_not]]
+violation = "complex-function app/main/routes.py:158"
+why = "app/main/routes.py:158 def translate_text(): complexity 1, 5 lines, no parameters"
+
+[[must_not]]
+violation = "complex-function app/models.py:54"
+why = "app/models.py:54 def reindex(cls): 1 for = complexity 2, 3 lines, no parameters besides cls"
+
+[[must_not]]
+violation = "long-function microblog.py:10"
+why = "microblog.py:10 def make_shell_context(): 3 lines"

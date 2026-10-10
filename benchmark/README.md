@@ -23,6 +23,11 @@ says in its top comment what was deliberately left out.
   resolved file-level call. `why` starts with `path:line` in the pinned
   commit and says what that line shows.
 - `[[must_not]]`: probes that must not appear, with the reason.
+- `violation = "<check> <path>:<line>"` is a health violation (see
+  `docs/health.md`). The line is where the violation's evidence starts: the
+  function's first line, the class line, line 1 for a large file, the first
+  import line of a cycle, the first line of the first copy of a duplicated
+  block.
 
 Rules:
 

@@ -198,3 +198,28 @@ why = "the only database is PostgreSQL (service db); no Mongo service or client 
 [[must_not]]
 call = "internal/app/app.go -> pkg/rabbitmq/rmq_rpc/client/client.go#New"
 why = "app.go imports the RabbitMQ server package (rmqRPCServer.New), not the client package that has a same-named New"
+
+# Health violations (counted by hand from source)
+[[must]]
+violation = "many-parameters internal/controller/restapi/router.go:30"
+why = "internal/controller/restapi/router.go:30 func NewRouter(app, cfg, t, u, tk, jwtManager, l) takes 7 parameters"
+
+[[must]]
+violation = "long-function pkg/rabbitmq/rmq_rpc/connection.go:56"
+why = "pkg/rabbitmq/rmq_rpc/connection.go:56 func (c *Connection) connect() runs from line 56 to line 119 = 64 lines"
+
+[[must]]
+violation = "long-function internal/repo/persistent/task/task.go:76"
+why = "internal/repo/persistent/task/task.go:76 func (r *Repo) List(...) runs from line 76 to line 135 = 60 lines"
+
+[[must_not]]
+violation = "complex-function internal/usecase/task/task.go:20"
+why = "internal/usecase/task/task.go:20 func New(r): complexity 1, 3 lines, 1 parameter"
+
+[[must_not]]
+violation = "complex-function pkg/rabbitmq/rmq_rpc/connection.go:28"
+why = "pkg/rabbitmq/rmq_rpc/connection.go:28 func New(consumerExchange, cfg): complexity 1, 8 lines, 2 parameters"
+
+[[must_not]]
+violation = "long-function pkg/rabbitmq/rmq_rpc/connection.go:38"
+why = "pkg/rabbitmq/rmq_rpc/connection.go:38 func (c *Connection) AttemptConnect(): 17 lines, complexity 4"
