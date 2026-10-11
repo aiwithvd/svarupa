@@ -58,6 +58,20 @@ __all__ = ["Ctx", "Frame", "PackExtractor", "language_for"]
 
 _IDENT = re.compile(r"[A-Za-z_$][\w$]*")
 _MAX_NODE = 2000  # bytes: longer nodes are never an unsafe one-liner
+_ARGS = re.compile(r"\([^()]*\)")
+
+
+def _plain(callee: str) -> str:
+    """The callee without any argument it was chained through, so a literal
+    (`connect("postgresql://user:pw@db")`) never reaches a fact."""
+    while True:
+        shorter = _ARGS.sub("()", callee)
+        if shorter == callee:
+            break
+        callee = shorter
+    if any(q in callee for q in "\"'`"):
+        callee = callee.rsplit(".", 1)[-1]
+    return callee[:80]
 
 
 @dataclass(frozen=True, slots=True)
@@ -299,7 +313,10 @@ class Ctx:
                     continue
                 self._risk_node(node, spec, by_type, built, name, out)
                 work.extend(reversed(node.children))
-        return sorted(out, key=lambda r: (r.evidence.start_line, r.kind, r.tag, r.detail))
+        # A chained call (`md5(d).hexdigest()`) matches at both calls: one
+        # fact per line, kind and tag.
+        unique = {(r.evidence.start_line, r.kind, r.tag): r for r in reversed(out)}
+        return sorted(unique.values(), key=lambda r: (r.evidence.start_line, r.kind, r.tag))
 
     def _risk_node(
         self,
@@ -341,7 +358,7 @@ class Ctx:
                             RiskFact(
                                 "sink-built",
                                 sink.tag,
-                                callee[:80],
+                                _plain(callee),
                                 self.node_evidence(node),
                                 scope,
                             )
@@ -358,6 +375,30 @@ class Ctx:
                         )
                     )
 
+    def _joins(self, node: TSNode, spec: RiskSpec) -> bool:
+        ops = dict(spec.concat).get(node.type)
+        return ops is not None and any(not c.is_named and c.type in ops for c in node.children)
+
+    def _parts(self, node: TSNode, spec: RiskSpec, built: set[str]) -> tuple[bool, bool]:
+        """(has a string, has a part only known at runtime) for a join.
+
+        `"SELECT 1 " + "FROM t"` is all literal, so it is not built; a Java
+        query split over lines that way is the common case.
+        """
+        if self._joins(node, spec):
+            has_string, dynamic = False, False
+            for c in node.named_children:
+                s, d = self._parts(c, spec, built)
+                has_string, dynamic = has_string or s, dynamic or d
+            return has_string, dynamic
+        if node.type in spec.unwrap and node.named_children:
+            return self._parts(node.named_children[-1], spec, built)
+        if node.type in spec.string_types:
+            return True, self._built(node, spec, built)
+        if self._built(node, spec, built):
+            return True, True
+        return False, True
+
     def _built(self, node: TSNode, spec: RiskSpec, built: set[str]) -> bool:
         """Whether this expression is a string built at runtime."""
         t = node.type
@@ -371,12 +412,9 @@ class Ctx:
                 for c in node.named_children
                 if c.type in spec.string_types
             )
-        ops = dict(spec.concat).get(t)
-        if ops is not None and any(not c.is_named and c.type in ops for c in node.children):
-            return any(
-                c.type in spec.string_types or self._built(c, spec, built)
-                for c in node.named_children
-            )
+        if self._joins(node, spec):
+            has_string, dynamic = self._parts(node, spec, built)
+            return has_string and dynamic
         if t in spec.call_types:
             callee = spec.callee(self, node)
             return callee is not None and spec.format_callee.search(callee) is not None

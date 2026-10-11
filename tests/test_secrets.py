@@ -116,3 +116,11 @@ def test_values_that_name_themselves_or_are_hashes_are_not_secrets() -> None:
 
 def test_digit_only_values_are_not_secrets() -> None:
     assert hits({"t.go": '`{"username": "u", "password": "0123456789"}`\n'}) == []
+
+
+def test_fingerprint_is_not_a_plain_hash_of_the_value() -> None:
+    import hashlib
+
+    (v,) = secret_checks({"a.py": f"key = '{AWS}'\n"})
+    assert hashlib.sha256(AWS.encode()).hexdigest()[:12] not in v.message
+    assert secret_checks({"a.py": f"key = '{AWS}'\n"})[0].message == v.message

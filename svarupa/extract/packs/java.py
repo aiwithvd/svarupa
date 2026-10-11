@@ -291,7 +291,9 @@ RISKS = RiskSpec(
     ),
     unwrap=frozenset({"parenthesized_expression"}),
     sinks=(
-        Sink("sql", re.compile(r"(?:^|\.)(?:executeQuery|executeUpdate|executeLargeUpdate|execute|addBatch|prepareStatement|prepareCall|createQuery|createNativeQuery|queryForList|queryForObject|queryForMap|query|update|batchUpdate)$")),
+        Sink("sql", re.compile(r"(?:^|\.)(?:executeQuery|executeUpdate|executeLargeUpdate|addBatch|prepareStatement|prepareCall|createQuery|createNativeQuery|createSQLQuery|queryForList|queryForObject|queryForMap|queryForRowSet|batchUpdate)$")),
+        # `execute`, `query` and `update` are SQL only on a database receiver.
+        Sink("sql", re.compile(r"(?i)(?:^|\.)\w*(?:jdbc|template|stmt|statement|conn|connection|session|entitymanager|em|db|database)\.(?:execute|query|update)$")),
         Sink("shell", re.compile(r"getRuntime\(\)\.exec$|^new ProcessBuilder$")),
         Sink("code", re.compile(r"(?:^|\.)(?:eval|parseExpression)$")),
     ),

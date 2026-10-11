@@ -6,7 +6,9 @@ protected when a marker appears in its own lines (the route declaration and
 handler) or in the file's top-level code (a router built with a dependency,
 a guard on the controller class), never in an import line. A unit with no
 marker anywhere is not judged: Svarupa cannot tell "no auth" from "auth it
-does not know", and says so instead.
+does not know", and says so instead. Auth attached where routers are
+mounted (`include_router(..., dependencies=...)`, `app.use(authenticate)`,
+a global guard) covers the whole unit.
 """
 
 from __future__ import annotations
@@ -27,6 +29,9 @@ _PUBLIC = re.compile(
     r"(?i)(?:^|/)(?:login|logout|signin|sign-in|signup|sign-up|register|token|refresh|oauth"
     r"|callback|webhooks?|health|healthz|password-recovery|reset-password|forgot-password"
     r"|verify-email)(?:/|$|-|\{)"
+)
+_MOUNT = re.compile(
+    r"\binclude_router\(|\.use\(|useGlobalGuards\(|APP_GUARD\b|register_blueprint\("
 )
 _IMPORT = re.compile(
     r"^[ \t]*from[ \t]+[\w.]+[ \t]+import[ \t]*\([^)]*\)"
@@ -86,13 +91,19 @@ def auth_checks(
     for r, w in windows.items():
         by_file.setdefault(r.file, []).append(w)
 
+    tops: dict[str, str] = {}
+
     def top_level(path: str) -> str:
-        covered = spans.get(path, []) + by_file.get(path, [])
-        return "\n".join(
-            text
-            for n, text in enumerate(lines[path], start=1)
-            if not any(a <= n <= b for a, b in covered)
-        )
+        """The file's lines outside every function and route, built once."""
+        if path not in tops:
+            covered = [False] * (len(lines[path]) + 2)
+            for a, b in spans.get(path, []) + by_file.get(path, []):
+                for n in range(a, min(b, len(lines[path])) + 1):
+                    covered[n] = True
+            tops[path] = "\n".join(
+                text for n, text in enumerate(lines[path], start=1) if not covered[n]
+            )
+        return tops[path]
 
     check = BY_ID["endpoint-without-auth"]
     out: list[Violation] = []
@@ -105,6 +116,12 @@ def auth_checks(
                 f"{unit or '.'}: no auth marker found, so endpoint-without-auth was not "
                 "checked; add your markers to design.yaml under auth_markers"
             )
+            continue
+        # Auth attached where a router is mounted or a guard registered
+        # (`include_router(r, dependencies=[...])`, `app.use(authenticate)`,
+        # `useGlobalGuards`) covers the unit's routes: Svarupa does not trace
+        # which router it names, so it errs toward protected.
+        if any(_MOUNT.search(line) and rx.search(line) for p in files for line in lines[p]):
             continue
         for r in sorted(unit_routes):
             if r.method not in _WRITES or _PUBLIC.search(r.path):

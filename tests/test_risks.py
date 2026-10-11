@@ -304,3 +304,49 @@ def test_java_cors_configuration_with_every_origin_is_recorded() -> None:
 }
 """
     assert tags("java", "A.java", src) == [("cors-any-origin", 3), ("cors-any-origin", 4)]
+
+
+def test_detail_never_carries_a_literal_from_the_callee() -> None:
+    pw = "Sup3r" + "S3cretPw"
+    src = f'def f(name):\n    psycopg2.connect("postgresql://admin:{pw}@db/x").cursor().execute("SELECT " + name)\n'
+    (fact,) = extractor("python").parse("m.py", src.encode()).risks
+    assert pw not in fact.detail and fact.detail.endswith("execute")
+
+
+def test_plotting_text_is_not_a_sql_sink() -> None:
+    src = (
+        "def f(ax, st, v, sql, sa, name):\n"
+        '    ax.text(0.5, 0.5, f"{v:.2f}")\n'
+        '    st.text(f"Hello {name}")\n'
+        '    sa.text("SELECT " + sql)\n'
+        '    User.objects.raw("SELECT " + sql)\n'
+    )
+    assert tags("python", "m.py", src) == [("sql", 4), ("sql", 5)]
+
+
+def test_a_chained_call_is_reported_once() -> None:
+    assert tags(
+        "python", "m.py", "import hashlib\ndef f(d):\n    return hashlib.md5(d).hexdigest()\n"
+    ) == [("weak-hash", 3)]
+
+
+def test_constant_concatenation_is_not_built() -> None:
+    py = 'def f(cur, x):\n    cur.execute("SELECT 1 " + "FROM t")\n    cur.execute("SELECT 1 " + "FROM t " + x)\n'
+    java = (
+        'class A { void f(String x) {\n  stmt.executeQuery("SELECT a " +\n    "FROM t");\n} }\n'
+    )
+    assert tags("python", "m.py", py) == [("sql", 3)]
+    assert tags("java", "A.java", java) == []
+
+
+def test_java_sql_sinks_need_a_database_receiver() -> None:
+    src = """class A {
+  void f(String id, Object v) {
+    cache.update("k" + id, v);
+    map.query("k" + id);
+    jdbcTemplate.update("DELETE FROM t WHERE id = " + id);
+    stmt.execute("DELETE FROM t WHERE id = " + id);
+  }
+}
+"""
+    assert tags("java", "A.java", src) == [("sql", 5), ("sql", 6)]

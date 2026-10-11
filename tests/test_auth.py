@@ -118,3 +118,44 @@ def test_team_markers_from_design_yaml_count(tmp_path: Path) -> None:
         "@router.post('/other')\ndef other(item: dict):\n    return item\n",
     )
     assert flagged(run(tmp_path, ("require_session",))) == [("app/items.py", 8)]
+
+
+def test_auth_attached_when_the_router_is_included_protects_it(tmp_path: Path) -> None:
+    write(tmp_path, "app/deps.py", DEPS)
+    write(
+        tmp_path,
+        "app/items.py",
+        "from fastapi import APIRouter\nrouter = APIRouter()\n"
+        "@router.post('/items')\ndef create(item: dict):\n    return item\n",
+    )
+    write(
+        tmp_path,
+        "app/main.py",
+        "from fastapi import FastAPI, Depends\nfrom app import items\n"
+        "from app.deps import get_current_user\napp = FastAPI()\n"
+        "app.include_router(items.router, dependencies=[Depends(get_current_user)])\n",
+    )
+    assert flagged(run(tmp_path)) == []
+
+
+def test_many_routes_in_one_file_stay_fast(tmp_path: Path) -> None:
+    import time
+
+    body = "".join(
+        f"@router.post('/r{i}')\ndef r{i}(item: dict):\n    return {i}\n" for i in range(800)
+    )
+    write(tmp_path, "app/deps.py", DEPS)
+    write(
+        tmp_path,
+        "app/big.py",
+        "from fastapi import APIRouter, Depends\nfrom app.deps import get_current_user\n"
+        "router = APIRouter(dependencies=[Depends(get_current_user)])\n" + body,
+    )
+    scan = detect(tmp_path)
+    graph = build(scan, extract(scan, declared_dependencies(scan)), strict=False)
+    texts = source_texts(scan, graph)
+    start = time.perf_counter()
+    from svarupa.health.auth import auth_checks
+
+    out, _ = auth_checks(graph, texts, ())
+    assert out == [] and time.perf_counter() - start < 5

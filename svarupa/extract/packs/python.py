@@ -325,7 +325,7 @@ RISKS = RiskSpec(
     assigns=(("assignment", "left", "right"), ("augmented_assignment", "left", "right")),
     unwrap=frozenset({"parenthesized_expression", "keyword_argument", "await"}),
     sinks=(
-        Sink("sql", re.compile(r"(?:^|\.)(?:execute|executemany|executescript|raw|extra|text)$")),
+        Sink("sql", re.compile(r"(?:^|\.)(?:execute|executemany|executescript)$|\.objects\.(?:raw|extra)$|^(?:sqlalchemy\.|sa\.)?text$")),
         Sink("shell", re.compile(r"^os\.(?:system|popen)$|^subprocess\.(?:getoutput|getstatusoutput)$")),
         Sink(
             "shell",

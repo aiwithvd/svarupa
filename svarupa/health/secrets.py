@@ -1,8 +1,8 @@
 """Committed secrets: known key formats and secret-named assignments.
 
-The value is never kept: a violation carries the rule, the line and the
-first 12 hex characters of the value's SHA-256, enough to tell two findings
-apart and to check a rotated key, and useless to anyone reading the report.
+The value is never kept: a violation carries the rule, the line and a
+fingerprint (a salted scrypt hash of the value), enough to tell two
+findings apart and to see a rotated key, and useless for testing guesses.
 Formats follow the gitleaks default rules.
 """
 
@@ -128,6 +128,16 @@ def _found(path: str, text: str) -> list[tuple[int, str, str]]:
     return sorted(hits)
 
 
+def _fingerprint(path: str, value: str) -> str:
+    """Stable for one value in one file, so a rotated key shows as changed,
+    but slow to compute and salted with the path, so the report cannot be
+    used to test password guesses (a plain hash of a short password can)."""
+    digest = hashlib.scrypt(
+        value.encode(), salt=f"svarupa:{path}".encode(), n=2**14, r=8, p=1, dklen=16
+    )
+    return digest.hex()[:12]
+
+
 def secret_checks(texts: Mapping[str, str]) -> list[Violation]:
     check = BY_ID["hardcoded-secret"]
     out: list[Violation] = []
@@ -135,7 +145,7 @@ def secret_checks(texts: Mapping[str, str]) -> list[Violation]:
         newlines = [i for i, c in enumerate(text) if c == "\n"]
         for offset, rule, value in _found(path, text):
             line = bisect.bisect_left(newlines, offset) + 1
-            fingerprint = hashlib.sha256(value.encode()).hexdigest()[:12]
+            fingerprint = _fingerprint(path, value)
             out.append(
                 Violation(
                     check="hardcoded-secret",
