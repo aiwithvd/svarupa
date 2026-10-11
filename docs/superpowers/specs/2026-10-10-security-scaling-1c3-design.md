@@ -87,8 +87,9 @@ included (`.env`, YAML, JSON, properties, source), not only parsed source:
 
 Placeholders are skipped: empty values, `changeme`, `example`, `xxx`,
 `<...>`, `${...}`, `{{...}}`, values read from the environment. The
-outputs carry the rule name, `file:line` and `sha256(value)[:12]` as the
-fingerprint; the value itself is never stored, printed or written.
+outputs carry the rule name, `file:line` and a fingerprint (12 hex of a
+scrypt hash of the value, salted with the file path, so it cannot be used to
+test password guesses); the value itself is never stored, printed or written.
 
 ## The checks
 

@@ -61,7 +61,9 @@ How each one decides:
 - **Secrets.** Every non-ignored file is scanned, config included (`.env`,
   YAML, properties), except generated and vendored files, lockfiles and
   `.svarupa/`. The value is never stored or shown: a violation carries the
-  rule, `file:line` and the first 12 hex characters of the value's SHA-256.
+  rule, `file:line` and a fingerprint: 12 hex characters of a scrypt hash
+  of the value salted with the file path. It changes when the key is
+  rotated, and it cannot be used to test password guesses.
   Placeholders are skipped: empty or short values, `changeme`, `example`,
   `${VAR}`, `{{...}}`, `<...>`, environment reads, values that name
   themselves (`email-server-password`), digit-only values, password hashes
