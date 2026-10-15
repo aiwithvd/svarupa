@@ -18,7 +18,7 @@ from svarupa.detect import FileRole, ScanLimits, detect
 from svarupa.diagnostics import Diagnostic, DiagnosticError, Severity
 from svarupa.emit import OUTPUT_DIR, claim, emit
 from svarupa.extract import declared_dependencies, extract
-from svarupa.health import assess, source_texts
+from svarupa.health import assess, secret_texts, source_texts
 from svarupa.lock import (
     LOCK_NAME,
     SCHEMA_MAJOR,
@@ -145,7 +145,14 @@ def _scan(
             print(f"  design: {u.unit.id or '.'} {u.note}")
             for move in u.moves:
                 print(f"    move: {move}")
-    health = assess(graph, source_texts(scan, graph), design, design.exceptions)
+    health = assess(
+        graph,
+        source_texts(scan, graph),
+        design,
+        design.exceptions,
+        secrets=secret_texts(scan),
+        auth_markers=tuple(accepted.auth_markers) if accepted else (),
+    )
     print()
     print(
         "  health: "

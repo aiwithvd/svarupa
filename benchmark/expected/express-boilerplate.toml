@@ -173,3 +173,20 @@ why = "src/controllers/user.controller.js:5 const { userService } = require('../
 [[must_not]]
 design = ". clean"
 why = "no entities or usecases directories; business logic in src/services talks to mongoose models directly, so there is no pure core"
+
+# Security (read from source before running)
+[[must]]
+violation = "cors-any-origin src/app.js:41"
+why = "src/app.js:41 app.use(cors()): the cors package defaults to every origin"
+
+[[must]]
+violation = "cors-any-origin src/app.js:42"
+why = "src/app.js:42 app.options('*', cors()): default cors, every origin"
+
+[[must_not]]
+violation = "endpoint-without-auth src/routes/v1/auth.route.js:15"
+why = "src/routes/v1/auth.route.js:15 router.post('/send-verification-email', auth(), ...): auth middleware in the chain"
+
+[[must_not]]
+violation = "endpoint-without-auth src/routes/v1/auth.route.js:9"
+why = "src/routes/v1/auth.route.js:9 router.post('/register', ...): registration is public by design"

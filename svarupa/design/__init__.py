@@ -38,7 +38,7 @@ def design_for(scan: Scan, graph: Graph, accepted: object | None = None) -> Desi
     sig = signals(graph)
     chosen_by_file = _accepted_units(accepted)
     excepted = tuple(accepted.exceptions) if isinstance(accepted, DesignFile) else ()
-    excused = frozenset((e.rule, e.src, e.dst) for e in excepted)
+    excused = frozenset((e.rule, e.src, e.dst) for e in excepted if not e.at)
     out: list[UnitDesign] = []
     for unit in units:
         # A unit with no proven level may be a backend whose framework routes

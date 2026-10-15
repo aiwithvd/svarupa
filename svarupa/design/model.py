@@ -139,7 +139,9 @@ class Design:
     def to_json(self) -> dict[str, object]:
         return {
             "exceptions": [
-                {"rule": e.rule, "from": e.src, "to": e.dst, "reason": e.reason}
+                {"rule": e.rule, "at": e.at, "reason": e.reason}
+                if e.at
+                else {"rule": e.rule, "from": e.src, "to": e.dst, "reason": e.reason}
                 for e in self.exceptions
             ],
             "system": list(self.system),

@@ -43,6 +43,8 @@ class Health:
     debt_ratio: float
     ratings: tuple[tuple[str, str | None], ...]  # (area, A..E or None)
     violations: tuple[Violation, ...]  # highest priority first
+    accepted: tuple[Violation, ...] = ()  # excepted in design.yaml, not counted
+    notes: tuple[str, ...] = ()  # what a check could not judge, and why
 
     def rating(self, area: str) -> str | None:
         return dict(self.ratings)[area]
@@ -57,6 +59,8 @@ class Health:
             "debt_ratio": round(self.debt_ratio, 4),
             "ratings": dict(self.ratings),
             "violations": [v.to_json() for v in self.violations],
+            "accepted": [v.to_json() for v in self.accepted],
+            "notes": list(self.notes),
             "checks": [
                 {
                     "id": c.id,

@@ -23,6 +23,9 @@ from svarupa.extract.packs.model import (
     Maturity,
     MetricsSpec,
     Pack,
+    RiskSpec,
+    Sink,
+    Unsafe,
 )
 from svarupa.extract.packs.modules import GoModules
 from svarupa.extract.packs.walker import Ctx, Frame
@@ -230,6 +233,49 @@ METRICS = MetricsSpec(
 )
 
 
+def risk_callee(ctx: Ctx, node: TSNode) -> str | None:
+    fn = node.child_by_field_name("function")
+    if fn is None or fn.end_byte - fn.start_byte > 200:
+        return None
+    return ctx.text(fn)
+
+
+def _p(pattern: str) -> re.Pattern[str]:
+    return re.compile(pattern, re.DOTALL)
+
+
+_KEYED = frozenset({"keyed_element"})
+_CALL = frozenset({"call_expression"})
+
+# Go has no route extraction yet, so no auth markers.
+# fmt: off
+RISKS = RiskSpec(
+    call_types=frozenset({"call_expression"}),
+    callee=risk_callee,
+    string_types=frozenset({"interpreted_string_literal", "raw_string_literal"}),
+    interpolations=(),
+    concat=(("binary_expression", frozenset({"+"})),),
+    format_callee=re.compile(r"^fmt\.Sprintf$"),
+    assigns=(
+        ("short_var_declaration", "left", "right"),
+        ("assignment_statement", "left", "right"),
+        ("var_spec", "name", "value"),
+    ),
+    unwrap=frozenset({"parenthesized_expression", "expression_list"}),
+    sinks=(
+        Sink("sql", re.compile(r"\.(?:Query|QueryRow|QueryContext|QueryRowContext|Exec|ExecContext|Raw|Prepare|PrepareContext)$")),
+        Sink("shell", re.compile(r"^exec\.Command(?:Context)?$"), re.compile(r"\"(?:/bin/)?(?:sh|bash|zsh)\"\s*,\s*\"-c\"")),
+    ),
+    unsafe=(
+        Unsafe("tls-verify-off", "InsecureSkipVerify: true", _KEYED, _p(r"InsecureSkipVerify\s*:\s*true")),
+        Unsafe("weak-hash", "MD5 or SHA-1", _CALL, _p(r"(?:md5|sha1)\.(?:New|Sum)\(.*")),
+        Unsafe("debug-enabled", "gin debug mode", _CALL, _p(r"gin\.SetMode\(\s*gin\.DebugMode\s*\)")),
+        Unsafe("cors-any-origin", "CORS allows every origin", _KEYED, _p(r"AllowAllOrigins\s*:\s*true|Allow(?:ed)?Origins\s*:\s*\[\]string\{\s*\"\*\"\s*\}")),
+    ),
+)
+# fmt: on
+
+
 PACK = Pack(
     lang="go",
     grammar=Grammar(
@@ -240,6 +286,7 @@ PACK = Pack(
     ),
     maturity=Maturity.STABLE,
     metrics=METRICS,
+    risks=RISKS,
     rules={
         "import_spec": Import(hook=import_),
         "type_spec": Custom(hook=type_spec),

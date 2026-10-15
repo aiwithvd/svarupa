@@ -188,7 +188,7 @@ def design_checks(
     """Imports that break each unit's chosen style; excepted ones are left out."""
     if design is None:
         return []
-    excused = {(e.rule, e.src, e.dst) for e in exceptions}
+    excused = {(e.rule, e.src, e.dst) for e in exceptions if not e.at}
     out: list[Violation] = []
     for u in design.units:
         if u.chosen is None:

@@ -235,3 +235,12 @@ why = "src/main/java/io/spring/application/UserQueryService.java:4 import io.spr
 [[must]]
 violation = "layer-direction src/main/java/io/spring/application/CommentQueryService.java:5"
 why = "src/main/java/io/spring/application/CommentQueryService.java:5 import io.spring.infrastructure.mybatis.readservice.CommentReadService;"
+
+# Security (read from source before running)
+[[must]]
+violation = "cors-any-origin src/main/java/io/spring/api/security/WebSecurityConfig.java:70"
+why = "src/main/java/io/spring/api/security/WebSecurityConfig.java:70 configuration.setAllowedOrigins(asList(\"*\"))"
+
+[[must]]
+violation = "hardcoded-secret src/main/resources/application.properties:9"
+why = "src/main/resources/application.properties:9 jwt.secret=nRvy...: the JWT signing secret committed in the default config"

@@ -34,7 +34,7 @@ def complex_python(n: int) -> str:
 
 
 def test_catalog_matches_the_spec() -> None:
-    assert [c.id for c in CATALOG] == [
+    assert [c.id for c in CATALOG if c.area == "maintainability"] == [
         "complex-function",
         "long-function",
         "many-parameters",
@@ -49,7 +49,7 @@ def test_catalog_matches_the_spec() -> None:
         "public-entry",
         "core-purity",
     ]
-    assert all(c.area == "maintainability" and c.source for c in CATALOG)
+    assert all(c.source for c in CATALOG)
     assert BY_ID["complex-function"].threshold == 10
 
 
@@ -165,13 +165,13 @@ def test_no_source_means_no_debt(tmp_path: Path) -> None:
     )
 
 
-def test_unassessed_areas_have_no_grade(tmp_path: Path) -> None:
+def test_only_assessed_areas_have_a_grade(tmp_path: Path) -> None:
     write(tmp_path, "app/m.py", "def f():\n    return 1\n")
     h = health(tmp_path)
     assert set(AREAS) == {"maintainability", "reliability", "security", "performance"}
     assert [h.rating(a) for a in ("reliability", "security", "performance")] == [
         None,
-        None,
+        "A",
         None,
     ]
 

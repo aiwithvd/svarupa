@@ -73,9 +73,9 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     (
         "a profile citation lands on a value that quotes the name (F1)",
         "svarupa/extract/environments.py",
-        '    key = re.compile(rf\'"{re.escape(name)}"\\s*:\')\n'
+        "    key = re.compile(rf'\"{re.escape(name)}\"\\s*:')\n"
         "    return next((i for i in range(start, end + 1) if key.search(lines[i - 1])), None)",
-        '    needle = f\'"{name}"\'\n'
+        "    needle = f'\"{name}\"'\n"
         "    return next((i for i in range(start, end + 1) if needle in lines[i - 1]), None)",
     ),
     (

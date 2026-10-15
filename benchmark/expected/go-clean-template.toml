@@ -238,3 +238,12 @@ why = "internal/controller/restapi/v1/controller.go:4 \"github.com/evrone/go-cle
 [[must_not]]
 design = ". cqrs"
 why = "no commands/queries split; internal/usecase/contracts.go mixes reads and writes in one interface per use case"
+
+# Security (read from source before running)
+[[must_not]]
+violation = "sql-injection internal/repo/persistent/user/user.go:38"
+why = "internal/repo/persistent/user/user.go:38 r.Pool.Exec(ctx, sql, args...): sql comes from a query builder's ToSql(), values passed separately"
+
+[[must]]
+violation = "hardcoded-secret docker-compose.yml:6"
+why = "docker-compose.yml:6 POSTGRES_PASSWORD: \"myAw...\": a database password committed in compose"

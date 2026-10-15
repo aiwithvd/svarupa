@@ -90,6 +90,14 @@ def _health_section(health: Health | None) -> list[str]:
         f"technical debt, debt ratio **{health.debt_ratio:.1%}**",
         "",
     ]
+    for note in health.notes:
+        lines.append(f"- Note: {note}")
+    if health.accepted:
+        lines.append(
+            f"- {len(health.accepted)} violation(s) accepted as exceptions in design.yaml"
+        )
+    if health.notes or health.accepted:
+        lines.append("")
     if not health.violations:
         return [*lines, "No violations.", ""]
     lines += ["### Fix first", ""]

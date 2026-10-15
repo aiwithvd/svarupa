@@ -174,3 +174,24 @@ why = "bakerydemo/base/management/commands/create_random_data.py:172 def handle(
 [[must_not]]
 design = ". hexagonal"
 why = "no ports, adapters or pure core: each Django app keeps Wagtail page models (database) and views together, with no interface layer between them"
+
+# Security (read from source before running)
+[[must]]
+violation = "hardcoded-secret bakerydemo/settings/base.py:25"
+why = "bakerydemo/settings/base.py:25 SECRET_KEY = \"c6u0-...\": a Django secret key committed as a literal"
+
+[[must]]
+violation = "debug-enabled bakerydemo/settings/base.py:28"
+why = "bakerydemo/settings/base.py:28 DEBUG = True in the base settings every environment imports"
+
+[[must]]
+violation = "debug-enabled bakerydemo/settings/dev.py:3"
+why = "bakerydemo/settings/dev.py:3 DEBUG = True"
+
+[[must_not]]
+violation = "hardcoded-secret bakerydemo/settings/production.py:12"
+why = "bakerydemo/settings/production.py:12 SECRET_KEY = os.environ[\"DJANGO_SECRET_KEY\"]: read from the environment"
+
+[[must]]
+violation = "hardcoded-secret bakerydemo/settings/base.py:254"
+why = "bakerydemo/settings/base.py:254 GOOGLE_MAP_API_KEY = \"AIza...\": a Google API key committed (the comment above asks not to use it in production)"

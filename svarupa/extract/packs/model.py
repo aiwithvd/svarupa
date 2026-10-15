@@ -9,6 +9,7 @@ literal decodes. The walker reads the rules; it never knows the language.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from enum import Enum
@@ -27,6 +28,7 @@ __all__ = [
     "BasesHook",
     "Call",
     "CallHook",
+    "CalleeHook",
     "Carry",
     "Custom",
     "CustomHook",
@@ -44,7 +46,10 @@ __all__ = [
     "MetricsSpec",
     "Pack",
     "ParamsHook",
+    "RiskSpec",
     "Rule",
+    "Sink",
+    "Unsafe",
 ]
 
 # Ctx and Frame are quoted: walker.py imports this module, so they exist
@@ -162,6 +167,49 @@ class MetricsSpec:
     else_if_parents: frozenset[str] = frozenset()
 
 
+CalleeHook = Callable[["Ctx", TSNode], str | None]
+
+
+@dataclass(frozen=True, slots=True)
+class Sink:
+    """A call that runs SQL, a shell or code from its argument."""
+
+    tag: str  # "sql" | "shell" | "code"
+    callee: re.Pattern[str]  # searched in the callee text
+    requires: re.Pattern[str] | None = None  # searched in the argument list text
+
+
+@dataclass(frozen=True, slots=True)
+class Unsafe:
+    """A node whose whole text (whitespace collapsed) is an unsafe setting."""
+
+    check: str  # catalog id, e.g. "tls-verify-off"
+    label: str  # what the evidence shows, e.g. "verify=False"; never a value
+    node_types: frozenset[str]
+    pattern: re.Pattern[str]  # fullmatch
+
+
+@dataclass(frozen=True, slots=True)
+class RiskSpec:
+    """Which syntax builds strings, which calls are sinks, what is unsafe."""
+
+    call_types: frozenset[str]
+    callee: CalleeHook
+    string_types: frozenset[str]
+    # (string node type, interpolation child type): f"{x}", `${x}`.
+    interpolations: tuple[tuple[str, str], ...]
+    # (binary node type, operator tokens that join strings).
+    concat: tuple[tuple[str, frozenset[str]], ...]
+    format_callee: re.Pattern[str]  # "x".format(...), fmt.Sprintf, String.format
+    # (node type, left field, right field) for plain and augmented assignment.
+    assigns: tuple[tuple[str, str, str], ...]
+    # Wrappers whose last named child is the value: (x), await x, kw=x.
+    unwrap: frozenset[str] = frozenset()
+    sinks: tuple[Sink, ...] = ()
+    unsafe: tuple[Unsafe, ...] = ()
+    auth_markers: frozenset[str] = frozenset()
+
+
 @dataclass(frozen=True, slots=True)
 class Pack:
     lang: str  # the label every fact from this pack carries
@@ -174,3 +222,4 @@ class Pack:
     # language resolves in resolve.py (Python, TypeScript, JavaScript).
     modules: Callable[[ModuleContext], ModuleResolver] | None = None
     metrics: MetricsSpec | None = None
+    risks: RiskSpec | None = None

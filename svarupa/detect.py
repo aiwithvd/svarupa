@@ -321,6 +321,9 @@ class Scan:
     workspaces: tuple[Workspace, ...]
     diagnostics: tuple[Diagnostic, ...] = ()
     skipped: tuple[tuple[str, int], ...] = ()
+    # Non-ignored files of no analyzed language (.env, YAML, properties),
+    # under the size limit. Only the secret scanner reads them.
+    others: tuple[str, ...] = ()
 
     def by_role(self, role: FileRole) -> tuple[FileRec, ...]:
         return tuple(f for f in self.files if f.role is role)
@@ -654,6 +657,7 @@ def detect(root: str | Path, limits: ScanLimits | None = None) -> Scan:
     ignore = _Ignore(_read_ignore_files(root_path))
 
     files: list[FileRec] = []
+    others: list[str] = []
     diags: list[Diagnostic] = []
     skipped = _Counter()
 
@@ -767,6 +771,12 @@ def detect(root: str | Path, limits: ScanLimits | None = None) -> Scan:
             config_kind = _config_kind(rel, name)
             if lang is None and config_kind is None:
                 skipped.hit("unrecognized-type")
+                try:
+                    small = entry.stat(follow_symlinks=False).st_size <= limits.max_file_bytes
+                except OSError:
+                    small = False
+                if small and len(others) < limits.max_files:
+                    others.append(rel)
                 continue
 
             try:
@@ -860,4 +870,5 @@ def detect(root: str | Path, limits: ScanLimits | None = None) -> Scan:
         workspaces=tuple(_detect_workspaces(root_path, ordered)),
         diagnostics=tuple(diags),
         skipped=skipped.frozen(),
+        others=tuple(sorted(others)),
     )

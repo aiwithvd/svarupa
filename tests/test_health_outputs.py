@@ -24,7 +24,8 @@ def test_cli_writes_health_everywhere(tmp_path: Path, capsys) -> None:
 
     gj = json.loads((tmp_path / ".svarupa" / "graph.json").read_text(encoding="utf8"))
     assert gj["health"]["ratings"]["maintainability"] == "B"
-    assert gj["health"]["ratings"]["security"] is None
+    assert gj["health"]["ratings"]["security"] == "A"
+    assert gj["health"]["ratings"]["reliability"] is None
     assert gj["health"]["violations"][0]["check"] == "many-parameters"
 
     report = (tmp_path / ".svarupa" / "REPORT.md").read_text(encoding="utf8")
