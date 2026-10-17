@@ -24,7 +24,7 @@ from svarupa.health.checks import (
 )
 from svarupa.health.duplication import duplicated_blocks
 from svarupa.health.model import Health, Violation
-from svarupa.health.performance import shared_datastores
+from svarupa.health.performance import hub_on_request_path, shared_datastores
 from svarupa.health.risks import risk_checks
 from svarupa.health.score import grade
 from svarupa.health.secrets import secret_checks, secret_texts
@@ -87,6 +87,7 @@ def assess(
         *design_checks(design, exceptions),
         *risk_checks(graph),
         *shared_datastores(graph),
+        *hub_on_request_path(graph),
         *secret_checks(secrets or {}),
         *auth,
     ]

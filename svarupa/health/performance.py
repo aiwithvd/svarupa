@@ -3,13 +3,15 @@ hubs that every request path goes through."""
 
 from __future__ import annotations
 
+import networkx as nx
+
 from svarupa.build import Graph, build_context_of
 from svarupa.extract.base import module_of
 from svarupa.health.catalog import BY_ID
 from svarupa.health.model import Violation
-from svarupa.model import EdgeKind, NodeKind
+from svarupa.model import EdgeKind, Evidence, NodeKind
 
-__all__ = ["shared_datastores"]
+__all__ = ["hub_on_request_path", "shared_datastores"]
 
 
 def _app(graph: Graph, nid: str) -> bool:
@@ -61,6 +63,51 @@ def shared_datastores(graph: Graph) -> list[Violation]:
                 evidence=(store.evidence[0], *(graph.nodes[a].evidence[0] for a in ordered)),
                 module=module_of(dst.split("#", 1)[0]),
                 value=len(codebases),
+                minutes=check.minutes,
+            )
+        )
+    return out
+
+
+def _first_imports(graph: Graph, module: str) -> tuple[Evidence, ...]:
+    """The module's own import lines, in file and line order, at most five."""
+    lines = {
+        e.evidence[0]
+        for e in graph.edges
+        if e.kind is EdgeKind.IMPORTS and e.evidence and module_of(e.src) == module
+    }
+    return tuple(sorted(lines, key=lambda ev: (ev.file, ev.start_line, ev.end_line))[:5])
+
+
+def hub_on_request_path(graph: Graph) -> list[Violation]:
+    """A hub module that every route module reaches through its imports."""
+    check, hub = BY_ID["hub-on-request-path"], BY_ID["hub-module"]
+    route_modules = sorted({module_of(r.file) for r in graph.routes})
+    if len(route_modules) <= check.threshold:
+        return []
+    g: nx.DiGraph[str] = nx.DiGraph()
+    g.add_nodes_from(route_modules)
+    g.add_edges_from(graph.module_deps)
+    common = set.intersection(*(nx.descendants(g, m) | {m} for m in route_modules))
+    out: list[Violation] = []
+    for module in sorted(common):
+        fan_in, fan_out = g.in_degree(module), g.out_degree(module)
+        if fan_in <= hub.threshold or fan_out <= hub.threshold:
+            continue
+        cited = _first_imports(graph, module)
+        if not cited:
+            continue
+        out.append(
+            Violation(
+                check="hub-on-request-path",
+                message=(
+                    f"{module or '.'} is a hub (used by {fan_in} modules, uses {fan_out}) "
+                    f"on every request path, from {len(route_modules)} route modules; "
+                    "a slow or broken change there reaches every endpoint"
+                ),
+                evidence=cited,
+                module=module,
+                value=len(route_modules),
                 minutes=check.minutes,
             )
         )

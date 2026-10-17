@@ -99,3 +99,44 @@ def test_one_codebase_with_two_services_is_not_shared(tmp_path: Path) -> None:
         SHARED.replace("build: ./worker", "build: ./api"),
     )
     assert [v for v in run(tmp_path).violations if v.check == "shared-datastore"] == []
+
+
+ROUTE = (
+    "from fastapi import APIRouter\n"
+    "from hub.core import run\n"
+    "router = APIRouter()\n"
+    "@router.get('/x')\n"
+    "def x():\n"
+    "    return run()\n"
+)
+
+
+def hub_repo(root: Path, route_modules: int) -> None:
+    for i in range(10):
+        write(root, f"user{i}/m.py", "from hub.core import run\n")
+        write(root, f"dep{i}/m.py", "def run():\n    return 1\n")
+    imports = "".join(f"from dep{i}.m import run as r{i}\n" for i in range(10))
+    write(root, "hub/core.py", imports + "\n\ndef run():\n    return 1\n")
+    for i in range(route_modules):
+        write(root, f"api{i}/routes.py", ROUTE)
+
+
+def test_hub_reached_from_every_route_module_is_flagged(tmp_path: Path) -> None:
+    hub_repo(tmp_path, 3)
+    found = [v for v in run(tmp_path).violations if v.check == "hub-on-request-path"]
+    assert [(v.module, v.value) for v in found] == [("hub", 3)]
+    assert found[0].evidence[0].file == "hub/core.py"
+    assert "every request path" in found[0].message
+
+
+def test_two_route_modules_are_not_enough(tmp_path: Path) -> None:
+    hub_repo(tmp_path, 2)
+    assert [v for v in run(tmp_path).violations if v.check == "hub-on-request-path"] == []
+
+
+def test_a_route_module_that_avoids_the_hub_clears_it(tmp_path: Path) -> None:
+    hub_repo(tmp_path, 3)
+    write(
+        tmp_path, "api9/routes.py", ROUTE.replace("from hub.core import run\n", "run = len\n")
+    )
+    assert [v for v in run(tmp_path).violations if v.check == "hub-on-request-path"] == []
