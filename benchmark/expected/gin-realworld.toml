@@ -143,3 +143,8 @@ why = "users/models.go:57 func (u *UserModel) setPassword(password): 10 lines, c
 [[must_not]]
 design = ". clean"
 why = "no usecase or entity layer: articles/models.go and users/models.go hold GORM models and DB calls in the same package as the Gin routers"
+
+# Performance and reliability (1c-3b), read from source
+[[must_not]]
+violation = "query-in-loop articles/models.go:210"
+why = "articles/models.go:210 tx.Preload(...).Where(\"id IN ?\", ids).Find(&models) runs once after the loop that only collects ids"

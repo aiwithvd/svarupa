@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import json
 import posixpath
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -62,6 +63,10 @@ _MAX_YAML_DEPTH = 60
 # multi-megabyte one is not a compose file, whatever its name, and refusing it
 # by size costs a diagnostic instead of the memory the parse would take.
 _MAX_COMPOSE_BYTES = 512 * 1024
+
+# A host inside a connection URL: `postgres://u:pw@db:5432/app`, `redis://cache`.
+_HOST = re.compile(r"(?:@|//)([A-Za-z0-9_.-]+?)(?::\d|/|\?|$)")
+_HOST_KEYS = ("HOST", "SERVER", "ADDR")
 
 
 @dataclass(frozen=True, slots=True)
@@ -130,6 +135,41 @@ def _key_lines(node: yaml.Node | None) -> dict[str, int]:
 
 
 _MAX_DOCKERFILE_BYTES = 256 * 1024
+
+
+def _env_items(node: yaml.Node | None) -> list[tuple[str, str]]:
+    """(key, value) pairs of an `environment:` block, list form and merge keys too."""
+    out: list[tuple[str, str]] = []
+    if isinstance(node, yaml.MappingNode):
+        for k, v in node.value:
+            if not isinstance(k, yaml.ScalarNode):
+                continue
+            if k.value == "<<":
+                for m in v.value if isinstance(v, yaml.SequenceNode) else [v]:
+                    out.extend(_env_items(m))
+            elif isinstance(v, yaml.ScalarNode):
+                out.append((str(k.value), str(v.value)))
+    elif isinstance(node, yaml.SequenceNode):
+        for item in node.value:
+            if isinstance(item, yaml.ScalarNode) and "=" in str(item.value):
+                key, _, value = str(item.value).partition("=")
+                out.append((key, value))
+    return out
+
+
+def _connects(body: dict[str, yaml.Node], others: set[str]) -> list[str]:
+    """Services this one reaches through its connection settings or `links`."""
+    found: set[str] = set()
+    for key, value in _env_items(body.get("environment")):
+        found.update(_HOST.findall(value))
+        if key.upper().endswith(_HOST_KEYS):
+            found.add(value.strip())
+    links = body.get("links")
+    if isinstance(links, yaml.SequenceNode):
+        for v in links.value:
+            if isinstance(v, yaml.ScalarNode):
+                found.add(str(v.value).split(":", 1)[0])
+    return sorted(found & others)
 
 
 def _dockerfile_ships(
@@ -347,6 +387,9 @@ def extract_compose(scan: Scan) -> ComposeFacts:
                     # that copies it. Empty when the Dockerfile copies nothing
                     # from the repository, which is a fact too.
                     attrs.append(("ships", "\n".join(f"{s}:{ln}" for s, ln in sources)))
+            connects = _connects(body, set(services) - {name})
+            if connects:
+                attrs.append(("connects", "\n".join(connects)))
             node_id = f"{path}#service.{name}"
             nodes[node_id] = Node(
                 id=node_id,

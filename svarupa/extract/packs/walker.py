@@ -287,7 +287,8 @@ class Ctx:
         return self.text(name) if name is not None else "(anonymous)"
 
     def scan_risks(self, root: TSNode) -> list[RiskFact]:
-        """Sinks fed by built strings and unsafe settings, per function.
+        """Risk facts per function: built strings into sinks, unsafe settings,
+        queries in loops, blocking calls in async code and empty catch blocks.
 
         Each function is its own scope: a variable built in one function is
         never the same variable in another. Iterative, like `measure`.
@@ -301,18 +302,30 @@ class Ctx:
             for t in rule.node_types:
                 by_type.setdefault(t, []).append(rule)
         out: list[RiskFact] = []
-        scopes: list[tuple[TSNode, str]] = [(root, "")]
+        loop_bodies = dict(spec.loops)
+        # (scope node, function name, whether it runs once per loop item)
+        scopes: list[tuple[TSNode, str, bool]] = [(root, "", False)]
         while scopes:
-            scope, name = scopes.pop()
+            scope, name, looped = scopes.pop()
             built: set[str] = set()
-            work = list(reversed(scope.children))
+            is_async = spec.async_marker is not None and any(
+                not c.is_named and c.type == spec.async_marker for c in scope.children
+            )
+            work = [(c, looped) for c in reversed(scope.children)]
             while work:
-                node = work.pop()
+                node, in_loop = work.pop()
                 if node.is_named and node.type in fn_types:
-                    scopes.append((node, self._function_name(node)))
+                    per_item = in_loop or self._per_item(node, spec)
+                    scopes.append((node, self._function_name(node), per_item))
                     continue
                 self._risk_node(node, spec, by_type, built, name, out)
-                work.extend(reversed(node.children))
+                self._runtime_node(node, spec, in_loop, is_async, name, out)
+                field = loop_bodies.get(node.type)
+                body = node.child_by_field_name(field) if field else None
+                work.extend(
+                    (c, in_loop or (body is not None and c.id == body.id))
+                    for c in reversed(node.children)
+                )
         # A chained call (`md5(d).hexdigest()`) matches at both calls: one
         # fact per line, kind and tag.
         unique = {(r.evidence.start_line, r.kind, r.tag): r for r in reversed(out)}
@@ -374,6 +387,72 @@ class Ctx:
                             "unsafe", rule.check, rule.label, self.node_evidence(node), scope
                         )
                     )
+
+    def _per_item(self, fn: TSNode, spec: RiskSpec) -> bool:
+        """Whether this function is passed to a per-item call (`xs.map(f)`)."""
+        args = fn.parent
+        call = args.parent if args is not None else None
+        if spec.loop_callee is None or call is None or call.type not in spec.call_types:
+            return False
+        got = call.child_by_field_name("arguments")
+        if got is None or args is None or got.id != args.id:
+            return False
+        callee = spec.callee(self, call)
+        return callee is not None and spec.loop_callee.search(callee) is not None
+
+    def _runtime_node(
+        self,
+        node: TSNode,
+        spec: RiskSpec,
+        in_loop: bool,
+        is_async: bool,
+        scope: str,
+        out: list[RiskFact],
+    ) -> None:
+        """Queries in a loop body, blocking calls in async code, empty catches."""
+        t = node.type
+        if t in spec.catch_types and self._guarded(node, spec) and self._quiet(node, spec):
+            keyword = "error check" if spec.catch_guard else node.children[0].type
+            out.append(
+                RiskFact(
+                    "empty-catch", "catch", f"empty {keyword}", self.node_evidence(node), scope
+                )
+            )
+            return
+        if t not in spec.call_types or not (in_loop or is_async):
+            return
+        callee = spec.callee(self, node)
+        if callee is None:
+            return
+        if in_loop and spec.datastore_calls is not None and spec.datastore_calls.search(callee):
+            out.append(
+                RiskFact("in-loop", "query", _plain(callee), self.node_evidence(node), scope)
+            )
+        if is_async and spec.blocking is not None and spec.blocking.search(callee):
+            out.append(
+                RiskFact(
+                    "blocking-async", "io", _plain(callee), self.node_evidence(node), scope
+                )
+            )
+
+    def _guarded(self, clause: TSNode, spec: RiskSpec) -> bool:
+        """Whether this clause handles an error (always, unless the pack needs a guard)."""
+        if spec.catch_guard is None:
+            return True
+        cond = clause.child_by_field_name("condition")
+        return (
+            cond is not None
+            and clause.child_by_field_name("alternative") is None
+            and spec.catch_guard.fullmatch(" ".join(self.text(cond).split())) is not None
+        )
+
+    def _quiet(self, clause: TSNode, spec: RiskSpec) -> bool:
+        """An except/catch whose body does nothing: empty, `pass` or comments."""
+        body = clause.child_by_field_name(spec.catch_body)
+        if body is None:  # Python: the block is the last named child
+            kids = clause.named_children
+            body = kids[-1] if kids else None
+        return body is not None and all(c.type in spec.quiet for c in body.named_children)
 
     def _joins(self, node: TSNode, spec: RiskSpec) -> bool:
         ops = dict(spec.concat).get(node.type)

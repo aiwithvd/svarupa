@@ -304,8 +304,26 @@ RISKS = RiskSpec(
         Unsafe("cors-any-origin", "CORS origin '*'", _INVOKE, _p(r".*\.(?:allowedOrigins|setAllowedOrigins|addAllowedOrigin)\(\s*(?:(?:Arrays\.)?asList\(|List\.of\()?\s*\"\*\"\s*\)?\s*\)")),
         Unsafe("cors-any-origin", "@CrossOrigin allows every origin", frozenset({"marker_annotation"}), _p(r"@CrossOrigin")),
         Unsafe("cors-any-origin", "@CrossOrigin allows every origin", frozenset({"annotation"}), _p(r"@CrossOrigin\(\s*(?:origins\s*=\s*)?\"\*\"\s*\)")),
+        Unsafe("no-timeout", "HttpClient without connect timeout", _INVOKE, _p(r"HttpClient\.newHttpClient\(\s*\)")),
+        Unsafe("no-timeout", "RestTemplate without timeouts", _NEW, _p(r"new RestTemplate\(\s*\)")),
+        Unsafe("no-retry", "RabbitMQ automatic recovery turned off", _INVOKE, _p(r".*\.setAutomaticRecoveryEnabled\(\s*false\s*\)")),
     ),
     auth_markers=frozenset({"PreAuthorize", "Secured", "RolesAllowed", "PostAuthorize"}),
+    loops=(
+        ("for_statement", "body"),
+        ("enhanced_for_statement", "body"),
+        ("while_statement", "body"),
+        ("do_statement", "body"),
+    ),
+    # `Optional.map` runs once: only a stream maps per item.
+    loop_callee=re.compile(r"\.stream\(\).*\.(?:map|flatMap|forEach)$|\.forEach$"),
+    datastore_calls=re.compile(
+        r"(?:^|\.)\w*(?:[Rr]epository|[Rr]epo|[Dd]ao|[Mm]apper)\.(?:find\w*|get\w*|save\w*|select\w*|insert\w*|update\w*|delete\w*|count\w*|exists\w*)$"
+        r"|(?:^|\.)(?:\w*(?:[Jj]dbc|[Mm]ongo)Template|jdbc|em|entityManager|\w*EntityManager|session|\w*Session)\.(?:query\w*|find|get|createQuery|createNativeQuery|update|execute|persist|merge)$"
+        r"|(?:^|\.)(?:executeQuery|executeUpdate)$"
+    ),
+    catch_types=frozenset({"catch_clause"}),
+    quiet=frozenset({"line_comment", "block_comment"}),
 )
 # fmt: on
 

@@ -624,6 +624,8 @@ RISKS = RiskSpec(
         Unsafe("cors-any-origin", "CORS with default origins (*)", _CALL, _p(r"cors\(\s*\)")),
         Unsafe("cors-any-origin", "CORS origin '*'", _PAIR, _p(r"origin\s*:\s*[\"']\*[\"']")),
         Unsafe("cors-any-origin", "Access-Control-Allow-Origin: *", _CALL, _p(r"\w+\.(?:setHeader|header|set)\(\s*[\"']Access-Control-Allow-Origin[\"']\s*,\s*[\"']\*[\"']\s*\)")),
+        Unsafe("no-timeout", "axios call without timeout", _CALL, _p(r"axios(?:\.(?:get|post|put|patch|delete|head|options|request))?\((?!.*\btimeout\s*:).*")),
+        Unsafe("no-timeout", "axios instance without timeout", _CALL, _p(r"axios\.create\((?!.*\btimeout\s*:).*")),
     ),
     auth_markers=frozenset({
         "authenticate", "isAuthenticated", "ensureAuthenticated", "ensureLoggedIn",
@@ -631,6 +633,27 @@ RISKS = RiskSpec(
         "protect", "authorize", "UseGuards", "AuthGuard", "JwtAuthGuard", "GqlAuthGuard",
         "withAuth", "getServerSession", "currentUser",
     }),
+    loops=(
+        ("for_statement", "body"),
+        ("for_in_statement", "body"),
+        ("while_statement", "body"),
+        ("do_statement", "body"),
+    ),
+    loop_callee=re.compile(r"\.(?:forEach|map|flatMap)$"),
+    datastore_calls=re.compile(
+        r"(?:^|\.)(?:prisma|db|tx)\.\w+\.(?:find\w*|create\w*|update\w*|upsert|delete\w*|count|aggregate|groupBy)$"
+        r"|(?:^|\.)\w*(?:[Rr]epo|[Rr]epository|[Mm]odel)\.(?:find\w*|save|insert|update|delete|remove|count\w*|exists\w*|query|create)$"
+        r"|^[A-Z]\w*\.(?:find|findOne|findById|findOneAndUpdate|updateOne|updateMany|deleteOne|deleteMany|countDocuments|aggregate|exists)$"
+        r"|(?:^|\.)(?:pool|client|db|conn|connection|knex|sql|database|pg)\.(?:query|execute|one|many|any|oneOrNone|manyOrNone)$"
+    ),
+    async_marker="async",
+    blocking=re.compile(
+        r"^(?:(?:fs|child_process|cp|bcrypt|bcryptjs|crypto|zlib)\.\w+Sync"
+        r"|readFileSync|writeFileSync|existsSync|readdirSync|statSync|mkdirSync"
+        r"|execSync|execFileSync|spawnSync|hashSync|compareSync|pbkdf2Sync|scryptSync)$"
+    ),
+    catch_types=frozenset({"catch_clause"}),
+    quiet=frozenset({"comment", "empty_statement"}),
 )
 # fmt: on
 

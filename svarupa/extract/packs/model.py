@@ -208,6 +208,20 @@ class RiskSpec:
     sinks: tuple[Sink, ...] = ()
     unsafe: tuple[Unsafe, ...] = ()
     auth_markers: frozenset[str] = frozenset()
+    # (loop node type, body field): only the body runs once per item, never
+    # the iterable (`for u in User.objects.all():` queries once).
+    loops: tuple[tuple[str, str], ...] = ()
+    # A function passed to one of these runs once per item (`xs.forEach(f)`).
+    loop_callee: re.Pattern[str] | None = None
+    datastore_calls: re.Pattern[str] | None = None  # a query on a database client
+    async_marker: str | None = None  # keyword token that makes a function async
+    blocking: re.Pattern[str] | None = None  # sync I/O that stalls an event loop
+    catch_types: frozenset[str] = frozenset()  # except/catch clauses
+    catch_body: str = "body"  # the clause's body field (Go: `consequence`)
+    # Go has no catch: an `if` whose condition matches this, with no `else`,
+    # is the error handler (`if err != nil {}`).
+    catch_guard: re.Pattern[str] | None = None
+    quiet: frozenset[str] = frozenset()  # statements that do nothing: pass, comments
 
 
 @dataclass(frozen=True, slots=True)

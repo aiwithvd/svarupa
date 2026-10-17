@@ -271,7 +271,19 @@ RISKS = RiskSpec(
         Unsafe("weak-hash", "MD5 or SHA-1", _CALL, _p(r"(?:md5|sha1)\.(?:New|Sum)\(.*")),
         Unsafe("debug-enabled", "gin debug mode", _CALL, _p(r"gin\.SetMode\(\s*gin\.DebugMode\s*\)")),
         Unsafe("cors-any-origin", "CORS allows every origin", _KEYED, _p(r"AllowAllOrigins\s*:\s*true|Allow(?:ed)?Origins\s*:\s*\[\]string\{\s*\"\*\"\s*\}")),
+        Unsafe("no-timeout", "http default client has no timeout", _CALL, _p(r"http\.(?:Get|Post|Head|PostForm)\(.*|http\.DefaultClient\.\w+\(.*")),
+        Unsafe("no-timeout", "http.Client without Timeout", frozenset({"composite_literal"}), _p(r"http\.Client\{(?!.*\bTimeout\s*:).*\}")),
+        Unsafe("no-retry", "Redis retries turned off", _KEYED, _p(r"MaxRetries\s*:\s*-1")),
     ),
+    loops=(("for_statement", "body"),),
+    datastore_calls=re.compile(
+        r"(?:^|\.)(?:\w*(?:db|DB|Db)|tx|\w*Tx|conn|\w*Conn|pool|\w*Pool|stmt|\w*Stmt)\.(?:Query|QueryContext|QueryRow|QueryRowContext|Exec|ExecContext)$"
+        r"|(?:^|\.)(?:\w*(?:db|DB|Db)|tx|\w*Tx|\w*[Rr]epo|\w*[Rr]epository)\.(?:Get|Select|First|Find|Take|Create|Save|Delete|Updates?|Where)$"
+    ),
+    catch_types=frozenset({"if_statement"}),
+    catch_body="consequence",
+    catch_guard=re.compile(r"\w*[eE]rr\w*\s*!=\s*nil"),
+    quiet=frozenset({"comment"}),
 )
 # fmt: on
 

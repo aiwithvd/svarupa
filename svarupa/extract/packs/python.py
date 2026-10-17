@@ -346,6 +346,10 @@ RISKS = RiskSpec(
         Unsafe("cors-any-origin", "CORS allows every origin", _KW, _p(r"(?:allow_origins|origins)\s*=\s*(?:\[\s*)?[\"']\*[\"']\s*\]?")),
         Unsafe("cors-any-origin", "CORS allows every origin", _ASSIGN, _p(r"CORS_(?:ORIGIN_ALLOW_ALL|ALLOW_ALL_ORIGINS)\s*=\s*True")),
         Unsafe("cors-any-origin", "CORS with default origins (*)", _CALL, _p(r"CORS\(\s*\w+\s*\)")),
+        Unsafe("no-timeout", "requests call without timeout", _CALL, _p(r"requests\.(?:get|post|put|patch|delete|head|options|request)\((?!.*\btimeout\s*=).*")),
+        Unsafe("no-timeout", "urlopen without timeout", _CALL, _p(r"(?:urllib\.request\.)?urlopen\((?!.*\btimeout\s*=).*")),
+        Unsafe("no-retry", "pika connection tries once", _CALL, _p(r"pika\.(?:ConnectionParameters|URLParameters)\((?!.*connection_attempts).*")),
+        Unsafe("no-retry", "aio_pika.connect does not reconnect (use connect_robust)", _CALL, _p(r"aio_pika\.connect\(.*")),
     ),
     auth_markers=frozenset({
         "login_required", "permission_required", "user_passes_test", "jwt_required",
@@ -355,6 +359,28 @@ RISKS = RiskSpec(
         "Security", "permission_classes", "IsAuthenticated", "LoginRequiredMixin",
         "PermissionRequiredMixin", "verify_token",
     }),
+    loops=(
+        ("for_statement", "body"),
+        ("while_statement", "body"),
+        ("list_comprehension", "body"),
+        ("set_comprehension", "body"),
+        ("dictionary_comprehension", "body"),
+        ("generator_expression", "body"),
+    ),
+    datastore_calls=re.compile(
+        r"(?:^|\.)objects\.\w+$"
+        r"|(?:^|\.)[A-Z]\w*\.query\.(?:get|get_or_404|filter|filter_by|first|all|one|count)$"
+        r"|(?:^|\.)(?:db\.session|cursor|cur|collection)\.(?:query|execute|executemany|get|scalar|scalars|scalar_one|first|find|find_one|insert_one|update_one|delete_one|aggregate|fetch|fetchrow|fetchval)$"
+        r"|(?:^|\.)(?:session|db|conn|connection|engine)\.(?:query|execute|executemany|scalar|scalars|scalar_one|fetch|fetchrow|fetchval)$"
+    ),
+    async_marker="async",
+    blocking=re.compile(
+        r"^(?:requests\.(?:get|post|put|patch|delete|head|options|request)|time\.sleep"
+        r"|urllib\.request\.urlopen|urlopen|subprocess\.(?:run|call|check_call|check_output)"
+        r"|os\.system|psycopg2\.connect|sqlite3\.connect)$"
+    ),
+    catch_types=frozenset({"except_clause"}),
+    quiet=frozenset({"pass_statement", "comment"}),
 )
 # fmt: on
 

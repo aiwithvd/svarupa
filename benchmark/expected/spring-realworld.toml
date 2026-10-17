@@ -244,3 +244,28 @@ why = "src/main/java/io/spring/api/security/WebSecurityConfig.java:70 configurat
 [[must]]
 violation = "hardcoded-secret src/main/resources/application.properties:9"
 why = "src/main/resources/application.properties:9 jwt.secret=nRvy...: the JWT signing secret committed in the default config"
+
+# Performance and reliability (1c-3b), read from source
+[[must]]
+violation = "query-in-loop src/main/java/io/spring/infrastructure/repository/MyBatisArticleRepository.java:32"
+why = "src/main/java/io/spring/infrastructure/repository/MyBatisArticleRepository.java:32 articleMapper.findTag(...) inside for (Tag tag : article.getTags())"
+
+[[must]]
+violation = "query-in-loop src/main/java/io/spring/infrastructure/repository/MyBatisArticleRepository.java:35"
+why = "src/main/java/io/spring/infrastructure/repository/MyBatisArticleRepository.java:35 articleMapper.insertTag(tag) in a lambda inside the same loop"
+
+[[must]]
+violation = "query-in-loop src/main/java/io/spring/infrastructure/repository/MyBatisArticleRepository.java:38"
+why = "src/main/java/io/spring/infrastructure/repository/MyBatisArticleRepository.java:38 articleMapper.insertArticleTagRelation(...) inside the loop"
+
+[[must_not]]
+violation = "query-in-loop src/main/java/io/spring/infrastructure/repository/MyBatisArticleRepository.java:40"
+why = "src/main/java/io/spring/infrastructure/repository/MyBatisArticleRepository.java:40 articleMapper.insert(article) runs once, after the loop"
+
+[[must_not]]
+violation = "query-in-loop src/main/java/io/spring/api/ProfileApi.java:45"
+why = "src/main/java/io/spring/api/ProfileApi.java:45 userRepository.saveRelation(...) inside findByUsername(...).map(...): an Optional, so it runs once"
+
+[[must_not]]
+violation = "query-in-loop src/main/java/io/spring/graphql/RelationMutation.java:33"
+why = "src/main/java/io/spring/graphql/RelationMutation.java:33 userRepository.saveRelation(...) inside findByUsername(...).map(...): an Optional, so it runs once"

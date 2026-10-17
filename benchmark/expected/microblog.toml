@@ -208,3 +208,12 @@ why = "app/cli.py:18 os.system('pybabel extract ...'): a literal command, nothin
 [[must_not]]
 violation = "sql-injection app/models.py:203"
 why = "app/models.py:203 db.session.execute(self.notifications.delete()...): an ORM expression, not a string"
+
+# Performance and reliability (1c-3b), read from source
+[[must]]
+violation = "no-timeout app/translate.py:14"
+why = "app/translate.py:14 requests.post(...) to the translator API with headers and json but no timeout"
+
+[[must_not]]
+violation = "query-in-loop app/models.py:55"
+why = "app/models.py:55 for obj in db.session.scalars(sa.select(cls)): the query is the loop's iterable and runs once"

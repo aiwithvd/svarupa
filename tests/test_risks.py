@@ -103,7 +103,7 @@ def f(x, data):
     subprocess.run("ls " + x, shell=True)
     os.system(f"ls {x}")
     eval("1 + " + x)
-    requests.get(x, verify=False)
+    requests.get(x, verify=False, timeout=5)
     pickle.loads(data)
     yaml.load(data)
     hashlib.md5(data)
@@ -117,7 +117,7 @@ PY_SAFE = """import subprocess, os, pickle, yaml, hashlib, requests
 def f(x, data):
     subprocess.run(["ls", x])
     subprocess.run("ls " + x)
-    requests.get(x, verify=True)
+    requests.get(x, verify=True, timeout=5)
     yaml.load(data, Loader=yaml.SafeLoader)
     yaml.safe_load(data)
     hashlib.md5(data, usedforsecurity=False)
@@ -350,3 +350,315 @@ def test_java_sql_sinks_need_a_database_receiver() -> None:
 }
 """
     assert tags("java", "A.java", src) == [("sql", 5), ("sql", 6)]
+
+
+PY_RUNTIME = """def load(ids, User):
+    for i in ids:
+        User.objects.get(id=i)
+    return [db.session.get(User, i) for i in ids]
+
+
+def once(cur, ids):
+    for row in cur.execute("SELECT 1"):
+        print(row)
+
+
+async def handler(url):
+    requests.get(url, timeout=5)
+    time.sleep(1)
+
+
+def sync(url):
+    requests.get(url, timeout=5)
+
+
+def quiet():
+    try:
+        run()
+    except ValueError:
+        pass
+    try:
+        run()
+    except KeyError:  # nothing to do
+        pass
+    try:
+        run()
+    except OSError:
+        log.warning("failed")
+"""
+
+
+def test_python_runtime_facts_are_recorded() -> None:
+    assert risks("python", "m.py", PY_RUNTIME) == [
+        ("in-loop", "query", 3, "load"),
+        ("in-loop", "query", 4, "load"),
+        ("blocking-async", "io", 13, "handler"),
+        ("blocking-async", "io", 14, "handler"),
+        ("empty-catch", "catch", 24, "quiet"),
+        ("empty-catch", "catch", 28, "quiet"),
+    ]
+
+
+def test_nested_functions_have_their_own_loop_and_async_state() -> None:
+    src = (
+        "async def outer(ids):\n"
+        "    def helper():\n"
+        "        time.sleep(1)\n"
+        "    for i in ids:\n"
+        "        print(i)\n"
+        "    def later():\n"
+        "        session.query(X)\n"
+        "    return helper, later\n"
+    )
+    assert risks("python", "m.py", src) == []
+
+
+def test_runtime_detail_is_the_callee() -> None:
+    src = b"def f(ids):\n    for i in ids:\n        User.objects.get(id=i)\n"
+    f = extractor("python").parse("m.py", src)
+    assert [r.detail for r in f.risks] == ["User.objects.get"]
+
+
+JS_RUNTIME = """async function load(ids) {
+  for (const id of ids) {
+    await prisma.user.findUnique({ where: { id } });
+  }
+  await Promise.all(ids.map((id) => User.findById(id)));
+  for (const u of await this.userRepository.find()) {
+    console.log(u);
+  }
+  const data = fs.readFileSync(path);
+  try {
+    run();
+  } catch (e) {
+    // ignore
+  }
+  try {
+    run();
+  } catch (e) {
+    log(e);
+  }
+}
+function sync() {
+  return fs.readFileSync(path);
+}
+"""
+
+
+def test_javascript_runtime_facts_are_recorded() -> None:
+    assert risks("javascript", "m.js", JS_RUNTIME) == [
+        ("in-loop", "query", 3, "load"),
+        ("in-loop", "query", 5, "(anonymous)"),
+        ("blocking-async", "io", 9, "load"),
+        ("empty-catch", "catch", 12, "load"),
+    ]
+
+
+JAVA_RUNTIME = """class S {
+  void load(List<Long> ids) {
+    for (Long id : ids) {
+      userRepository.findById(id);
+    }
+    ids.forEach(id -> this.orderRepository.findByUserId(id));
+    for (User u : userRepository.findAll()) {
+      log(u);
+    }
+    try {
+      run();
+    } catch (Exception e) {
+      // ignore
+    }
+    try {
+      run();
+    } catch (Exception e) {
+      throw new RuntimeException(e);
+    }
+  }
+}
+"""
+
+
+def test_java_runtime_facts_are_recorded() -> None:
+    assert risks("java", "S.java", JAVA_RUNTIME) == [
+        ("in-loop", "query", 4, "load"),
+        ("in-loop", "query", 6, "(anonymous)"),
+        ("empty-catch", "catch", 12, "load"),
+    ]
+
+
+GO_RUNTIME = """package s
+
+func load(db *sql.DB, ids []int) {
+\tfor _, id := range ids {
+\t\tdb.QueryRow("SELECT 1 WHERE id = $1", id)
+\t}
+\trows, _ := db.Query("SELECT 1")
+\tfor rows.Next() {
+\t\tfmt.Println(rows)
+\t}
+}
+"""
+
+
+def test_go_runtime_facts_are_recorded() -> None:
+    assert risks("go", "s.go", GO_RUNTIME) == [("in-loop", "query", 5, "load")]
+
+
+PY_RELIABILITY = """import requests, pika, aio_pika
+def f(url):
+    requests.get(url)
+    requests.post(url, json={}, timeout=5)
+    urlopen(url)
+    urlopen(url, timeout=3)
+    pika.ConnectionParameters(host="mq")
+    pika.ConnectionParameters(host="mq", connection_attempts=5)
+    aio_pika.connect(url)
+    aio_pika.connect_robust(url)
+"""
+
+
+def test_python_reliability_rules() -> None:
+    assert tags("python", "m.py", PY_RELIABILITY) == [
+        ("no-timeout", 3),
+        ("no-timeout", 5),
+        ("no-retry", 7),
+        ("no-retry", 9),
+    ]
+
+
+JS_RELIABILITY = """async function f(url) {
+  await axios.get(url);
+  await axios.get(url, { timeout: 5000 });
+  const api = axios.create({ baseURL: url });
+  const ok = axios.create({ baseURL: url, timeout: 5000 });
+  await fetch(url);
+}
+"""
+
+
+def test_javascript_reliability_rules() -> None:
+    assert tags("javascript", "m.js", JS_RELIABILITY) == [("no-timeout", 2), ("no-timeout", 4)]
+
+
+GO_RELIABILITY = """package s
+
+func f() {
+\thttp.Get(u)
+\tc := &http.Client{}
+\tok := &http.Client{Timeout: 5 * time.Second}
+\thttp.DefaultClient.Do(req)
+\t_, err := run()
+\tif err != nil {
+\t}
+\tif err != nil {
+\t\treturn
+\t}
+\to := redis.Options{MaxRetries: -1}
+}
+"""
+
+
+def test_go_reliability_rules() -> None:
+    assert tags("go", "s.go", GO_RELIABILITY) == [
+        ("no-timeout", 4),
+        ("no-timeout", 5),
+        ("no-timeout", 7),
+        ("catch", 9),
+        ("no-retry", 14),
+    ]
+
+
+JAVA_RELIABILITY = """class C {
+  void f() {
+    HttpClient a = HttpClient.newHttpClient();
+    RestTemplate r = new RestTemplate();
+    RestTemplate ok = new RestTemplate(factory);
+    factory.setAutomaticRecoveryEnabled(false);
+  }
+}
+"""
+
+
+def test_java_reliability_rules() -> None:
+    assert tags("java", "C.java", JAVA_RELIABILITY) == [
+        ("no-timeout", 3),
+        ("no-timeout", 4),
+        ("no-retry", 6),
+    ]
+
+
+def test_go_error_block_with_a_comment_and_code_is_not_swallowed() -> None:
+    src = (
+        "package s\n\n"
+        "func f() error {\n"
+        "\tif err != nil {\n"
+        "\t\t// the file may not exist yet\n"
+        "\t\treturn nil\n"
+        "\t}\n"
+        "\tif err := g(); err != nil {\n"
+        "\t\t// retry later\n"
+        "\t\tlog.Println(err)\n"
+        "\t}\n"
+        "\tif err != nil {\n"
+        "\t\t// ignored on purpose\n"
+        "\t}\n"
+        "\treturn nil\n"
+        "}\n"
+    )
+    assert risks("go", "s.go", src) == [("empty-catch", "catch", 12, "f")]
+
+
+def test_java_optional_map_is_not_a_loop() -> None:
+    src = """class S {
+  void f(String u, List<Long> ids) {
+    userRepository.findByUsername(u).map(t -> userRepository.saveRelation(t));
+    ids.stream().map(id -> userRepository.findById(id));
+  }
+}
+"""
+    assert risks("java", "S.java", src) == [("in-loop", "query", 4, "(anonymous)")]
+
+
+def test_non_database_calls_in_loops_are_not_queries() -> None:
+    py = (
+        "def f(urls, request):\n"
+        "    for u in urls:\n"
+        "        session.get(u)\n"
+        "        self.session.get(u)\n"
+        "        request.query.get('x')\n"
+        "        User.query.get(u)\n"
+        "        db.session.get(User, u)\n"
+    )
+    assert [r[2] for r in risks("python", "m.py", py)] == [6, 7]
+    go = (
+        "package s\n\n"
+        "func f() {\n"
+        "\tfor _, x := range xs {\n"
+        "\t\tr.URL.Query()\n"
+        "\t\tbufPool.Get()\n"
+        '\t\tsessionStore.Get(r, "s")\n'
+        '\t\tctx.Get("k")\n'
+        '\t\tdb.QueryRow("SELECT 1")\n'
+        "\t\ts.db.Where(x).First(&u)\n"
+        "\t}\n"
+        "}\n"
+    )
+    assert [r[2] for r in risks("go", "s.go", go)] == [9, 10]
+    java = """class S {
+  void f(List<Item> items) {
+    for (Item item : items) {
+      item.get();
+      em.find(Item.class, 1);
+    }
+  }
+}
+"""
+    assert [r[2] for r in risks("java", "S.java", java)] == [5]
+    js = """async function f(xs) {
+  for (const x of xs) {
+    await client.messages.create({});
+    await prisma.user.create({});
+  }
+}
+"""
+    assert [r[2] for r in risks("javascript", "m.js", js)] == [4]
