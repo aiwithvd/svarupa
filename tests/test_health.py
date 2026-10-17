@@ -165,15 +165,11 @@ def test_no_source_means_no_debt(tmp_path: Path) -> None:
     )
 
 
-def test_only_assessed_areas_have_a_grade(tmp_path: Path) -> None:
+def test_every_area_has_a_grade(tmp_path: Path) -> None:
     write(tmp_path, "app/m.py", "def f():\n    return 1\n")
     h = health(tmp_path)
     assert set(AREAS) == {"maintainability", "reliability", "security", "performance"}
-    assert [h.rating(a) for a in ("reliability", "security", "performance")] == [
-        None,
-        "A",
-        None,
-    ]
+    assert [h.rating(a) for a in ("reliability", "security", "performance")] == ["A", "A", "A"]
 
 
 def test_violations_are_ranked_by_impact_and_deterministic(tmp_path: Path) -> None:
