@@ -79,6 +79,17 @@ def _first_imports(graph: Graph, module: str) -> tuple[Evidence, ...]:
     return tuple(sorted(lines, key=lambda ev: (ev.file, ev.start_line, ev.end_line))[:5])
 
 
+def _reach(uses: dict[str, set[str]], start: str) -> set[str]:
+    """Every module `start` imports, directly or through others, and itself."""
+    seen, stack = {start}, [start]
+    while stack:
+        for dst in uses.get(stack.pop(), ()):
+            if dst not in seen:
+                seen.add(dst)
+                stack.append(dst)
+    return seen
+
+
 def hub_on_request_path(graph: Graph) -> list[Violation]:
     """A hub module that every route module reaches through its imports."""
     check, hub = BY_ID["hub-on-request-path"], BY_ID["hub-module"]
@@ -88,7 +99,12 @@ def hub_on_request_path(graph: Graph) -> list[Violation]:
     g: nx.DiGraph[str] = nx.DiGraph()
     g.add_nodes_from(route_modules)
     g.add_edges_from(graph.module_deps)
-    common = set.intersection(*(nx.descendants(g, m) | {m} for m in route_modules))
+    uses: dict[str, set[str]] = {}
+    for src, dst in graph.module_deps:
+        uses.setdefault(src, set()).add(dst)
+    common = _reach(uses, route_modules[0])
+    for m in route_modules[1:]:
+        common &= _reach(uses, m)
     out: list[Violation] = []
     for module in sorted(common):
         fan_in, fan_out = g.in_degree(module), g.out_degree(module)
