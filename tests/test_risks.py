@@ -103,7 +103,7 @@ def f(x, data):
     subprocess.run("ls " + x, shell=True)
     os.system(f"ls {x}")
     eval("1 + " + x)
-    requests.get(x, verify=False)
+    requests.get(x, verify=False, timeout=5)
     pickle.loads(data)
     yaml.load(data)
     hashlib.md5(data)
@@ -117,7 +117,7 @@ PY_SAFE = """import subprocess, os, pickle, yaml, hashlib, requests
 def f(x, data):
     subprocess.run(["ls", x])
     subprocess.run("ls " + x)
-    requests.get(x, verify=True)
+    requests.get(x, verify=True, timeout=5)
     yaml.load(data, Loader=yaml.SafeLoader)
     yaml.safe_load(data)
     hashlib.md5(data, usedforsecurity=False)
@@ -502,3 +502,86 @@ func load(db *sql.DB, ids []int) {
 
 def test_go_runtime_facts_are_recorded() -> None:
     assert risks("go", "s.go", GO_RUNTIME) == [("in-loop", "query", 5, "load")]
+
+
+PY_RELIABILITY = """import requests, pika, aio_pika
+def f(url):
+    requests.get(url)
+    requests.post(url, json={}, timeout=5)
+    urlopen(url)
+    urlopen(url, timeout=3)
+    pika.ConnectionParameters(host="mq")
+    pika.ConnectionParameters(host="mq", connection_attempts=5)
+    aio_pika.connect(url)
+    aio_pika.connect_robust(url)
+"""
+
+
+def test_python_reliability_rules() -> None:
+    assert tags("python", "m.py", PY_RELIABILITY) == [
+        ("no-timeout", 3),
+        ("no-timeout", 5),
+        ("no-retry", 7),
+        ("no-retry", 9),
+    ]
+
+
+JS_RELIABILITY = """async function f(url) {
+  await axios.get(url);
+  await axios.get(url, { timeout: 5000 });
+  const api = axios.create({ baseURL: url });
+  const ok = axios.create({ baseURL: url, timeout: 5000 });
+  await fetch(url);
+}
+"""
+
+
+def test_javascript_reliability_rules() -> None:
+    assert tags("javascript", "m.js", JS_RELIABILITY) == [("no-timeout", 2), ("no-timeout", 4)]
+
+
+GO_RELIABILITY = """package s
+
+func f() {
+\thttp.Get(u)
+\tc := &http.Client{}
+\tok := &http.Client{Timeout: 5 * time.Second}
+\thttp.DefaultClient.Do(req)
+\t_, err := run()
+\tif err != nil {
+\t}
+\tif err != nil {
+\t\treturn
+\t}
+\to := redis.Options{MaxRetries: -1}
+}
+"""
+
+
+def test_go_reliability_rules() -> None:
+    assert tags("go", "s.go", GO_RELIABILITY) == [
+        ("no-timeout", 4),
+        ("no-timeout", 5),
+        ("no-timeout", 7),
+        ("swallowed-error", 9),
+        ("no-retry", 14),
+    ]
+
+
+JAVA_RELIABILITY = """class C {
+  void f() {
+    HttpClient a = HttpClient.newHttpClient();
+    RestTemplate r = new RestTemplate();
+    RestTemplate ok = new RestTemplate(factory);
+    factory.setAutomaticRecoveryEnabled(false);
+  }
+}
+"""
+
+
+def test_java_reliability_rules() -> None:
+    assert tags("java", "C.java", JAVA_RELIABILITY) == [
+        ("no-timeout", 3),
+        ("no-timeout", 4),
+        ("no-retry", 6),
+    ]

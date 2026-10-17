@@ -304,6 +304,9 @@ RISKS = RiskSpec(
         Unsafe("cors-any-origin", "CORS origin '*'", _INVOKE, _p(r".*\.(?:allowedOrigins|setAllowedOrigins|addAllowedOrigin)\(\s*(?:(?:Arrays\.)?asList\(|List\.of\()?\s*\"\*\"\s*\)?\s*\)")),
         Unsafe("cors-any-origin", "@CrossOrigin allows every origin", frozenset({"marker_annotation"}), _p(r"@CrossOrigin")),
         Unsafe("cors-any-origin", "@CrossOrigin allows every origin", frozenset({"annotation"}), _p(r"@CrossOrigin\(\s*(?:origins\s*=\s*)?\"\*\"\s*\)")),
+        Unsafe("no-timeout", "HttpClient without connect timeout", _INVOKE, _p(r"HttpClient\.newHttpClient\(\s*\)")),
+        Unsafe("no-timeout", "RestTemplate without timeouts", _NEW, _p(r"new RestTemplate\(\s*\)")),
+        Unsafe("no-retry", "RabbitMQ automatic recovery turned off", _INVOKE, _p(r".*\.setAutomaticRecoveryEnabled\(\s*false\s*\)")),
     ),
     auth_markers=frozenset({"PreAuthorize", "Secured", "RolesAllowed", "PostAuthorize"}),
     loops=(

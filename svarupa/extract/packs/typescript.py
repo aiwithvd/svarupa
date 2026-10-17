@@ -624,6 +624,8 @@ RISKS = RiskSpec(
         Unsafe("cors-any-origin", "CORS with default origins (*)", _CALL, _p(r"cors\(\s*\)")),
         Unsafe("cors-any-origin", "CORS origin '*'", _PAIR, _p(r"origin\s*:\s*[\"']\*[\"']")),
         Unsafe("cors-any-origin", "Access-Control-Allow-Origin: *", _CALL, _p(r"\w+\.(?:setHeader|header|set)\(\s*[\"']Access-Control-Allow-Origin[\"']\s*,\s*[\"']\*[\"']\s*\)")),
+        Unsafe("no-timeout", "axios call without timeout", _CALL, _p(r"axios(?:\.(?:get|post|put|patch|delete|head|options|request))?\((?!.*\btimeout\s*:).*")),
+        Unsafe("no-timeout", "axios instance without timeout", _CALL, _p(r"axios\.create\((?!.*\btimeout\s*:).*")),
     ),
     auth_markers=frozenset({
         "authenticate", "isAuthenticated", "ensureAuthenticated", "ensureLoggedIn",
