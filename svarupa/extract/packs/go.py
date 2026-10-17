@@ -272,6 +272,11 @@ RISKS = RiskSpec(
         Unsafe("debug-enabled", "gin debug mode", _CALL, _p(r"gin\.SetMode\(\s*gin\.DebugMode\s*\)")),
         Unsafe("cors-any-origin", "CORS allows every origin", _KEYED, _p(r"AllowAllOrigins\s*:\s*true|Allow(?:ed)?Origins\s*:\s*\[\]string\{\s*\"\*\"\s*\}")),
     ),
+    loops=(("for_statement", "body"),),
+    datastore_calls=re.compile(
+        r"\.(?:Query|QueryContext|QueryRow|QueryRowContext|ExecContext)$"
+        r"|(?i:(?:^|\.)\w*(?:db|tx|conn|pool|repo|store|gorm))\.(?:Exec|Get|Select|First|Find|Take|Create|Save|Delete|Updates?|Where)$"
+    ),
 )
 # fmt: on
 

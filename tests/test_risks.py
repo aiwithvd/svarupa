@@ -417,3 +417,88 @@ def test_runtime_detail_is_the_callee() -> None:
     src = b"def f(ids):\n    for i in ids:\n        User.objects.get(id=i)\n"
     f = extractor("python").parse("m.py", src)
     assert [r.detail for r in f.risks] == ["User.objects.get"]
+
+
+JS_RUNTIME = """async function load(ids) {
+  for (const id of ids) {
+    await prisma.user.findUnique({ where: { id } });
+  }
+  await Promise.all(ids.map((id) => User.findById(id)));
+  for (const u of await this.userRepository.find()) {
+    console.log(u);
+  }
+  const data = fs.readFileSync(path);
+  try {
+    run();
+  } catch (e) {
+    // ignore
+  }
+  try {
+    run();
+  } catch (e) {
+    log(e);
+  }
+}
+function sync() {
+  return fs.readFileSync(path);
+}
+"""
+
+
+def test_javascript_runtime_facts_are_recorded() -> None:
+    assert risks("javascript", "m.js", JS_RUNTIME) == [
+        ("in-loop", "query", 3, "load"),
+        ("in-loop", "query", 5, "(anonymous)"),
+        ("blocking-async", "io", 9, "load"),
+        ("empty-catch", "catch", 12, "load"),
+    ]
+
+
+JAVA_RUNTIME = """class S {
+  void load(List<Long> ids) {
+    for (Long id : ids) {
+      userRepository.findById(id);
+    }
+    ids.forEach(id -> this.orderRepository.findByUserId(id));
+    for (User u : userRepository.findAll()) {
+      log(u);
+    }
+    try {
+      run();
+    } catch (Exception e) {
+      // ignore
+    }
+    try {
+      run();
+    } catch (Exception e) {
+      throw new RuntimeException(e);
+    }
+  }
+}
+"""
+
+
+def test_java_runtime_facts_are_recorded() -> None:
+    assert risks("java", "S.java", JAVA_RUNTIME) == [
+        ("in-loop", "query", 4, "load"),
+        ("in-loop", "query", 6, "(anonymous)"),
+        ("empty-catch", "catch", 12, "load"),
+    ]
+
+
+GO_RUNTIME = """package s
+
+func load(db *sql.DB, ids []int) {
+\tfor _, id := range ids {
+\t\tdb.QueryRow("SELECT 1 WHERE id = $1", id)
+\t}
+\trows, _ := db.Query("SELECT 1")
+\tfor rows.Next() {
+\t\tfmt.Println(rows)
+\t}
+}
+"""
+
+
+def test_go_runtime_facts_are_recorded() -> None:
+    assert risks("go", "s.go", GO_RUNTIME) == [("in-loop", "query", 5, "load")]
