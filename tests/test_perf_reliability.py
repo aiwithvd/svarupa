@@ -63,3 +63,39 @@ def test_clean_code_rates_performance_and_reliability_a(tmp_path: Path) -> None:
     write(tmp_path, "app/m.py", "def f():\n    return 1\n")
     h = run(tmp_path)
     assert (h.rating("performance"), h.rating("reliability")) == ("A", "A")
+
+
+SHARED = (
+    "services:\n"
+    "  api:\n"
+    "    build: ./api\n"
+    "    depends_on: [db]\n"
+    "  worker:\n"
+    "    build: ./worker\n"
+    "    environment:\n"
+    "      DATABASE_URL: postgres://app:${PW}@db:5432/app\n"
+    "  admin:\n"
+    "    image: adminer\n"
+    "    depends_on: [db]\n"
+    "  db:\n"
+    "    image: postgres:16\n"
+)
+
+
+def test_two_codebases_on_one_datastore_are_flagged(tmp_path: Path) -> None:
+    write(tmp_path, "docker-compose.yml", SHARED)
+    shared = [v for v in run(tmp_path).violations if v.check == "shared-datastore"]
+    assert len(shared) == 1
+    v = shared[0]
+    assert [e.start_line for e in v.evidence] == [12, 2, 5]
+    assert v.value == 2
+    assert v.message.startswith("db is used by 2 services (api, worker)")
+
+
+def test_one_codebase_with_two_services_is_not_shared(tmp_path: Path) -> None:
+    write(
+        tmp_path,
+        "docker-compose.yml",
+        SHARED.replace("build: ./worker", "build: ./api"),
+    )
+    assert [v for v in run(tmp_path).violations if v.check == "shared-datastore"] == []
