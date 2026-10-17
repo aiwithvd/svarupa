@@ -350,3 +350,70 @@ def test_java_sql_sinks_need_a_database_receiver() -> None:
 }
 """
     assert tags("java", "A.java", src) == [("sql", 5), ("sql", 6)]
+
+
+PY_RUNTIME = """def load(ids, User):
+    for i in ids:
+        User.objects.get(id=i)
+    return [db.session.get(User, i) for i in ids]
+
+
+def once(cur, ids):
+    for row in cur.execute("SELECT 1"):
+        print(row)
+
+
+async def handler(url):
+    requests.get(url, timeout=5)
+    time.sleep(1)
+
+
+def sync(url):
+    requests.get(url, timeout=5)
+
+
+def quiet():
+    try:
+        run()
+    except ValueError:
+        pass
+    try:
+        run()
+    except KeyError:  # nothing to do
+        pass
+    try:
+        run()
+    except OSError:
+        log.warning("failed")
+"""
+
+
+def test_python_runtime_facts_are_recorded() -> None:
+    assert risks("python", "m.py", PY_RUNTIME) == [
+        ("in-loop", "query", 3, "load"),
+        ("in-loop", "query", 4, "load"),
+        ("blocking-async", "io", 13, "handler"),
+        ("blocking-async", "io", 14, "handler"),
+        ("empty-catch", "catch", 24, "quiet"),
+        ("empty-catch", "catch", 28, "quiet"),
+    ]
+
+
+def test_nested_functions_have_their_own_loop_and_async_state() -> None:
+    src = (
+        "async def outer(ids):\n"
+        "    def helper():\n"
+        "        time.sleep(1)\n"
+        "    for i in ids:\n"
+        "        print(i)\n"
+        "    def later():\n"
+        "        session.query(X)\n"
+        "    return helper, later\n"
+    )
+    assert risks("python", "m.py", src) == []
+
+
+def test_runtime_detail_is_the_callee() -> None:
+    src = b"def f(ids):\n    for i in ids:\n        User.objects.get(id=i)\n"
+    f = extractor("python").parse("m.py", src)
+    assert [r.detail for r in f.risks] == ["User.objects.get"]

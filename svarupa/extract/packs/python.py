@@ -355,6 +355,27 @@ RISKS = RiskSpec(
         "Security", "permission_classes", "IsAuthenticated", "LoginRequiredMixin",
         "PermissionRequiredMixin", "verify_token",
     }),
+    loops=(
+        ("for_statement", "body"),
+        ("while_statement", "body"),
+        ("list_comprehension", "body"),
+        ("set_comprehension", "body"),
+        ("dictionary_comprehension", "body"),
+        ("generator_expression", "body"),
+    ),
+    datastore_calls=re.compile(
+        r"(?:^|\.)objects\.\w+$"
+        r"|\.query\.(?:get|get_or_404|filter|filter_by|first|all|one|count)$"
+        r"|(?:^|\.)(?:session|db|cursor|cur|conn|connection|engine|collection)\.(?:query|execute|executemany|get|scalar|scalars|scalar_one|first|find|find_one|insert_one|update_one|delete_one|aggregate|fetch|fetchrow|fetchval)$"
+    ),
+    async_marker="async",
+    blocking=re.compile(
+        r"^(?:requests\.(?:get|post|put|patch|delete|head|options|request)|time\.sleep"
+        r"|urllib\.request\.urlopen|urlopen|subprocess\.(?:run|call|check_call|check_output)"
+        r"|os\.system|psycopg2\.connect|sqlite3\.connect)$"
+    ),
+    catch_types=frozenset({"except_clause"}),
+    quiet=frozenset({"pass_statement", "comment"}),
 )
 # fmt: on
 

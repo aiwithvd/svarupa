@@ -227,8 +227,8 @@ class RiskFact:
     the source, so a fact can be printed anywhere.
     """
 
-    kind: str  # "sink-built" | "unsafe"
-    tag: str  # sink tag (sql/shell/code) or the unsafe check id
+    kind: str  # "sink-built" | "unsafe" | "in-loop" | "blocking-async" | "empty-catch"
+    tag: str  # sink tag (sql/shell/code), unsafe check id, or query/io/catch
     detail: str
     evidence: Evidence
     function: str  # enclosing function name, "" at module level
