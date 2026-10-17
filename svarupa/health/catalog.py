@@ -55,7 +55,7 @@ CATALOG: tuple[Check, ...] = (
     Check("cors-any-origin", "CORS allows every origin", 0, "CWE-942; OWASP A05:2021", "security", "major", 10, maturity="stable"),
     Check("endpoint-without-auth", "Write endpoint without auth", 0, "CWE-306; OWASP A01:2021", "security", "major", 20),
     Check("shared-datastore", "Datastore shared by services", 1, "Newman, Building Microservices: database per service", "performance", "major", 240),
-    Check("query-in-loop", "Query in a loop (N+1)", 0, "N+1 query anti-pattern; Fowler, PoEAA", "performance", "major", 20),
+    Check("query-in-loop", "Query in a loop (N+1)", 0, "N+1 query anti-pattern; Fowler, PoEAA", "performance", "major", 20, maturity="stable"),
     Check("blocking-in-async", "Blocking call in async code", 0, "Python asyncio docs: running blocking code; Node.js: Don't block the event loop", "performance", "major", 15),
     Check("hub-on-request-path", "Hub module on every request path", 2, "Arcan hub-like dependency on the request path", "performance", "major", 60),
     Check("no-timeout", "Outbound call without a timeout", 0, "CWE-1088; Nygard, Release It!: Timeouts", "reliability", "major", 10),

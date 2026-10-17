@@ -20,12 +20,7 @@ def test_perf_and_reliability_checks_are_in_the_catalog() -> None:
         ("no-retry", "reliability", "minor", 15),
     ):
         check = BY_ID[cid]
-        assert (check.area, check.severity, check.minutes, check.maturity) == (
-            area,
-            sev,
-            minutes,
-            "experimental",
-        )
+        assert (check.area, check.severity, check.minutes) == (area, sev, minutes)
 
 
 def test_runtime_facts_become_violations(tmp_path: Path) -> None:

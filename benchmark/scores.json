@@ -1,8 +1,8 @@
 {
  "bakerydemo": {
   "recall": 1.0,
-  "found": 30,
-  "total": 30,
+  "found": 33,
+  "total": 33,
   "missed": [],
   "fired": [],
   "by_kind": {
@@ -41,9 +41,17 @@
    "violation:module-cycle": [
     1,
     1
+   ],
+   "violation:query-in-loop": [
+    2,
+    2
+   ],
+   "violation:swallowed-error": [
+    1,
+    1
    ]
   },
-  "expected": "0224bc4f5448725f",
+  "expected": "f75a1b6266f6b8be",
   "design_found": []
  },
  "express-boilerplate": {
@@ -170,7 +178,7 @@
     1
    ]
   },
-  "expected": "da207c97be90593d",
+  "expected": "2415d82334c9d010",
   "design_found": []
  },
  "go-clean-arch": {
@@ -264,9 +272,9 @@
   "design_found": []
  },
  "microblog": {
-  "recall": 0.9697,
-  "found": 32,
-  "total": 33,
+  "recall": 0.9706,
+  "found": 33,
+  "total": 34,
   "missed": [
    "record:endpoint\tPOST /tokens\tapp/api"
   ],
@@ -299,9 +307,13 @@
    "violation:module-cycle": [
     1,
     1
+   ],
+   "violation:no-timeout": [
+    1,
+    1
    ]
   },
-  "expected": "46aa60b06730bc02",
+  "expected": "3109f3ccee8ba422",
   "design_found": []
  },
  "nestjs-prisma": {
@@ -378,8 +390,8 @@
  },
  "spring-realworld": {
   "recall": 1.0,
-  "found": 41,
-  "total": 41,
+  "found": 44,
+  "total": 44,
   "missed": [],
   "fired": [],
   "by_kind": {
@@ -418,9 +430,13 @@
    "violation:module-cycle": [
     1,
     1
+   ],
+   "violation:query-in-loop": [
+    3,
+    3
    ]
   },
-  "expected": "143ca5c225bc9fb7",
+  "expected": "763188b718fd567f",
   "design_found": [
    "onion"
   ]
