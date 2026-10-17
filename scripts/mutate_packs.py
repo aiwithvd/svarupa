@@ -19,7 +19,13 @@ Each entry breaks one promise of the walker; a test must go red:
 * a sink that needs `shell=True` fires only with it;
 * placeholders are never secrets;
 * an import line never counts as auth;
-* a location exception moves a violation to accepted.
+* a location exception moves a violation to accepted;
+* only a loop's body runs per item;
+* an async function is async;
+* a catch with code in it is not empty;
+* a forEach/map callback runs per item;
+* one codebase is one owner of a datastore;
+* a hub must be on every request path.
 """
 
 from __future__ import annotations
@@ -53,6 +59,8 @@ SUITE = [
     "tests/test_security.py",
     "tests/test_secrets.py",
     "tests/test_auth.py",
+    "tests/test_perf_reliability.py",
+    "tests/test_compose.py",
 ]
 
 MUTATIONS: list[tuple[str, str, str, str]] = [
@@ -253,6 +261,42 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
         "svarupa/health/__init__.py",
         "    return any(e.at and e.rule == v.check and e.at in places for e in exceptions)\n",
         "    return False\n",
+    ),
+    (
+        "a loop's iterable counts as its body",
+        "svarupa/extract/packs/walker.py",
+        "                    (c, in_loop or (body is not None and c.id == body.id))\n",
+        "                    (c, in_loop or body is not None)\n",
+    ),
+    (
+        "async functions are never async",
+        "svarupa/extract/packs/walker.py",
+        "            is_async = spec.async_marker is not None and any(\n",
+        "            is_async = False and any(\n",
+    ),
+    (
+        "a catch that does something counts as empty",
+        "svarupa/extract/packs/walker.py",
+        "        return body is not None and all(c.type in spec.quiet for c in body.named_children)\n",
+        "        return body is not None\n",
+    ),
+    (
+        "callbacks of forEach and map are not per item",
+        "svarupa/extract/packs/walker.py",
+        "                    per_item = in_loop or self._per_item(node, spec)\n",
+        "                    per_item = in_loop\n",
+    ),
+    (
+        "one codebase with two services counts as shared",
+        "svarupa/health/performance.py",
+        "        if len(codebases) <= check.threshold:\n",
+        "        if len(apps) <= check.threshold:\n",
+    ),
+    (
+        "a hub off some request paths is still flagged",
+        "svarupa/health/performance.py",
+        "        common &= _reach(uses, m)\n",
+        "        common |= _reach(uses, m)\n",
     ),
 ]
 

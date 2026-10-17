@@ -240,3 +240,9 @@ def test_headers_and_import_groups_are_not_duplication(
         p: (tmp_path / p).read_text(encoding="utf8") for p in (f"app/a.{ext}", f"app/b.{ext}")
     }
     assert duplicated_blocks(texts) == []
+
+
+def test_an_area_without_checks_has_no_grade() -> None:
+    from svarupa.health.score import _area_rating
+
+    assert _area_rating("usability", []) is None
