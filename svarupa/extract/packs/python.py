@@ -369,8 +369,9 @@ RISKS = RiskSpec(
     ),
     datastore_calls=re.compile(
         r"(?:^|\.)objects\.\w+$"
-        r"|\.query\.(?:get|get_or_404|filter|filter_by|first|all|one|count)$"
-        r"|(?:^|\.)(?:session|db|cursor|cur|conn|connection|engine|collection)\.(?:query|execute|executemany|get|scalar|scalars|scalar_one|first|find|find_one|insert_one|update_one|delete_one|aggregate|fetch|fetchrow|fetchval)$"
+        r"|(?:^|\.)[A-Z]\w*\.query\.(?:get|get_or_404|filter|filter_by|first|all|one|count)$"
+        r"|(?:^|\.)(?:db\.session|cursor|cur|collection)\.(?:query|execute|executemany|get|scalar|scalars|scalar_one|first|find|find_one|insert_one|update_one|delete_one|aggregate|fetch|fetchrow|fetchval)$"
+        r"|(?:^|\.)(?:session|db|conn|connection|engine)\.(?:query|execute|executemany|scalar|scalars|scalar_one|fetch|fetchrow|fetchval)$"
     ),
     async_marker="async",
     blocking=re.compile(

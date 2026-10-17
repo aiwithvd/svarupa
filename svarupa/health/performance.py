@@ -27,6 +27,13 @@ def _datastore(graph: Graph, nid: str) -> bool:
     return node is not None and node.kind is NodeKind.DATASTORE
 
 
+def _codebase(graph: Graph, nid: str) -> str | None:
+    """The folder a service builds; the raw context when it leaves the repo.
+    The root is "", which is a real answer, not a missing one."""
+    ctx = build_context_of(graph, nid)
+    return ctx if ctx is not None else graph.nodes[nid].attr("build_context")
+
+
 def shared_datastores(graph: Graph) -> list[Violation]:
     """A datastore that services from two or more codebases use."""
     check = BY_ID["shared-datastore"]
@@ -44,9 +51,7 @@ def shared_datastores(graph: Graph) -> list[Violation]:
                 users.setdefault(dst, set()).add(nid)
     out: list[Violation] = []
     for dst, apps in sorted(users.items()):
-        codebases = {
-            build_context_of(graph, a) or graph.nodes[a].attr("build_context") for a in apps
-        }
+        codebases = {_codebase(graph, a) for a in apps}
         if len(codebases) <= check.threshold:
             continue
         store = graph.nodes[dst]

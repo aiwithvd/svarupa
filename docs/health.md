@@ -83,7 +83,7 @@ How each one decides:
 | Id | Fires on | Source | Severity | Minutes |
 |---|---|---|---|---|
 | shared-datastore | services built from two or more codebases use the same compose datastore (`depends_on`, `links`, or a connection setting that names it) | Newman, Building Microservices: database per service | major | 240 |
-| query-in-loop | a database query inside a loop body, or inside a `forEach`/`map` callback | N+1 query anti-pattern; Fowler, PoEAA | major | 20 |
+| query-in-loop | a database query inside a loop body, or inside a `forEach`/`map` callback (in Java, `map` only on a stream: `Optional.map` runs once) | N+1 query anti-pattern; Fowler, PoEAA | major | 20 |
 | blocking-in-async | a blocking call (`requests`, `time.sleep`, `fs.readFileSync`, `bcrypt.hashSync`...) inside an async function | Python asyncio docs; Node.js "Don't block the event loop" | major | 15 |
 | hub-on-request-path | a hub module (the `hub-module` limits) that every route module reaches, with at least 3 route modules | Arcan hub-like dependency | major | 60 |
 
@@ -105,7 +105,7 @@ How each one decides:
 | Id | Fires on | Source | Severity | Minutes |
 |---|---|---|---|---|
 | no-timeout | `requests` or `urlopen` without `timeout=`, axios without `timeout`, Go's default HTTP client, `http.Client{}` without `Timeout`, Java `HttpClient.newHttpClient()` and `new RestTemplate()` | CWE-1088; Nygard, Release It! | major | 10 |
-| swallowed-error | an `except` or `catch` whose body is empty, `pass` or comments; Go `if err != nil {}` | CWE-390; Bandit B110 | major | 10 |
+| swallowed-error | an `except` or `catch` whose body is empty, `pass` or comments; Go `if err != nil {}` with nothing but comments inside | CWE-390; Bandit B110 | major | 10 |
 | no-retry | a client built with retries off or a single attempt: pika without `connection_attempts`, `aio_pika.connect` (not `connect_robust`), Redis `MaxRetries: -1`, RabbitMQ automatic recovery off | Nygard, Release It! | minor | 15 |
 
 `fetch` is not flagged: Node's fetch has 300-second timeouts by default and

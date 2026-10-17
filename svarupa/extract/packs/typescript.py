@@ -641,7 +641,7 @@ RISKS = RiskSpec(
     ),
     loop_callee=re.compile(r"\.(?:forEach|map|flatMap)$"),
     datastore_calls=re.compile(
-        r"(?:^|\.)(?:prisma|db|tx|client)\.\w+\.(?:find\w*|create\w*|update\w*|upsert|delete\w*|count|aggregate|groupBy)$"
+        r"(?:^|\.)(?:prisma|db|tx)\.\w+\.(?:find\w*|create\w*|update\w*|upsert|delete\w*|count|aggregate|groupBy)$"
         r"|(?:^|\.)\w*(?:[Rr]epo|[Rr]epository|[Mm]odel)\.(?:find\w*|save|insert|update|delete|remove|count\w*|exists\w*|query|create)$"
         r"|^[A-Z]\w*\.(?:find|findOne|findById|findOneAndUpdate|updateOne|updateMany|deleteOne|deleteMany|countDocuments|aggregate|exists)$"
         r"|(?:^|\.)(?:pool|client|db|conn|connection|knex|sql|database|pg)\.(?:query|execute|one|many|any|oneOrNone|manyOrNone)$"

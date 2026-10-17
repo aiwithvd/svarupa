@@ -315,10 +315,11 @@ RISKS = RiskSpec(
         ("while_statement", "body"),
         ("do_statement", "body"),
     ),
-    loop_callee=re.compile(r"\.(?:forEach|map|flatMap)$"),
+    # `Optional.map` runs once: only a stream maps per item.
+    loop_callee=re.compile(r"\.stream\(\).*\.(?:map|flatMap|forEach)$|\.forEach$"),
     datastore_calls=re.compile(
         r"(?:^|\.)\w*(?:[Rr]epository|[Rr]epo|[Dd]ao|[Mm]apper)\.(?:find\w*|get\w*|save\w*|select\w*|insert\w*|update\w*|delete\w*|count\w*|exists\w*)$"
-        r"|(?i:(?:^|\.)\w*(?:jdbctemplate|template|entitymanager|em|session))\.(?:query\w*|find|get|createQuery|createNativeQuery|update|execute|persist|merge)$"
+        r"|(?:^|\.)(?:\w*(?:[Jj]dbc|[Mm]ongo)Template|jdbc|em|entityManager|\w*EntityManager|session|\w*Session)\.(?:query\w*|find|get|createQuery|createNativeQuery|update|execute|persist|merge)$"
         r"|(?:^|\.)(?:executeQuery|executeUpdate)$"
     ),
     catch_types=frozenset({"catch_clause"}),

@@ -217,6 +217,10 @@ class RiskSpec:
     async_marker: str | None = None  # keyword token that makes a function async
     blocking: re.Pattern[str] | None = None  # sync I/O that stalls an event loop
     catch_types: frozenset[str] = frozenset()  # except/catch clauses
+    catch_body: str = "body"  # the clause's body field (Go: `consequence`)
+    # Go has no catch: an `if` whose condition matches this, with no `else`,
+    # is the error handler (`if err != nil {}`).
+    catch_guard: re.Pattern[str] | None = None
     quiet: frozenset[str] = frozenset()  # statements that do nothing: pass, comments
 
 

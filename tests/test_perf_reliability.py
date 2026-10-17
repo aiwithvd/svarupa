@@ -135,3 +135,20 @@ def test_a_route_module_that_avoids_the_hub_clears_it(tmp_path: Path) -> None:
         tmp_path, "api9/routes.py", ROUTE.replace("from hub.core import run\n", "run = len\n")
     )
     assert [v for v in run(tmp_path).violations if v.check == "hub-on-request-path"] == []
+
+
+def test_root_build_context_spelled_two_ways_is_one_codebase(tmp_path: Path) -> None:
+    write(
+        tmp_path,
+        "docker-compose.yml",
+        "services:\n"
+        "  api:\n"
+        "    build: .\n"
+        "    depends_on: [db]\n"
+        "  migrate:\n"
+        "    build: {context: ./}\n"
+        "    depends_on: [db]\n"
+        "  db:\n"
+        "    image: postgres:16\n",
+    )
+    assert [v for v in run(tmp_path).violations if v.check == "shared-datastore"] == []

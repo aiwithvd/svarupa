@@ -563,7 +563,7 @@ def test_go_reliability_rules() -> None:
         ("no-timeout", 4),
         ("no-timeout", 5),
         ("no-timeout", 7),
-        ("swallowed-error", 9),
+        ("catch", 9),
         ("no-retry", 14),
     ]
 
@@ -585,3 +585,80 @@ def test_java_reliability_rules() -> None:
         ("no-timeout", 4),
         ("no-retry", 6),
     ]
+
+
+def test_go_error_block_with_a_comment_and_code_is_not_swallowed() -> None:
+    src = (
+        "package s\n\n"
+        "func f() error {\n"
+        "\tif err != nil {\n"
+        "\t\t// the file may not exist yet\n"
+        "\t\treturn nil\n"
+        "\t}\n"
+        "\tif err := g(); err != nil {\n"
+        "\t\t// retry later\n"
+        "\t\tlog.Println(err)\n"
+        "\t}\n"
+        "\tif err != nil {\n"
+        "\t\t// ignored on purpose\n"
+        "\t}\n"
+        "\treturn nil\n"
+        "}\n"
+    )
+    assert risks("go", "s.go", src) == [("empty-catch", "catch", 12, "f")]
+
+
+def test_java_optional_map_is_not_a_loop() -> None:
+    src = """class S {
+  void f(String u, List<Long> ids) {
+    userRepository.findByUsername(u).map(t -> userRepository.saveRelation(t));
+    ids.stream().map(id -> userRepository.findById(id));
+  }
+}
+"""
+    assert risks("java", "S.java", src) == [("in-loop", "query", 4, "(anonymous)")]
+
+
+def test_non_database_calls_in_loops_are_not_queries() -> None:
+    py = (
+        "def f(urls, request):\n"
+        "    for u in urls:\n"
+        "        session.get(u)\n"
+        "        self.session.get(u)\n"
+        "        request.query.get('x')\n"
+        "        User.query.get(u)\n"
+        "        db.session.get(User, u)\n"
+    )
+    assert [r[2] for r in risks("python", "m.py", py)] == [6, 7]
+    go = (
+        "package s\n\n"
+        "func f() {\n"
+        "\tfor _, x := range xs {\n"
+        "\t\tr.URL.Query()\n"
+        "\t\tbufPool.Get()\n"
+        '\t\tsessionStore.Get(r, "s")\n'
+        '\t\tctx.Get("k")\n'
+        '\t\tdb.QueryRow("SELECT 1")\n'
+        "\t\ts.db.Where(x).First(&u)\n"
+        "\t}\n"
+        "}\n"
+    )
+    assert [r[2] for r in risks("go", "s.go", go)] == [9, 10]
+    java = """class S {
+  void f(List<Item> items) {
+    for (Item item : items) {
+      item.get();
+      em.find(Item.class, 1);
+    }
+  }
+}
+"""
+    assert [r[2] for r in risks("java", "S.java", java)] == [5]
+    js = """async function f(xs) {
+  for (const x of xs) {
+    await client.messages.create({});
+    await prisma.user.create({});
+  }
+}
+"""
+    assert [r[2] for r in risks("javascript", "m.js", js)] == [4]

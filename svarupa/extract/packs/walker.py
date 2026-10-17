@@ -411,8 +411,8 @@ class Ctx:
     ) -> None:
         """Queries in a loop body, blocking calls in async code, empty catches."""
         t = node.type
-        if t in spec.catch_types and self._quiet(node, spec):
-            keyword = node.children[0].type if node.children else "catch"
+        if t in spec.catch_types and self._guarded(node, spec) and self._quiet(node, spec):
+            keyword = "error check" if spec.catch_guard else node.children[0].type
             out.append(
                 RiskFact(
                     "empty-catch", "catch", f"empty {keyword}", self.node_evidence(node), scope
@@ -435,9 +435,20 @@ class Ctx:
                 )
             )
 
+    def _guarded(self, clause: TSNode, spec: RiskSpec) -> bool:
+        """Whether this clause handles an error (always, unless the pack needs a guard)."""
+        if spec.catch_guard is None:
+            return True
+        cond = clause.child_by_field_name("condition")
+        return (
+            cond is not None
+            and clause.child_by_field_name("alternative") is None
+            and spec.catch_guard.fullmatch(" ".join(self.text(cond).split())) is not None
+        )
+
     def _quiet(self, clause: TSNode, spec: RiskSpec) -> bool:
         """An except/catch whose body does nothing: empty, `pass` or comments."""
-        body = clause.child_by_field_name("body")
+        body = clause.child_by_field_name(spec.catch_body)
         if body is None:  # Python: the block is the last named child
             kids = clause.named_children
             body = kids[-1] if kids else None
