@@ -5,7 +5,8 @@ A finding is matched by what it is, not where it is: the same check in the
 same file on the same definition (or, with no definition, the same message
 with its numbers blanked) is the same finding, so moving code never makes
 it new. Matching is a multiset: a second copy of an old finding is new.
-A finding that moved to another file (a rename) is matched too.
+A finding that moved to another file is matched too, but only when its old
+file is gone from the head tree (a rename, move or delete).
 """
 
 from __future__ import annotations
@@ -29,6 +30,7 @@ __all__ = [
     "Finding",
     "Snapshot",
     "analyze",
+    "analyze_with_files",
     "base_from_ref",
     "compare",
     "snapshot",
@@ -81,15 +83,19 @@ class Finding:
 class Snapshot:
     findings: tuple[Finding, ...]
     ratings: tuple[tuple[str, str | None], ...]
+    # The head tree's repository-relative file paths. None when unknown: then
+    # no finding is matched across files.
+    files: frozenset[str] | None = None
 
 
-def snapshot(health: Health) -> Snapshot:
+def snapshot(health: Health, files: frozenset[str] | None = None) -> Snapshot:
     return Snapshot(
         tuple(
             Finding(v.check, v.evidence[0].file, v.evidence[0].start_line, v.symbol, v.message)
             for v in health.violations
         ),
         health.ratings,
+        files,
     )
 
 
@@ -196,10 +202,14 @@ def _unmatched(items: tuple[Finding, ...], other: tuple[Finding, ...]) -> tuple[
 
 
 def _without_moved(
-    new: tuple[Finding, ...], fixed: tuple[Finding, ...]
+    new: tuple[Finding, ...], fixed: tuple[Finding, ...], head_files: frozenset[str] | None
 ) -> tuple[tuple[Finding, ...], tuple[Finding, ...]]:
-    """Pair leftover new and fixed findings that only differ by file."""
-    left = Counter(f.moved_key for f in fixed)
+    """Pair leftover new and fixed findings that only differ by file, when
+    the fixed finding's file is gone from the head tree."""
+    if head_files is None:
+        return new, fixed
+    gone = tuple(f for f in fixed if f.file not in head_files)
+    left = Counter(f.moved_key for f in gone)
     kept_new: list[Finding] = []
     paired: Counter[tuple[str, str]] = Counter()
     for f in new:
@@ -210,7 +220,7 @@ def _without_moved(
             kept_new.append(f)
     kept_fixed: list[Finding] = []
     for f in fixed:
-        if paired[f.moved_key] > 0:
+        if f.file not in head_files and paired[f.moved_key] > 0:
             paired[f.moved_key] -= 1
         else:
             kept_fixed.append(f)
@@ -221,7 +231,9 @@ def compare(base: Snapshot, head: Snapshot) -> Delta:
     before, after = dict(base.ratings), dict(head.ratings)
     areas = [a for a, _ in head.ratings] + [a for a in before if a not in after]
     new, fixed = _without_moved(
-        _unmatched(head.findings, base.findings), _unmatched(base.findings, head.findings)
+        _unmatched(head.findings, base.findings),
+        _unmatched(base.findings, head.findings),
+        head.files,
     )
     return Delta(
         new=new,
@@ -235,6 +247,12 @@ def compare(base: Snapshot, head: Snapshot) -> Delta:
 def analyze(root: Path, rules_root: Path) -> Health:
     """The health of the tree at `root`, judged by the rules (design.yaml,
     exceptions, auth markers) at `rules_root`. Writes nothing."""
+    return analyze_with_files(root, rules_root)[0]
+
+
+def analyze_with_files(root: Path, rules_root: Path) -> tuple[Health, frozenset[str]]:
+    """Like `analyze`, and the scanned file paths of the tree, relative to
+    `root` (the same paths findings use)."""
     from svarupa.build import build
     from svarupa.design import design_for
     from svarupa.design.file import DESIGN_FILE, load_design
@@ -246,7 +264,7 @@ def analyze(root: Path, rules_root: Path) -> Health:
     graph = build(scan, extract(scan, declared_dependencies(scan)), strict=False)
     accepted, _ = load_design(rules_root / DESIGN_FILE)
     design = design_for(scan, graph, accepted)
-    return assess(
+    health = assess(
         graph,
         source_texts(scan, graph),
         design,
@@ -254,6 +272,7 @@ def analyze(root: Path, rules_root: Path) -> Health:
         secrets=secret_texts(scan),
         auth_markers=tuple(accepted.auth_markers) if accepted else (),
     )
+    return health, frozenset([f.path for f in scan.files] + list(scan.others))
 
 
 def _git(cwd: Path, *args: str) -> str:

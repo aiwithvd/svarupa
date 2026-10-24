@@ -22,8 +22,8 @@ def f(
     return Finding(check, file, line, symbol, message)
 
 
-def snap(*found: Finding, ratings=RATINGS) -> Snapshot:
-    return Snapshot(tuple(found), ratings)
+def snap(*found: Finding, ratings=RATINGS, files: frozenset[str] | None = None) -> Snapshot:
+    return Snapshot(tuple(found), ratings, files)
 
 
 def test_a_moved_finding_is_not_new() -> None:
@@ -47,7 +47,7 @@ def test_digits_in_messages_do_not_break_matching() -> None:
 def test_a_renamed_file_is_moved_not_new() -> None:
     old = f(file="sub/a.py", symbol="sub/a.py#sub.a.f")
     new = f(file="sub/b.py", symbol="sub/b.py#sub.b.f")
-    d = compare(snap(old), snap(new))
+    d = compare(snap(old), snap(new, files=frozenset({"sub/b.py"})))
     assert d.new == () and d.fixed == ()
 
 
@@ -58,7 +58,7 @@ def test_a_renamed_file_without_a_symbol_is_moved() -> None:
     new = f(
         check="large-file", file="b.py", symbol=None, message="b.py has 1200 lines (limit 1000)"
     )
-    d = compare(snap(old), snap(new))
+    d = compare(snap(old), snap(new, files=frozenset({"b.py"})))
     assert d.new == () and d.fixed == ()
 
 
@@ -73,7 +73,7 @@ def test_moved_pairing_is_a_multiset() -> None:
     old = f(file="a.py", symbol="a.py#a.f")
     new1 = f(file="b.py", symbol="b.py#b.f")
     new2 = f(file="c.py", symbol="c.py#c.f")
-    d = compare(snap(old), snap(new1, new2))
+    d = compare(snap(old), snap(new1, new2, files=frozenset({"b.py", "c.py"})))
     assert d.new == (new2,) and d.fixed == ()
 
 
@@ -81,8 +81,34 @@ def test_an_exact_match_wins_over_a_rename() -> None:
     old = f(file="a.py", symbol="a.py#a.f", line=1)
     same = f(file="a.py", symbol="a.py#a.f", line=40)
     other = f(file="b.py", symbol="b.py#b.f", line=5)
-    d = compare(snap(old), snap(other, same))
+    d = compare(snap(old), snap(other, same, files=frozenset({"a.py", "b.py"})))
     assert d.new == (other,) and d.fixed == ()
+
+
+def _save(file: str) -> Finding:
+    return f(
+        check="long-function",
+        file=file,
+        symbol=f"{file}#{file[:-3]}.save",
+        message="save is 60 lines (limit 50)",
+    )
+
+
+def test_a_finding_in_a_file_that_still_exists_is_not_paired() -> None:
+    fixed, new = _save("y.py"), _save("x.py")
+    d = compare(snap(fixed), snap(new, files=frozenset({"x.py", "y.py"})))
+    assert d.new == (new,) and d.fixed == (fixed,) and d.failed("minor")
+
+
+def test_a_finding_whose_file_is_gone_is_paired() -> None:
+    d = compare(snap(_save("y.py")), snap(_save("x.py"), files=frozenset({"x.py"})))
+    assert d.new == () and d.fixed == ()
+
+
+def test_unknown_head_files_never_pair_across_files() -> None:
+    fixed, new = _save("y.py"), _save("x.py")
+    d = compare(snap(fixed), snap(new))
+    assert d.new == (new,) and d.fixed == (fixed,)
 
 
 def test_a_grade_drop_fails_alone() -> None:
@@ -278,6 +304,24 @@ def test_a_git_rename_is_not_new(tmp_path: Path, capsys) -> None:
     code = main(["check", str(tmp_path / "sub"), "--base", "HEAD~1", "--json"])
     out = json.loads(capsys.readouterr().out)
     assert code == 0 and out["new"] == [] and out["fixed"] == []
+
+
+def test_a_same_named_function_in_another_file_is_still_new(tmp_path: Path, capsys) -> None:
+    git_repo(tmp_path)
+    six = "class A:\n    def save(self, a, b, c, d, e, f):\n        return a\n"
+    one = "class B:\n    def save(self, a):\n        return a\n"
+    write(tmp_path, "a.py", one)
+    write(tmp_path, "b.py", six.replace("class A", "class B"))
+    git = ["git", "-C", str(tmp_path)]
+    subprocess.run([*git, "add", "."], check=True, capture_output=True)
+    subprocess.run([*git, "commit", "-q", "-m", "two"], check=True)
+    write(tmp_path, "a.py", six.replace("class A", "class B"))
+    write(tmp_path, "b.py", one)
+    code = main(["check", str(tmp_path), "--base", "HEAD", "--json"])
+    out = json.loads(capsys.readouterr().out)
+    assert code == 3
+    assert [(v["check"], v["file"]) for v in out["new"]] == [("many-parameters", "a.py")]
+    assert [v["file"] for v in out["fixed"]] == ["b.py"]
 
 
 def test_check_does_not_run_the_users_post_checkout_hook(tmp_path: Path) -> None:

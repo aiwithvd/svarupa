@@ -546,7 +546,7 @@ def _check(argv: list[str]) -> int:
 
     from svarupa.check import (
         CheckError,
-        analyze,
+        analyze_with_files,
         base_from_ref,
         compare,
         snapshot,
@@ -578,7 +578,8 @@ def _check(argv: list[str]) -> int:
             base = snapshot_from_json(json.loads(Path(args.base).read_text(encoding="utf8")))
         else:
             base = snapshot(base_from_ref(root, args.base))
-        head = snapshot(analyze(root, root))
+        health, files = analyze_with_files(root, root)
+        head = snapshot(health, files)
     except (CheckError, OSError, ValueError) as exc:
         print(f"svarupa check: {exc}", file=sys.stderr)
         return 1
