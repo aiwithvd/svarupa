@@ -28,7 +28,9 @@ Each entry breaks one promise of the walker; a test must go red:
 * a hub must be on every request path;
 * function checks need an example in every language;
 * a JavaScript finding shows the TypeScript example;
-* a box counts only its own findings.
+* a box counts only its own findings;
+* moved code is never a new finding;
+* a grade drop fails the check.
 """
 
 from __future__ import annotations
@@ -66,6 +68,7 @@ SUITE = [
     "tests/test_compose.py",
     "tests/test_explain.py",
     "tests/test_about.py",
+    "tests/test_check.py",
 ]
 
 MUTATIONS: list[tuple[str, str, str, str]] = [
@@ -320,6 +323,18 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
         "svarupa/derive/about.py",
         "        return list(ix.by_module.get(module, []))\n",
         "        return [v for vs in ix.by_module.values() for v in vs]\n",
+    ),
+    (
+        "line numbers decide whether a finding is new",
+        "svarupa/check.py",
+        '        return (self.check, self.file, self.symbol or _DIGITS.sub("#", self.message))\n',
+        '        return (self.check, self.file, f"{self.line}")\n',
+    ),
+    (
+        "a grade drop does not fail the check",
+        "svarupa/check.py",
+        "        return bool(self.worse()) or any(\n",
+        "        return False or any(\n",
     ),
 ]
 

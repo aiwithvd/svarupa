@@ -351,7 +351,13 @@ def _real_flags() -> set[str]:
     import io
 
     flags: set[str] = set()
-    for args in (["--help"], ["setup", "--help"], ["query", "--help"]):
+    for args in (
+        ["--help"],
+        ["setup", "--help"],
+        ["query", "--help"],
+        ["check", "--help"],
+        ["explain", "--help"],
+    ):
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf), pytest.raises(SystemExit):
             main(args)
@@ -447,3 +453,16 @@ def test_the_skill_names_the_artifact_files_that_actually_exist() -> None:
     them. If emit renames one, this is what fails."""
     for name in ("index.html", "graph.json", "REPORT.md"):
         assert name in SKILL_MD, f"SKILL.md no longer mentions {name}"
+
+
+def test_the_skill_teaches_the_check_workflow() -> None:
+    assert "## Before and after you write code" in SKILL_MD
+    assert "svarupa check <path> --base HEAD --json" in SKILL_MD
+    assert "get_design_rules --json" in SKILL_MD
+
+
+def test_the_skill_names_the_real_number_of_mcp_tools() -> None:
+    from svarupa.query import FUNCTIONS
+
+    words = {7: "seven", 8: "eight", 9: "nine", 10: "ten", 11: "eleven", 12: "twelve"}
+    assert f"serves the same {words[len(FUNCTIONS)]}" in SKILL_MD

@@ -112,11 +112,30 @@ output; a `truncated` banner names how much was cut against a budget measured
 on the printed JSON; zero hits exits 1. Exit 0 means the question was
 answered (an empty `affected` list is an answer).
 
-For an agent runtime, `svarupa mcp <artifact-dir>` serves the same seven
+For an agent runtime, `svarupa mcp <artifact-dir>` serves the same nine
 functions as MCP tools over stdio (needs the optional dependency:
 `pip install 'svarupa[mcp]'`; without it the command refuses with
 `SVA-Q-002`). Tool names and parameters follow Graphify's, answers follow
 svarupa's rules above.
+
+## Before and after you write code
+
+When you change code in a repository Svarupa has analyzed, follow its rules
+and prove the change is clean:
+
+1. Run `svarupa <path>` once, or reuse a fresh `<path>/.svarupa/`.
+2. Before editing, read the rules:
+   `svarupa query <path>/.svarupa get_design_rules --json`. Each unit lists
+   its parts and the import directions that are forbidden; `checks` lists
+   every health rule with its limit and how to stay within it.
+3. After editing, check the change against the last commit:
+   `svarupa check <path> --base HEAD --json`. It lists only the violations
+   your change added (moved code does not count) and any grade that got
+   worse. Exit 0 means clean; exit 3 means fix it before you finish.
+4. For each new violation, `svarupa explain <check>` says why it matters and
+   how to fix it. If the violation is right on purpose, propose an exception
+   with a reason in `.svarupa/design.yaml` and say so; never weaken a rule
+   silently. Use `--min-severity major` only when the user asked for it.
 
 ## Architecture diff between commits
 
