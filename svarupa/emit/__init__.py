@@ -23,6 +23,7 @@ from pathlib import Path
 
 from svarupa import __version__
 from svarupa.build import Graph
+from svarupa.derive.about import about_lines
 from svarupa.derive.base import DiagramKind, DiagramSet
 from svarupa.design import Design
 from svarupa.design.file import DESIGN_NAME
@@ -125,7 +126,10 @@ def emit(
     head, dirty = git_state(root)
     # graph.json is built once: the report quotes its counts (review #23 F5:
     # REPORT.md said 132 nodes where graph.json held 184).
-    gj = graph_json(graph, rationale, head, dirty, health, design)
+    about = about_lines(graph, health, produced)
+    gj = graph_json(
+        graph, rationale, head, dirty, health, design, {k: a.text for k, a in about.items()}
+    )
     written.append(
         (
             "graph.json",
@@ -142,7 +146,7 @@ def emit(
 
     shown = display_root if display_root is not None else root.name
     html = render_viewer(
-        shown, produced, laid_out, notes, style, __version__, graph, health, design
+        shown, produced, laid_out, notes, style, __version__, graph, health, design, about=about
     )
     written.append(("index.html", _write_text(directory / "index.html", html)))
 

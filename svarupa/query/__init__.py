@@ -174,13 +174,17 @@ def get_node(index: GraphIndex, label: str) -> dict[str, Any]:
     if nid is None:
         return err
     n = index.nodes[nid]
-    return {
+    out: dict[str, Any] = {
         "query": label,
         "matched_by": by,
         "match": {**_brief(n), "lang": n.get("lang"), "attrs": n.get("attrs", {})},
         "out_degree": len(index.out.get(nid, [])),
         "in_degree": len(index.inc.get(nid, [])),
     }
+    about: Any = index.data.get("about")
+    if isinstance(about, dict) and nid in about:
+        out["about"] = cast("dict[str, Any]", about)[nid]
+    return out
 
 
 def get_neighbors(

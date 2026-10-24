@@ -120,3 +120,36 @@ def test_a_file_box_names_what_it_defines(tmp_path: Path) -> None:
     got = lines(tmp_path, with_health=False)
     assert got["api/routes.py"].text == "File api/routes.py: defines 2 functions."
     assert got["api/deps.py"].text == "File api/deps.py: defines 2 classes."
+
+
+import json  # noqa: E402
+
+from svarupa.cli import main  # noqa: E402
+
+
+def test_about_reaches_graph_json_get_node_and_the_page(tmp_path: Path, capsys) -> None:
+    api_repo(tmp_path)
+    assert main([str(tmp_path)]) == 0
+    capsys.readouterr()
+    gj = json.loads((tmp_path / ".svarupa" / "graph.json").read_text(encoding="utf8"))
+    assert gj["about"]["api"].startswith("Module api: serves 2 HTTP routes")
+    assert main(["query", str(tmp_path / ".svarupa"), "get_node", "api", "--json"]) == 0
+    assert json.loads(capsys.readouterr().out)["about"].startswith("Module api:")
+    html = (tmp_path / ".svarupa" / "index.html").read_text(encoding="utf8")
+    assert 'id="about-data"' in html and html.count("<script") == 1
+    assert 'id="panel-about"' in html
+
+
+def test_about_data_is_escaped_in_the_page(tmp_path: Path) -> None:
+    write(
+        tmp_path,
+        "docker-compose.yml",
+        'services:\n  "x</script><b>":\n    image: redis\n',
+    )
+    api_repo(tmp_path)
+    assert main([str(tmp_path)]) == 0
+    html = (tmp_path / ".svarupa" / "index.html").read_text(encoding="utf8")
+    start = html.index('id="about-data"')
+    tag_text = html[start : html.index(">", start)]
+    assert "<" not in tag_text and "&lt;/script&gt;" in tag_text
+    assert html.count("<script") == 1

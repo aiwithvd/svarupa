@@ -17,7 +17,11 @@ Three properties, in the order they were designed for:
 
 from __future__ import annotations
 
+import json
+from collections.abc import Mapping
+
 from svarupa.build import Graph
+from svarupa.derive.about import About
 from svarupa.derive.base import DiagramKind, DiagramSet
 from svarupa.design import Design
 from svarupa.emit.cards import Card, cards_for, chapters_for, render_cards, render_guided
@@ -330,6 +334,7 @@ aside.is-open { transform: none; }
 aside .eyebrow { margin: 0 0 4px; font-size: 9px; letter-spacing: .16em; text-transform: uppercase; color: var(--accent); font-weight: 700; }
 aside h2 { font-size: 15px; margin: 0 0 2px; font-family: var(--mono); font-weight: 700; padding-right: 60px; }
 aside .sub { margin: 0 0 10px; color: var(--dim); font-size: 11px; }
+aside .about { margin: 0 0 10px; font-size: 12px; }
 aside .chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 0 0 10px; }
 aside .chips span { font-size: 9px; letter-spacing: .08em; text-transform: uppercase; padding: 2px 7px; border: 1px solid var(--line); border-radius: 3px; color: var(--dim); }
 aside .chips span.chip-kind { border-color: var(--k); color: var(--k); background: color-mix(in srgb, var(--k) 12%, transparent); font-weight: 700; }
@@ -524,6 +529,10 @@ def _js() -> Markup:
   var metaEl = document.getElementById('panel-meta');
   var alsoEl = document.getElementById('panel-also');
   var sumEl = document.getElementById('panel-summary');
+  var aboutEl = document.getElementById('panel-about');
+  var whyEl = document.getElementById('panel-why');
+  var ABOUT = {};
+  try { ABOUT = JSON.parse(document.getElementById('about-data').getAttribute('data-json') || '{}'); } catch (e) { ABOUT = {}; }
   var outEl = document.getElementById('panel-out');
   var outH = document.getElementById('panel-out-h');
   var inEl = document.getElementById('panel-in');
@@ -620,6 +629,11 @@ def _js() -> Markup:
     var isFrame = node.classList.contains('sv-boundary');
     eyebrowEl.textContent = isFrame ? 'Frame' : 'Passport';
     subEl.textContent = node.getAttribute('data-sublabel') || '';
+    var line = isFrame ? null : ABOUT[id];
+    aboutEl.textContent = line ? line[0] : '';
+    whyEl.hidden = !(line && line[1]);
+    if (line && line[1]) whyEl.setAttribute('data-why', line[1]);
+    else whyEl.removeAttribute('data-why');
     metaEl.textContent = '';
     var kind = kindOf(node);
     chip(kind, 'chip-kind', kind);
@@ -1657,6 +1671,15 @@ def _health_tab(
     )
 
 
+def _about_data(about: Mapping[str, About] | None) -> Markup:
+    """Box lines for the passport, embedded once in an attribute. `attrs`
+    escapes the value, so repository text can never become markup, and the
+    page keeps exactly one script element."""
+    data = {k: [a.text, a.worst] for k, a in sorted((about or {}).items())}
+    text = json.dumps(data, sort_keys=True, ensure_ascii=False)
+    return tag("div", raw(""), id="about-data", hidden=True, data_json=text)
+
+
 def render_viewer(
     root: str,
     produced: dict[DiagramKind, DiagramSet],
@@ -1667,6 +1690,7 @@ def render_viewer(
     graph: Graph | None = None,
     health: Health | None = None,
     design: Design | None = None,
+    about: Mapping[str, About] | None = None,
 ) -> str:
     """The whole document, as one self-contained string."""
     kinds = sorted(produced, key=lambda k: k.value)
@@ -1726,6 +1750,7 @@ def render_viewer(
             join(_tab(produced[k], laid_out[k], style, cards) for k in kinds),
             _unavailable(notes),
             _health_tab(health, design, graph),
+            _about_data(about),
             tag(
                 "aside",
                 join(
@@ -1736,6 +1761,10 @@ def render_viewer(
                         ),
                         tag("p", esc("Passport"), id="panel-eyebrow", class_="eyebrow"),
                         tag("h2", raw(""), id="panel-title"),
+                        tag("p", raw(""), id="panel-about", class_="about"),
+                        raw(
+                            '<a id="panel-why" class="why-link" data-why="" href="#d-health" hidden>why?</a>'
+                        ),
                         tag("p", raw(""), id="panel-sub", class_="sub"),
                         tag("div", raw(""), id="panel-meta", class_="chips"),
                         tag("div", raw(""), id="panel-also", class_="chips also"),
