@@ -332,3 +332,57 @@ def test_check_does_not_run_the_users_post_checkout_hook(tmp_path: Path) -> None
     hook.chmod(0o755)
     main(["check", str(tmp_path), "--base", "HEAD"])
     assert not marker.exists()
+
+
+def test_github_format_annotates_each_new_violation() -> None:
+    worse = (
+        ("maintainability", "A"),
+        ("reliability", "A"),
+        ("security", "C"),
+        ("performance", "A"),
+    )
+    d = compare(snap(f(check="deep-nesting")), snap(f(), ratings=worse))
+    out = d.render_github().splitlines()
+    assert out[0].startswith(
+        "::error file=a.py,line=1,title=Too many parameters::f has 6 parameters (limit 5) Fix: Group the values"
+    )
+    assert out[1] == "::warning title=Health grade::security A -> C"
+    assert not any("deep-nesting" in line and line.startswith("::") for line in out)
+    assert "1 new, 1 fixed" in out
+
+
+def test_github_format_escapes_workflow_command_text() -> None:
+    d = compare(snap(), snap(f(file="a,b:c.py", message="50% done\nnext")))
+    line = d.render_github().splitlines()[0]
+    assert line.startswith("::error file=a%2Cb%3Ac.py,line=1,")
+    assert "50%25 done%0Anext" in line
+
+
+def test_gitlab_fingerprints_are_stable_and_unique() -> None:
+    a = compare(snap(), snap(f(line=3), f(line=9))).to_gitlab()
+    b = compare(snap(), snap(f(line=30), f(line=90))).to_gitlab()
+    assert [x["fingerprint"] for x in a] == [x["fingerprint"] for x in b]
+    assert a[0]["fingerprint"] != a[1]["fingerprint"]
+    assert a[0]["severity"] == "minor" and a[0]["check_name"] == "many-parameters"
+    assert a[0]["location"] == {"path": "a.py", "lines": {"begin": 3}}
+    assert a[0]["description"].startswith("Too many parameters: f has 6 parameters")
+
+
+def test_json_and_format_together_is_a_usage_error(tmp_path: Path) -> None:
+    with pytest.raises(SystemExit) as exc:
+        main(["check", str(tmp_path), "--base", "HEAD", "--json", "--format", "github"])
+    assert exc.value.code == 2
+
+
+def test_gitlab_format_keeps_stdout_pure_json(tmp_path: Path, capsys) -> None:
+    write(tmp_path, "app/m.py", CLEAN)
+    assert main([str(tmp_path)]) == 0
+    base = tmp_path / "base.json"
+    shutil.copy(tmp_path / ".svarupa" / "graph.json", base)
+    write(tmp_path, "app/n.py", SIX)
+    capsys.readouterr()
+    assert main(["check", str(tmp_path), "--base", str(base), "--format", "gitlab"]) == 3
+    cap = capsys.readouterr()
+    report = json.loads(cap.out)
+    assert [r["check_name"] for r in report] == ["many-parameters"]
+    assert cap.err.startswith("1 new, 0 fixed")

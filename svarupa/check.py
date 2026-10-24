@@ -11,9 +11,12 @@ file is gone from the head tree (a rename, move or delete).
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 from collections import Counter
 from collections.abc import Mapping
@@ -33,6 +36,7 @@ __all__ = [
     "analyze_with_files",
     "base_from_ref",
     "compare",
+    "emit",
     "snapshot",
     "snapshot_from_json",
 ]
@@ -137,6 +141,20 @@ def _parse_health(health: dict[str, Any]) -> Snapshot:
     return Snapshot(tuple(found), tuple(ratings.items()))
 
 
+def _data(text: str) -> str:
+    """Escape a GitHub workflow command's message."""
+    return text.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+
+
+def _prop(text: str) -> str:
+    """Escape a GitHub workflow command's property value."""
+    return _data(text).replace(":", "%3A").replace(",", "%2C")
+
+
+def _title(check: str) -> str:
+    return BY_ID[check].title if check in BY_ID else check
+
+
 @dataclass(frozen=True, slots=True)
 class Delta:
     new: tuple[Finding, ...]
@@ -188,6 +206,47 @@ class Delta:
                 for area, before, after in self.grades
             ]
         return "\n".join(lines)
+
+    def render_github(self) -> str:
+        """Workflow commands that annotate each new violation on its line,
+        a warning per worse grade, then the text report."""
+        from svarupa.health.explain import explanation
+
+        lines: list[str] = []
+        for f in self.new:
+            fix = f" Fix: {explanation(f.check).fix}" if f.check in BY_ID else ""
+            lines.append(
+                f"::error file={_prop(f.file)},line={f.line},title={_prop(_title(f.check))}"
+                f"::{_data(f.message + fix)}"
+            )
+        grades = {area: (before, after) for area, before, after in self.grades}
+        for area in self.worse():
+            before, after = grades[area]
+            lines.append(
+                f"::warning title=Health grade::{_data(f'{area} {before} -> {after}')}"
+            )
+        lines.append(self.render())
+        return "\n".join(lines)
+
+    def to_gitlab(self) -> list[dict[str, object]]:
+        """A GitLab Code Quality report of the new violations. The
+        fingerprint hashes the match key, so it survives moved lines; a
+        repeated key gets its occurrence number so GitLab keeps both."""
+        seen: Counter[tuple[str, str, str]] = Counter()
+        out: list[dict[str, object]] = []
+        for f in self.new:
+            seen[f.key] += 1
+            raw = "\x00".join((*f.key, str(seen[f.key])))
+            out.append(
+                {
+                    "description": f"{_title(f.check)}: {f.message}",
+                    "check_name": f.check,
+                    "fingerprint": hashlib.sha256(raw.encode("utf8")).hexdigest(),
+                    "severity": BY_ID[f.check].severity if f.check in BY_ID else "info",
+                    "location": {"path": f.file, "lines": {"begin": f.line}},
+                }
+            )
+        return out
 
 
 def _unmatched(items: tuple[Finding, ...], other: tuple[Finding, ...]) -> tuple[Finding, ...]:
@@ -242,6 +301,19 @@ def compare(base: Snapshot, head: Snapshot) -> Delta:
             (a, before.get(a), after.get(a)) for a in areas if before.get(a) != after.get(a)
         ),
     )
+
+
+def emit(delta: Delta, fmt: str, failed: bool) -> None:
+    """Print a result in the requested format."""
+    if fmt == "json":
+        print(json.dumps(delta.to_json(failed), indent=2, sort_keys=True))
+    elif fmt == "github":
+        print(delta.render_github())
+    elif fmt == "gitlab":
+        print(json.dumps(delta.to_gitlab(), indent=2, sort_keys=True))
+        print(delta.render(), file=sys.stderr)
+    else:
+        print(delta.render())
 
 
 def analyze(root: Path, rules_root: Path) -> Health:

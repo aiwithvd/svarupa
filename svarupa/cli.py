@@ -549,6 +549,7 @@ def _check(argv: list[str]) -> int:
         analyze_with_files,
         base_from_ref,
         compare,
+        emit,
         snapshot,
         snapshot_from_json,
     )
@@ -571,7 +572,16 @@ def _check(argv: list[str]) -> int:
         help="ignore new violations below this severity (grade drops always count)",
     )
     parser.add_argument("--json", action="store_true", help="print the result as JSON")
+    parser.add_argument(
+        "--format",
+        choices=["text", "json", "github", "gitlab"],
+        default=None,
+        help="output: text (default), json, github (annotations) or gitlab (Code Quality JSON)",
+    )
     args = parser.parse_args(argv)
+    if args.json and args.format not in (None, "json"):
+        parser.error("--json and --format are two ways to say one thing; use --format")
+    fmt = "json" if args.json else (args.format or "text")
     root = Path(args.path)
     try:
         if args.base.endswith(".json"):
@@ -585,10 +595,7 @@ def _check(argv: list[str]) -> int:
         return 1
     delta = compare(base, head)
     failed = delta.failed(args.min_severity)
-    if args.json:
-        print(json.dumps(delta.to_json(failed), indent=2, sort_keys=True))
-    else:
-        print(delta.render())
+    emit(delta, fmt, failed)
     return EXIT_CHANGED if failed else 0
 
 
