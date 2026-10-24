@@ -67,3 +67,23 @@ def test_mcp_merge_refuses_invalid_json_and_arrays() -> None:
 def test_mcp_merge_refuses_a_non_object_server_map() -> None:
     with pytest.raises(MergeError, match="mcpServers"):
         merge_mcp(json.dumps({"mcpServers": []}), "mcpServers", ENTRY)
+
+
+def test_mcp_merge_refuses_files_that_cannot_round_trip() -> None:
+    for bad in ('{"a": NaN}', '{"a": -Infinity}', '{"a": 1e400}', '{"a": 1, "a": 2}'):
+        with pytest.raises(MergeError):
+            merge_mcp(bad, "mcpServers", ENTRY)
+    with pytest.raises(MergeError, match="duplicate key 'x'"):
+        merge_mcp('{"n": {"x": 1, "x": 2}}', "mcpServers", ENTRY)
+
+
+def test_mcp_merge_round_trips_nested_unicode_and_big_integers() -> None:
+    mine = (
+        '{"n": {"deep": [1, {"k": "caf\u00e9 \u2603"}]}, "big": 123456789012345678901234567890}'
+    )
+    text = merge_mcp(mine, "mcpServers", ENTRY)
+    out = json.loads(text)
+    assert out["big"] == 123456789012345678901234567890
+    assert out["n"] == {"deep": [1, {"k": "caf\u00e9 \u2603"}]}
+    assert "\u2603" in text
+    assert merge_mcp(text, "mcpServers", ENTRY) == text

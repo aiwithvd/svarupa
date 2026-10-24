@@ -48,12 +48,29 @@ def merge_block(existing: str | None, body: str) -> str:
     return existing[:start] + block + existing[stop:]
 
 
+def _no_constant(_name: str) -> Any:
+    raise MergeError("has NaN or Infinity, which is not valid JSON; fix or remove it")
+
+
+def _no_duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    for k, v in pairs:
+        if k in out:
+            raise MergeError(f"has a duplicate key {k!r}; fix or remove it")
+        out[k] = v
+    return out
+
+
 def merge_mcp(existing: str | None, key: str, entry: dict[str, object]) -> str:
     """`existing` MCP JSON with `key.svarupa` set to `entry`, others kept."""
     data: Any = {}
     if existing and existing.strip():
         try:
-            data = json.loads(existing)
+            data = json.loads(
+                existing, parse_constant=_no_constant, object_pairs_hook=_no_duplicates
+            )
+        except MergeError:
+            raise
         except ValueError as exc:
             raise MergeError(f"is not a JSON object ({exc}); fix or remove it") from exc
     if not isinstance(data, dict):
@@ -63,4 +80,10 @@ def merge_mcp(existing: str | None, key: str, entry: dict[str, object]) -> str:
     if not isinstance(servers, dict):
         raise MergeError(f"has a {key} value that is not a JSON object")
     cast("dict[str, Any]", servers)["svarupa"] = entry
-    return json.dumps(doc, indent=2, ensure_ascii=False) + "\n"
+    try:
+        text = json.dumps(doc, indent=2, ensure_ascii=False, allow_nan=False)
+    except ValueError as exc:
+        raise MergeError(
+            f"has a number that is not valid JSON ({exc}); fix or remove it"
+        ) from exc
+    return text + "\n"
