@@ -521,3 +521,15 @@ def test_the_health_step_script_fails_and_summarizes(tmp_path: Path) -> None:
     text = summary.read_text(encoding="utf8")
     assert "## Health of this change" in text and "1 new, 0 fixed" in text
     assert "::error" not in text
+
+
+def test_the_gitlab_health_job_reports_code_quality() -> None:
+    job = yaml.safe_load(GITLAB_CI)["health_check"]
+    assert job["rules"] == [{"if": '$CI_PIPELINE_SOURCE == "merge_request_event"'}]
+    assert job["variables"]["GIT_DEPTH"] == 0
+    assert job["artifacts"]["reports"]["codequality"] == "gl-code-quality-report.json"
+    assert job["artifacts"]["when"] == "always"
+    script = "\n".join(job["script"])
+    assert '--base "$CI_MERGE_REQUEST_DIFF_BASE_SHA" --format gitlab' in script
+    assert "> gl-code-quality-report.json" in script
+    assert 'exit "$code"' in script

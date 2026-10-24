@@ -78,6 +78,30 @@ architecture_diff:
       fi
       cat /tmp/delta.txt
       exit "$code"
+
+# Fails the merge request only for health problems it adds: a new violation
+# or a lower grade (exit 3), or a check that could not run (exit 1). The new
+# violations appear in the merge request through the Code Quality report.
+# To make it report-only, change the last line to `exit 0`.
+health_check:
+  image: python:3.12
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  variables:
+    GIT_DEPTH: 0
+  before_script:
+    - pip install uv
+    - uv tool install 'svarupa==__SVARUPA_VERSION__'
+    - export PATH="$HOME/.local/bin:$PATH"
+  script:
+    - |
+      svarupa check . --base "$CI_MERGE_REQUEST_DIFF_BASE_SHA" --format gitlab \\
+        > gl-code-quality-report.json && code=0 || code=$?
+      exit "$code"
+  artifacts:
+    when: always
+    reports:
+      codequality: gl-code-quality-report.json
 """
 
 GITLAB_CI = _TEMPLATE.replace("__SVARUPA_VERSION__", __version__)
@@ -85,7 +109,9 @@ GITLAB_CI = _TEMPLATE.replace("__SVARUPA_VERSION__", __version__)
 
 class CiGitlabTarget(Target):
     name: ClassVar[str] = "ci_gitlab"
-    summary: ClassVar[str] = "a GitLab CI job that diffs architecture per merge request"
+    summary: ClassVar[str] = (
+        "a GitLab CI job that diffs architecture and gates health per merge request"
+    )
 
     def files(self) -> tuple[tuple[str, str], ...]:
         return ((".gitlab-ci.yml", GITLAB_CI),)
@@ -97,4 +123,6 @@ class CiGitlabTarget(Target):
         return (
             "Run `svarupa . --lock` and commit .svarupa/architecture.lock as the base.",
             "Commit .gitlab-ci.yml.",
+            "Merge requests now fail only for health problems they add; see the "
+            "health_check job's comment to make it report-only.",
         )
