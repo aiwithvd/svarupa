@@ -1,0 +1,48 @@
+what = "The same database query runs once for every item in a loop."
+why = "100 items means 100 round trips to the database. Pages get slow as data grows, and the database gets busy for everyone. This is called the N+1 query problem."
+fix = "Load everything the loop needs in one query before the loop (or let the ORM join it in), then look items up in memory."
+
+[example.python]
+before = '''
+for order in orders:
+    customer = Customer.objects.get(id=order.customer_id)
+'''
+after = '''
+customers = Customer.objects.in_bulk([o.customer_id for o in orders])
+for order in orders:
+    customer = customers[order.customer_id]
+'''
+
+[example.typescript]
+before = '''
+for (const order of orders) {
+  const customer = await prisma.customer.findUnique({ where: { id: order.customerId } });
+}
+'''
+after = '''
+const customers = await prisma.customer.findMany({
+  where: { id: { in: orders.map((o) => o.customerId) } },
+});
+const byId = new Map(customers.map((c) => [c.id, c]));
+'''
+
+[example.go]
+before = '''
+for _, o := range orders {
+	db.QueryRow("SELECT name FROM customers WHERE id = $1", o.CustomerID)
+}
+'''
+after = '''
+rows, err := db.Query("SELECT id, name FROM customers WHERE id = ANY($1)", pq.Array(ids))
+'''
+
+[example.java]
+before = '''
+for (Order o : orders) {
+    Customer c = customerRepository.findById(o.customerId()).orElseThrow();
+}
+'''
+after = '''
+Map<Long, Customer> byId = customerRepository.findAllById(ids).stream()
+    .collect(Collectors.toMap(Customer::id, c -> c));
+'''
