@@ -1581,7 +1581,7 @@ def _unavailable(notes: tuple[str, ...]) -> Markup:
 
 def _why_folds(health: Health, graph: Graph | None) -> Markup:
     """One closed fold per check with violations: what, why, fix, example."""
-    folds = []
+    folds: list[Markup] = []
     for check_id, lang in checks_in_order(health, graph):
         e = explanation(check_id)
         ex = example_for(check_id, lang)
