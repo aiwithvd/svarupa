@@ -1,0 +1,3 @@
+what = "Two parts that this unit's design style says must be independent import each other (for example, two features of a modular monolith)."
+why = "Independent parts can be changed, owned and later split out on their own. One import between them ties their release and testing together."
+fix = "Move what both parts need into a shared module, or let one part call the other through its public entry or an event instead of importing its inside."

@@ -1,0 +1,26 @@
+what = "An async function calls something that blocks: it waits for the network, the disk or a timer without giving control back."
+why = "Async code shares one thread. While one call blocks, every other request on that server waits too, so one slow call makes the whole service slow."
+fix = "Use the async version of the library (httpx.AsyncClient, asyncio.sleep, fs.promises), or move the blocking call to a worker thread."
+
+[example.python]
+before = '''
+async def fetch_rate(url):
+    return requests.get(url, timeout=5).json()
+'''
+after = '''
+async def fetch_rate(url):
+    async with httpx.AsyncClient(timeout=5) as client:
+        return (await client.get(url)).json()
+'''
+
+[example.typescript]
+before = '''
+async function loadConfig() {
+  return JSON.parse(fs.readFileSync("config.json", "utf8"));
+}
+'''
+after = '''
+async function loadConfig() {
+  return JSON.parse(await fs.promises.readFile("config.json", "utf8"));
+}
+'''

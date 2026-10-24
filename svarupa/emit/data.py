@@ -14,6 +14,7 @@ and CI, which is the property the whole pipeline is built around.
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from pathlib import Path
 
 from svarupa.build import Graph
@@ -368,6 +369,7 @@ def graph_json(
     worktree_dirty: bool | None = None,
     health: Health | None = None,
     design: Design | None = None,
+    about: Mapping[str, str] | None = None,
 ) -> dict[str, object]:
     """The whole graph, evidence included.
 
@@ -443,6 +445,8 @@ def graph_json(
         out["health"] = health.to_json()
     if design is not None:
         out["design"] = design.to_json()
+    if about is not None:
+        out["about"] = dict(sorted(about.items()))
     return out
 
 

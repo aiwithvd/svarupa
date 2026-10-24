@@ -17,14 +17,20 @@ Three properties, in the order they were designed for:
 
 from __future__ import annotations
 
+import json
+from collections.abc import Mapping
+
 from svarupa.build import Graph
+from svarupa.derive.about import About
 from svarupa.derive.base import DiagramKind, DiagramSet
 from svarupa.design import Design
 from svarupa.emit.cards import Card, cards_for, chapters_for, render_cards, render_guided
+from svarupa.emit.explained import checks_in_order, languages_by_check
 from svarupa.emit.markup import Markup, esc, join, raw, tag
 from svarupa.emit.report import _design_lines  # pyright: ignore[reportPrivateUsage]
 from svarupa.emit.svg import canvas_svg, evidence_ref, expanded_svg
 from svarupa.health import BY_ID, Health
+from svarupa.health.explain import Example, example_for, explanation
 from svarupa.layout import LaidOutDiagram
 from svarupa.layout.geometry import Style
 from svarupa.layout.text import FONT_STACK
@@ -152,6 +158,7 @@ body:has(.tab:target) .tab:target { display: block; }
 
 h2 { font-size: 20px; margin: 0 0 4px; font-weight: 700; letter-spacing: -0.02em; }
 .meta { color: var(--dim); margin: 0 0 16px; font-size: 13px; }
+details.why { margin: .4rem 0; } details.why pre { overflow-x: auto; }
 .crumbs { margin: 0 0 12px; font-size: 13px; }
 .crumbs a { color: var(--accent); text-decoration: none; }
 .crumbs a:hover { text-decoration: underline; }
@@ -327,6 +334,7 @@ aside.is-open { transform: none; }
 aside .eyebrow { margin: 0 0 4px; font-size: 9px; letter-spacing: .16em; text-transform: uppercase; color: var(--accent); font-weight: 700; }
 aside h2 { font-size: 15px; margin: 0 0 2px; font-family: var(--mono); font-weight: 700; padding-right: 60px; }
 aside .sub { margin: 0 0 10px; color: var(--dim); font-size: 11px; }
+aside .about { margin: 0 0 10px; font-size: 12px; }
 aside .chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 0 0 10px; }
 aside .chips span { font-size: 9px; letter-spacing: .08em; text-transform: uppercase; padding: 2px 7px; border: 1px solid var(--line); border-radius: 3px; color: var(--dim); }
 aside .chips span.chip-kind { border-color: var(--k); color: var(--k); background: color-mix(in srgb, var(--k) 12%, transparent); font-weight: 700; }
@@ -521,6 +529,10 @@ def _js() -> Markup:
   var metaEl = document.getElementById('panel-meta');
   var alsoEl = document.getElementById('panel-also');
   var sumEl = document.getElementById('panel-summary');
+  var aboutEl = document.getElementById('panel-about');
+  var whyEl = document.getElementById('panel-why');
+  var ABOUT = {};
+  try { ABOUT = JSON.parse(document.getElementById('about-data').getAttribute('data-json') || '{}'); } catch (e) { ABOUT = {}; }
   var outEl = document.getElementById('panel-out');
   var outH = document.getElementById('panel-out-h');
   var inEl = document.getElementById('panel-in');
@@ -529,6 +541,18 @@ def _js() -> Markup:
   var downBtn = document.getElementById('reach-down');
   var openBtn = document.getElementById('panel-open');
   var linkBtn = document.getElementById('panel-link');
+  // "why?" opens that check's fold in the Health tab. The tab switch is the
+  // link's own #d-health; the fold is opened here.
+  function openWhy(check) {
+    var fold = document.getElementById('why-' + check);
+    if (!fold) return;
+    fold.open = true;
+    fold.scrollIntoView();
+  }
+  document.addEventListener('click', function (ev) {
+    var a = ev.target.closest && ev.target.closest('[data-why]');
+    if (a) setTimeout(function () { openWhy(a.getAttribute('data-why')); }, 0);
+  });
   // The box the passport currently shows, for the deep link. A box id is
   // repo-derived text; it enters the URL only percent-encoded.
   var linkTarget = null;
@@ -605,6 +629,11 @@ def _js() -> Markup:
     var isFrame = node.classList.contains('sv-boundary');
     eyebrowEl.textContent = isFrame ? 'Frame' : 'Passport';
     subEl.textContent = node.getAttribute('data-sublabel') || '';
+    var line = isFrame ? null : ABOUT[id];
+    aboutEl.textContent = line ? line[0] : '';
+    whyEl.hidden = !(line && line[1]);
+    if (line && line[1]) whyEl.setAttribute('data-why', line[1]);
+    else whyEl.removeAttribute('data-why');
     metaEl.textContent = '';
     var kind = kindOf(node);
     chip(kind, 'chip-kind', kind);
@@ -1564,7 +1593,37 @@ def _unavailable(notes: tuple[str, ...]) -> Markup:
     )
 
 
-def _health_tab(health: Health | None, design: Design | None = None) -> Markup:
+def _why_folds(health: Health, graph: Graph | None) -> Markup:
+    """One closed fold per check with violations: what, why, fix, example."""
+    folds: list[Markup] = []
+    fired = languages_by_check(health, graph)
+    for check_id, _ in checks_in_order(health, graph):
+        e = explanation(check_id)
+        shown: list[tuple[str, Example]] = []
+        for lang in fired.get(check_id, []):
+            ex = example_for(check_id, lang)
+            if ex is not None and all(ex != s for _, s in shown):
+                shown.append((lang, ex))
+        body = [
+            tag("summary", esc(BY_ID[check_id].title)),
+            tag("p", join((tag("strong", esc("What ")), esc(e.what)))),
+            tag("p", join((tag("strong", esc("Why ")), esc(e.why)))),
+            tag("p", join((tag("strong", esc("How to fix ")), esc(e.fix)))),
+        ]
+        for lang, ex in shown:
+            body += [
+                tag("p", esc(f"Before ({lang})"), class_="meta"),
+                tag("pre", tag("code", esc(ex.before))),
+                tag("p", esc("After"), class_="meta"),
+                tag("pre", tag("code", esc(ex.after))),
+            ]
+        folds.append(tag("details", join(body), id=f"why-{check_id}", class_="why"))
+    return join(folds)
+
+
+def _health_tab(
+    health: Health | None, design: Design | None = None, graph: Graph | None = None
+) -> Markup:
     """Ratings, the fixes worth doing first, and every violation with its line."""
     if health is None:
         return raw("")
@@ -1579,6 +1638,10 @@ def _health_tab(health: Health | None, design: Design | None = None) -> Markup:
                 (
                     tag("code", esc(f"{v.evidence[0].file}:{v.evidence[0].start_line}")),
                     esc(f" {BY_ID[v.check].title}: {v.message} ({v.minutes} min)"),
+                    esc(" "),
+                    tag(
+                        "a", esc("why?"), href="#d-health", class_="why-link", data_why=v.check
+                    ),
                 )
             ),
         )
@@ -1604,11 +1667,22 @@ def _health_tab(health: Health | None, design: Design | None = None) -> Markup:
                 else raw(""),
                 tag("h3", esc("Violations, highest impact first")),
                 tag("ol", items) if health.violations else tag("p", esc("No violations.")),
+                tag("h3", esc("What these mean")) if health.violations else raw(""),
+                _why_folds(health, graph) if health.violations else raw(""),
             )
         ),
         class_="tab",
         id="d-health",
     )
+
+
+def _about_data(about: Mapping[str, About] | None) -> Markup:
+    """Box lines for the passport, embedded once in an attribute. `attrs`
+    escapes the value, so repository text can never become markup, and the
+    page keeps exactly one script element."""
+    data = {k: [a.text, a.worst] for k, a in sorted((about or {}).items())}
+    text = json.dumps(data, sort_keys=True, ensure_ascii=False)
+    return tag("div", raw(""), id="about-data", hidden=True, data_json=text)
 
 
 def render_viewer(
@@ -1621,6 +1695,7 @@ def render_viewer(
     graph: Graph | None = None,
     health: Health | None = None,
     design: Design | None = None,
+    about: Mapping[str, About] | None = None,
 ) -> str:
     """The whole document, as one self-contained string."""
     kinds = sorted(produced, key=lambda k: k.value)
@@ -1679,7 +1754,8 @@ def render_viewer(
             header,
             join(_tab(produced[k], laid_out[k], style, cards) for k in kinds),
             _unavailable(notes),
-            _health_tab(health, design),
+            _health_tab(health, design, graph),
+            _about_data(about),
             tag(
                 "aside",
                 join(
@@ -1690,6 +1766,10 @@ def render_viewer(
                         ),
                         tag("p", esc("Passport"), id="panel-eyebrow", class_="eyebrow"),
                         tag("h2", raw(""), id="panel-title"),
+                        tag("p", raw(""), id="panel-about", class_="about"),
+                        raw(
+                            '<a id="panel-why" class="why-link" data-why="" href="#d-health" hidden>why?</a>'
+                        ),
                         tag("p", raw(""), id="panel-sub", class_="sub"),
                         tag("div", raw(""), id="panel-meta", class_="chips"),
                         tag("div", raw(""), id="panel-also", class_="chips also"),

@@ -1,0 +1,3 @@
+what = "This module is used by 10 or more modules and itself uses 10 or more. Everything flows through it."
+why = "A change here can break many places at once, and it changes often because so much depends on it. It becomes the bottleneck for the whole team."
+fix = "Split it by responsibility so each caller only imports the small part it needs. Keep a thin entry that re-exports the parts while callers move over."

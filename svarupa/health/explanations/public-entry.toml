@@ -1,0 +1,3 @@
+what = "Code imports the inside of another part instead of going through that part's public entry (for example its __init__ or index file)."
+why = "The inside of a part can change at any time. Importing it directly means a refactor inside one part breaks code in another."
+fix = "Import from the part's public entry, and add the name you need to that entry if it is missing."

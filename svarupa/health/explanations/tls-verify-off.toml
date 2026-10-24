@@ -1,0 +1,37 @@
+what = "A connection uses HTTPS (TLS) but turns off the check that the server's certificate is real."
+why = "Without that check, anyone on the network path (public Wi-Fi, a compromised router) can pretend to be the server and read or change everything sent, including passwords."
+fix = "Turn the check back on. If the server uses a private certificate, give the client that certificate authority instead of skipping the check."
+
+[example.python]
+before = '''
+requests.get(url, verify=False, timeout=10)
+'''
+after = '''
+requests.get(url, verify="/etc/ssl/company-ca.pem", timeout=10)
+'''
+
+[example.typescript]
+before = '''
+https.request({ host, rejectUnauthorized: false });
+'''
+after = '''
+https.request({ host, ca: fs.readFileSync("company-ca.pem") });
+'''
+
+[example.go]
+before = '''
+cfg := &tls.Config{InsecureSkipVerify: true}
+'''
+after = '''
+pool := x509.NewCertPool()
+pool.AppendCertsFromPEM(caPEM)
+cfg := &tls.Config{RootCAs: pool}
+'''
+
+[example.java]
+before = '''
+SSLConnectionSocketFactory f = new SSLConnectionSocketFactory(ctx, new NoopHostnameVerifier());
+'''
+after = '''
+SSLConnectionSocketFactory f = new SSLConnectionSocketFactory(ctx);
+'''

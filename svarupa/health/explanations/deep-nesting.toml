@@ -1,0 +1,93 @@
+what = "Blocks inside this function are nested more than 4 levels deep (an if inside a loop inside an if, and so on)."
+why = "Every level is one more condition the reader has to remember. Deep code is hard to follow and hard to change without breaking a case."
+fix = "Check the bad cases first and leave early (return, continue), so the main path stays at the left edge. Move inner blocks into helper functions."
+
+[example.python]
+before = '''
+for order in orders:
+    if order.paid:
+        if order.items:
+            for item in order.items:
+                if item.in_stock:
+                    ship(item)
+'''
+after = '''
+def ship_in_stock(items):
+    for item in items:
+        if item.in_stock:
+            ship(item)
+
+for order in orders:
+    if not order.paid or not order.items:
+        continue
+    ship_in_stock(order.items)
+'''
+
+[example.typescript]
+before = '''
+for (const order of orders) {
+  if (order.paid) {
+    if (order.items.length) {
+      for (const item of order.items) {
+        if (item.inStock) ship(item);
+      }
+    }
+  }
+}
+'''
+after = '''
+for (const order of orders) {
+  if (!order.paid || !order.items.length) continue;
+  order.items.filter((i) => i.inStock).forEach(ship);
+}
+'''
+
+[example.go]
+before = '''
+for _, o := range orders {
+	if o.Paid {
+		if len(o.Items) > 0 {
+			for _, it := range o.Items {
+				if it.InStock {
+					ship(it)
+				}
+			}
+		}
+	}
+}
+'''
+after = '''
+func shipInStock(items []Item) {
+	for _, it := range items {
+		if it.InStock {
+			ship(it)
+		}
+	}
+}
+
+for _, o := range orders {
+	if !o.Paid || len(o.Items) == 0 {
+		continue
+	}
+	shipInStock(o.Items)
+}
+'''
+
+[example.java]
+before = '''
+for (Order o : orders) {
+    if (o.paid()) {
+        if (!o.items().isEmpty()) {
+            for (Item it : o.items()) {
+                if (it.inStock()) ship(it);
+            }
+        }
+    }
+}
+'''
+after = '''
+for (Order o : orders) {
+    if (!o.paid() || o.items().isEmpty()) continue;
+    o.items().stream().filter(Item::inStock).forEach(this::ship);
+}
+'''

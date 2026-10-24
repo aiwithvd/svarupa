@@ -1,0 +1,41 @@
+what = "A call to another server has no timeout, so it can wait forever."
+why = "When the other server hangs, your requests hang too, threads or connections run out, and one slow dependency takes your service down with it."
+fix = "Set a timeout on every outbound call, a few seconds for most APIs, and decide what to do when it fires (retry, fall back or report an error)."
+
+[example.python]
+before = '''
+r = requests.post(url, json=payload)
+'''
+after = '''
+r = requests.post(url, json=payload, timeout=5)
+'''
+
+[example.typescript]
+before = '''
+const res = await axios.get(url);
+'''
+after = '''
+const res = await axios.get(url, { timeout: 5000 });
+'''
+
+[example.go]
+before = '''
+resp, err := http.Get(url)
+'''
+after = '''
+client := &http.Client{Timeout: 5 * time.Second}
+resp, err := client.Get(url)
+'''
+
+[example.java]
+before = '''
+HttpClient client = HttpClient.newHttpClient();
+'''
+after = '''
+HttpClient client = HttpClient.newBuilder()
+    .connectTimeout(Duration.ofSeconds(5))
+    .build();
+HttpRequest request = HttpRequest.newBuilder(uri)
+    .timeout(Duration.ofSeconds(10))  // the whole request, not only connecting
+    .build();
+'''

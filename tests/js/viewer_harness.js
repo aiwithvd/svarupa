@@ -86,6 +86,7 @@ check('click focuses', svg.classList.contains('is-focused') && a.classList.conta
 const labelOfNode = (n) => n.querySelector('title').textContent.split('\n')[0];
 check('click opens the passport titled by the label', panel.classList.contains('is-open') && document.getElementById('panel-title').textContent === labelOfNode(a), document.getElementById('panel-title').textContent);
 check('the id chip still carries the id', Array.from(document.querySelectorAll('#panel-meta code')).some((c) => c.textContent === a.getAttribute('data-id')));
+check('the passport shows the box line', (document.getElementById('panel-about') || {}).textContent, String((document.getElementById('panel-about') || {}).textContent));
 fire(a, 'mouseout', { relatedTarget: document.body });
 fire(view.querySelector('.scroller'), 'click', { detail: 1 });
 check('background click clears every lit state',

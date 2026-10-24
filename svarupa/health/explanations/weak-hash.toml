@@ -1,0 +1,35 @@
+what = "MD5 or SHA-1 is used. Both are broken: people can create two different inputs with the same hash."
+why = "If the hash protects passwords, signatures or tokens, an attacker can forge or crack them. For passwords, any fast hash is too weak."
+fix = "Use SHA-256 for checksums and signatures. For passwords use a slow password hash (bcrypt, scrypt or Argon2). If the hash is only a cache key, mark it as not for security."
+
+[example.python]
+before = '''
+digest = hashlib.md5(data).hexdigest()
+'''
+after = '''
+digest = hashlib.sha256(data).hexdigest()
+'''
+
+[example.typescript]
+before = '''
+crypto.createHash("md5").update(data).digest("hex");
+'''
+after = '''
+crypto.createHash("sha256").update(data).digest("hex");
+'''
+
+[example.go]
+before = '''
+sum := md5.Sum(data)
+'''
+after = '''
+sum := sha256.Sum256(data)
+'''
+
+[example.java]
+before = '''
+MessageDigest md = MessageDigest.getInstance("MD5");
+'''
+after = '''
+MessageDigest md = MessageDigest.getInstance("SHA-256");
+'''

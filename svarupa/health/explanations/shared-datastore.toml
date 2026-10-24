@@ -1,0 +1,3 @@
+what = "Services built from two or more different codebases use the same database or store."
+why = "Each service can change the shared tables in ways the others do not expect, a slow query from one slows all of them, and none of them can be released alone."
+fix = "Give each service its own database (or schema) and let the others ask through the owning service's API or events. If the sharing is on purpose for now, record it as an exception with a reason."

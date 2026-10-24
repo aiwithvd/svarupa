@@ -1,0 +1,35 @@
+what = "The server allows browsers on every website (origin \"*\") to call it."
+why = "Any page a user visits can then talk to your API from their browser. Together with cookies or tokens, that can expose their data to other sites."
+fix = "List the exact sites that may call the API (your own front end), and keep that list in configuration."
+
+[example.python]
+before = '''
+app.add_middleware(CORSMiddleware, allow_origins=["*"])
+'''
+after = '''
+app.add_middleware(CORSMiddleware, allow_origins=["https://app.example.com"])
+'''
+
+[example.typescript]
+before = '''
+app.use(cors());
+'''
+after = '''
+app.use(cors({ origin: ["https://app.example.com"] }));
+'''
+
+[example.go]
+before = '''
+cors.New(cors.Config{AllowAllOrigins: true})
+'''
+after = '''
+cors.New(cors.Config{AllowOrigins: []string{"https://app.example.com"}})
+'''
+
+[example.java]
+before = '''
+registry.addMapping("/**").allowedOrigins("*");
+'''
+after = '''
+registry.addMapping("/**").allowedOrigins("https://app.example.com");
+'''

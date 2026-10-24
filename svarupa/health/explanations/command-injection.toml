@@ -1,0 +1,35 @@
+what = "A shell command is built by joining strings, and part of it comes from data known only at runtime."
+why = "A value like \"x; rm -rf /\" turns into a second command. Whoever controls the value can run any program on the server."
+fix = "Run the program directly with its arguments as a list, without a shell. Then each value is one argument, never extra commands."
+
+[example.python]
+before = '''
+os.system("convert " + filename + " out.png")
+'''
+after = '''
+subprocess.run(["convert", filename, "out.png"], check=True)
+'''
+
+[example.typescript]
+before = '''
+child_process.exec("convert " + filename + " out.png");
+'''
+after = '''
+child_process.execFile("convert", [filename, "out.png"]);
+'''
+
+[example.go]
+before = '''
+exec.Command("sh", "-c", "convert "+filename+" out.png").Run()
+'''
+after = '''
+exec.Command("convert", filename, "out.png").Run()
+'''
+
+[example.java]
+before = '''
+Runtime.getRuntime().exec("convert " + filename + " out.png");
+'''
+after = '''
+new ProcessBuilder("convert", filename, "out.png").start();
+'''

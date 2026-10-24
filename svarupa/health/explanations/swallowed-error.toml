@@ -1,0 +1,57 @@
+what = "An error is caught and then ignored: the handler is empty or only says pass or has a comment."
+why = "The program goes on as if nothing happened, with bad or missing data. When something breaks later, there is no log to show where it started."
+fix = "Handle the error, log it with enough detail to debug, or let it go up to a caller that can. If ignoring it is right, catch the narrowest error and write why in a comment next to a log line."
+
+[example.python]
+before = '''
+try:
+    send_email(user)
+except Exception:
+    pass
+'''
+after = '''
+try:
+    send_email(user)
+except SMTPException:
+    log.warning("welcome email failed for user %s", user.id, exc_info=True)
+'''
+
+[example.typescript]
+before = '''
+try {
+  await sendEmail(user);
+} catch (e) {}
+'''
+after = '''
+try {
+  await sendEmail(user);
+} catch (e) {
+  logger.warn({ err: e, userId: user.id }, "welcome email failed");
+}
+'''
+
+[example.go]
+before = '''
+if err := sendEmail(user); err != nil {
+}
+'''
+after = '''
+if err := sendEmail(user); err != nil {
+	log.Printf("welcome email failed for user %d: %v", user.ID, err)
+}
+'''
+
+[example.java]
+before = '''
+try {
+    sendEmail(user);
+} catch (MessagingException e) {
+}
+'''
+after = '''
+try {
+    sendEmail(user);
+} catch (MessagingException e) {
+    log.warn("welcome email failed for user {}", user.id(), e);
+}
+'''

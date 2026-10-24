@@ -1,0 +1,28 @@
+what = "A connection to a queue or store is set up so it tries only once, or with its retries turned off."
+why = "Networks drop for a moment all the time. Without a retry, a short blip becomes a failed job or a crashed worker."
+fix = "Turn on the client's retry or reconnect option with a small limit and a growing delay between tries."
+
+[example.python]
+before = '''
+params = pika.ConnectionParameters(host="mq")
+'''
+after = '''
+params = pika.ConnectionParameters(host="mq", connection_attempts=5, retry_delay=2)
+'''
+
+[example.go]
+before = '''
+rdb := redis.NewClient(&redis.Options{Addr: addr, MaxRetries: -1})
+'''
+after = '''
+rdb := redis.NewClient(&redis.Options{Addr: addr, MaxRetries: 3})
+'''
+
+[example.java]
+before = '''
+factory.setAutomaticRecoveryEnabled(false);
+'''
+after = '''
+factory.setAutomaticRecoveryEnabled(true);
+factory.setNetworkRecoveryInterval(5000);
+'''

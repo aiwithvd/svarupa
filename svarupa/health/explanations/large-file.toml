@@ -1,0 +1,3 @@
+what = "This file has more than 1000 lines."
+why = "A big file usually mixes several topics. It is hard to find things in it, and many people editing it at once causes merge conflicts."
+fix = "Split it by topic into smaller files in the same folder. Keep the old import path working (re-export the names) while callers move over."

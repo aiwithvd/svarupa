@@ -1,0 +1,3 @@
+what = "The same 10 or more lines appear in more than one place."
+why = "When the logic changes, someone has to find and fix every copy. Usually one copy gets missed and the copies start to behave differently."
+fix = "Move the repeated lines into one function (or one shared module) and call it from each place. If the copies differ a little, pass the difference in as a parameter."
