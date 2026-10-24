@@ -57,6 +57,8 @@ annotation on its line (`--format github`); on GitLab it appears in the
 merge request through a Code Quality report (`--format gitlab`). A comment
 in each file shows the one-line change that makes the gate report-only.
 
+AI coding tools learn these rules from `svarupa setup ide`, which writes them into each tool's rules file.
+
 ## Checks
 
 | Id | Violated when | Source | Severity | Minutes |

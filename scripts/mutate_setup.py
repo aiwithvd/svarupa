@@ -16,7 +16,15 @@ import tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 PY = ROOT / ".venv" / "bin" / "python"
-SUITE = ["tests/test_setup.py", "tests/test_diagnostics.py", "tests/test_detect.py"]
+SUITE = [
+    "tests/test_setup.py",
+    "tests/test_diagnostics.py",
+    "tests/test_detect.py",
+    "tests/test_setup_merge.py",
+    "tests/test_setup_rules.py",
+    "tests/test_setup_install.py",
+    "tests/test_setup_ide.py",
+]
 
 MUTATIONS: list[tuple[str, str, str, str]] = [
     (
@@ -162,6 +170,30 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
         "svarupa/detect.py",
         '        ".svarupa",',
         "",
+    ),
+    (
+        "text after the marked block is dropped",
+        "svarupa/setup/merge.py",
+        "    return existing[:start] + block + existing[stop:]\n",
+        "    return existing[:start] + block\n",
+    ),
+    (
+        "other MCP servers are dropped",
+        "svarupa/setup/merge.py",
+        '    cast("dict[str, Any]", servers)["svarupa"] = entry\n',
+        '    doc[key] = {"svarupa": entry}\n',
+    ),
+    (
+        "detection ignores Cursor",
+        "svarupa/setup/ide.py",
+        '        "cursor": (".cursor",),\n',
+        '        "cursor": (),\n',
+    ),
+    (
+        "a refused merge still writes the other files",
+        "svarupa/setup/__init__.py",
+        "    merged = [(p, _merged(p, m)) for p, m in merges]\n",
+        "    merged = []\n",
     ),
 ]
 
