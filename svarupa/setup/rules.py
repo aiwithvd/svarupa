@@ -3,8 +3,8 @@ repository's design and health rules, generated from the code."""
 
 from __future__ import annotations
 
-from functools import cache
 from pathlib import Path
+from typing import Any
 
 from svarupa.setup.skill import SKILL_MD
 
@@ -18,6 +18,23 @@ def workflow_text() -> str:
     start = SKILL_MD.index(_WORKFLOW)
     end = SKILL_MD.find("\n## ", start + len(_WORKFLOW))
     return SKILL_MD[start : end + 1 if end != -1 else len(SKILL_MD)]
+
+
+def _style_rules(style: Any) -> list[str]:
+    """Every rule kind a style carries, one plain sentence each."""
+    order = list(style.order)
+    pairs = [(order[j], order[i]) for i in range(len(order)) for j in range(i + 1, len(order))]
+    pairs += list(style.forbidden)
+    rules = [f"{a} must not import {b}" for a, b in pairs]
+    if style.independent:
+        rules.append(
+            "slices in " + ", ".join(style.independent) + " must not import each other"
+        )
+    if style.public_entry:
+        rules.append("import " + ", ".join(style.public_entry) + " only through a slice's root")
+    if style.pure:
+        rules.append(", ".join(style.pure) + " must stay free of framework and I/O code")
+    return rules
 
 
 def _design_lines(root: Path) -> list[str]:
@@ -39,12 +56,7 @@ def _design_lines(root: Path) -> list[str]:
             lines.append(f"- `{name}`: no style accepted yet")
             continue
         style = STYLES[u.chosen.style]
-        order = list(style.order)
-        pairs = [
-            (order[j], order[i]) for i in range(len(order)) for j in range(i + 1, len(order))
-        ]
-        pairs += list(style.forbidden)
-        rules = "; ".join(f"{a} must not import {b}" for a, b in pairs) or "no direction rules"
+        rules = "; ".join(_style_rules(style)) or "no direction rules"
         lines.append(f"- `{name}` follows {style.id}: {rules}")
     for e in design.exceptions:
         where = e.at or f"{e.src} -> {e.dst}"
@@ -79,16 +91,11 @@ def repo_rules(root: Path) -> str:
     return "\n".join(out) + "\n"
 
 
-@cache
-def _body(resolved: str) -> str:
+def rules_body(root: Path) -> str:
+    """The full text for every rules file, computed fresh on each call."""
     return (
         "# Svarupa\n\n"
         "This repository is analyzed by Svarupa. Follow the workflow and the rules "
         "below when you change code.\n\n"
-        f"{workflow_text()}\n{repo_rules(Path(resolved))}"
+        f"{workflow_text()}\n{repo_rules(root)}"
     )
-
-
-def rules_body(root: Path) -> str:
-    """The full text for every rules file, computed once per repository."""
-    return _body(str(root.resolve()))
