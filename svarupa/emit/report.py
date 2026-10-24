@@ -15,6 +15,7 @@ from svarupa.build import Graph
 from svarupa.derive.base import DiagramKind, DiagramSet
 from svarupa.design import Design, conformance
 from svarupa.diagnostics import Diagnostic, Severity
+from svarupa.emit.explained import checks_in_order, explanation_markdown
 from svarupa.health import BY_ID, Health
 from svarupa.layout import LaidOutDiagram, fits
 
@@ -69,7 +70,7 @@ def _design_section(design: Design | None) -> list[str]:
     return [*lines, "", "See `docs/design.md` and `svarupa design`.", ""]
 
 
-def _health_section(health: Health | None) -> list[str]:
+def _health_section(health: Health | None, graph: Graph | None = None) -> list[str]:
     if health is None:
         return []
     lines = [
@@ -107,6 +108,9 @@ def _health_section(health: Health | None) -> list[str]:
             f"- `{ev.file}:{ev.start_line}` {BY_ID[v.check].title}: {v.message} "
             f"({v.minutes} min, impact {v.impact})"
         )
+    lines += ["", "### What these mean", ""]
+    for check_id, lang in checks_in_order(health, graph):
+        lines += explanation_markdown(check_id, lang)
     lines += ["", "### All violations", ""]
     lines.append(
         _listing(
@@ -254,7 +258,7 @@ def render_report(
         "",
         *_semantics_scope(graph),
         *_environments_section(graph),
-        *_health_section(health),
+        *_health_section(health, graph),
         *_design_section(design),
         "## Resolution",
         "",

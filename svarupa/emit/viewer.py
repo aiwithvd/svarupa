@@ -21,10 +21,12 @@ from svarupa.build import Graph
 from svarupa.derive.base import DiagramKind, DiagramSet
 from svarupa.design import Design
 from svarupa.emit.cards import Card, cards_for, chapters_for, render_cards, render_guided
+from svarupa.emit.explained import checks_in_order
 from svarupa.emit.markup import Markup, esc, join, raw, tag
 from svarupa.emit.report import _design_lines  # pyright: ignore[reportPrivateUsage]
 from svarupa.emit.svg import canvas_svg, evidence_ref, expanded_svg
 from svarupa.health import BY_ID, Health
+from svarupa.health.explain import example_for, explanation
 from svarupa.layout import LaidOutDiagram
 from svarupa.layout.geometry import Style
 from svarupa.layout.text import FONT_STACK
@@ -152,6 +154,7 @@ body:has(.tab:target) .tab:target { display: block; }
 
 h2 { font-size: 20px; margin: 0 0 4px; font-weight: 700; letter-spacing: -0.02em; }
 .meta { color: var(--dim); margin: 0 0 16px; font-size: 13px; }
+details.why { margin: .4rem 0; } details.why pre { overflow-x: auto; }
 .crumbs { margin: 0 0 12px; font-size: 13px; }
 .crumbs a { color: var(--accent); text-decoration: none; }
 .crumbs a:hover { text-decoration: underline; }
@@ -529,6 +532,18 @@ def _js() -> Markup:
   var downBtn = document.getElementById('reach-down');
   var openBtn = document.getElementById('panel-open');
   var linkBtn = document.getElementById('panel-link');
+  // "why?" opens that check's fold in the Health tab. The tab switch is the
+  // link's own #d-health; the fold is opened here.
+  function openWhy(check) {
+    var fold = document.getElementById('why-' + check);
+    if (!fold) return;
+    fold.open = true;
+    fold.scrollIntoView();
+  }
+  document.addEventListener('click', function (ev) {
+    var a = ev.target.closest && ev.target.closest('[data-why]');
+    if (a) setTimeout(function () { openWhy(a.getAttribute('data-why')); }, 0);
+  });
   // The box the passport currently shows, for the deep link. A box id is
   // repo-derived text; it enters the URL only percent-encoded.
   var linkTarget = null;
@@ -1564,7 +1579,32 @@ def _unavailable(notes: tuple[str, ...]) -> Markup:
     )
 
 
-def _health_tab(health: Health | None, design: Design | None = None) -> Markup:
+def _why_folds(health: Health, graph: Graph | None) -> Markup:
+    """One closed fold per check with violations: what, why, fix, example."""
+    folds = []
+    for check_id, lang in checks_in_order(health, graph):
+        e = explanation(check_id)
+        ex = example_for(check_id, lang)
+        body = [
+            tag("summary", esc(BY_ID[check_id].title)),
+            tag("p", join((tag("strong", esc("What ")), esc(e.what)))),
+            tag("p", join((tag("strong", esc("Why ")), esc(e.why)))),
+            tag("p", join((tag("strong", esc("How to fix ")), esc(e.fix)))),
+        ]
+        if ex is not None:
+            body += [
+                tag("p", esc(f"Before ({lang})"), class_="meta"),
+                tag("pre", tag("code", esc(ex.before))),
+                tag("p", esc("After"), class_="meta"),
+                tag("pre", tag("code", esc(ex.after))),
+            ]
+        folds.append(tag("details", join(body), id=f"why-{check_id}", class_="why"))
+    return join(folds)
+
+
+def _health_tab(
+    health: Health | None, design: Design | None = None, graph: Graph | None = None
+) -> Markup:
     """Ratings, the fixes worth doing first, and every violation with its line."""
     if health is None:
         return raw("")
@@ -1579,6 +1619,10 @@ def _health_tab(health: Health | None, design: Design | None = None) -> Markup:
                 (
                     tag("code", esc(f"{v.evidence[0].file}:{v.evidence[0].start_line}")),
                     esc(f" {BY_ID[v.check].title}: {v.message} ({v.minutes} min)"),
+                    esc(" "),
+                    tag(
+                        "a", esc("why?"), href="#d-health", class_="why-link", data_why=v.check
+                    ),
                 )
             ),
         )
@@ -1604,6 +1648,8 @@ def _health_tab(health: Health | None, design: Design | None = None) -> Markup:
                 else raw(""),
                 tag("h3", esc("Violations, highest impact first")),
                 tag("ol", items) if health.violations else tag("p", esc("No violations.")),
+                tag("h3", esc("What these mean")) if health.violations else raw(""),
+                _why_folds(health, graph) if health.violations else raw(""),
             )
         ),
         class_="tab",
@@ -1679,7 +1725,7 @@ def render_viewer(
             header,
             join(_tab(produced[k], laid_out[k], style, cards) for k in kinds),
             _unavailable(notes),
-            _health_tab(health, design),
+            _health_tab(health, design, graph),
             tag(
                 "aside",
                 join(
