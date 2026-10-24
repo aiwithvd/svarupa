@@ -1,0 +1,82 @@
+what = "This class does a lot: the complexity of all its methods added together is above 47 (a measure called weighted methods per class)."
+why = "A class that knows and does too much becomes the place every change touches. It is hard to test alone and hard to reuse."
+fix = "Find groups of methods that work on the same data and move each group into its own class. The old class can keep thin methods that call the new ones."
+
+[example.python]
+before = '''
+class OrderService:
+    def price(self, order): ...
+    def apply_discount(self, order): ...
+    def charge_card(self, order): ...
+    def refund(self, order): ...
+    def send_email(self, order): ...
+'''
+after = '''
+class Pricing:
+    def price(self, order): ...
+    def apply_discount(self, order): ...
+
+class Payments:
+    def charge_card(self, order): ...
+    def refund(self, order): ...
+
+class OrderService:
+    def __init__(self, pricing: Pricing, payments: Payments): ...
+'''
+
+[example.typescript]
+before = '''
+class OrderService {
+  price(order) {}
+  applyDiscount(order) {}
+  chargeCard(order) {}
+  refund(order) {}
+  sendEmail(order) {}
+}
+'''
+after = '''
+class Pricing { price(order) {} applyDiscount(order) {} }
+class Payments { chargeCard(order) {} refund(order) {} }
+
+class OrderService {
+  constructor(private pricing: Pricing, private payments: Payments) {}
+}
+'''
+
+[example.go]
+before = '''
+type OrderService struct{}
+
+func (s *OrderService) Price(o Order) Money    {}
+func (s *OrderService) ChargeCard(o Order) error {}
+func (s *OrderService) Refund(o Order) error     {}
+func (s *OrderService) SendEmail(o Order) error  {}
+'''
+after = '''
+type Pricing struct{}
+type Payments struct{}
+
+type OrderService struct {
+	pricing  *Pricing
+	payments *Payments
+}
+'''
+
+[example.java]
+before = '''
+class OrderService {
+    Money price(Order o) { }
+    void chargeCard(Order o) { }
+    void refund(Order o) { }
+    void sendEmail(Order o) { }
+}
+'''
+after = '''
+class Pricing { Money price(Order o) { } }
+class Payments { void chargeCard(Order o) { } void refund(Order o) { } }
+
+class OrderService {
+    private final Pricing pricing;
+    private final Payments payments;
+}
+'''

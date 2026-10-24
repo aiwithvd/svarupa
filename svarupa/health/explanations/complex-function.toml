@@ -1,0 +1,96 @@
+what = "This function has many paths through it. Every if, loop, case and and/or adds one path; Svarupa counts them (this count is called cyclomatic complexity) and the limit is 10."
+why = "Each path needs its own test, and a reader has to keep every path in mind to change the function safely. Bugs hide in the paths nobody tested."
+fix = "Split the function. Move each separate decision into a small helper with a clear name, use a lookup table instead of long if/else chains, and return early instead of nesting."
+
+[example.python]
+before = '''
+def shipping(order):
+    if order.country == "US":
+        if order.weight > 10:
+            return 20
+        return 10
+    elif order.country == "CA":
+        return 15
+    else:
+        return 30
+'''
+after = '''
+RATES = {"US": 10, "CA": 15}
+
+def shipping(order):
+    if order.country == "US" and order.weight > 10:
+        return 20
+    return RATES.get(order.country, 30)
+'''
+
+[example.typescript]
+before = '''
+function shipping(order) {
+  if (order.country === "US") {
+    if (order.weight > 10) return 20;
+    return 10;
+  } else if (order.country === "CA") {
+    return 15;
+  } else {
+    return 30;
+  }
+}
+'''
+after = '''
+const RATES = { US: 10, CA: 15 };
+
+function shipping(order) {
+  if (order.country === "US" && order.weight > 10) return 20;
+  return RATES[order.country] ?? 30;
+}
+'''
+
+[example.go]
+before = '''
+func shipping(o Order) int {
+	if o.Country == "US" {
+		if o.Weight > 10 {
+			return 20
+		}
+		return 10
+	} else if o.Country == "CA" {
+		return 15
+	}
+	return 30
+}
+'''
+after = '''
+var rates = map[string]int{"US": 10, "CA": 15}
+
+func shipping(o Order) int {
+	if o.Country == "US" && o.Weight > 10 {
+		return 20
+	}
+	if r, ok := rates[o.Country]; ok {
+		return r
+	}
+	return 30
+}
+'''
+
+[example.java]
+before = '''
+int shipping(Order o) {
+    if (o.country().equals("US")) {
+        if (o.weight() > 10) return 20;
+        return 10;
+    } else if (o.country().equals("CA")) {
+        return 15;
+    } else {
+        return 30;
+    }
+}
+'''
+after = '''
+static final Map<String, Integer> RATES = Map.of("US", 10, "CA", 15);
+
+int shipping(Order o) {
+    if (o.country().equals("US") && o.weight() > 10) return 20;
+    return RATES.getOrDefault(o.country(), 30);
+}
+'''

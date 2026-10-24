@@ -1,0 +1,19 @@
+what = "Debug mode is turned on in code that can run in production."
+why = "Debug pages show stack traces, settings and sometimes an interactive console to anyone who triggers an error. That leaks secrets and can let them run code."
+fix = "Read the setting from the environment and make it off by default, so only a developer's machine turns it on."
+
+[example.python]
+before = '''
+DEBUG = True
+'''
+after = '''
+DEBUG = os.environ.get("DEBUG") == "1"
+'''
+
+[example.go]
+before = '''
+gin.SetMode(gin.DebugMode)
+'''
+after = '''
+gin.SetMode(os.Getenv("GIN_MODE"))  // "release" unless set
+'''

@@ -1,0 +1,3 @@
+what = "Two or more modules import each other, directly or through other modules, so they form a loop."
+why = "You cannot change, test or reuse one module without the others, and import-order errors can appear at startup. Cycles also make the design hard to see."
+fix = "Move the part both sides need into a third module that both import, or let one side depend on an interface (a small contract) instead of the other module itself."

@@ -1,0 +1,27 @@
+what = "Data is turned back into objects with a format that can create any object (pickle, yaml.load without a safe loader, Java ObjectInputStream, node-serialize)."
+why = "A crafted input can make the program run code while it is being read. If the data can come from a user, a cache or a queue, that is a remote takeover."
+fix = "Use a data-only format such as JSON, or the safe variant of the loader, and check the result against the shape you expect."
+
+[example.python]
+before = '''
+profile = pickle.loads(request.body)
+'''
+after = '''
+profile = json.loads(request.body)
+'''
+
+[example.typescript]
+before = '''
+const profile = serialize.unserialize(req.body);
+'''
+after = '''
+const profile = JSON.parse(req.body);
+'''
+
+[example.java]
+before = '''
+Profile p = (Profile) new ObjectInputStream(in).readObject();
+'''
+after = '''
+Profile p = new ObjectMapper().readValue(in, Profile.class);
+'''

@@ -1,0 +1,52 @@
+what = "This function takes more than 5 parameters."
+why = "Callers have to pass many values in the right order, and it is easy to swap two of them without any error. Long parameter lists often mean several values belong together."
+fix = "Group the values that travel together into one object (a data class, an interface, a struct or a record) and pass that instead."
+
+[example.python]
+before = '''
+def create_user(name, email, street, city, zip_code, country):
+    ...
+'''
+after = '''
+@dataclass
+class Address:
+    street: str
+    city: str
+    zip_code: str
+    country: str
+
+def create_user(name, email, address: Address):
+    ...
+'''
+
+[example.typescript]
+before = '''
+function createUser(name, email, street, city, zip, country) { /* ... */ }
+'''
+after = '''
+interface Address { street: string; city: string; zip: string; country: string }
+
+function createUser(name: string, email: string, address: Address) { /* ... */ }
+'''
+
+[example.go]
+before = '''
+func CreateUser(name, email, street, city, zip, country string) error
+'''
+after = '''
+type Address struct {
+	Street, City, Zip, Country string
+}
+
+func CreateUser(name, email string, addr Address) error
+'''
+
+[example.java]
+before = '''
+User createUser(String name, String email, String street, String city, String zip, String country)
+'''
+after = '''
+record Address(String street, String city, String zip, String country) {}
+
+User createUser(String name, String email, Address address)
+'''

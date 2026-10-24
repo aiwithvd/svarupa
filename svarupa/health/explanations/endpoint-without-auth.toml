@@ -1,0 +1,34 @@
+what = "An endpoint that changes data (POST, PUT, PATCH or DELETE) has no sign of a login or permission check, while other endpoints in the same app have one."
+why = "Anyone who finds the URL can call it. Missing access control is the most common web security problem (OWASP A01)."
+fix = "Add the same auth check the other endpoints use. If the endpoint is public on purpose (a signed webhook), record that as an exception with a reason in .svarupa/design.yaml."
+
+[example.python]
+before = '''
+@router.post("/orders")
+def create_order(order: OrderIn):
+    ...
+'''
+after = '''
+@router.post("/orders")
+def create_order(order: OrderIn, user: User = Depends(get_current_user)):
+    ...
+'''
+
+[example.typescript]
+before = '''
+router.post("/orders", createOrder);
+'''
+after = '''
+router.post("/orders", requireAuth, createOrder);
+'''
+
+[example.java]
+before = '''
+@PostMapping("/orders")
+Order create(@RequestBody OrderIn in) { }
+'''
+after = '''
+@PostMapping("/orders")
+@PreAuthorize("isAuthenticated()")
+Order create(@RequestBody OrderIn in) { }
+'''

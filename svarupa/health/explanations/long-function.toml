@@ -1,0 +1,78 @@
+what = "This function is longer than 50 lines."
+why = "A long function usually does several jobs at once. It is hard to name, hard to test, and a change to one job can break another."
+fix = "Find the separate steps (read the input, check it, do the work, save, reply) and move each step into its own function with a name that says what it does."
+
+[example.python]
+before = '''
+def place_order(request):
+    # 15 lines that read and check the form
+    # 20 lines that price the cart
+    # 15 lines that save and send the email
+    ...
+'''
+after = '''
+def place_order(request):
+    form = read_order_form(request)
+    total = price_cart(form.items)
+    order = save_order(form, total)
+    send_confirmation(order)
+    return order
+'''
+
+[example.typescript]
+before = '''
+async function placeOrder(req) {
+  // 15 lines that read and check the body
+  // 20 lines that price the cart
+  // 15 lines that save and send the email
+}
+'''
+after = '''
+async function placeOrder(req) {
+  const form = readOrderForm(req);
+  const total = priceCart(form.items);
+  const order = await saveOrder(form, total);
+  await sendConfirmation(order);
+  return order;
+}
+'''
+
+[example.go]
+before = '''
+func PlaceOrder(r *http.Request) (*Order, error) {
+	// 15 lines that read and check the body
+	// 20 lines that price the cart
+	// 15 lines that save and send the email
+}
+'''
+after = '''
+func PlaceOrder(r *http.Request) (*Order, error) {
+	form, err := readOrderForm(r)
+	if err != nil {
+		return nil, err
+	}
+	order, err := saveOrder(form, priceCart(form.Items))
+	if err != nil {
+		return nil, err
+	}
+	return order, sendConfirmation(order)
+}
+'''
+
+[example.java]
+before = '''
+Order placeOrder(OrderRequest req) {
+    // 15 lines that read and check the request
+    // 20 lines that price the cart
+    // 15 lines that save and send the email
+}
+'''
+after = '''
+Order placeOrder(OrderRequest req) {
+    OrderForm form = readOrderForm(req);
+    Money total = priceCart(form.items());
+    Order order = saveOrder(form, total);
+    sendConfirmation(order);
+    return order;
+}
+'''

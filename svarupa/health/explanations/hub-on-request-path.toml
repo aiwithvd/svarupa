@@ -1,0 +1,3 @@
+what = "A hub module (one that many modules use and that uses many) sits on the path of every HTTP request: every module with routes reaches it through its imports."
+why = "Every endpoint depends on it, so one slow or broken change there affects all of them at once, and it is hard to scale or change any endpoint alone."
+fix = "Split the hub so each route module imports only the small part it needs, and keep heavy work (setup, caches) out of the code that every request loads."

@@ -1,0 +1,3 @@
+what = "The core of this unit (the business rules) imports a framework, a database driver or other input and output code."
+why = "The core is meant to be plain logic that can be tested fast and kept when the framework changes. A framework import inside it removes both benefits."
+fix = "Define a small interface in the core for what it needs (for example save_order), and implement that interface in an adapter outside the core."

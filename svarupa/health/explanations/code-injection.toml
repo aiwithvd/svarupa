@@ -1,0 +1,30 @@
+what = "Code is built from strings and then run (eval, exec, new Function, an expression parser)."
+why = "If any part of the string comes from outside, whoever controls it can run their own code inside your program, with all its access."
+fix = "Do not run built code. Parse the value as data (a number, JSON), or look the action up in a fixed table of allowed choices."
+
+[example.python]
+before = '''
+result = eval("1 + " + user_value)
+'''
+after = '''
+result = 1 + int(user_value)
+'''
+
+[example.typescript]
+before = '''
+const handler = new Function("return " + userValue);
+'''
+after = '''
+const HANDLERS = { add: (a, b) => a + b, sub: (a, b) => a - b };
+const handler = HANDLERS[userValue];
+'''
+
+[example.java]
+before = '''
+parser.parseExpression("price * " + userValue).getValue(order);
+'''
+after = '''
+EvaluationContext ctx = new StandardEvaluationContext(order);
+ctx.setVariable("factor", Double.parseDouble(userValue));
+parser.parseExpression("price * #factor").getValue(ctx);
+'''

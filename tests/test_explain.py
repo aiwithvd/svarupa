@@ -80,3 +80,31 @@ def test_example_text_is_dedented_and_trimmed() -> None:
     )
     assert dict(e.examples)["go"] == Example("a\n  b", "c")
     assert explain.LANGS == ("python", "typescript", "go", "java")
+
+
+from svarupa.health import CATALOG  # noqa: E402
+
+
+def test_every_check_has_an_explanation() -> None:
+    for check in CATALOG:
+        explanation(check.id)
+
+
+def test_every_language_that_can_fire_has_an_example() -> None:
+    missing = [
+        f"{c.id}:{lang}"
+        for c in CATALOG
+        for lang in sorted(required_languages(c.id))
+        if example_for(c.id, lang) is None
+    ]
+    assert missing == []
+
+
+def test_explanations_are_plain_text() -> None:
+    for check in CATALOG:
+        e = explanation(check.id)
+        text = " ".join([e.what, e.why, e.fix, *(x.before + x.after for _, x in e.examples)])
+        assert "\u2014" not in text, check.id
+        assert "TODO" not in text, check.id
+        for part in (e.what, e.why, e.fix):
+            assert len(part) <= 400, check.id
