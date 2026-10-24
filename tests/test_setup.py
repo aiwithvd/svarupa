@@ -533,3 +533,33 @@ def test_the_gitlab_health_job_reports_code_quality() -> None:
     assert '--base "$CI_MERGE_REQUEST_DIFF_BASE_SHA" --format gitlab' in script
     assert "> gl-code-quality-report.json" in script
     assert 'exit "$code"' in script
+
+
+def test_the_gitlab_health_script_fails_and_writes_the_report(tmp_path: Path) -> None:
+    import os
+    import shutil
+    import subprocess
+
+    sh = shutil.which("sh")
+    if not sh:
+        pytest.skip("sh is not installed")
+    stub = tmp_path / "bin" / "svarupa"
+    stub.parent.mkdir()
+    stub.write_text(
+        "#!/bin/sh\necho '[{\"check_name\": \"x\"}]'\necho '1 new, 0 fixed' >&2\nexit 3\n",
+        encoding="utf8",
+    )
+    stub.chmod(0o755)
+    work = tmp_path / "work"
+    work.mkdir()
+    env = {
+        **os.environ,
+        "PATH": f"{stub.parent}{os.pathsep}{os.environ['PATH']}",
+        "CI_MERGE_REQUEST_DIFF_BASE_SHA": "abc123",
+    }
+    script = "\n".join(yaml.safe_load(GITLAB_CI)["health_check"]["script"])
+    proc = subprocess.run([sh, "-c", script], env=env, cwd=work, capture_output=True, text=True)
+    assert proc.returncode == 3
+    report = work / "gl-code-quality-report.json"
+    assert '"check_name"' in report.read_text(encoding="utf8")
+    assert "1 new, 0 fixed" in proc.stderr

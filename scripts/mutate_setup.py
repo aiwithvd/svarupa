@@ -128,6 +128,12 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
         "          true",
     ),
     (
+        "the GitLab gate swallows the exit code",
+        "svarupa/setup/ci_gitlab.py",
+        "        > gl-code-quality-report.json && code=0 || code=$?\n",
+        "        > gl-code-quality-report.json\n",
+    ),
+    (
         "the workflow falls back silently when git cannot read the base",
         "svarupa/setup/ci_github.py",
         '          git cat-file -e "$BASE_SHA^{commit}"',
