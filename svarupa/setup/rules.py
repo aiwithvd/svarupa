@@ -8,7 +8,7 @@ from typing import Any
 
 from svarupa.setup.skill import SKILL_MD
 
-__all__ = ["repo_rules", "rules_body", "workflow_text"]
+__all__ = ["repo_rules", "rules_bodies", "rules_body", "workflow_text"]
 
 _WORKFLOW = "## Before and after you write code\n"
 
@@ -64,9 +64,10 @@ def _design_lines(root: Path) -> list[str]:
     return lines
 
 
-def repo_rules(root: Path) -> str:
-    """This repository's design and health rules, as Markdown."""
-    from svarupa.diagnostics import DiagnosticError
+_FIX_HINT = "Run `svarupa explain <check>` to see why a check matters and how to fix it."
+
+
+def _repo_rules(design: list[str], compact: bool) -> str:
     from svarupa.health import CATALOG
     from svarupa.health.explain import explanation
 
@@ -78,24 +79,53 @@ def repo_rules(root: Path) -> str:
         "",
         "### Design",
         "",
+        *design,
+        "",
+        "### Health checks (a change must not add any)",
+        "",
     ]
-    try:
-        out += _design_lines(root) or ["- No unit found yet."]
-    except DiagnosticError:
-        out.append(
-            "- Svarupa found no source it can analyze, so no rules could be read yet. "
-            "Run `svarupa setup ide --update` once the repository has code."
-        )
-    out += ["", "### Health checks (a change must not add any)", ""]
-    out += [f"- {c.id} ({c.area}, {c.severity}): {explanation(c.id).fix}" for c in CATALOG]
+    if compact:
+        out += [f"- {c.id} ({c.area}, {c.severity})" for c in CATALOG]
+        out += ["", _FIX_HINT]
+    else:
+        out += [f"- {c.id} ({c.area}, {c.severity}): {explanation(c.id).fix}" for c in CATALOG]
     return "\n".join(out) + "\n"
 
 
-def rules_body(root: Path) -> str:
-    """The full text for every rules file, computed fresh on each call."""
+def _design(root: Path) -> list[str]:
+    from svarupa.diagnostics import DiagnosticError
+
+    try:
+        return _design_lines(root) or ["- No unit found yet."]
+    except DiagnosticError:
+        return [
+            "- Svarupa found no source it can analyze, so no rules could be read yet. "
+            "Run `svarupa setup ide --update` once the repository has code."
+        ]
+
+
+def _wrap(rules: str) -> str:
     return (
         "# Svarupa\n\n"
         "This repository is analyzed by Svarupa. Follow the workflow and the rules "
         "below when you change code.\n\n"
-        f"{workflow_text()}\n{repo_rules(root)}"
+        f"{workflow_text()}\n{rules}"
     )
+
+
+def repo_rules(root: Path, compact: bool = False) -> str:
+    """This repository's design and health rules, as Markdown.
+
+    `compact` drops the per-check fix text for tools with a small size limit."""
+    return _repo_rules(_design(root), compact)
+
+
+def rules_body(root: Path, compact: bool = False) -> str:
+    """The full text for every rules file, computed fresh on each call."""
+    return _wrap(repo_rules(root, compact))
+
+
+def rules_bodies(root: Path) -> tuple[str, str]:
+    """(full, compact) bodies from a single analysis of the repository."""
+    design = _design(root)
+    return _wrap(_repo_rules(design, False)), _wrap(_repo_rules(design, True))

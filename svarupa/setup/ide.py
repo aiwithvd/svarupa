@@ -4,11 +4,12 @@ MCP config get Svarupa's server merged in next to the user's own."""
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import ClassVar
 
 from svarupa.setup.base import Merge, Target
-from svarupa.setup.rules import rules_body
+from svarupa.setup.rules import rules_bodies
 from svarupa.setup.skill import SKILL_MD
 
 __all__ = [
@@ -25,20 +26,28 @@ _FIRST = (
     "Run `svarupa .` so `.svarupa/graph.json` exists, and install the MCP extra "
     "(`pip install 'svarupa[mcp]'`) so the server can start."
 )
+_ARGS = json.dumps(ENTRY["args"])
+_WINDSURF_LIMIT = 6000
 _REFRESH = "After the design changes, run `svarupa setup ide --update`."
 
 
 class _ToolTarget(Target):
     """A target whose files carry the shared rules text, computed at most once."""
 
-    def __init__(self, root: Path = Path(), body: str | None = None) -> None:
+    def __init__(
+        self,
+        root: Path = Path(),
+        body: str | None = None,
+        compact: str | None = None,
+    ) -> None:
         super().__init__(root)
         self._body = body
+        self._compact = compact
 
-    def _rules(self) -> str:
-        if self._body is None:
-            self._body = rules_body(self.root)
-        return self._body
+    def _rules(self, compact: bool = False) -> str:
+        if self._body is None or self._compact is None:
+            self._body, self._compact = rules_bodies(self.root)
+        return self._compact if compact else self._body
 
 
 class AgentsTarget(_ToolTarget):
@@ -52,7 +61,9 @@ class AgentsTarget(_ToolTarget):
         return (Merge("AGENTS.md", "block", body=self._rules()),)
 
     def next_steps(self) -> tuple[str, ...]:
-        snippet = '[mcp_servers.svarupa]\ncommand = "svarupa"\nargs = ["mcp", ".svarupa"]'
+        snippet = (
+            f"[mcp_servers.svarupa]\ncommand = {json.dumps(ENTRY['command'])}\nargs = {_ARGS}"
+        )
         return (
             "Commit AGENTS.md.",
             _REFRESH,
@@ -125,15 +136,30 @@ class WindsurfTarget(_ToolTarget):
 
     def files(self) -> tuple[tuple[str, str], ...]:
         return (
-            (".windsurf/rules/svarupa.md", "---\ntrigger: always_on\n---\n\n" + self._rules()),
+            (
+                ".windsurf/rules/svarupa.md",
+                "---\ntrigger: always_on\n---\n\n" + self._rules(compact=True),
+            ),
         )
 
     def next_steps(self) -> tuple[str, ...]:
         snippet = (
-            '{\n  "mcpServers": {\n    "svarupa": {\n      "command": "svarupa",\n'
-            '      "args": ["mcp", ".svarupa"]\n    }\n  }\n}'
+            '{\n  "mcpServers": {\n    "svarupa": {\n'
+            f'      "command": {json.dumps(ENTRY["command"])},\n'
+            f'      "args": {_ARGS}\n    }}\n  }}\n}}'
+        )
+        size = len(self.files()[0][1])
+        over = (
+            (
+                f"The Windsurf rules file is {size} characters, over Windsurf's "
+                f"{_WINDSURF_LIMIT:,} limit; Windsurf will cut it. Keep the workflow, "
+                "or split the repository's rules by hand.",
+            )
+            if size > _WINDSURF_LIMIT
+            else ()
         )
         return (
+            *over,
             "Commit .windsurf/rules/svarupa.md.",
             f"For Windsurf MCP, add to ~/.codeium/windsurf/mcp_config.json:\n{snippet}",
             _FIRST,
@@ -173,11 +199,11 @@ class IdeTarget(Target):
     def selected(self) -> list[Target]:
         """The sub-targets, built once and sharing one analysis of the repository."""
         if self._selected is None:
-            body = rules_body(self.root)
+            body = rules_bodies(self.root)
             tools = [
-                t(self.root, body) for t in _TOOLS if self.every or _detected(self.root, t)
+                t(self.root, *body) for t in _TOOLS if self.every or _detected(self.root, t)
             ]
-            self._selected = [AgentsTarget(self.root, body), *tools]
+            self._selected = [AgentsTarget(self.root, *body), *tools]
         return self._selected
 
     def files(self) -> tuple[tuple[str, str], ...]:

@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
+import tomllib
 
 from svarupa.cli import main
 from svarupa.setup import TARGETS, ide
@@ -105,11 +107,11 @@ def test_ide_computes_the_rules_once_per_run(
 ) -> None:
     calls: list[Path] = []
 
-    def counting(root: Path) -> str:
+    def counting(root: Path) -> tuple[str, str]:
         calls.append(root)
-        return "rules\n"
+        return "rules\n", "compact\n"
 
-    monkeypatch.setattr(ide, "rules_body", counting)
+    monkeypatch.setattr(ide, "rules_bodies", counting)
     target = IdeTarget(tmp_path, every=True)
     target.files()
     target.merges()
@@ -130,3 +132,53 @@ def test_ide_all_has_no_duplicate_destinations(tmp_path: Path) -> None:
     target = IdeTarget(tmp_path, every=True)
     paths = [p for p, _ in target.files()] + [m.path for m in target.merges()]
     assert len(paths) == len(set(paths))
+
+
+def _windsurf(root: Path) -> str:
+    return (root / ".windsurf/rules/svarupa.md").read_text(encoding="utf8")
+
+
+def test_windsurf_file_fits_the_limit_and_lists_every_check(tmp_path: Path) -> None:
+    from svarupa.health import CATALOG
+    from tests.test_design import layered
+
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    full = tmp_path / "layered"
+    full.mkdir()
+    layered(full)
+    for root in (empty, full):
+        assert main(["setup", "windsurf", "--dest", str(root)]) == 0
+        text = _windsurf(root)
+        assert len(text) < 6000, (root.name, len(text))
+        assert all(c.id in text for c in CATALOG)
+        assert "svarupa explain <check>" in text
+
+
+def test_full_form_keeps_the_fix_text(tmp_path: Path) -> None:
+    from svarupa.health import CATALOG
+    from svarupa.health.explain import explanation
+
+    assert main(["setup", "claude", "--dest", str(tmp_path)]) == 0
+    text = (tmp_path / "CLAUDE.md").read_text(encoding="utf8")
+    assert explanation(CATALOG[0].id).fix in text
+
+
+def test_over_limit_windsurf_file_adds_a_next_step(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(ide, "rules_bodies", lambda _root: ("full\n", "x" * 6500))
+    assert main(["setup", "windsurf", "--dest", str(tmp_path)]) == 0
+    out = capsys.readouterr().out
+    assert re.search(r"file is \d+ characters, over Windsurf's 6,000 limit", out)
+
+
+def test_printed_snippets_parse(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(["setup", "ide", "--all", "--dest", str(tmp_path)]) == 0
+    out = capsys.readouterr().out
+    js = out[out.index("mcp_config.json:\n") + len("mcp_config.json:\n") :]
+    parsed = json.loads(js[: js.index("\n}") + 2])
+    assert parsed == {"mcpServers": {"svarupa": ENTRY}}
+    toml = out[out.index("config.toml:\n") + len("config.toml:\n") :]
+    toml = toml[: toml.index("\n  next:")]
+    assert tomllib.loads(toml) == {"mcp_servers": {"svarupa": ENTRY}}
