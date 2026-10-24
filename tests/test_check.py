@@ -81,3 +81,130 @@ def test_json_and_text_say_the_same() -> None:
     assert text.startswith("1 new, 1 fixed")
     assert "a.py:1 many-parameters: f has 6 parameters (limit 5)" in text
     assert "fix: Group the values that travel together" in text
+
+
+import json  # noqa: E402
+import shutil  # noqa: E402
+import subprocess  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+import pytest  # noqa: E402
+
+from svarupa.cli import main  # noqa: E402
+from tests.test_health import write  # noqa: E402
+
+CLEAN = "def ok(a):\n    return a\n"
+SIX = "def six(a, b, c, d, e, f):\n    return a\n"
+
+
+def git_repo(root: Path) -> None:
+    if not shutil.which("git"):
+        pytest.skip("git is not installed")
+
+    def git(*args: str) -> None:
+        subprocess.run(["git", "-C", str(root), *args], check=True, capture_output=True)
+
+    git("init", "-q")
+    git("config", "user.email", "t@example.com")
+    git("config", "user.name", "t")
+    git("config", "commit.gpgsign", "false")
+    write(root, "app/m.py", CLEAN)
+    git("add", ".")
+    git("commit", "-q", "-m", "base")
+
+
+def worktrees(root: Path) -> int:
+    out = subprocess.run(
+        ["git", "-C", str(root), "worktree", "list"], capture_output=True, text=True, check=True
+    )
+    return len(out.stdout.strip().splitlines())
+
+
+def test_check_against_a_graph_json(tmp_path: Path, capsys) -> None:
+    write(tmp_path, "app/m.py", CLEAN)
+    assert main([str(tmp_path)]) == 0
+    base = tmp_path / "base.json"
+    shutil.copy(tmp_path / ".svarupa" / "graph.json", base)
+    write(tmp_path, "app/n.py", SIX)
+    capsys.readouterr()
+    assert main(["check", str(tmp_path), "--base", str(base), "--json"]) == 3
+    out = json.loads(capsys.readouterr().out)
+    assert [v["check"] for v in out["new"]] == ["many-parameters"] and out["failed"] is True
+
+
+def test_check_against_a_git_ref(tmp_path: Path, capsys) -> None:
+    git_repo(tmp_path)
+    write(tmp_path, "app/m.py", CLEAN + "\n\n" + SIX)
+    assert main(["check", str(tmp_path), "--base", "HEAD"]) == 3
+    out = capsys.readouterr().out
+    assert out.startswith("1 new, 0 fixed") and "fix: Group the values" in out
+    assert worktrees(tmp_path) == 1
+
+
+def test_check_with_no_change_passes(tmp_path: Path, capsys) -> None:
+    git_repo(tmp_path)
+    assert main(["check", str(tmp_path), "--base", "HEAD"]) == 0
+    assert capsys.readouterr().out.startswith("0 new, 0 fixed")
+
+
+def test_check_in_a_subfolder_of_the_checkout(tmp_path: Path, capsys) -> None:
+    git_repo(tmp_path)
+    write(tmp_path, "svc/m.py", SIX)
+    subprocess.run(["git", "-C", str(tmp_path), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "commit", "-q", "-m", "svc"], check=True)
+    assert main(["check", str(tmp_path / "app"), "--base", "HEAD", "--json"]) == 0
+    assert json.loads(capsys.readouterr().out)["new"] == []
+
+
+def test_unknown_ref_exits_1_and_leaves_no_worktree(tmp_path: Path, capsys) -> None:
+    git_repo(tmp_path)
+    assert main(["check", str(tmp_path), "--base", "no-such-ref"]) == 1
+    assert "unknown ref" in capsys.readouterr().err
+    assert worktrees(tmp_path) == 1
+
+
+def test_a_base_without_health_exits_1(tmp_path: Path, capsys) -> None:
+    write(tmp_path, "app/m.py", CLEAN)
+    base = tmp_path / "old.json"
+    base.write_text(json.dumps({"schema": 2, "nodes": []}), encoding="utf8")
+    assert main(["check", str(tmp_path), "--base", str(base)]) == 1
+    assert "no health" in capsys.readouterr().err
+
+
+def test_an_excepted_violation_is_not_new(tmp_path: Path) -> None:
+    git_repo(tmp_path)
+    write(tmp_path, "app/n.py", SIX)
+    write(
+        tmp_path,
+        ".svarupa/design.yaml",
+        "units: {}\nexceptions:\n  - rule: many-parameters\n    at: app/n.py\n    reason: generated adapter\n",
+    )
+    assert main(["check", str(tmp_path), "--base", "HEAD"]) == 0
+
+
+def test_min_severity_major_ignores_a_new_minor(tmp_path: Path) -> None:
+    git_repo(tmp_path)
+    write(tmp_path, "app/n.py", SIX)
+    assert main(["check", str(tmp_path), "--base", "HEAD", "--min-severity", "major"]) == 0
+
+
+@pytest.mark.parametrize(
+    "health",
+    [
+        [],
+        {"violations": ["x"]},
+        {"violations": [{"message": "m"}]},
+        {
+            "violations": [
+                {"check": "many-parameters", "evidence": [{"file": "a.py", "start_line": "x"}]}
+            ]
+        },
+        {"violations": [], "ratings": {"security": "Z"}},
+    ],
+)
+def test_a_malformed_base_exits_1_with_a_message(tmp_path: Path, capsys, health) -> None:
+    write(tmp_path, "app/m.py", CLEAN)
+    base = tmp_path / "bad.json"
+    base.write_text(json.dumps({"schema": 2, "health": health}), encoding="utf8")
+    assert main(["check", str(tmp_path), "--base", str(base)]) == 1
+    assert "malformed" in capsys.readouterr().err
