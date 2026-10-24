@@ -902,7 +902,7 @@ git commit -m "Set up Claude Code, Cursor, Copilot, Windsurf and AGENTS.md in on
 **Files:**
 - Modify: `scripts/mutate_setup.py`, `README.md`, `svarupa/setup/skill.py` (`SKILL_MD`), `skills/svarupa/SKILL.md`, `docs/health.md`
 
-- [ ] **Step 1: Mutations** (append to `MUTATIONS` in `scripts/mutate_setup.py`; add `"tests/test_setup_merge.py"`, `"tests/test_setup_rules.py"`, `"tests/test_setup_install.py"`, `"tests/test_setup_ide.py"` to its suite list if it has one)
+- [ ] **Step 1: Mutations** (append to `MUTATIONS` in `scripts/mutate_setup.py`)
 
 ```python
     (
