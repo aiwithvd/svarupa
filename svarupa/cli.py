@@ -29,7 +29,7 @@ from svarupa.lock import (
     diff,
     drift_check,
 )
-from svarupa.setup import TARGETS, Target, install
+from svarupa.setup import TARGETS, Installed, Target, install
 from svarupa.setup.ide import IdeTarget
 
 # Exit codes are a machine contract: 0 answered, 1 no usable answer (an error
@@ -466,7 +466,7 @@ def _design(argv: list[str]) -> int:
     return 0
 
 
-def _setup(argv: list[str]) -> int:
+def _setup_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="svarupa setup",
         description="Install an integration into a repository.",
@@ -497,6 +497,22 @@ def _setup(argv: list[str]) -> int:
         action="store_true",
         help="with ide: install every tool, not only detected ones",
     )
+    return parser
+
+
+def _print_install(result: Installed, dry_run: bool) -> None:
+    if dry_run:
+        for path, action in result.actions:
+            print(f"  {action:<9} {path}")
+        return
+    for path in result.written:
+        print(f"  wrote     {path}")
+    for path in result.unchanged:
+        print(f"  unchanged {path}")
+
+
+def _setup(argv: list[str]) -> int:
+    parser = _setup_parser()
     args = parser.parse_args(argv)
     if args.all and args.target != "ide":
         parser.error("--all is only for the ide target")
@@ -506,14 +522,7 @@ def _setup(argv: list[str]) -> int:
         else TARGETS[args.target](Path(args.dest))
     )
     result = install(target, Path(args.dest), args.force or args.update, dry_run=args.dry_run)
-    if args.dry_run:
-        for path, action in result.actions:
-            print(f"  {action:<9} {path}")
-    else:
-        for path in result.written:
-            print(f"  wrote     {path}")
-        for path in result.unchanged:
-            print(f"  unchanged {path}")
+    _print_install(result, args.dry_run)
     print()
     for step in target.next_steps():
         print(f"  next: {step}")
