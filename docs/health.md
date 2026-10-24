@@ -11,8 +11,7 @@ SonarQube's ratings and aligned with ISO/IEC 25010.
   A: up to 5%. B: up to 10%. C: up to 20%. D: up to 50%. E: above 50%.
 - **Reliability, security, performance** use the worst severity found
   (minor B, major C, critical D, blocker E). Until checks exist for an area
-  it shows "not assessed yet", never a grade. Security is assessed;
-  reliability and performance come next.
+  it shows "not assessed yet", never a grade. All four areas are assessed.
 
 ## Checks
 
@@ -78,6 +77,40 @@ How each one decides:
   register, token, refresh, webhook, health, password reset) are skipped.
   A unit with no marker anywhere is not judged, and the report says so.
   Routes are known for FastAPI, Flask, Express and NestJS today.
+
+## Performance checks
+
+| Id | Fires on | Source | Severity | Minutes |
+|---|---|---|---|---|
+| shared-datastore | services built from two or more codebases use the same compose datastore (`depends_on`, `links`, or a connection setting that names it) | Newman, Building Microservices: database per service | major | 240 |
+| query-in-loop | a database query inside a loop body, or inside a `forEach`/`map` callback (in Java, `map` only on a stream: `Optional.map` runs once) | N+1 query anti-pattern; Fowler, PoEAA | major | 20 |
+| blocking-in-async | a blocking call (`requests`, `time.sleep`, `fs.readFileSync`, `bcrypt.hashSync`...) inside an async function | Python asyncio docs; Node.js "Don't block the event loop" | major | 15 |
+| hub-on-request-path | a hub module (the `hub-module` limits) that every route module reaches, with at least 3 route modules | Arcan hub-like dependency | major | 60 |
+
+How each one decides:
+
+- **Loops.** Only the loop body counts: `for u in User.objects.all():` runs
+  one query. A function passed to `forEach`, `map` or `flatMap` runs once
+  per item. A query is a call on a database client, ORM model or
+  repository (`cursor.execute`, `User.objects.get`, `prisma.user.findMany`,
+  `userRepository.findById`, `db.QueryRow`).
+- **Async.** A function marked `async` (Python, JavaScript, TypeScript). A
+  function defined inside it is judged on its own.
+- **Shared datastore.** Only services built from this repository count, so
+  an admin image like adminer is never an owner. Two services built from
+  the same folder (an app and its migration job) are one owner.
+
+## Reliability checks
+
+| Id | Fires on | Source | Severity | Minutes |
+|---|---|---|---|---|
+| no-timeout | `requests` or `urlopen` without `timeout=`, axios without `timeout`, Go's default HTTP client, `http.Client{}` without `Timeout`, Java `HttpClient.newHttpClient()` and `new RestTemplate()` | CWE-1088; Nygard, Release It! | major | 10 |
+| swallowed-error | an `except` or `catch` whose body is empty, `pass` or comments; Go `if err != nil {}` with nothing but comments inside | CWE-390; Bandit B110 | major | 10 |
+| no-retry | a client built with retries off or a single attempt: pika without `connection_attempts`, `aio_pika.connect` (not `connect_robust`), Redis `MaxRetries: -1`, RabbitMQ automatic recovery off | Nygard, Release It! | minor | 15 |
+
+`fetch` is not flagged: Node's fetch has 300-second timeouts by default and
+a browser user can cancel a request. Clients that retry by default (most
+Redis, MongoDB and Kafka clients) are not flagged either.
 
 ## Exceptions
 

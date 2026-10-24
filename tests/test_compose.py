@@ -182,3 +182,31 @@ def test_a_multi_document_file_reads_its_first_document(tmp_path: Path) -> None:
     assert labels in ({"web"}, set()), labels
     if not labels:
         assert any(d.code == "SVA-X-005" for d in got.diagnostics)
+
+
+def test_connection_settings_and_links_are_recorded(tmp_path: Path) -> None:
+    write(
+        tmp_path,
+        "docker-compose.yml",
+        "x-env: &env\n"
+        "  DB_HOST: db\n"
+        "services:\n"
+        "  api:\n"
+        "    build: .\n"
+        "    environment:\n"
+        "      <<: *env\n"
+        "      CACHE_URL: redis://cache:6379/0\n"
+        "  worker:\n"
+        "    build: ./w\n"
+        "    environment:\n"
+        "      - DATABASE_URL=postgres://u@db/app\n"
+        "    links:\n"
+        '      - "mq:queue"\n'
+        "  db: {image: postgres}\n"
+        "  cache: {image: redis}\n"
+        "  mq: {image: rabbitmq}\n",
+    )
+    by = {n.label: n.attr("connects") for n in facts(tmp_path).nodes}
+    assert by["api"] == "cache\ndb"
+    assert by["worker"] == "db\nmq"
+    assert by["db"] is None

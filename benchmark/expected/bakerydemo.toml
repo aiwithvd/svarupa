@@ -195,3 +195,24 @@ why = "bakerydemo/settings/production.py:12 SECRET_KEY = os.environ[\"DJANGO_SEC
 [[must]]
 violation = "hardcoded-secret bakerydemo/settings/base.py:254"
 why = "bakerydemo/settings/base.py:254 GOOGLE_MAP_API_KEY = \"AIza...\": a Google API key committed (the comment above asks not to use it in production)"
+
+# Performance and reliability (1c-3b), read from source
+[[must]]
+violation = "query-in-loop bakerydemo/base/management/commands/create_random_data.py:131"
+why = "bakerydemo/base/management/commands/create_random_data.py:131 Country.objects.create(...) inside for _ in range(snippet_count): one INSERT per pass"
+
+[[must]]
+violation = "query-in-loop bakerydemo/base/management/commands/create_random_data.py:143"
+why = "bakerydemo/base/management/commands/create_random_data.py:143 Person.objects.create(...) inside for _ in range(snippet_count): one INSERT per pass"
+
+[[must]]
+violation = "swallowed-error bakerydemo/settings/dev.py:14"
+why = "bakerydemo/settings/dev.py:14 except ImportError: pass, the error is ignored"
+
+[[must_not]]
+violation = "swallowed-error bakerydemo/breads/models.py:255"
+why = "bakerydemo/breads/models.py:255 except PageNotAnInteger: pages = paginator.page(1), the error is handled"
+
+[[must_not]]
+violation = "swallowed-error bakerydemo/locations/models.py:210"
+why = "bakerydemo/locations/models.py:210 except LocationOperatingHours.DoesNotExist: return False, the error is handled"
