@@ -578,6 +578,7 @@ def _check(argv: list[str]) -> int:
         base_from_ref,
         compare,
         emit,
+        repo_prefix,
         snapshot,
         snapshot_from_json,
     )
@@ -600,7 +601,7 @@ def _check(argv: list[str]) -> int:
         return 1
     delta = compare(base, head)
     failed = delta.failed(args.min_severity)
-    emit(delta, fmt, failed)
+    emit(delta, fmt, failed, repo_prefix(root) if fmt in ("github", "gitlab") else "")
     return EXIT_CHANGED if failed else 0
 
 

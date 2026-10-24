@@ -574,3 +574,10 @@ def test_svarupa_gates_its_own_pull_requests() -> None:
     run = "\n".join(str(s.get("run", "")) for s in job["steps"])
     assert "uv run svarupa check . --base" in run and "--format github" in run
     assert "GITHUB_STEP_SUMMARY" in run
+
+
+def test_docs_say_the_health_step_gates_pull_requests() -> None:
+    readme = (Path(__file__).resolve().parent.parent / "README.md").read_text(encoding="utf8")
+    for text in (SKILL_MD, readme):
+        assert "Both are informational by default" not in text
+        assert "health step fails the job on new problems" in " ".join(text.split())

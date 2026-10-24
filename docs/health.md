@@ -42,6 +42,8 @@ code never makes it new, and a finding is matched across files only when
 its old file is gone (a rename or move). Exit 3 when a new violation is at or above
 `--min-severity` (default minor) or a grade got worse; exit 0 otherwise.
 Both sides are judged by the working tree's `.svarupa/design.yaml`.
+Annotations (`--format github` and `gitlab`) use repository-root paths, so
+`svarupa check` works on a monorepo subfolder.
 
 AI agents get every rule up front from `get_design_rules` (`checks`: id,
 rule, area, severity, limit, fix), and the agent skill tells them to run

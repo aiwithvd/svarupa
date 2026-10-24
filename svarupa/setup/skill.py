@@ -161,8 +161,10 @@ exactly the lines that changed.
 three per pull request and gates health (it fails only on health problems
 the pull request adds); `svarupa setup ci_gitlab` installs the same job for
 GitLab merge requests (it refuses to overwrite an existing `.gitlab-ci.yml`
-and prints the job to merge in by hand instead). Both are informational
-by default; add `--fail-on-change` to their `svarupa` calls to gate merges.
+and prints the job to merge in by hand instead). The architecture delta
+is informational by default; add `--fail-on-change` to gate it. The health
+step fails the job on new problems (new violations or a worse grade); a
+comment in the installed file shows the one-line change to make it report-only.
 
 ## Rules the tool holds itself to, which you can rely on
 

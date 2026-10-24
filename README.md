@@ -53,7 +53,10 @@ somewhere other than `<repo>/.svarupa/`. The artifact holds:
 - `--lock` writes the committed architecture lockfile; `--diff` prints the
   architecture delta against a base lockfile; add `--fail-on-change` to exit
   3 when that delta is not empty. `svarupa setup ci_github` (or `ci_gitlab`)
-  installs the per-pull-request workflow, informational by default.
+  installs the per-pull-request workflow. The architecture delta is
+  informational by default (add `--fail-on-change` to gate it); the health
+  step fails the job on new problems (new violations or a worse grade), and
+  the file describes the one-line change that makes it report-only.
 - Code facts come from language packs: Python, TypeScript, JavaScript, Go
   and Java today. Other detected languages are listed as detected but not
   analyzed (SVA-X-012), never guessed.

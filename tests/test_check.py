@@ -386,3 +386,33 @@ def test_gitlab_format_keeps_stdout_pure_json(tmp_path: Path, capsys) -> None:
     report = json.loads(cap.out)
     assert [r["check_name"] for r in report] == ["many-parameters"]
     assert cap.err.startswith("1 new, 0 fixed")
+
+
+def test_annotations_prepend_the_path_prefix() -> None:
+    d = compare(snap(), snap(f()))
+    assert d.render_github("pkg").startswith("::error file=pkg/a.py,")
+    assert d.to_gitlab("pkg")[0]["location"] == {"path": "pkg/a.py", "lines": {"begin": 1}}
+    assert d.render_github().startswith("::error file=a.py,")
+
+
+def test_github_annotations_use_repository_root_paths_for_a_subfolder(
+    tmp_path: Path, capsys
+) -> None:
+    git_repo(tmp_path)
+    write(tmp_path, "pkg/app/m.py", CLEAN)
+    subprocess.run(["git", "-C", str(tmp_path), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "commit", "-q", "-m", "pkg"], check=True)
+    write(tmp_path, "pkg/app/n.py", SIX)
+    assert main(["check", str(tmp_path / "pkg"), "--base", "HEAD", "--format", "github"]) == 3
+    assert "::error file=pkg/app/n.py," in capsys.readouterr().out
+    assert main(["check", str(tmp_path / "pkg"), "--base", "HEAD", "--format", "gitlab"]) == 3
+    assert json.loads(capsys.readouterr().out)[0]["location"]["path"] == "pkg/app/n.py"
+
+
+def test_github_annotations_keep_plain_paths_at_the_repository_root(
+    tmp_path: Path, capsys
+) -> None:
+    git_repo(tmp_path)
+    write(tmp_path, "app/n.py", SIX)
+    assert main(["check", str(tmp_path), "--base", "HEAD", "--format", "github"]) == 3
+    assert "::error file=app/n.py," in capsys.readouterr().out

@@ -207,7 +207,7 @@ class Delta:
             ]
         return "\n".join(lines)
 
-    def render_github(self) -> str:
+    def render_github(self, prefix: str = "") -> str:
         """Workflow commands that annotate each new violation on its line,
         a warning per worse grade, then the text report."""
         from svarupa.health.explain import explanation
@@ -216,7 +216,7 @@ class Delta:
         for f in self.new:
             fix = f" Fix: {explanation(f.check).fix}" if f.check in BY_ID else ""
             lines.append(
-                f"::error file={_prop(f.file)},line={f.line},title={_prop(_title(f.check))}"
+                f"::error file={_prop(_join(prefix, f.file))},line={f.line},title={_prop(_title(f.check))}"
                 f"::{_data(f.message + fix)}"
             )
         grades = {area: (before, after) for area, before, after in self.grades}
@@ -228,7 +228,7 @@ class Delta:
         lines.append(self.render())
         return "\n".join(lines)
 
-    def to_gitlab(self) -> list[dict[str, object]]:
+    def to_gitlab(self, prefix: str = "") -> list[dict[str, object]]:
         """A GitLab Code Quality report of the new violations. The
         fingerprint hashes the match key, so it survives moved lines; a
         repeated key gets its occurrence number so GitLab keeps both."""
@@ -243,10 +243,14 @@ class Delta:
                     "check_name": f.check,
                     "fingerprint": hashlib.sha256(raw.encode("utf8")).hexdigest(),
                     "severity": BY_ID[f.check].severity if f.check in BY_ID else "info",
-                    "location": {"path": f.file, "lines": {"begin": f.line}},
+                    "location": {"path": _join(prefix, f.file), "lines": {"begin": f.line}},
                 }
             )
         return out
+
+
+def _join(prefix: str, file: str) -> str:
+    return f"{prefix}/{file}" if prefix else file
 
 
 def _unmatched(items: tuple[Finding, ...], other: tuple[Finding, ...]) -> tuple[Finding, ...]:
@@ -303,14 +307,15 @@ def compare(base: Snapshot, head: Snapshot) -> Delta:
     )
 
 
-def emit(delta: Delta, fmt: str, failed: bool) -> None:
-    """Print a result in the requested format."""
+def emit(delta: Delta, fmt: str, failed: bool, prefix: str = "") -> None:
+    """Print a result in the requested format. `prefix` is the analyzed root's
+    path inside the repository, so annotations name repository-root files."""
     if fmt == "json":
         print(json.dumps(delta.to_json(failed), indent=2, sort_keys=True))
     elif fmt == "github":
-        print(delta.render_github())
+        print(delta.render_github(prefix))
     elif fmt == "gitlab":
-        print(json.dumps(delta.to_gitlab(), indent=2, sort_keys=True))
+        print(json.dumps(delta.to_gitlab(prefix), indent=2, sort_keys=True))
         print(delta.render(), file=sys.stderr)
     else:
         print(delta.render())
@@ -355,6 +360,17 @@ def _git(cwd: Path, *args: str) -> str:
     if proc.returncode:
         raise CheckError(proc.stderr.strip() or f"git {args[0]} failed")
     return proc.stdout.strip()
+
+
+def repo_prefix(root: Path) -> str:
+    """`root` relative to its git checkout's top level, "" at the top level
+    or when there is no checkout (or no git)."""
+    try:
+        top = Path(_git(root, "rev-parse", "--show-toplevel")).resolve()
+    except (CheckError, OSError):
+        return ""
+    rel = root.resolve().relative_to(top).as_posix()
+    return "" if rel == "." else rel
 
 
 def base_from_ref(root: Path, ref: str) -> Health:
