@@ -124,9 +124,7 @@ def test_every_package_module_is_reachable_by_import() -> None:
     #
     # Empty as of P1-7: `svarupa.lock` was the last entry, and wiring it made
     # this assertion fail, which is what the list is for.
-    NOT_WIRED_YET: set[str] = {
-        "svarupa.setup.rules"
-    }  # wired by the ide target (phase 3, task 4)
+    NOT_WIRED_YET: set[str] = set()
 
     live = live_modules()
     orphans = {

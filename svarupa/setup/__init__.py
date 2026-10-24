@@ -31,6 +31,14 @@ from svarupa.diagnostics import Diagnostic, DiagnosticError, Severity
 from svarupa.setup.base import Merge, Target
 from svarupa.setup.ci_github import CiGithubTarget
 from svarupa.setup.ci_gitlab import CiGitlabTarget
+from svarupa.setup.ide import (
+    AgentsTarget,
+    ClaudeTarget,
+    CopilotTarget,
+    CursorTarget,
+    IdeTarget,
+    WindsurfTarget,
+)
 from svarupa.setup.merge import MergeError, merge_block, merge_mcp
 from svarupa.setup.skill import SkillTarget
 
@@ -43,6 +51,12 @@ TARGETS: dict[str, type[Target]] = {
     SkillTarget.name: SkillTarget,
     CiGithubTarget.name: CiGithubTarget,
     CiGitlabTarget.name: CiGitlabTarget,
+    AgentsTarget.name: AgentsTarget,
+    ClaudeTarget.name: ClaudeTarget,
+    CursorTarget.name: CursorTarget,
+    CopilotTarget.name: CopilotTarget,
+    WindsurfTarget.name: WindsurfTarget,
+    IdeTarget.name: IdeTarget,
 }
 
 

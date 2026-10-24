@@ -29,7 +29,8 @@ from svarupa.lock import (
     diff,
     drift_check,
 )
-from svarupa.setup import TARGETS, install
+from svarupa.setup import TARGETS, Target, install
+from svarupa.setup.ide import IdeTarget
 
 # Exit codes are a machine contract: 0 answered, 1 no usable answer (an error
 # or a refusal), 2 argparse usage error, 3 answered and the architecture
@@ -497,7 +498,13 @@ def _setup(argv: list[str]) -> int:
         help="with ide: install every tool, not only detected ones",
     )
     args = parser.parse_args(argv)
-    target = TARGETS[args.target](Path(args.dest))
+    if args.all and args.target != "ide":
+        parser.error("--all is only for the ide target")
+    target: Target = (
+        IdeTarget(Path(args.dest), every=args.all)
+        if args.target == "ide"
+        else TARGETS[args.target](Path(args.dest))
+    )
     result = install(target, Path(args.dest), args.force or args.update, dry_run=args.dry_run)
     if args.dry_run:
         for path, action in result.actions:
