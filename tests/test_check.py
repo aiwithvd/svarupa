@@ -152,8 +152,11 @@ def test_check_in_a_subfolder_of_the_checkout(tmp_path: Path, capsys) -> None:
     write(tmp_path, "svc/m.py", SIX)
     subprocess.run(["git", "-C", str(tmp_path), "add", "."], check=True)
     subprocess.run(["git", "-C", str(tmp_path), "commit", "-q", "-m", "svc"], check=True)
-    assert main(["check", str(tmp_path / "app"), "--base", "HEAD", "--json"]) == 0
-    assert json.loads(capsys.readouterr().out)["new"] == []
+    write(tmp_path, "app/n.py", SIX)
+    assert main(["check", str(tmp_path / "app"), "--base", "HEAD", "--json"]) == 3
+    out = json.loads(capsys.readouterr().out)
+    assert [(v["check"], v["file"]) for v in out["new"]] == [("many-parameters", "n.py")]
+    assert out["fixed"] == []
 
 
 def test_unknown_ref_exits_1_and_leaves_no_worktree(tmp_path: Path, capsys) -> None:
@@ -206,5 +209,14 @@ def test_a_malformed_base_exits_1_with_a_message(tmp_path: Path, capsys, health)
     write(tmp_path, "app/m.py", CLEAN)
     base = tmp_path / "bad.json"
     base.write_text(json.dumps({"schema": 2, "health": health}), encoding="utf8")
+    assert main(["check", str(tmp_path), "--base", str(base)]) == 1
+    assert "malformed" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("content", ["[]", "null", '"x"'])
+def test_a_base_that_is_not_an_object_exits_1(tmp_path: Path, capsys, content) -> None:
+    write(tmp_path, "app/m.py", CLEAN)
+    base = tmp_path / "bad.json"
+    base.write_text(content, encoding="utf8")
     assert main(["check", str(tmp_path), "--base", str(base)]) == 1
     assert "malformed" in capsys.readouterr().err

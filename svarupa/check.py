@@ -82,6 +82,10 @@ def snapshot(health: Health) -> Snapshot:
 
 def snapshot_from_json(data: Mapping[str, Any]) -> Snapshot:
     """The health in an artifact's graph.json."""
+    if not isinstance(cast("object", data), dict):
+        raise CheckError(
+            "the base graph.json health is malformed: the file is not a JSON object"
+        )
     raw = data.get("health")
     if raw is None:
         raise CheckError("the base graph.json has no health; rebuild it with this svarupa")
