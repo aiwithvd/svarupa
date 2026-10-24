@@ -5,6 +5,7 @@ A finding is matched by what it is, not where it is: the same check in the
 same file on the same definition (or, with no definition, the same message
 with its numbers blanked) is the same finding, so moving code never makes
 it new. Matching is a multiset: a second copy of an old finding is new.
+A finding that moved to another file (a rename) is matched too.
 """
 
 from __future__ import annotations
@@ -53,6 +54,18 @@ class Finding:
     @property
     def key(self) -> tuple[str, str, str]:
         return (self.check, self.file, self.symbol or _DIGITS.sub("#", self.message))
+
+    @property
+    def moved_key(self) -> tuple[str, str]:
+        """The key without the file: the last name of the symbol, or the
+        message with its numbers and this file's name blanked."""
+        if self.symbol:
+            return (self.check, self.symbol.split("#", 1)[-1].rsplit(".", 1)[-1])
+        message = self.message
+        for name in (self.file, self.file.rsplit("/", 1)[-1]):
+            if name:
+                message = message.replace(name, "")
+        return (self.check, _DIGITS.sub("#", message))
 
     def to_json(self) -> dict[str, object]:
         return {
@@ -182,12 +195,37 @@ def _unmatched(items: tuple[Finding, ...], other: tuple[Finding, ...]) -> tuple[
     return tuple(out)
 
 
+def _without_moved(
+    new: tuple[Finding, ...], fixed: tuple[Finding, ...]
+) -> tuple[tuple[Finding, ...], tuple[Finding, ...]]:
+    """Pair leftover new and fixed findings that only differ by file."""
+    left = Counter(f.moved_key for f in fixed)
+    kept_new: list[Finding] = []
+    paired: Counter[tuple[str, str]] = Counter()
+    for f in new:
+        if left[f.moved_key] > 0:
+            left[f.moved_key] -= 1
+            paired[f.moved_key] += 1
+        else:
+            kept_new.append(f)
+    kept_fixed: list[Finding] = []
+    for f in fixed:
+        if paired[f.moved_key] > 0:
+            paired[f.moved_key] -= 1
+        else:
+            kept_fixed.append(f)
+    return tuple(kept_new), tuple(kept_fixed)
+
+
 def compare(base: Snapshot, head: Snapshot) -> Delta:
     before, after = dict(base.ratings), dict(head.ratings)
     areas = [a for a, _ in head.ratings] + [a for a in before if a not in after]
+    new, fixed = _without_moved(
+        _unmatched(head.findings, base.findings), _unmatched(base.findings, head.findings)
+    )
     return Delta(
-        new=_unmatched(head.findings, base.findings),
-        fixed=_unmatched(base.findings, head.findings),
+        new=new,
+        fixed=fixed,
         grades=tuple(
             (a, before.get(a), after.get(a)) for a in areas if before.get(a) != after.get(a)
         ),
@@ -244,7 +282,17 @@ def base_from_ref(root: Path, ref: str) -> Health:
     tmp = Path(tempfile.mkdtemp(prefix="svarupa-check-"))
     tree = tmp / "base"
     try:
-        _git(top, "worktree", "add", "--detach", "--quiet", str(tree), ref)
+        _git(
+            top,
+            "-c",
+            "core.hooksPath=/dev/null",
+            "worktree",
+            "add",
+            "--detach",
+            "--quiet",
+            str(tree),
+            ref,
+        )
         return analyze(tree / root.relative_to(top), root)
     finally:
         git = shutil.which("git")

@@ -128,10 +128,13 @@ and prove the change is clean:
    `svarupa query <path>/.svarupa get_design_rules --json`. Each unit lists
    its parts and the import directions that are forbidden; `checks` lists
    every health rule with its limit and how to stay within it.
-3. After editing, check the change against the last commit:
-   `svarupa check <path> --base HEAD --json`. It lists only the violations
-   your change added (moved code does not count) and any grade that got
-   worse. Exit 0 means clean; exit 3 means fix it before you finish.
+3. After editing, check the change against the commit or branch the task
+   started from, for example `svarupa check <path> --base main --json`, or
+   `--base HEAD` when nothing has been committed yet. It lists only the
+   violations your change added (moved code does not count) and any grade
+   that got worse. Exit 0 means clean; exit 3 means fix it before you
+   finish. Exit 1 means the check could not run (for example an unknown
+   ref); report it, never treat it as clean.
 4. For each new violation, `svarupa explain <check>` says why it matters and
    how to fix it. If the violation is right on purpose, propose an exception
    with a reason in `.svarupa/design.yaml` and say so; never weaken a rule

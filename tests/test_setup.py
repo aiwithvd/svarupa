@@ -457,7 +457,11 @@ def test_the_skill_names_the_artifact_files_that_actually_exist() -> None:
 
 def test_the_skill_teaches_the_check_workflow() -> None:
     assert "## Before and after you write code" in SKILL_MD
-    assert "svarupa check <path> --base HEAD --json" in SKILL_MD
+    assert "svarupa check <path> --base main --json" in SKILL_MD
+    flat = " ".join(SKILL_MD.split())
+    assert "`--base HEAD` when nothing has been committed yet" in flat
+    assert "Exit 1 means the check could not run" in flat
+    assert "never treat it as clean" in flat
     assert "get_design_rules --json" in SKILL_MD
 
 

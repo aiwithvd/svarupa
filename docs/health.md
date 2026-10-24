@@ -38,7 +38,8 @@ PostgreSQL. 2 health findings, worst: Query in a loop (major)."
 Lists the violations the working tree adds against the base, the ones it
 fixed, and every area whose grade moved. A finding is the same finding when
 it is the same check in the same file on the same definition, so moving
-code never makes it new. Exit 3 when a new violation is at or above
+code never makes it new, and a finding that moved to another file (a
+rename) is matched too. Exit 3 when a new violation is at or above
 `--min-severity` (default minor) or a grade got worse; exit 0 otherwise.
 Both sides are judged by the working tree's `.svarupa/design.yaml`.
 

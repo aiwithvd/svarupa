@@ -44,6 +44,47 @@ def test_digits_in_messages_do_not_break_matching() -> None:
     assert compare(snap(base), snap(head)).new == ()
 
 
+def test_a_renamed_file_is_moved_not_new() -> None:
+    old = f(file="sub/a.py", symbol="sub/a.py#sub.a.f")
+    new = f(file="sub/b.py", symbol="sub/b.py#sub.b.f")
+    d = compare(snap(old), snap(new))
+    assert d.new == () and d.fixed == ()
+
+
+def test_a_renamed_file_without_a_symbol_is_moved() -> None:
+    old = f(
+        check="large-file", file="a.py", symbol=None, message="a.py has 1200 lines (limit 1000)"
+    )
+    new = f(
+        check="large-file", file="b.py", symbol=None, message="b.py has 1200 lines (limit 1000)"
+    )
+    d = compare(snap(old), snap(new))
+    assert d.new == () and d.fixed == ()
+
+
+def test_different_findings_in_different_files_stay_new_and_fixed() -> None:
+    old = f(file="sub/a.py", symbol="sub/a.py#sub.a.f")
+    new = f(file="sub/b.py", symbol="sub/b.py#sub.b.g")
+    d = compare(snap(old), snap(new))
+    assert d.new == (new,) and d.fixed == (old,)
+
+
+def test_moved_pairing_is_a_multiset() -> None:
+    old = f(file="a.py", symbol="a.py#a.f")
+    new1 = f(file="b.py", symbol="b.py#b.f")
+    new2 = f(file="c.py", symbol="c.py#c.f")
+    d = compare(snap(old), snap(new1, new2))
+    assert d.new == (new2,) and d.fixed == ()
+
+
+def test_an_exact_match_wins_over_a_rename() -> None:
+    old = f(file="a.py", symbol="a.py#a.f", line=1)
+    same = f(file="a.py", symbol="a.py#a.f", line=40)
+    other = f(file="b.py", symbol="b.py#b.f", line=5)
+    d = compare(snap(old), snap(other, same))
+    assert d.new == (other,) and d.fixed == ()
+
+
 def test_a_grade_drop_fails_alone() -> None:
     worse = (
         ("maintainability", "A"),
@@ -220,3 +261,30 @@ def test_a_base_that_is_not_an_object_exits_1(tmp_path: Path, capsys, content) -
     base.write_text(content, encoding="utf8")
     assert main(["check", str(tmp_path), "--base", str(base)]) == 1
     assert "malformed" in capsys.readouterr().err
+
+
+def test_a_git_rename_is_not_new(tmp_path: Path, capsys) -> None:
+    git_repo(tmp_path)
+    seven = "def f(a, b, c, d, e, f, g):\n    return a\n"
+    write(tmp_path, "sub/a.py", seven)
+    subprocess.run(["git", "-C", str(tmp_path), "add", "."], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(tmp_path), "commit", "-q", "-m", "a"], check=True)
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "mv", "sub/a.py", "sub/b.py"],
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(["git", "-C", str(tmp_path), "commit", "-q", "-m", "mv"], check=True)
+    code = main(["check", str(tmp_path / "sub"), "--base", "HEAD~1", "--json"])
+    out = json.loads(capsys.readouterr().out)
+    assert code == 0 and out["new"] == [] and out["fixed"] == []
+
+
+def test_check_does_not_run_the_users_post_checkout_hook(tmp_path: Path) -> None:
+    git_repo(tmp_path)
+    marker = tmp_path.parent / f"{tmp_path.name}-hook-ran"
+    hook = tmp_path / ".git" / "hooks" / "post-checkout"
+    hook.write_text(f"#!/bin/sh\ntouch '{marker}'\n")
+    hook.chmod(0o755)
+    main(["check", str(tmp_path), "--base", "HEAD"])
+    assert not marker.exists()

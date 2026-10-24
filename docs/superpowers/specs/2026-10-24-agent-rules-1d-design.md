@@ -59,7 +59,8 @@ svarupa check <path> --base <git ref | path/to/graph.json> [--min-severity minor
   is `(check, file, anchor)` where `anchor` is its `symbol` when it has one,
   else its message with every run of digits replaced by `#`. Keys are
   compared as multisets: a third copy of a finding that existed twice is
-  one new violation.
+  one new violation. A finding that moved to another file (a rename) is
+  matched too.
 - **Output (text):** "N new, M fixed" then each new violation as
   `file:line check: message` plus a `fix:` line from the explanation, each
   fixed violation as one line, and each area whose grade changed
