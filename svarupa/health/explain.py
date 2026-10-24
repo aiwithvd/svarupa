@@ -1,7 +1,7 @@
 """Plain explanations of the health checks: what a finding means, why it
 matters and how to fix it, with a short before/after per language.
 
-The text is fixed and lives in `explain/<check-id>.toml` next to this
+The text is fixed and lives in `explanations/<check-id>.toml` next to this
 module, so it is reviewed like code and never generated.
 """
 
@@ -120,7 +120,9 @@ def _loads(text: str) -> dict[str, Any]:
 
 @cache
 def explanation(check_id: str) -> Explanation:
-    path = resources.files("svarupa.health").joinpath("explain").joinpath(f"{check_id}.toml")
+    path = (
+        resources.files("svarupa.health").joinpath("explanations").joinpath(f"{check_id}.toml")
+    )
     if not path.is_file():
         raise ExplanationError(f"{check_id}: no explanation file")
     return parse(check_id, _loads(path.read_text(encoding="utf8")))
