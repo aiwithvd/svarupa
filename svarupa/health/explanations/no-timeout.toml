@@ -35,4 +35,7 @@ after = '''
 HttpClient client = HttpClient.newBuilder()
     .connectTimeout(Duration.ofSeconds(5))
     .build();
+HttpRequest request = HttpRequest.newBuilder(uri)
+    .timeout(Duration.ofSeconds(10))  // the whole request, not only connecting
+    .build();
 '''

@@ -25,12 +25,12 @@ from svarupa.derive.about import About
 from svarupa.derive.base import DiagramKind, DiagramSet
 from svarupa.design import Design
 from svarupa.emit.cards import Card, cards_for, chapters_for, render_cards, render_guided
-from svarupa.emit.explained import checks_in_order
+from svarupa.emit.explained import checks_in_order, languages_by_check
 from svarupa.emit.markup import Markup, esc, join, raw, tag
 from svarupa.emit.report import _design_lines  # pyright: ignore[reportPrivateUsage]
 from svarupa.emit.svg import canvas_svg, evidence_ref, expanded_svg
 from svarupa.health import BY_ID, Health
-from svarupa.health.explain import example_for, explanation
+from svarupa.health.explain import Example, example_for, explanation
 from svarupa.layout import LaidOutDiagram
 from svarupa.layout.geometry import Style
 from svarupa.layout.text import FONT_STACK
@@ -1596,16 +1596,21 @@ def _unavailable(notes: tuple[str, ...]) -> Markup:
 def _why_folds(health: Health, graph: Graph | None) -> Markup:
     """One closed fold per check with violations: what, why, fix, example."""
     folds: list[Markup] = []
-    for check_id, lang in checks_in_order(health, graph):
+    fired = languages_by_check(health, graph)
+    for check_id, _ in checks_in_order(health, graph):
         e = explanation(check_id)
-        ex = example_for(check_id, lang)
+        shown: list[tuple[str, Example]] = []
+        for lang in fired.get(check_id, []):
+            ex = example_for(check_id, lang)
+            if ex is not None and all(ex != s for _, s in shown):
+                shown.append((lang, ex))
         body = [
             tag("summary", esc(BY_ID[check_id].title)),
             tag("p", join((tag("strong", esc("What ")), esc(e.what)))),
             tag("p", join((tag("strong", esc("Why ")), esc(e.why)))),
             tag("p", join((tag("strong", esc("How to fix ")), esc(e.fix)))),
         ]
-        if ex is not None:
+        for lang, ex in shown:
             body += [
                 tag("p", esc(f"Before ({lang})"), class_="meta"),
                 tag("pre", tag("code", esc(ex.before))),

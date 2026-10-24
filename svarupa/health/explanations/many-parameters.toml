@@ -24,9 +24,9 @@ before = '''
 function createUser(name, email, street, city, zip, country) { /* ... */ }
 '''
 after = '''
-interface Address { street: string; city: string; zip: string; country: string }
+function createUser(name, email, address) { /* ... */ }
 
-function createUser(name: string, email: string, address: Address) { /* ... */ }
+createUser("Ana", "ana@example.com", { street, city, zip, country });
 '''
 
 [example.go]

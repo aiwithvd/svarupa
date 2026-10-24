@@ -138,3 +138,35 @@ def test_explain_unknown_check_names_close_ones(capsys) -> None:
     assert main(["explain", "query-in-loops"]) == 2
     err = capsys.readouterr().err
     assert "unknown check" in err and "query-in-loop" in err
+
+
+def test_typescript_examples_are_valid_javascript(tmp_path) -> None:
+    """JavaScript findings show these, so they must run as plain JavaScript."""
+    import shutil
+    import subprocess
+
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node is not installed; the examples are not syntax checked in this run")
+    bad = []
+    for c in CATALOG:
+        ex = example_for(c.id, "typescript")
+        for side in ("before", "after") if ex else ():
+            f = tmp_path / f"{c.id}.{side}.mjs"
+            f.write_text(getattr(ex, side) + "\n", encoding="utf8")
+            if subprocess.run([node, "--check", str(f)], capture_output=True).returncode:
+                bad.append(f.name)
+    assert bad == []
+
+
+def test_examples_teach_working_fixes() -> None:
+    gin = example_for("debug-enabled", "go")
+    assert gin is not None and "gin.ReleaseMode" in gin.after and "GIN_MODE" not in gin.after
+    java = example_for("no-timeout", "java")
+    assert java is not None and ".timeout(Duration" in java.after
+    ts = example_for("code-injection", "typescript")
+    assert ts is not None and "new Map" in ts.after and ".has(" in ts.after
+    py = example_for("deep-nesting", "python")
+    assert py is not None and py.after.index("def ship_in_stock") < py.after.index("for order")
+    go = example_for("deep-nesting", "go")
+    assert go is not None and "func shipInStock" in go.after

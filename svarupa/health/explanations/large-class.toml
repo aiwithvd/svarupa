@@ -39,7 +39,10 @@ class Pricing { price(order) {} applyDiscount(order) {} }
 class Payments { chargeCard(order) {} refund(order) {} }
 
 class OrderService {
-  constructor(private pricing: Pricing, private payments: Payments) {}
+  constructor(pricing, payments) {
+    this.pricing = pricing;
+    this.payments = payments;
+  }
 }
 '''
 

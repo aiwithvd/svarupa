@@ -15,8 +15,9 @@ before = '''
 const handler = new Function("return " + userValue);
 '''
 after = '''
-const HANDLERS = { add: (a, b) => a + b, sub: (a, b) => a - b };
-const handler = HANDLERS[userValue];
+const HANDLERS = new Map([["add", (a, b) => a + b], ["sub", (a, b) => a - b]]);
+if (!HANDLERS.has(userValue)) throw new Error("unknown action");
+const handler = HANDLERS.get(userValue);
 '''
 
 [example.java]

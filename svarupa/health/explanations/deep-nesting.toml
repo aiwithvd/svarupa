@@ -12,15 +12,15 @@ for order in orders:
                     ship(item)
 '''
 after = '''
-for order in orders:
-    if not order.paid or not order.items:
-        continue
-    ship_in_stock(order.items)
-
 def ship_in_stock(items):
     for item in items:
         if item.in_stock:
             ship(item)
+
+for order in orders:
+    if not order.paid or not order.items:
+        continue
+    ship_in_stock(order.items)
 '''
 
 [example.typescript]
@@ -57,6 +57,14 @@ for _, o := range orders {
 }
 '''
 after = '''
+func shipInStock(items []Item) {
+	for _, it := range items {
+		if it.InStock {
+			ship(it)
+		}
+	}
+}
+
 for _, o := range orders {
 	if !o.Paid || len(o.Items) == 0 {
 		continue

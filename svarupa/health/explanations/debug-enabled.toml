@@ -15,5 +15,7 @@ before = '''
 gin.SetMode(gin.DebugMode)
 '''
 after = '''
-gin.SetMode(os.Getenv("GIN_MODE"))  // "release" unless set
+if os.Getenv("APP_DEBUG") != "1" {
+	gin.SetMode(gin.ReleaseMode)
+}
 '''

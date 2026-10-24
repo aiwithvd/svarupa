@@ -87,7 +87,7 @@ def test_compose_boxes(tmp_path: Path) -> None:
 
 
 def test_a_symbol_box_counts_only_its_own_findings(tmp_path: Path) -> None:
-    from svarupa.derive.about import _findings  # pyright: ignore[reportPrivateUsage]
+    from svarupa.derive.about import _findings_in, _index  # pyright: ignore[reportPrivateUsage]
     from svarupa.derive.base import DiagramNode
 
     root = tmp_path
@@ -107,7 +107,7 @@ def test_a_symbol_box_counts_only_its_own_findings(tmp_path: Path) -> None:
     )
     box = DiagramNode(id=iface.id, label="P", kind="interface", evidence=iface.evidence)
     assert any(v.check == "long-function" for v in health.violations)
-    assert _findings(graph, health, box) == []
+    assert _findings_in(_index(graph, health), box) == []
 
 
 def test_a_file_box_names_what_it_defines(tmp_path: Path) -> None:
@@ -153,3 +153,105 @@ def test_about_data_is_escaped_in_the_page(tmp_path: Path) -> None:
     tag_text = html[start : html.index(">", start)]
     assert "<" not in tag_text and "&lt;/script&gt;" in tag_text
     assert html.count("<script") == 1
+
+
+def test_an_external_box_has_no_health_clause(tmp_path: Path) -> None:
+    api_repo(tmp_path)
+    write(
+        tmp_path,
+        "api/dup.py",
+        "import psycopg2\n" + "".join(f"x{i} = {i} * 2 + 1\n" for i in range(12)),
+    )
+    write(tmp_path, "domain/dup.py", "".join(f"x{i} = {i} * 2 + 1\n" for i in range(12)))
+    ext = next(v for k, v in lines(tmp_path).items() if k.startswith("ext:"))
+    assert "health finding" not in ext.text and ext.worst is None
+
+
+def test_a_class_box_counts_its_methods_findings(tmp_path: Path) -> None:
+    from svarupa.derive.about import _findings_in, _index  # pyright: ignore[reportPrivateUsage]
+    from svarupa.derive.base import DiagramNode
+
+    write(
+        tmp_path,
+        "svc/a.py",
+        "class OrderService:\n    def place(self, a, b, c, d, e, f):\n        return a\n",
+    )
+    scan = detect(tmp_path)
+    graph = build(scan, extract(scan, declared_dependencies(scan)), strict=False)
+    health = assess(graph, source_texts(scan, graph))
+    cls = next(n for n in graph.nodes.values() if n.label == "OrderService")
+    box = DiagramNode(id=cls.id, label="OrderService", kind="class", evidence=cls.evidence)
+    assert [v.check for v in _findings_in(_index(graph, health), box) or []] == [
+        "many-parameters"
+    ]
+
+
+def test_a_group_names_the_root_module_as_a_dot() -> None:
+    from svarupa.derive.about import _describe_in, _index  # pyright: ignore[reportPrivateUsage]
+    from svarupa.derive.base import DiagramNode
+    from svarupa.model import Evidence
+
+    root = Path(__import__("tempfile").mkdtemp())
+    write(root, "main.py", "x = 1\n")
+    scan = detect(root)
+    graph = build(scan, extract(scan, declared_dependencies(scan)), strict=False)
+    box = DiagramNode(
+        id="group:",
+        label="g",
+        kind="group",
+        evidence=(Evidence("main.py", 1, 1),),
+        attrs=(("members", "\napi\ncommon"),),
+    )
+    assert _describe_in(_index(graph, None), box) == "Group of 3 modules: ., api and common."
+    four = DiagramNode(
+        id="group:",
+        label="g",
+        kind="group",
+        evidence=(Evidence("main.py", 1, 1),),
+        attrs=(("members", "\napi\ncommon\nweb"),),
+    )
+    assert (
+        _describe_in(_index(graph, None), four)
+        == "Group of 4 modules: ., api, common and 1 other."
+    )
+
+
+def test_route_samples_are_not_repeated(tmp_path: Path) -> None:
+    route = "from fastapi import APIRouter\nrouter = APIRouter()\n@router.get('/')\ndef a():\n    return 1\n"
+    write(tmp_path, "api/a.py", route)
+    write(tmp_path, "api/b.py", route)
+    entry = next(v.text for k, v in lines(tmp_path).items() if k.startswith(("in:", "req:")))
+    assert entry.count("GET /") == 1
+
+
+def test_about_lines_scan_the_graph_a_fixed_number_of_times(tmp_path: Path) -> None:
+    import dataclasses
+    from collections.abc import Mapping
+
+    class Counting(Mapping):  # type: ignore[type-arg]
+        def __init__(self, inner):
+            self.inner, self.scans = inner, 0
+
+        def __getitem__(self, k):
+            return self.inner[k]
+
+        def __iter__(self):
+            self.scans += 1
+            return iter(self.inner)
+
+        def __len__(self):
+            return len(self.inner)
+
+        def items(self):
+            self.scans += 1
+            return self.inner.items()
+
+    for i in range(20):
+        write(tmp_path, f"m{i}/a.py", f"class C{i}:\n    def f(self):\n        return {i}\n")
+        write(tmp_path, f"m{i}/b.py", "def g():\n    return 1\n")
+    scan = detect(tmp_path)
+    graph = build(scan, extract(scan, declared_dependencies(scan)), strict=False)
+    produced, _ = derive_all(graph, cluster(graph))
+    counting = Counting(graph.nodes)
+    about_lines(dataclasses.replace(graph, nodes=counting), None, produced)
+    assert counting.scans <= 3, counting.scans

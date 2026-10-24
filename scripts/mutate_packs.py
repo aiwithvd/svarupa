@@ -318,8 +318,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     (
         "a box takes every finding",
         "svarupa/derive/about.py",
-        "        return [v for v in vs if v.module == module]\n",
-        "        return list(vs)\n",
+        "        return list(ix.by_module.get(module, []))\n",
+        "        return [v for vs in ix.by_module.values() for v in vs]\n",
     ),
 ]
 

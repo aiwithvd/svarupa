@@ -88,4 +88,17 @@ def test_a_javascript_finding_shows_the_typescript_example(tmp_path: Path) -> No
     )
     assert main([str(tmp_path)]) == 0
     report = (tmp_path / ".svarupa" / "REPORT.md").read_text(encoding="utf8")
-    assert "```javascript" in report and "interface Address" in report
+    assert "```javascript" in report and 'createUser("Ana"' in report
+
+
+def test_a_fold_shows_every_language_its_check_fired_in(tmp_path: Path) -> None:
+    make_repo(tmp_path)
+    (tmp_path / "svc").mkdir()
+    (tmp_path / "svc" / "m.go").write_text(
+        "package svc\n\nfunc F(a, b, c, d, e, f int) int {\n\treturn a\n}\n", encoding="utf8"
+    )
+    assert main([str(tmp_path)]) == 0
+    html = (tmp_path / ".svarupa" / "index.html").read_text(encoding="utf8")
+    fold = html[html.index('id="why-many-parameters"') :]
+    fold = fold[: fold.index("</details>")]
+    assert "Before (python)" in fold and "Before (go)" in fold
