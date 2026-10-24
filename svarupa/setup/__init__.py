@@ -90,6 +90,8 @@ def _differs(path: Path, content: str) -> bool:
 def _merged(path: Path, merge: Merge) -> str:
     """The content `merge` leaves at `path`, or SVA-S-005 when it cannot."""
     try:
+        if path.exists() and not path.is_file():
+            raise MergeError("is a directory, not a file")
         existing = path.read_text(encoding="utf8") if path.is_file() else None
         if merge.kind == "block":
             return merge_block(existing, merge.body)
@@ -126,6 +128,19 @@ def install(target: Target, dest: Path, force: bool, *, dry_run: bool = False) -
         )
     planned = [(dest / Path(rel), content) for rel, content in target.files()]
     merges = [(dest / Path(m.path), m) for m in target.merges()]
+    seen: set[Path] = set()
+    for p in [*(p for p, _ in planned), *(p for p, _ in merges)]:
+        if p in seen:
+            raise DiagnosticError(
+                Diagnostic(
+                    code="SVA-S-005",
+                    severity=Severity.ERROR,
+                    message="is set up twice by this target; nothing was written",
+                    subject=str(p),
+                    suggested_fixes=("Report this as a bug in the target.",),
+                )
+            )
+        seen.add(p)
     # Checked before collisions and never overridden by --force: force means
     # "replace your file", never "follow your link somewhere else".
     escaping = [

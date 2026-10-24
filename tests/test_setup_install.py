@@ -79,3 +79,68 @@ def test_a_symlinked_merge_target_is_refused(tmp_path: Path) -> None:
         install(Demo(repo), repo, force=False)
     assert exc.value.diagnostic.code == "SVA-S-003"
     assert outside.read_text(encoding="utf8") == "x\n"
+
+
+class Twice(Target):
+    name: ClassVar[str] = "twice"
+    summary: ClassVar[str] = "duplicate destinations"
+
+    def __init__(
+        self, root: Path, items: tuple[Merge, ...], files: tuple[str, ...] = ()
+    ) -> None:
+        super().__init__(root)
+        self._items = items
+        self._files = files
+
+    def files(self) -> tuple[tuple[str, str], ...]:
+        return tuple((f, "x\n") for f in self._files)
+
+    def merges(self) -> tuple[Merge, ...]:
+        return self._items
+
+    def next_steps(self) -> tuple[str, ...]:
+        return ()
+
+
+def test_two_merges_of_one_path_are_refused(tmp_path: Path) -> None:
+    m = Merge("NOTES.md", "block", body="a\n")
+    with pytest.raises(DiagnosticError) as exc:
+        install(Twice(tmp_path, (m, m)), tmp_path, force=False)
+    assert exc.value.diagnostic.code == "SVA-S-005"
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_a_file_and_a_merge_of_one_path_are_refused(tmp_path: Path) -> None:
+    t = Twice(tmp_path, (Merge("NOTES.md", "block", body="a\n"),), ("NOTES.md",))
+    with pytest.raises(DiagnosticError) as exc:
+        install(t, tmp_path, force=True)
+    assert exc.value.diagnostic.code == "SVA-S-005"
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_a_directory_at_a_merge_path_is_refused(tmp_path: Path) -> None:
+    (tmp_path / "NOTES.md").mkdir()
+    with pytest.raises(DiagnosticError) as exc:
+        install(Demo(tmp_path), tmp_path, force=False)
+    assert exc.value.diagnostic.code == "SVA-S-005"
+    assert not (tmp_path / "owned").exists() and not (tmp_path / ".mcp.json").exists()
+
+
+def test_a_dry_run_refuses_a_bad_merge_like_a_real_run(tmp_path: Path) -> None:
+    (tmp_path / ".mcp.json").write_text("[]", encoding="utf8")
+    with pytest.raises(DiagnosticError) as exc:
+        install(Demo(tmp_path), tmp_path, force=False, dry_run=True)
+    assert exc.value.diagnostic.code == "SVA-S-005"
+
+
+def test_update_keeps_user_text_outside_the_markers(tmp_path: Path) -> None:
+    # No registered target has a block merge yet, so this drives install()
+    # with force=True (what the CLI passes for --update) on the Demo target.
+    (tmp_path / "NOTES.md").write_text("mine\n", encoding="utf8")
+    install(Demo(tmp_path), tmp_path, force=False)
+    (tmp_path / "owned").mkdir(exist_ok=True)
+    (tmp_path / "owned/rules.md").write_text("stale\n", encoding="utf8")
+    install(Demo(tmp_path), tmp_path, force=True)
+    notes = (tmp_path / "NOTES.md").read_text(encoding="utf8")
+    assert notes.startswith("mine\n") and notes.count(BEGIN) == 1
+    assert (tmp_path / "owned/rules.md").read_text(encoding="utf8") == "owned\n"
