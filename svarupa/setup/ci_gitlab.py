@@ -33,15 +33,7 @@ from typing import ClassVar
 from svarupa import __version__
 from svarupa.setup.base import Target
 
-_TEMPLATE = """\
-# Installed by `svarupa setup ci_gitlab`: the per-merge-request architecture
-# diff. Regenerates the base lockfile from base-commit code, diffs the head
-# against the committed base with the regenerated one as the drift guard. It
-# exits non-zero when the build reports an error; an architecture change is
-# printed in the job log, not failed. Add --fail-on-change to both svarupa
-# calls in the script to fail the job (exit 3) until the regenerated lockfile
-# is committed.
-architecture_diff:
+_JOB_SETUP = """\
   image: python:3.12
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
@@ -54,7 +46,18 @@ architecture_diff:
     - uv tool install 'svarupa==__SVARUPA_VERSION__'
     - export PATH="$HOME/.local/bin:$PATH"
   script:
-    - git worktree add /tmp/base-src "$CI_MERGE_REQUEST_DIFF_BASE_SHA"
+"""
+
+_TEMPLATE = """\
+# Installed by `svarupa setup ci_gitlab`: the per-merge-request architecture
+# diff. Regenerates the base lockfile from base-commit code, diffs the head
+# against the committed base with the regenerated one as the drift guard. It
+# exits non-zero when the build reports an error; an architecture change is
+# printed in the job log, not failed. Add --fail-on-change to both svarupa
+# calls in the script to fail the job (exit 3) until the regenerated lockfile
+# is committed.
+architecture_diff:
+__JOB_SETUP__    - git worktree add /tmp/base-src "$CI_MERGE_REQUEST_DIFF_BASE_SHA"
     - svarupa /tmp/base-src --lock --out /tmp/base-artifact
     # A base commit git cannot read is a job failure, never a silent
     # fallback: falling back would drop the drift guard exactly when the
@@ -84,17 +87,7 @@ architecture_diff:
 # violations appear in the merge request through the Code Quality report.
 # To make it report-only, change the last line to `exit 0`.
 health_check:
-  image: python:3.12
-  rules:
-    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
-  variables:
-    GIT_DEPTH: 0
-  before_script:
-    - pip install uv
-    - uv tool install 'svarupa==__SVARUPA_VERSION__'
-    - export PATH="$HOME/.local/bin:$PATH"
-  script:
-    - |
+__JOB_SETUP__    - |
       svarupa check . --base "$CI_MERGE_REQUEST_DIFF_BASE_SHA" --format gitlab \\
         > gl-code-quality-report.json && code=0 || code=$?
       exit "$code"
@@ -104,7 +97,9 @@ health_check:
       codequality: gl-code-quality-report.json
 """
 
-GITLAB_CI = _TEMPLATE.replace("__SVARUPA_VERSION__", __version__)
+GITLAB_CI = _TEMPLATE.replace("__JOB_SETUP__", _JOB_SETUP).replace(
+    "__SVARUPA_VERSION__", __version__
+)
 
 
 class CiGitlabTarget(Target):

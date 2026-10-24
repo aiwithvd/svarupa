@@ -540,20 +540,7 @@ def _explain(argv: list[str]) -> int:
     return 0
 
 
-def _check(argv: list[str]) -> int:
-    """The health violations a change added, against a base."""
-    import json
-
-    from svarupa.check import (
-        CheckError,
-        analyze_with_files,
-        base_from_ref,
-        compare,
-        emit,
-        snapshot,
-        snapshot_from_json,
-    )
-
+def _check_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="svarupa check",
         description=(
@@ -578,6 +565,24 @@ def _check(argv: list[str]) -> int:
         default=None,
         help="output: text (default), json, github (annotations) or gitlab (Code Quality JSON)",
     )
+    return parser
+
+
+def _check(argv: list[str]) -> int:
+    """The health violations a change added, against a base."""
+    import json
+
+    from svarupa.check import (
+        CheckError,
+        analyze_with_files,
+        base_from_ref,
+        compare,
+        emit,
+        snapshot,
+        snapshot_from_json,
+    )
+
+    parser = _check_parser()
     args = parser.parse_args(argv)
     if args.json and args.format not in (None, "json"):
         parser.error("--json and --format are two ways to say one thing; use --format")
