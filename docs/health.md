@@ -13,6 +13,23 @@ SonarQube's ratings and aligned with ISO/IEC 25010.
   (minor B, major C, critical D, blocker E). Until checks exist for an area
   it shows "not assessed yet", never a grade. All four areas are assessed.
 
+## Explanations
+
+Every check has a plain explanation: what it means, why it matters and how
+to fix it, with a short before/after in Python, TypeScript/JavaScript, Go
+or Java where the fix is code. They live in `svarupa/health/explanations/` and
+show in REPORT.md ("What these mean"), the Health tab ("why?"), graph.json
+(`health.checks[].explanation`) and MCP `get_health`. From the command line:
+
+    svarupa explain                      # list the checks
+    svarupa explain query-in-loop        # one check, every example
+    svarupa explain query-in-loop --lang go
+
+Every box on the map also has one plain sentence in its passport, in
+graph.json (`about`) and in `get_node`, for example "Module app/api: serves
+12 HTTP routes (FastAPI), uses 3 modules and is used by 5, talks to
+PostgreSQL. 2 health findings, worst: Query in a loop (major)."
+
 ## Checks
 
 | Id | Violated when | Source | Severity | Minutes |

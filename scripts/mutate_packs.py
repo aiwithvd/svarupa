@@ -25,7 +25,10 @@ Each entry breaks one promise of the walker; a test must go red:
 * a catch with code in it is not empty;
 * a forEach/map callback runs per item;
 * one codebase is one owner of a datastore;
-* a hub must be on every request path.
+* a hub must be on every request path;
+* function checks need an example in every language;
+* a JavaScript finding shows the TypeScript example;
+* a box counts only its own findings.
 """
 
 from __future__ import annotations
@@ -61,6 +64,8 @@ SUITE = [
     "tests/test_auth.py",
     "tests/test_perf_reliability.py",
     "tests/test_compose.py",
+    "tests/test_explain.py",
+    "tests/test_about.py",
 ]
 
 MUTATIONS: list[tuple[str, str, str, str]] = [
@@ -297,6 +302,24 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
         "svarupa/health/performance.py",
         "        common &= _reach(uses, m)\n",
         "        common |= _reach(uses, m)\n",
+    ),
+    (
+        "function checks need no examples",
+        "svarupa/health/explain.py",
+        "        if check_id in _FUNCTION_CHECKS and pack.metrics is not None:\n",
+        "        if False:\n",
+    ),
+    (
+        "javascript loses the typescript example",
+        "svarupa/health/explain.py",
+        '_SAME_AS = {"javascript": "typescript"}\n',
+        "_SAME_AS: dict[str, str] = {}\n",
+    ),
+    (
+        "a box takes every finding",
+        "svarupa/derive/about.py",
+        "        return [v for v in vs if v.module == module]\n",
+        "        return list(vs)\n",
     ),
 ]
 
