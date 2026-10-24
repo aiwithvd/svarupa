@@ -105,3 +105,32 @@ def test_accepting_again_keeps_the_teams_design(tmp_path: Path) -> None:
     data = yaml.safe_load((tmp_path / ".svarupa" / "design.yaml").read_text(encoding="utf8"))
     assert data["units"]["."]["style"] == "mvc"
     assert data["units"]["."]["parts"]["controller"] == ["shop/api"]
+
+
+def test_design_rules_carry_the_health_rules(tmp_path: Path, capsys) -> None:
+    from svarupa.health import CATALOG
+
+    layered(tmp_path)
+    assert main([str(tmp_path)]) == 0
+    capsys.readouterr()
+    assert main(["query", str(tmp_path / ".svarupa"), "get_design_rules", "--json"]) == 0
+    rules = json.loads(capsys.readouterr().out)
+    assert [c["id"] for c in rules["checks"]] == [c.id for c in CATALOG]
+    q = {c["id"]: c for c in rules["checks"]}["query-in-loop"]
+    assert (q["rule"], q["area"], q["severity"], q["limit"]) == (
+        "Query in a loop (N+1)",
+        "performance",
+        "major",
+        0,
+    )
+    assert q["fix"].startswith("Load everything the loop needs")
+
+
+def test_health_rules_without_a_design(tmp_path: Path) -> None:
+    from svarupa.query import GraphIndex, get_design_rules
+
+    (tmp_path / "graph.json").write_text(
+        json.dumps({"schema": 2, "nodes": [], "edges": []}), encoding="utf8"
+    )
+    rules = get_design_rules(GraphIndex.load(tmp_path))
+    assert rules["available"] is False and len(rules["checks"]) == 30
