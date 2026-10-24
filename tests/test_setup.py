@@ -410,8 +410,11 @@ def test_the_workflow_parses_as_yaml_and_names_the_real_lockfile() -> None:
     from svarupa import __version__
 
     assert f"svarupa=={__version__}" in WORKFLOW, "the install is not pinned"
-    assert 'exit "$code"' in WORKFLOW, "the exit code is not re-raised after the summary"
-    assert WORKFLOW.index("GITHUB_STEP_SUMMARY") < WORKFLOW.index('exit "$code"')
+    # The delta step itself, not the whole file: the health step also ends in
+    # `exit "$code"`, so a file-wide check survives deleting this one.
+    delta_run = next(s for s in steps if s.get("name") == "architecture delta")["run"]
+    assert 'exit "$code"' in delta_run, "the exit code is not re-raised after the summary"
+    assert delta_run.index("GITHUB_STEP_SUMMARY") < delta_run.index('exit "$code"')
     # The exact commit-verification line, not any `cat-file`: the
     # file-existence check is also a cat-file, so a substring of the family
     # was satisfied with the commit verification deleted.
@@ -470,3 +473,111 @@ def test_the_skill_names_the_real_number_of_mcp_tools() -> None:
 
     words = {7: "seven", 8: "eight", 9: "nine", 10: "ten", 11: "eleven", 12: "twelve"}
     assert f"serves the same {words[len(FUNCTIONS)]}" in SKILL_MD
+
+
+def _health_step() -> dict:
+    steps = yaml.safe_load(WORKFLOW)["jobs"]["diff"]["steps"]
+    return next(s for s in steps if s.get("name") == "health of this change")
+
+
+def test_the_health_step_runs_after_a_failed_delta() -> None:
+    step = _health_step()
+    assert step["if"] == "${{ !cancelled() }}"
+    assert step["shell"] == "bash"
+    assert 'svarupa check . --base "$BASE_SHA" --format github' in step["run"]
+    names = [s.get("name") for s in yaml.safe_load(WORKFLOW)["jobs"]["diff"]["steps"]]
+    assert names.index("health of this change") > names.index("architecture delta")
+
+
+def test_the_health_step_script_fails_and_summarizes(tmp_path: Path) -> None:
+    import os
+    import shutil
+    import subprocess
+
+    bash = shutil.which("bash")
+    if not bash:
+        pytest.skip("bash is not installed")
+    stub = tmp_path / "bin" / "svarupa"
+    stub.parent.mkdir()
+    stub.write_text(
+        "#!/bin/sh\necho '::error file=a.py,line=1,title=T::m'\necho '1 new, 0 fixed'\nexit 3\n",
+        encoding="utf8",
+    )
+    stub.chmod(0o755)
+    summary = tmp_path / "summary.md"
+    env = {
+        **os.environ,
+        "PATH": f"{stub.parent}{os.pathsep}{os.environ['PATH']}",
+        "GITHUB_STEP_SUMMARY": str(summary),
+    }
+    script = _health_step()["run"].replace(
+        "${{ github.event.pull_request.base.sha }}", "abc123"
+    )
+    proc = subprocess.run(
+        [bash, "-e", "-o", "pipefail", "-c", script], env=env, capture_output=True, text=True
+    )
+    assert proc.returncode == 3
+    assert "::error file=a.py" in proc.stdout
+    text = summary.read_text(encoding="utf8")
+    assert "## Health of this change" in text and "1 new, 0 fixed" in text
+    assert "::error" not in text
+
+
+def test_the_gitlab_health_job_reports_code_quality() -> None:
+    job = yaml.safe_load(GITLAB_CI)["health_check"]
+    assert job["rules"] == [{"if": '$CI_PIPELINE_SOURCE == "merge_request_event"'}]
+    assert job["variables"]["GIT_DEPTH"] == 0
+    assert job["artifacts"]["reports"]["codequality"] == "gl-code-quality-report.json"
+    assert job["artifacts"]["when"] == "always"
+    script = "\n".join(job["script"])
+    assert '--base "$CI_MERGE_REQUEST_DIFF_BASE_SHA" --format gitlab' in script
+    assert "> gl-code-quality-report.json" in script
+    assert 'exit "$code"' in script
+
+
+def test_the_gitlab_health_script_fails_and_writes_the_report(tmp_path: Path) -> None:
+    import os
+    import shutil
+    import subprocess
+
+    sh = shutil.which("sh")
+    if not sh:
+        pytest.skip("sh is not installed")
+    stub = tmp_path / "bin" / "svarupa"
+    stub.parent.mkdir()
+    stub.write_text(
+        "#!/bin/sh\necho '[{\"check_name\": \"x\"}]'\necho '1 new, 0 fixed' >&2\nexit 3\n",
+        encoding="utf8",
+    )
+    stub.chmod(0o755)
+    work = tmp_path / "work"
+    work.mkdir()
+    env = {
+        **os.environ,
+        "PATH": f"{stub.parent}{os.pathsep}{os.environ['PATH']}",
+        "CI_MERGE_REQUEST_DIFF_BASE_SHA": "abc123",
+    }
+    script = "\n".join(yaml.safe_load(GITLAB_CI)["health_check"]["script"])
+    proc = subprocess.run([sh, "-c", script], env=env, cwd=work, capture_output=True, text=True)
+    assert proc.returncode == 3
+    report = work / "gl-code-quality-report.json"
+    assert '"check_name"' in report.read_text(encoding="utf8")
+    assert "1 new, 0 fixed" in proc.stderr
+
+
+def test_svarupa_gates_its_own_pull_requests() -> None:
+    ci = yaml.safe_load((REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf8"))
+    job = ci["jobs"]["health"]
+    assert job["if"] == "github.event_name == 'pull_request'"
+    checkout = next(s for s in job["steps"] if "checkout" in str(s.get("uses", "")))
+    assert checkout["with"]["fetch-depth"] == 0
+    run = "\n".join(str(s.get("run", "")) for s in job["steps"])
+    assert "uv run svarupa check . --base" in run and "--format github" in run
+    assert "GITHUB_STEP_SUMMARY" in run
+
+
+def test_docs_say_the_health_step_gates_pull_requests() -> None:
+    readme = (Path(__file__).resolve().parent.parent / "README.md").read_text(encoding="utf8")
+    for text in (SKILL_MD, readme):
+        assert "Both are informational by default" not in text
+        assert "health step fails the job on new problems" in " ".join(text.split())

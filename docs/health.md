@@ -42,10 +42,20 @@ code never makes it new, and a finding is matched across files only when
 its old file is gone (a rename or move). Exit 3 when a new violation is at or above
 `--min-severity` (default minor) or a grade got worse; exit 0 otherwise.
 Both sides are judged by the working tree's `.svarupa/design.yaml`.
+Annotations (`--format github` and `gitlab`) use repository-root paths, so
+`svarupa check` works on a monorepo subfolder.
 
 AI agents get every rule up front from `get_design_rules` (`checks`: id,
 rule, area, severity, limit, fix), and the agent skill tells them to run
 `svarupa check` before they finish.
+
+In CI: `svarupa setup ci_github` adds a "health of this change" step to the
+pull request workflow, and `svarupa setup ci_gitlab` adds a `health_check`
+job. Both run `svarupa check` against the pull request's base and fail only
+for problems the pull request adds. On GitHub each new violation is an
+annotation on its line (`--format github`); on GitLab it appears in the
+merge request through a Code Quality report (`--format gitlab`). A comment
+in each file shows the one-line change that makes the gate report-only.
 
 ## Checks
 

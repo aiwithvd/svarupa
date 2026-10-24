@@ -540,19 +540,7 @@ def _explain(argv: list[str]) -> int:
     return 0
 
 
-def _check(argv: list[str]) -> int:
-    """The health violations a change added, against a base."""
-    import json
-
-    from svarupa.check import (
-        CheckError,
-        analyze_with_files,
-        base_from_ref,
-        compare,
-        snapshot,
-        snapshot_from_json,
-    )
-
+def _check_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="svarupa check",
         description=(
@@ -571,7 +559,35 @@ def _check(argv: list[str]) -> int:
         help="ignore new violations below this severity (grade drops always count)",
     )
     parser.add_argument("--json", action="store_true", help="print the result as JSON")
+    parser.add_argument(
+        "--format",
+        choices=["text", "json", "github", "gitlab"],
+        default=None,
+        help="output: text (default), json, github (annotations) or gitlab (Code Quality JSON)",
+    )
+    return parser
+
+
+def _check(argv: list[str]) -> int:
+    """The health violations a change added, against a base."""
+    import json
+
+    from svarupa.check import (
+        CheckError,
+        analyze_with_files,
+        base_from_ref,
+        compare,
+        emit,
+        repo_prefix,
+        snapshot,
+        snapshot_from_json,
+    )
+
+    parser = _check_parser()
     args = parser.parse_args(argv)
+    if args.json and args.format not in (None, "json"):
+        parser.error("--json and --format are two ways to say one thing; use --format")
+    fmt = "json" if args.json else (args.format or "text")
     root = Path(args.path)
     try:
         if args.base.endswith(".json"):
@@ -585,10 +601,7 @@ def _check(argv: list[str]) -> int:
         return 1
     delta = compare(base, head)
     failed = delta.failed(args.min_severity)
-    if args.json:
-        print(json.dumps(delta.to_json(failed), indent=2, sort_keys=True))
-    else:
-        print(delta.render())
+    emit(delta, fmt, failed, repo_prefix(root) if fmt in ("github", "gitlab") else "")
     return EXIT_CHANGED if failed else 0
 
 
