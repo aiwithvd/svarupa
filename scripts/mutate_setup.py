@@ -106,8 +106,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     (
         "the CLI hardcodes force=True",
         "svarupa/cli.py",
-        "    result = install(target, Path(args.dest), args.force)",
-        "    result = install(target, Path(args.dest), True)",
+        "    result = install(target, Path(args.dest), args.force or args.update, dry_run=args.dry_run)",
+        "    result = install(target, Path(args.dest), True, dry_run=args.dry_run)",
     ),
     (
         "the workflow fetch is depth 1",

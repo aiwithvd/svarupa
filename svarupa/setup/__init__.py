@@ -28,9 +28,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from svarupa.diagnostics import Diagnostic, DiagnosticError, Severity
-from svarupa.setup.base import Target
+from svarupa.setup.base import Merge, Target
 from svarupa.setup.ci_github import CiGithubTarget
 from svarupa.setup.ci_gitlab import CiGitlabTarget
+from svarupa.setup.merge import MergeError, merge_block, merge_mcp
 from svarupa.setup.skill import SkillTarget
 
 __all__ = ["TARGETS", "Installed", "Target", "install"]
@@ -49,6 +50,7 @@ TARGETS: dict[str, type[Target]] = {
 class Installed:
     written: tuple[Path, ...]
     unchanged: tuple[Path, ...]
+    actions: tuple[tuple[Path, str], ...] = ()
 
 
 def _escapes(path: Path, dest: Path) -> bool:
@@ -85,7 +87,32 @@ def _differs(path: Path, content: str) -> bool:
         return True
 
 
-def install(target: Target, dest: Path, force: bool) -> Installed:
+def _merged(path: Path, merge: Merge) -> str:
+    """The content `merge` leaves at `path`, or SVA-S-005 when it cannot."""
+    try:
+        existing = path.read_text(encoding="utf8") if path.is_file() else None
+        if merge.kind == "block":
+            return merge_block(existing, merge.body)
+        return merge_mcp(existing, merge.key, dict(merge.entry or {}))
+    except (MergeError, OSError, UnicodeDecodeError) as exc:
+        raise DiagnosticError(
+            Diagnostic(
+                code="SVA-S-005",
+                severity=Severity.ERROR,
+                message=f"{exc}; nothing was written",
+                subject=str(path),
+                suggested_fixes=("Fix the file by hand, then re-run setup.",),
+            )
+        ) from exc
+
+
+def _action(path: Path, content: str) -> str:
+    if not path.exists():
+        return "create"
+    return "update" if _differs(path, content) else "unchanged"
+
+
+def install(target: Target, dest: Path, force: bool, *, dry_run: bool = False) -> Installed:
     """Write a target's files under `dest`, refusing before writing anything."""
     if not dest.is_dir():
         raise DiagnosticError(
@@ -98,9 +125,12 @@ def install(target: Target, dest: Path, force: bool) -> Installed:
             )
         )
     planned = [(dest / Path(rel), content) for rel, content in target.files()]
+    merges = [(dest / Path(m.path), m) for m in target.merges()]
     # Checked before collisions and never overridden by --force: force means
     # "replace your file", never "follow your link somewhere else".
-    escaping = [p for p, _ in planned if _escapes(p, dest)]
+    escaping = [
+        p for p in [*(p for p, _ in planned), *(p for p, _ in merges)] if _escapes(p, dest)
+    ]
     if escaping:
         raise DiagnosticError(
             Diagnostic(
@@ -132,9 +162,20 @@ def install(target: Target, dest: Path, force: bool) -> Installed:
                 ),
             )
         )
+    # Every merge is computed before anything is written, so a refused merge
+    # (SVA-S-005) leaves the destination exactly as it was.
+    merged = [(p, _merged(p, m)) for p, m in merges]
+    todo = [*planned, *merged]
+    actions = tuple((p, _action(p, c)) for p, c in todo)
+    if dry_run:
+        return Installed(
+            written=(),
+            unchanged=tuple(p for p, a in actions if a == "unchanged"),
+            actions=actions,
+        )
     written: list[Path] = []
     unchanged: list[Path] = []
-    for path, content in planned:
+    for path, content in todo:
         if path.exists() and not _differs(path, content):
             unchanged.append(path)
             continue
@@ -159,4 +200,4 @@ def install(target: Target, dest: Path, force: bool) -> Installed:
                 )
             ) from exc
         written.append(path)
-    return Installed(written=tuple(written), unchanged=tuple(unchanged))
+    return Installed(written=tuple(written), unchanged=tuple(unchanged), actions=actions)

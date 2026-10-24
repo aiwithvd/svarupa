@@ -483,13 +483,30 @@ def _setup(argv: list[str]) -> int:
     parser.add_argument(
         "--force", action="store_true", help="overwrite an existing file that differs"
     )
+    parser.add_argument(
+        "--update",
+        action="store_true",
+        help="refresh Svarupa's own files and marked blocks after the design changed",
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true", help="show what would change and write nothing"
+    )
+    parser.add_argument(
+        "--all",
+        action="store_true",
+        help="with ide: install every tool, not only detected ones",
+    )
     args = parser.parse_args(argv)
-    target = TARGETS[args.target]()
-    result = install(target, Path(args.dest), args.force)
-    for path in result.written:
-        print(f"  wrote     {path}")
-    for path in result.unchanged:
-        print(f"  unchanged {path}")
+    target = TARGETS[args.target](Path(args.dest))
+    result = install(target, Path(args.dest), args.force or args.update, dry_run=args.dry_run)
+    if args.dry_run:
+        for path, action in result.actions:
+            print(f"  {action:<9} {path}")
+    else:
+        for path in result.written:
+            print(f"  wrote     {path}")
+        for path in result.unchanged:
+            print(f"  unchanged {path}")
     print()
     for step in target.next_steps():
         print(f"  next: {step}")
