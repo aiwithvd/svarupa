@@ -57,7 +57,13 @@ def _design_lines(root: Path) -> list[str]:
             continue
         style = STYLES[u.chosen.style]
         rules = "; ".join(_style_rules(style)) or "no direction rules"
-        lines.append(f"- `{name}` follows {style.id}: {rules}")
+        if u.source == "accepted":
+            lines.append(f"- `{name}` follows {style.id}: {rules}")
+        else:
+            lines.append(
+                f"- `{name}` looks like {style.id} (inferred, not yet accepted in "
+                f".svarupa/design.yaml): {rules}"
+            )
     for e in design.exceptions:
         where = e.at or f"{e.src} -> {e.dst}"
         lines.append(f"- Accepted exception: {e.rule} at {where} ({e.reason})")

@@ -144,3 +144,62 @@ def test_update_keeps_user_text_outside_the_markers(tmp_path: Path) -> None:
     notes = (tmp_path / "NOTES.md").read_text(encoding="utf8")
     assert notes.startswith("mine\n") and notes.count(BEGIN) == 1
     assert (tmp_path / "owned/rules.md").read_text(encoding="utf8") == "owned\n"
+
+
+def test_a_crlf_file_survives_install_byte_for_byte(tmp_path: Path) -> None:
+    path = tmp_path / "NOTES.md"
+    path.write_bytes(b"# Mine\r\nline two\r\n")
+    install(Demo(tmp_path), tmp_path, force=False)
+    data = path.read_bytes()
+    assert data.startswith(b"# Mine\r\nline two\r\n")
+    assert b"\n" not in data.replace(b"\r\n", b"")
+    again = install(Demo(tmp_path), tmp_path, force=False)
+    assert path not in again.written and path.read_bytes() == data
+
+
+def test_a_merge_symlink_inside_the_destination_is_edited_through(tmp_path: Path) -> None:
+    (tmp_path / "CLAUDE.md").write_text("mine\n", encoding="utf8")
+    (tmp_path / "AGENTS.md").symlink_to("CLAUDE.md")
+    same = (Merge("CLAUDE.md", "block", body="a\n"), Merge("AGENTS.md", "block", body="a\n"))
+    install(Twice(tmp_path, same), tmp_path, force=False)
+    assert (tmp_path / "AGENTS.md").is_symlink()
+    text = (tmp_path / "CLAUDE.md").read_text(encoding="utf8")
+    assert text.count(BEGIN) == 1 and text.startswith("mine\n")
+    again = install(Twice(tmp_path, same), tmp_path, force=False)
+    assert again.written == ()
+
+
+def test_symlinked_merges_with_different_bodies_are_refused(tmp_path: Path) -> None:
+    (tmp_path / "CLAUDE.md").write_text("mine\n", encoding="utf8")
+    (tmp_path / "AGENTS.md").symlink_to("CLAUDE.md")
+    diff = (Merge("CLAUDE.md", "block", body="a\n"), Merge("AGENTS.md", "block", body="b\n"))
+    with pytest.raises(DiagnosticError) as exc:
+        install(Twice(tmp_path, diff), tmp_path, force=False)
+    assert exc.value.diagnostic.code == "SVA-S-005"
+    assert (tmp_path / "CLAUDE.md").read_text(encoding="utf8") == "mine\n"
+
+
+def test_a_symlinked_whole_file_is_still_refused(tmp_path: Path) -> None:
+    (tmp_path / "real.md").write_text("x\n", encoding="utf8")
+    (tmp_path / "owned").mkdir()
+    (tmp_path / "owned/rules.md").symlink_to(tmp_path / "real.md")
+    with pytest.raises(DiagnosticError) as exc:
+        install(Demo(tmp_path), tmp_path, force=True)
+    assert exc.value.diagnostic.code == "SVA-S-003"
+
+
+def test_a_collision_refusal_suggests_update(tmp_path: Path) -> None:
+    (tmp_path / "owned").mkdir()
+    (tmp_path / "owned/rules.md").write_text("old\n", encoding="utf8")
+    with pytest.raises(DiagnosticError) as exc:
+        install(Demo(tmp_path), tmp_path, force=False)
+    assert exc.value.diagnostic.code == "SVA-S-001"
+    assert any("--update" in f for f in exc.value.diagnostic.suggested_fixes)
+
+
+def test_a_dangling_merge_symlink_is_refused(tmp_path: Path) -> None:
+    (tmp_path / "NOTES.md").symlink_to(tmp_path / "missing.md")
+    with pytest.raises(DiagnosticError) as exc:
+        install(Demo(tmp_path), tmp_path, force=False)
+    assert exc.value.diagnostic.code == "SVA-S-003"
+    assert not (tmp_path / "missing.md").exists()

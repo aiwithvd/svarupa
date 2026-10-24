@@ -100,16 +100,58 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
         "    if False:",
     ),
     (
-        "a broken symlink no longer counts as escaping",
+        "a broken merge symlink no longer counts as escaping",
         "svarupa/setup/__init__.py",
-        "    if path.is_symlink():\n        return True",
-        "    if path.is_symlink():\n        return False",
+        "        except OSError:\n            return True\n        if not target.is_file()",
+        "        except OSError:\n            return False\n        if not target.is_file()",
     ),
     (
         "a write failure escapes as a raw traceback again",
         "svarupa/setup/__init__.py",
         "        except OSError as exc:",
         "        except MemoryError as exc:",
+    ),
+    (
+        "existing files are read with newline translation again (CRLF becomes LF)",
+        "svarupa/setup/__init__.py",
+        '    return path.read_bytes().decode("utf8")',
+        '    return path.read_text(encoding="utf8")',
+    ),
+    (
+        "an identical MCP entry is re-serialized instead of left alone",
+        "svarupa/setup/merge.py",
+        '    if existing and servers.get("svarupa") == entry:',
+        "    if False:",
+    ),
+    (
+        "markers are found mid-line again",
+        "svarupa/setup/merge.py",
+        r'        if line.rstrip("\r\n") == marker:',
+        "        if marker in line:",
+    ),
+    (
+        "a symlink to a file outside the destination is edited through",
+        "svarupa/setup/__init__.py",
+        "        if not target.is_file() or droot not in target.parents:",
+        "        if not target.is_file():",
+    ),
+    (
+        "two different merges resolving to one file are applied twice",
+        "svarupa/setup/__init__.py",
+        "        if real in owned or (prior is not None and not _same_block(prior, m)):",
+        "        if False:",
+    ),
+    (
+        "the collision refusal stops suggesting --update",
+        "svarupa/setup/__init__.py",
+        "re-run with --update.",
+        "re-run with it.",
+    ),
+    (
+        "a symlinked whole file is followed like a merge target",
+        "svarupa/setup/__init__.py",
+        "        if not merge:\n            return True",
+        "        if not merge:\n            return False",
     ),
     (
         "the CLI hardcodes force=True",
@@ -180,7 +222,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     (
         "other MCP servers are dropped",
         "svarupa/setup/merge.py",
-        '    cast("dict[str, Any]", servers)["svarupa"] = entry\n',
+        '    servers["svarupa"] = entry\n',
         '    doc[key] = {"svarupa": entry}\n',
     ),
     (
@@ -192,7 +234,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     (
         "a refused merge still writes the other files",
         "svarupa/setup/__init__.py",
-        "    merged = [(p, _merged(p, m)) for p, m in merges]\n",
+        "    merged = [(p, _merged(p, m)) for p, m in _by_target(merges, planned)]\n",
         "    merged = []\n",
     ),
 ]

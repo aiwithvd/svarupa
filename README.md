@@ -59,9 +59,10 @@ somewhere other than `<repo>/.svarupa/`. The artifact holds:
   the file describes the one-line change that makes it report-only.
 - `svarupa setup ide` teaches your AI coding tools (Claude Code, Cursor,
   GitHub Copilot, Windsurf, and AGENTS.md readers such as Codex) the Svarupa
-  workflow and this repository's rules, and adds Svarupa's MCP server to their
-  project config. It only edits text between `<!-- svarupa:begin -->` and
-  `<!-- svarupa:end -->`; refresh with `--update`, preview with `--dry-run`.
+  workflow and this repository's rules. It adds Svarupa's MCP server to the
+  project configs of Claude Code, Cursor and Copilot, and prints it as a
+  snippet to add for Windsurf and Codex (their configs are global). It only edits text between
+  `<!-- svarupa:begin -->` and `<!-- svarupa:end -->`; refresh with `--update`, preview with `--dry-run`.
   Windsurf gets a shorter version, because Windsurf limits rule files to 6,000
   characters each (12,000 in total).
 - Code facts come from language packs: Python, TypeScript, JavaScript, Go

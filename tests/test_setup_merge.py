@@ -21,7 +21,8 @@ def test_block_append_keeps_the_user_text_byte_for_byte() -> None:
     mine = "# My rules\r\n\r\nUse tabs.\r\n"
     out = merge_block(mine, BODY)
     assert out.startswith(mine)
-    assert out[len(mine) :] == f"\n{BEGIN}\n{BODY}{END}\n"
+    crlf = lambda t: t.replace("\n", "\r\n")  # noqa: E731
+    assert out[len(mine) :] == crlf(f"\n{BEGIN}\n{BODY}{END}\n")
     no_newline = "Use tabs."
     assert merge_block(no_newline, BODY) == f"Use tabs.\n\n{BEGIN}\n{BODY}{END}\n"
 
@@ -87,3 +88,36 @@ def test_mcp_merge_round_trips_nested_unicode_and_big_integers() -> None:
     assert out["n"] == {"deep": [1, {"k": "caf\u00e9 \u2603"}]}
     assert "\u2603" in text
     assert merge_mcp(text, "mcpServers", ENTRY) == text
+
+
+def test_a_crlf_file_stays_crlf() -> None:
+    mine = "# Mine\r\nline two\r\n"
+    out = merge_block(mine, BODY)
+    assert out.startswith(mine)
+    assert "\n" not in out.replace("\r\n", "")
+    assert merge_block(out, BODY) == out
+    replaced = merge_block(out.replace("Rules here.", "old"), BODY)
+    assert replaced == out
+
+
+def test_an_identical_mcp_entry_leaves_the_file_byte_identical() -> None:
+    mine = '{\n\t"mcpServers": {\n\t\t"svarupa": {"command": "svarupa", "args": ["mcp", ".svarupa"]}\n\t},\n\t"n": 1.50\n}'
+    assert merge_mcp(mine, "mcpServers", ENTRY) == mine
+
+
+def test_mcp_merge_keeps_the_files_indentation() -> None:
+    four = '{\n    "keep": 1\n}\n'
+    out = merge_mcp(four, "mcpServers", ENTRY)
+    assert out.startswith('{\n    "keep": 1,\n    "mcpServers": {\n        "svarupa"')
+    tab = '{\n\t"keep": 1\n}\n'
+    out = merge_mcp(tab, "mcpServers", ENTRY)
+    assert out.startswith('{\n\t"keep": 1,\n\t"mcpServers": {\n\t\t"svarupa"')
+    assert merge_mcp(None, "mcpServers", ENTRY).startswith('{\n  "mcpServers"')
+
+
+def test_a_marker_mentioned_inline_is_not_a_marker() -> None:
+    mine = f"Docs: put `{BEGIN}` and `{END}` around the block.\nMore {BEGIN} text\n"
+    out = merge_block(mine, BODY)
+    assert out.startswith(mine)
+    assert out.endswith(f"\n{BEGIN}\n{BODY}{END}\n")
+    assert merge_block(out, BODY) == out

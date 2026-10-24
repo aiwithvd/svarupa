@@ -23,7 +23,11 @@ def test_repo_rules_list_forbidden_directions_and_every_check(tmp_path: Path) ->
     text = repo_rules(tmp_path)
     assert text.startswith("## This repository's rules\n")
     assert "layered" in text
-    assert "- `.` follows layered: service must not import api; " in text
+    assert (
+        "- `.` looks like layered (inferred, not yet accepted in .svarupa/design.yaml): "
+        in text
+    )
+    assert "service must not import api; " in text
     assert "data must not import service" in text
     for c in CATALOG:
         assert f"- {c.id} (" in text
@@ -53,3 +57,12 @@ def test_every_rule_kind_a_style_carries_is_listed() -> None:
     assert any("only through a slice's root" in r for r in fsd)
     hexagonal = _style_rules(BY_ID["hexagonal"])
     assert "core must stay free of framework and I/O code" in hexagonal
+
+
+def test_an_accepted_style_is_stated_as_binding(tmp_path: Path) -> None:
+    from svarupa.cli import main
+
+    layered(tmp_path)
+    assert main(["design", str(tmp_path), "--accept"]) == 0
+    text = repo_rules(tmp_path)
+    assert "- `.` follows layered: " in text and "inferred" not in text

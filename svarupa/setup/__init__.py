@@ -20,6 +20,9 @@ the filesystem, so the rules live once:
   social engineering. A planned path that is a symlink, or whose existing
   ancestors resolve outside the destination, is refused, and `--force` does
   not override it: force means "replace your file", never "follow your link".
+  The one exception is a file setup merges into (not one it writes whole): a
+  symlink there is edited through when it resolves to a regular file inside
+  the destination, such as `AGENTS.md -> CLAUDE.md`.
 """
 
 from __future__ import annotations
@@ -67,16 +70,25 @@ class Installed:
     actions: tuple[tuple[Path, str], ...] = ()
 
 
-def _escapes(path: Path, dest: Path) -> bool:
+def _escapes(path: Path, dest: Path, merge: bool = False) -> bool:
     """Whether writing `path` could land outside `dest`.
 
     True if the path itself is a symlink (dangling ones included: `exists()`
     is False on those, which is exactly how one slipped past the collision
     sweep), or if its nearest existing ancestor resolves outside the resolved
     destination, which catches a symlinked directory like `.github -> /outside`.
+    A merge path may be a symlink to a regular file inside the destination.
     """
     if path.is_symlink():
-        return True
+        if not merge:
+            return True
+        try:
+            target = path.resolve(strict=True)
+            droot = dest.resolve(strict=True)
+        except OSError:
+            return True
+        if not target.is_file() or droot not in target.parents:
+            return True
     anchor = path.parent
     while not anchor.exists():
         anchor = anchor.parent
@@ -88,6 +100,11 @@ def _escapes(path: Path, dest: Path) -> bool:
     return real != droot and droot not in real.parents
 
 
+def _read(path: Path) -> str:
+    """The file's text with its line endings exactly as stored."""
+    return path.read_bytes().decode("utf8")
+
+
 def _differs(path: Path, content: str) -> bool:
     """Whether an existing path stands in the way of writing `content`.
 
@@ -96,7 +113,7 @@ def _differs(path: Path, content: str) -> bool:
     refusal message is the honest report for every one of those shapes.
     """
     try:
-        return path.read_text(encoding="utf8") != content
+        return _read(path) != content
     except (OSError, UnicodeDecodeError):
         return True
 
@@ -106,7 +123,7 @@ def _merged(path: Path, merge: Merge) -> str:
     try:
         if path.exists() and not path.is_file():
             raise MergeError("is a directory, not a file")
-        existing = path.read_text(encoding="utf8") if path.is_file() else None
+        existing = _read(path) if path.is_file() else None
         if merge.kind == "block":
             return merge_block(existing, merge.body)
         return merge_mcp(existing, merge.key, dict(merge.entry or {}))
@@ -120,6 +137,37 @@ def _merged(path: Path, merge: Merge) -> str:
                 suggested_fixes=("Fix the file by hand, then re-run setup.",),
             )
         ) from exc
+
+
+def _by_target(
+    merges: list[tuple[Path, Merge]], planned: list[tuple[Path, str]]
+) -> list[tuple[Path, Merge]]:
+    """Merges keyed by the real file they edit, each file once.
+
+    Two block merges that resolve to one file with the same body (AGENTS.md
+    symlinked to CLAUDE.md) apply once; any other pair on one file is refused.
+    """
+    owned = {p.resolve() for p, _ in planned}
+    out: dict[Path, Merge] = {}
+    for p, m in merges:
+        real = p.resolve()
+        prior = out.get(real)
+        if real in owned or (prior is not None and not _same_block(prior, m)):
+            raise DiagnosticError(
+                Diagnostic(
+                    code="SVA-S-005",
+                    severity=Severity.ERROR,
+                    message="is set up twice by this target; nothing was written",
+                    subject=str(p),
+                    suggested_fixes=("Report this as a bug in the target.",),
+                )
+            )
+        out.setdefault(real, m)
+    return list(out.items())
+
+
+def _same_block(a: Merge, b: Merge) -> bool:
+    return a.kind == b.kind == "block" and a.body == b.body
 
 
 def _action(path: Path, content: str) -> str:
@@ -158,7 +206,8 @@ def install(target: Target, dest: Path, force: bool, *, dry_run: bool = False) -
     # Checked before collisions and never overridden by --force: force means
     # "replace your file", never "follow your link somewhere else".
     escaping = [
-        p for p in [*(p for p, _ in planned), *(p for p, _ in merges)] if _escapes(p, dest)
+        *(p for p, _ in planned if _escapes(p, dest)),
+        *(p for p, _ in merges if _escapes(p, dest, merge=True)),
     ]
     if escaping:
         raise DiagnosticError(
@@ -185,6 +234,7 @@ def install(target: Target, dest: Path, force: bool, *, dry_run: bool = False) -
                 ),
                 subject=str(clashes[0]),
                 suggested_fixes=(
+                    "If this is Svarupa's own file and the design changed, re-run with --update.",
                     "Re-run with --force to overwrite it.",
                     "Or move the existing file aside if it is yours.",
                     *target.collision_note(),
@@ -193,7 +243,7 @@ def install(target: Target, dest: Path, force: bool, *, dry_run: bool = False) -
         )
     # Every merge is computed before anything is written, so a refused merge
     # (SVA-S-005) leaves the destination exactly as it was.
-    merged = [(p, _merged(p, m)) for p, m in merges]
+    merged = [(p, _merged(p, m)) for p, m in _by_target(merges, planned)]
     todo = [*planned, *merged]
     actions = tuple((p, _action(p, c)) for p, c in todo)
     if dry_run:
