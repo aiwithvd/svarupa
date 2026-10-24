@@ -47,6 +47,14 @@ AI agents get every rule up front from `get_design_rules` (`checks`: id,
 rule, area, severity, limit, fix), and the agent skill tells them to run
 `svarupa check` before they finish.
 
+In CI: `svarupa setup ci_github` adds a "health of this change" step to the
+pull request workflow, and `svarupa setup ci_gitlab` adds a `health_check`
+job. Both run `svarupa check` against the pull request's base and fail only
+for problems the pull request adds. On GitHub each new violation is an
+annotation on its line (`--format github`); on GitLab it appears in the
+merge request through a Code Quality report (`--format gitlab`). A comment
+in each file shows the one-line change that makes the gate report-only.
+
 ## Checks
 
 | Id | Violated when | Source | Severity | Minutes |

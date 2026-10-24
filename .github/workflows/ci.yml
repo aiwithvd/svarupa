@@ -143,3 +143,30 @@ jobs:
           key: svarupa-bench-${{ hashFiles('benchmark/corpus.toml') }}
       - name: benchmark
         run: uv run python scripts/benchmark.py check
+
+  # The health gate Svarupa installs for users, run on itself: a pull
+  # request fails only for health problems it adds.
+  health:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --dev
+      - name: health of this change
+        shell: bash
+        run: |
+          uv run svarupa check . --base "${{ github.event.pull_request.base.sha }}" --format github \
+            > /tmp/health.txt 2>&1 && code=0 || code=$?
+          cat /tmp/health.txt
+          {
+            echo '## Health of this change'
+            echo '````'
+            grep -v '^::' /tmp/health.txt || true
+            echo '````'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$code"

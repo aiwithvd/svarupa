@@ -563,3 +563,14 @@ def test_the_gitlab_health_script_fails_and_writes_the_report(tmp_path: Path) ->
     report = work / "gl-code-quality-report.json"
     assert '"check_name"' in report.read_text(encoding="utf8")
     assert "1 new, 0 fixed" in proc.stderr
+
+
+def test_svarupa_gates_its_own_pull_requests() -> None:
+    ci = yaml.safe_load((REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf8"))
+    job = ci["jobs"]["health"]
+    assert job["if"] == "github.event_name == 'pull_request'"
+    checkout = next(s for s in job["steps"] if "checkout" in str(s.get("uses", "")))
+    assert checkout["with"]["fetch-depth"] == 0
+    run = "\n".join(str(s.get("run", "")) for s in job["steps"])
+    assert "uv run svarupa check . --base" in run and "--format github" in run
+    assert "GITHUB_STEP_SUMMARY" in run
