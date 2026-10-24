@@ -540,6 +540,58 @@ def _explain(argv: list[str]) -> int:
     return 0
 
 
+def _check(argv: list[str]) -> int:
+    """The health violations a change added, against a base."""
+    import json
+
+    from svarupa.check import (
+        CheckError,
+        analyze_with_files,
+        base_from_ref,
+        compare,
+        snapshot,
+        snapshot_from_json,
+    )
+
+    parser = argparse.ArgumentParser(
+        prog="svarupa check",
+        description=(
+            "List the health violations the working tree adds against a base, and any "
+            f"grade that got worse. Exit {EXIT_CHANGED} when the change should not ship."
+        ),
+    )
+    parser.add_argument("path", help="repository root; the working tree is used as it is")
+    parser.add_argument(
+        "--base", required=True, help="a git ref (main, HEAD~1) or an artifact's graph.json"
+    )
+    parser.add_argument(
+        "--min-severity",
+        default="minor",
+        choices=["minor", "major", "critical", "blocker"],
+        help="ignore new violations below this severity (grade drops always count)",
+    )
+    parser.add_argument("--json", action="store_true", help="print the result as JSON")
+    args = parser.parse_args(argv)
+    root = Path(args.path)
+    try:
+        if args.base.endswith(".json"):
+            base = snapshot_from_json(json.loads(Path(args.base).read_text(encoding="utf8")))
+        else:
+            base = snapshot(base_from_ref(root, args.base))
+        health, files = analyze_with_files(root, root)
+        head = snapshot(health, files)
+    except (CheckError, OSError, ValueError) as exc:
+        print(f"svarupa check: {exc}", file=sys.stderr)
+        return 1
+    delta = compare(base, head)
+    failed = delta.failed(args.min_severity)
+    if args.json:
+        print(json.dumps(delta.to_json(failed), indent=2, sort_keys=True))
+    else:
+        print(delta.render())
+    return EXIT_CHANGED if failed else 0
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     parser = argparse.ArgumentParser(
@@ -552,13 +604,14 @@ def main(argv: list[str] | None = None) -> int:
             'Also: "svarupa design <repo>" proposes the design style of each app '
             "unit and writes .svarupa/design.yaml on accept; "
             '"svarupa explain <check>" says what a health check means and how to fix it; '
+            '"svarupa check <repo> --base main" lists the health violations a change added; '
             '"svarupa setup skill", "svarupa setup ci_github" and '
             '"svarupa setup ci_gitlab" install '
             'integration files (see: svarupa setup --help), and "svarupa query '
             '<artifact> <function> ..." answers questions from graph.json (see: '
             'svarupa query --help); "svarupa mcp <artifact>" serves the same '
             "functions over MCP. To analyze a directory literally named "
-            '"setup", "query" or "mcp", pass it as "./setup" and so on.'
+            '"setup", "query", "mcp", "check" or "explain", pass it as "./setup" and so on.'
         ),
     )
     parser.add_argument("--version", action="version", version=f"svarupa {__version__}")
@@ -610,6 +663,8 @@ def main(argv: list[str] | None = None) -> int:
         # so `svarupa <path>` keeps working with no subcommand. The cost is
         # that a repository named `setup` needs `./setup`, which the epilog
         # says out loud.
+        if argv[:1] == ["check"]:
+            return _check(argv[1:])
         if argv[:1] == ["explain"]:
             return _explain(argv[1:])
         if argv[:1] == ["design"]:

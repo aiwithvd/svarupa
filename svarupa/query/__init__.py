@@ -480,13 +480,35 @@ def get_health(index: GraphIndex) -> dict[str, Any]:
     return {"available": True, **health}
 
 
+def _health_rules() -> list[dict[str, Any]]:
+    """Every check as a rule an agent follows: what it is, the limit, the fix."""
+    from svarupa.health import CATALOG
+    from svarupa.health.explain import explanation
+
+    return [
+        {
+            "id": c.id,
+            "rule": c.title,
+            "area": c.area,
+            "severity": c.severity,
+            "limit": c.threshold,
+            "fix": explanation(c.id).fix,
+        }
+        for c in CATALOG
+    ]
+
+
 def get_design_rules(index: GraphIndex) -> dict[str, Any]:
-    """What an agent must follow: per unit, parts, allowed and forbidden directions."""
+    """What an agent must follow: per unit, parts, allowed and forbidden directions, and every health rule."""
     from svarupa.design import BY_ID as STYLES
 
     raw: Any = index.data.get("design")
     if not isinstance(raw, dict):
-        return {"available": False, "reason": "this artifact was built without design"}
+        return {
+            "available": False,
+            "reason": "this artifact was built without design",
+            "checks": _health_rules(),
+        }
     design = cast("dict[str, Any]", raw)
     units: list[dict[str, Any]] = []
     for u in cast("list[dict[str, Any]]", design.get("units", [])):
@@ -517,4 +539,9 @@ def get_design_rules(index: GraphIndex) -> dict[str, Any]:
                 "must_stay_pure": list(style.pure),
             }
         )
-    return {"available": True, "units": units, "exceptions": design.get("exceptions", [])}
+    return {
+        "available": True,
+        "units": units,
+        "exceptions": design.get("exceptions", []),
+        "checks": _health_rules(),
+    }

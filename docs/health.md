@@ -30,6 +30,23 @@ graph.json (`about`) and in `get_node`, for example "Module app/api: serves
 12 HTTP routes (FastAPI), uses 3 modules and is used by 5, talks to
 PostgreSQL. 2 health findings, worst: Query in a loop (major)."
 
+## Checking a change
+
+    svarupa check <repo> --base main          # a git ref, built in a temporary worktree
+    svarupa check <repo> --base old/graph.json --json
+
+Lists the violations the working tree adds against the base, the ones it
+fixed, and every area whose grade moved. A finding is the same finding when
+it is the same check in the same file on the same definition, so moving
+code never makes it new, and a finding is matched across files only when
+its old file is gone (a rename or move). Exit 3 when a new violation is at or above
+`--min-severity` (default minor) or a grade got worse; exit 0 otherwise.
+Both sides are judged by the working tree's `.svarupa/design.yaml`.
+
+AI agents get every rule up front from `get_design_rules` (`checks`: id,
+rule, area, severity, limit, fix), and the agent skill tells them to run
+`svarupa check` before they finish.
+
 ## Checks
 
 | Id | Violated when | Source | Severity | Minutes |
