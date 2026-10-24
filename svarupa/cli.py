@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import textwrap
 from pathlib import Path
 
 from svarupa import __version__
@@ -495,6 +496,50 @@ def _setup(argv: list[str]) -> int:
     return 0
 
 
+def _explain(argv: list[str]) -> int:
+    """What a health check means, why it matters, how to fix it."""
+    import difflib
+
+    from svarupa.health import BY_ID, CATALOG
+    from svarupa.health.explain import LANGS, example_for, explanation
+
+    parser = argparse.ArgumentParser(
+        prog="svarupa explain",
+        description="Explain a health check in plain words, with a before/after example.",
+    )
+    parser.add_argument("check", nargs="?", help="check id, for example query-in-loop")
+    parser.add_argument(
+        "--lang",
+        default=None,
+        help=f"show only this language's example ({', '.join(LANGS)}, javascript)",
+    )
+    args = parser.parse_args(argv)
+    if args.check is None:
+        for c in CATALOG:
+            print(f"{c.id:<24} {c.title}")
+        return 0
+    if args.check not in BY_ID:
+        close = difflib.get_close_matches(args.check, list(BY_ID), n=3)
+        hint = f"; did you mean: {', '.join(close)}" if close else ""
+        print(f"svarupa explain: unknown check {args.check!r}{hint}", file=sys.stderr)
+        return 2
+    check, e = BY_ID[args.check], explanation(args.check)
+    print(f"{check.id}: {check.title} [{check.area}, {check.severity}]")
+    print(f"Source: {check.source}\n")
+    print(f"What: {e.what}\nWhy: {e.why}\nHow to fix: {e.fix}")
+    if args.lang is not None:
+        ex = example_for(args.check, args.lang)
+        shown = [(args.lang, ex)] if ex is not None else []
+        if ex is None:
+            print(f"\n(no {args.lang} example for this check)")
+    else:
+        shown = list(e.examples)
+    for lang, ex in shown:
+        print(f"\nBefore ({lang}):\n{textwrap.indent(ex.before, '    ')}")
+        print(f"After:\n{textwrap.indent(ex.after, '    ')}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     parser = argparse.ArgumentParser(
@@ -506,6 +551,7 @@ def main(argv: list[str] | None = None) -> int:
         epilog=(
             'Also: "svarupa design <repo>" proposes the design style of each app '
             "unit and writes .svarupa/design.yaml on accept; "
+            '"svarupa explain <check>" says what a health check means and how to fix it; '
             '"svarupa setup skill", "svarupa setup ci_github" and '
             '"svarupa setup ci_gitlab" install '
             'integration files (see: svarupa setup --help), and "svarupa query '
@@ -564,6 +610,8 @@ def main(argv: list[str] | None = None) -> int:
         # so `svarupa <path>` keeps working with no subcommand. The cost is
         # that a repository named `setup` needs `./setup`, which the epilog
         # says out loud.
+        if argv[:1] == ["explain"]:
+            return _explain(argv[1:])
         if argv[:1] == ["design"]:
             return _design(argv[1:])
         if argv[:1] == ["setup"]:

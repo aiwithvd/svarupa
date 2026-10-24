@@ -51,6 +51,7 @@ class Health:
 
     def to_json(self) -> dict[str, object]:
         from svarupa.health.catalog import CATALOG
+        from svarupa.health.explain import explanation
 
         return {
             "model": "SQALE",
@@ -72,6 +73,7 @@ class Health:
                     "minutes": c.minutes,
                     "per_unit": c.per_unit,
                     "maturity": c.maturity,
+                    "explanation": explanation(c.id).to_json(),
                 }
                 for c in CATALOG
             ],

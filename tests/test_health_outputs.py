@@ -45,3 +45,17 @@ def test_get_health_query(tmp_path: Path, capsys) -> None:
     result = json.loads(capsys.readouterr().out)
     assert result["ratings"]["maintainability"] == "B"
     assert result["violations"][0]["check"] == "many-parameters"
+
+
+def test_explanations_reach_graph_json_and_get_health(tmp_path: Path, capsys) -> None:
+    make_repo(tmp_path)
+    assert main([str(tmp_path)]) == 0
+    capsys.readouterr()
+    gj = json.loads((tmp_path / ".svarupa" / "graph.json").read_text(encoding="utf8"))
+    checks = {c["id"]: c for c in gj["health"]["checks"]}
+    assert checks["many-parameters"]["explanation"]["what"].startswith("This function takes")
+    assert "python" in checks["many-parameters"]["explanation"]["examples"]
+    assert "explanation" not in gj["health"]["violations"][0]
+    assert main(["query", str(tmp_path / ".svarupa"), "get_health", "--json"]) == 0
+    result = json.loads(capsys.readouterr().out)
+    assert {c["id"]: c for c in result["checks"]}["many-parameters"]["explanation"]["fix"]

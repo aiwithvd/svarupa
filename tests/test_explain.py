@@ -108,3 +108,33 @@ def test_explanations_are_plain_text() -> None:
         assert "TODO" not in text, check.id
         for part in (e.what, e.why, e.fix):
             assert len(part) <= 400, check.id
+
+
+from svarupa.cli import main  # noqa: E402
+
+
+def test_explain_lists_the_checks(capsys) -> None:
+    assert main(["explain"]) == 0
+    out = capsys.readouterr().out
+    assert "query-in-loop" in out and "Query in a loop (N+1)" in out
+    assert len(out.strip().splitlines()) == len(CATALOG)
+
+
+def test_explain_prints_one_check_in_one_language(capsys) -> None:
+    assert main(["explain", "query-in-loop", "--lang", "javascript"]) == 0
+    out = capsys.readouterr().out
+    assert "What:" in out and "Why:" in out and "How to fix:" in out
+    assert "prisma.customer.findMany" in out
+    assert "in_bulk" not in out
+
+
+def test_explain_without_an_example_prints_the_text(capsys) -> None:
+    assert main(["explain", "debug-enabled", "--lang", "java"]) == 0
+    out = capsys.readouterr().out
+    assert "How to fix:" in out and "no java example" in out
+
+
+def test_explain_unknown_check_names_close_ones(capsys) -> None:
+    assert main(["explain", "query-in-loops"]) == 2
+    err = capsys.readouterr().err
+    assert "unknown check" in err and "query-in-loop" in err
