@@ -97,6 +97,27 @@ jobs:
             echo '````'
           } >> "$GITHUB_STEP_SUMMARY"
           exit "$code"
+
+      # Fails the job only for problems this pull request adds: a new health
+      # violation or a lower grade (exit 3), or a check that could not run
+      # (exit 1). Old findings never fail it. Runs even when the delta step
+      # failed, so neither result hides the other. To make it report-only,
+      # change the last line to `exit 0`.
+      - name: health of this change
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          svarupa check . --base "$BASE_SHA" --format github \\
+            > /tmp/health.txt 2>&1 && code=0 || code=$?
+          cat /tmp/health.txt
+          {
+            echo '## Health of this change'
+            echo '````'
+            grep -v '^::' /tmp/health.txt || true
+            echo '````'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$code"
 """
 
 # The four-backtick fence above is not decoration: delta lines carry
@@ -108,7 +129,9 @@ WORKFLOW = _TEMPLATE.replace("__SVARUPA_VERSION__", __version__)
 
 class CiGithubTarget(Target):
     name: ClassVar[str] = "ci_github"
-    summary: ClassVar[str] = "a GitHub Actions workflow that diffs architecture per PR"
+    summary: ClassVar[str] = (
+        "a GitHub Actions workflow that diffs architecture and gates health per PR"
+    )
 
     def files(self) -> tuple[tuple[str, str], ...]:
         return ((".github/workflows/svarupa.yml", WORKFLOW),)
@@ -117,4 +140,6 @@ class CiGithubTarget(Target):
         return (
             "Run `svarupa . --lock` and commit .svarupa/architecture.lock as the base.",
             "Commit .github/workflows/svarupa.yml.",
+            "Pull requests now fail only for health problems they add; see the "
+            "workflow's comment to make the gate report-only.",
         )

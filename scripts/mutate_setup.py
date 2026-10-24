@@ -134,6 +134,18 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
         "          true",
     ),
     (
+        "the health step is skipped after a failed delta",
+        "svarupa/setup/ci_github.py",
+        "        if: ${{ !cancelled() }}\n",
+        "        if: ${{ success() }}\n",
+    ),
+    (
+        "raw annotations leak into the job summary",
+        "svarupa/setup/ci_github.py",
+        "            grep -v '^::' /tmp/health.txt || true\n",
+        "            cat /tmp/health.txt\n",
+    ),
+    (
         "the lockfile is foreign to claim() again",
         "svarupa/emit/__init__.py",
         "        owned = set(OWNED_FILES) | set(OWNED_DIRS) | set(TOLERATED_FILES)",

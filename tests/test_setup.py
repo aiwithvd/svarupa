@@ -410,8 +410,11 @@ def test_the_workflow_parses_as_yaml_and_names_the_real_lockfile() -> None:
     from svarupa import __version__
 
     assert f"svarupa=={__version__}" in WORKFLOW, "the install is not pinned"
-    assert 'exit "$code"' in WORKFLOW, "the exit code is not re-raised after the summary"
-    assert WORKFLOW.index("GITHUB_STEP_SUMMARY") < WORKFLOW.index('exit "$code"')
+    # The delta step itself, not the whole file: the health step also ends in
+    # `exit "$code"`, so a file-wide check survives deleting this one.
+    delta_run = next(s for s in steps if s.get("name") == "architecture delta")["run"]
+    assert 'exit "$code"' in delta_run, "the exit code is not re-raised after the summary"
+    assert delta_run.index("GITHUB_STEP_SUMMARY") < delta_run.index('exit "$code"')
     # The exact commit-verification line, not any `cat-file`: the
     # file-existence check is also a cat-file, so a substring of the family
     # was satisfied with the commit verification deleted.
@@ -470,3 +473,51 @@ def test_the_skill_names_the_real_number_of_mcp_tools() -> None:
 
     words = {7: "seven", 8: "eight", 9: "nine", 10: "ten", 11: "eleven", 12: "twelve"}
     assert f"serves the same {words[len(FUNCTIONS)]}" in SKILL_MD
+
+
+def _health_step() -> dict:
+    steps = yaml.safe_load(WORKFLOW)["jobs"]["diff"]["steps"]
+    return next(s for s in steps if s.get("name") == "health of this change")
+
+
+def test_the_health_step_runs_after_a_failed_delta() -> None:
+    step = _health_step()
+    assert step["if"] == "${{ !cancelled() }}"
+    assert step["shell"] == "bash"
+    assert 'svarupa check . --base "$BASE_SHA" --format github' in step["run"]
+    names = [s.get("name") for s in yaml.safe_load(WORKFLOW)["jobs"]["diff"]["steps"]]
+    assert names.index("health of this change") > names.index("architecture delta")
+
+
+def test_the_health_step_script_fails_and_summarizes(tmp_path: Path) -> None:
+    import os
+    import shutil
+    import subprocess
+
+    bash = shutil.which("bash")
+    if not bash:
+        pytest.skip("bash is not installed")
+    stub = tmp_path / "bin" / "svarupa"
+    stub.parent.mkdir()
+    stub.write_text(
+        "#!/bin/sh\necho '::error file=a.py,line=1,title=T::m'\necho '1 new, 0 fixed'\nexit 3\n",
+        encoding="utf8",
+    )
+    stub.chmod(0o755)
+    summary = tmp_path / "summary.md"
+    env = {
+        **os.environ,
+        "PATH": f"{stub.parent}{os.pathsep}{os.environ['PATH']}",
+        "GITHUB_STEP_SUMMARY": str(summary),
+    }
+    script = _health_step()["run"].replace(
+        "${{ github.event.pull_request.base.sha }}", "abc123"
+    )
+    proc = subprocess.run(
+        [bash, "-e", "-o", "pipefail", "-c", script], env=env, capture_output=True, text=True
+    )
+    assert proc.returncode == 3
+    assert "::error file=a.py" in proc.stdout
+    text = summary.read_text(encoding="utf8")
+    assert "## Health of this change" in text and "1 new, 0 fixed" in text
+    assert "::error" not in text
