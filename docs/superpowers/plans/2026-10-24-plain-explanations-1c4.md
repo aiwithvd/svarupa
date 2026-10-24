@@ -352,7 +352,7 @@ def test_explanations_are_plain_text() -> None:
     for check in CATALOG:
         e = explanation(check.id)
         text = " ".join([e.what, e.why, e.fix, *(x.before + x.after for _, x in e.examples)])
-        assert "—" not in text, check.id
+        assert "\u2014" not in text, check.id
         assert "TODO" not in text, check.id
         for part in (e.what, e.why, e.fix):
             assert len(part) <= 400, check.id
