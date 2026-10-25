@@ -21,8 +21,14 @@ the filesystem, so the rules live once:
   ancestors resolve outside the destination, is refused, and `--force` does
   not override it: force means "replace your file", never "follow your link".
   The one exception is a file setup merges into (not one it writes whole): a
-  symlink there is edited through when it resolves to a regular file inside
-  the destination, such as `AGENTS.md -> CLAUDE.md`.
+  symlink there is edited through only when it resolves to another file this
+  target also merges into, such as `AGENTS.md -> CLAUDE.md`. A link to any
+  other file, even one inside the destination (`.git/hooks/pre-commit`), is
+  refused.
+* **Line endings in Svarupa's own files are not content.** A whole file setup
+  writes is compared with CRLF read as LF, because git's `core.autocrlf` checks
+  such a file out with CRLF; it counts as unchanged and is left as it is. Merge
+  targets are the user's, so they are read and written byte for byte.
 """
 
 from __future__ import annotations
@@ -70,24 +76,24 @@ class Installed:
     actions: tuple[tuple[Path, str], ...] = ()
 
 
-def _escapes(path: Path, dest: Path, merge: bool = False) -> bool:
+def _escapes(path: Path, dest: Path, links: frozenset[Path] | None = None) -> bool:
     """Whether writing `path` could land outside `dest`.
 
     True if the path itself is a symlink (dangling ones included: `exists()`
     is False on those, which is exactly how one slipped past the collision
     sweep), or if its nearest existing ancestor resolves outside the resolved
     destination, which catches a symlinked directory like `.github -> /outside`.
-    A merge path may be a symlink to a regular file inside the destination.
+    `links` is None for a whole file. For a merge path it is the set of merge
+    destinations of the target; a symlink is followed only to one of those.
     """
     if path.is_symlink():
-        if not merge:
+        if links is None:
             return True
         try:
             target = path.resolve(strict=True)
-            droot = dest.resolve(strict=True)
         except OSError:
             return True
-        if not target.is_file() or droot not in target.parents:
+        if not target.is_file() or target not in links:
             return True
     anchor = path.parent
     while not anchor.exists():
@@ -100,20 +106,38 @@ def _escapes(path: Path, dest: Path, merge: bool = False) -> bool:
     return real != droot and droot not in real.parents
 
 
+def _link_note(path: Path) -> tuple[str, ...]:
+    """A fix line naming where a refused symlink points, when it is one."""
+    if not path.is_symlink():
+        return ()
+    try:
+        where = str(path.resolve())
+    except OSError:
+        where = str(path.readlink())
+    return (
+        f"{path.name} points to {where}; setup only follows links between "
+        "Svarupa's rules files (for example AGENTS.md to CLAUDE.md).",
+    )
+
+
 def _read(path: Path) -> str:
     """The file's text with its line endings exactly as stored."""
     return path.read_bytes().decode("utf8")
 
 
-def _differs(path: Path, content: str) -> bool:
+def _differs(path: Path, content: str, *, owned: bool = False) -> bool:
     """Whether an existing path stands in the way of writing `content`.
+
+    `owned` marks a whole file Svarupa writes: its line endings are not user
+    content, so CRLF (a git `core.autocrlf` checkout) equals LF.
 
     A directory, a binary file, or an unreadable file all differ: each is
     something already there that is not the file we would write, and the
     refusal message is the honest report for every one of those shapes.
     """
     try:
-        return _read(path) != content
+        text = _read(path)
+        return (text.replace("\r\n", "\n") if owned else text) != content
     except (OSError, UnicodeDecodeError):
         return True
 
@@ -170,10 +194,10 @@ def _same_block(a: Merge, b: Merge) -> bool:
     return a.kind == b.kind == "block" and a.body == b.body
 
 
-def _action(path: Path, content: str) -> str:
+def _action(path: Path, content: str, *, owned: bool = False) -> str:
     if not path.exists():
         return "create"
-    return "update" if _differs(path, content) else "unchanged"
+    return "update" if _differs(path, content, owned=owned) else "unchanged"
 
 
 def install(target: Target, dest: Path, force: bool, *, dry_run: bool = False) -> Installed:
@@ -205,9 +229,11 @@ def install(target: Target, dest: Path, force: bool, *, dry_run: bool = False) -
         seen.add(p)
     # Checked before collisions and never overridden by --force: force means
     # "replace your file", never "follow your link somewhere else".
+    droot = dest.resolve()
+    links = frozenset(droot / Path(m.path) for _, m in merges)
     escaping = [
         *(p for p, _ in planned if _escapes(p, dest)),
-        *(p for p, _ in merges if _escapes(p, dest, merge=True)),
+        *(p for p, _ in merges if _escapes(p, dest, links)),
     ]
     if escaping:
         raise DiagnosticError(
@@ -219,10 +245,13 @@ def install(target: Target, dest: Path, force: bool, *, dry_run: bool = False) -
                     "refuses to write through it (--force does not override this)"
                 ),
                 subject=str(escaping[0]),
-                suggested_fixes=("Remove the symlink if it is not yours, then re-run.",),
+                suggested_fixes=(
+                    *_link_note(escaping[0]),
+                    "Remove the symlink if it is not yours, then re-run.",
+                ),
             )
         )
-    clashes = [p for p, content in planned if p.exists() and _differs(p, content)]
+    clashes = [p for p, content in planned if p.exists() and _differs(p, content, owned=True)]
     if clashes and not force:
         raise DiagnosticError(
             Diagnostic(
@@ -245,7 +274,8 @@ def install(target: Target, dest: Path, force: bool, *, dry_run: bool = False) -
     # (SVA-S-005) leaves the destination exactly as it was.
     merged = [(p, _merged(p, m)) for p, m in _by_target(merges, planned)]
     todo = [*planned, *merged]
-    actions = tuple((p, _action(p, c)) for p, c in todo)
+    n_owned = len(planned)
+    actions = tuple((p, _action(p, c, owned=i < n_owned)) for i, (p, c) in enumerate(todo))
     if dry_run:
         return Installed(
             written=(),
@@ -254,8 +284,8 @@ def install(target: Target, dest: Path, force: bool, *, dry_run: bool = False) -
         )
     written: list[Path] = []
     unchanged: list[Path] = []
-    for path, content in todo:
-        if path.exists() and not _differs(path, content):
+    for i, (path, content) in enumerate(todo):
+        if path.exists() and not _differs(path, content, owned=i < n_owned):
             unchanged.append(path)
             continue
         try:

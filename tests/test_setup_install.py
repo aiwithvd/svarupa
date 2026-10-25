@@ -203,3 +203,42 @@ def test_a_dangling_merge_symlink_is_refused(tmp_path: Path) -> None:
         install(Demo(tmp_path), tmp_path, force=False)
     assert exc.value.diagnostic.code == "SVA-S-003"
     assert not (tmp_path / "missing.md").exists()
+
+
+def test_an_owned_file_with_crlf_endings_counts_as_unchanged(tmp_path: Path) -> None:
+    install(Demo(tmp_path), tmp_path, force=False)
+    owned = tmp_path / "owned/rules.md"
+    owned.write_bytes(b"owned\r\n")
+    dry = install(Demo(tmp_path), tmp_path, force=False, dry_run=True)
+    assert dict(dry.actions)[owned] == "unchanged"
+    again = install(Demo(tmp_path), tmp_path, force=False)
+    assert owned in again.unchanged and owned not in again.written
+    assert owned.read_bytes() == b"owned\r\n"
+    forced = install(Demo(tmp_path), tmp_path, force=True)
+    assert owned not in forced.written and owned.read_bytes() == b"owned\r\n"
+
+
+def test_an_owned_file_with_really_different_content_is_still_refused(tmp_path: Path) -> None:
+    install(Demo(tmp_path), tmp_path, force=False)
+    owned = tmp_path / "owned/rules.md"
+    owned.write_bytes(b"changed\r\n")
+    with pytest.raises(DiagnosticError) as exc:
+        install(Demo(tmp_path), tmp_path, force=False)
+    assert exc.value.diagnostic.code == "SVA-S-001"
+    assert owned.read_bytes() == b"changed\r\n"
+
+
+def test_a_merge_symlink_to_another_file_inside_the_destination_is_refused(
+    tmp_path: Path,
+) -> None:
+    hook = tmp_path / ".git/hooks/pre-commit"
+    hook.parent.mkdir(parents=True)
+    hook.write_text("#!/bin/sh\n", encoding="utf8")
+    (tmp_path / "NOTES.md").symlink_to(hook)
+    with pytest.raises(DiagnosticError) as exc:
+        install(Demo(tmp_path), tmp_path, force=False)
+    d = exc.value.diagnostic
+    assert d.code == "SVA-S-003"
+    assert any("pre-commit" in f and "Svarupa's rules files" in f for f in d.suggested_fixes)
+    assert hook.read_text(encoding="utf8") == "#!/bin/sh\n"
+    assert not (tmp_path / "owned").exists()

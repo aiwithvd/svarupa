@@ -42,8 +42,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     (
         "only the first planned file is checked for collisions",
         "svarupa/setup/__init__.py",
-        "    clashes = [p for p, content in planned if p.exists() and _differs(p, content)]",
-        "    clashes = [p for p, content in planned[:1] if p.exists() and _differs(p, content)]",
+        "    clashes = [p for p, content in planned if p.exists() and _differs(p, content, owned=True)]",
+        "    clashes = [p for p, content in planned[:1] if p.exists() and _differs(p, content, owned=True)]",
     ),
     (
         "an unreadable existing file counts as identical",
@@ -60,7 +60,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     (
         "an identical existing file is rewritten instead of reported unchanged",
         "svarupa/setup/__init__.py",
-        "        if path.exists() and not _differs(path, content):",
+        "        if path.exists() and not _differs(path, content, owned=i < n_owned):",
         "        if False:",
     ),
     (
@@ -130,10 +130,16 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
         "        if marker in line:",
     ),
     (
-        "a symlink to a file outside the destination is edited through",
+        "a merge symlink is edited through to any file, not just a merge destination",
         "svarupa/setup/__init__.py",
-        "        if not target.is_file() or droot not in target.parents:",
+        "        if not target.is_file() or target not in links:",
         "        if not target.is_file():",
+    ),
+    (
+        "owned files are compared byte for byte again (CRLF checkout refused)",
+        "svarupa/setup/__init__.py",
+        '        return (text.replace("\\r\\n", "\\n") if owned else text) != content',
+        "        return text != content",
     ),
     (
         "two different merges resolving to one file are applied twice",
@@ -150,8 +156,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     (
         "a symlinked whole file is followed like a merge target",
         "svarupa/setup/__init__.py",
-        "        if not merge:\n            return True",
-        "        if not merge:\n            return False",
+        "        if links is None:\n            return True",
+        "        if links is None:\n            return False",
     ),
     (
         "the CLI hardcodes force=True",

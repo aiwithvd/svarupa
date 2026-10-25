@@ -182,3 +182,27 @@ def test_printed_snippets_parse(tmp_path: Path, capsys: pytest.CaptureFixture[st
     toml = out[out.index("config.toml:\n") + len("config.toml:\n") :]
     toml = toml[: toml.index("\n  next:")]
     assert tomllib.loads(toml) == {"mcp_servers": {"svarupa": ENTRY}}
+
+
+def test_ide_all_follows_agents_md_linked_to_claude_md(tmp_path: Path) -> None:
+    (tmp_path / "CLAUDE.md").write_text("# mine\n", encoding="utf8")
+    (tmp_path / "AGENTS.md").symlink_to("CLAUDE.md")
+    assert main(["setup", "ide", "--all", "--dest", str(tmp_path)]) == 0
+    assert (tmp_path / "AGENTS.md").is_symlink()
+    text = (tmp_path / "CLAUDE.md").read_text(encoding="utf8")
+    assert text.startswith("# mine\n\n" + BEGIN) and text.count(BEGIN) == 1
+
+
+def test_ide_all_refuses_agents_md_linked_to_a_hook(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    hook = tmp_path / ".git/hooks/pre-commit"
+    hook.parent.mkdir(parents=True)
+    hook.write_text("#!/bin/sh\n", encoding="utf8")
+    (tmp_path / "AGENTS.md").symlink_to(hook)
+    assert main(["setup", "ide", "--all", "--dest", str(tmp_path)]) != 0
+    captured = capsys.readouterr()
+    assert "SVA-S-003" in captured.out + captured.err
+    assert hook.read_text(encoding="utf8") == "#!/bin/sh\n"
+    assert files(tmp_path) == {".git/hooks/pre-commit", "AGENTS.md"}  # the link, nothing new
+    assert not (tmp_path / "CLAUDE.md").exists()
