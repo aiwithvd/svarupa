@@ -7,7 +7,11 @@ import re
 from pathlib import Path
 
 import pytest
-import tomllib
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python 3.10: tomli is the backport (a dependency)
+    import tomli as tomllib  # type: ignore[no-redef]
 
 from svarupa.cli import main
 from svarupa.setup import TARGETS, ide
