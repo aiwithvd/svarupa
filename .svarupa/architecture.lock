@@ -1,4 +1,4 @@
-# svarupa 0.2.2
+# svarupa 2026.10.1
 # schema 1.7
 # grammars python@0.25.0
 dep	scripts	svarupa
@@ -16,6 +16,7 @@ dep	svarupa	svarupa/query
 dep	svarupa	svarupa/setup
 dep	svarupa/derive	svarupa
 dep	svarupa/derive	svarupa/extract
+dep	svarupa/derive	svarupa/health
 dep	svarupa/design	svarupa
 dep	svarupa/design	svarupa/extract
 dep	svarupa/emit	svarupa
@@ -32,13 +33,18 @@ dep	svarupa/extract/packs	svarupa/extract
 dep	svarupa/health	svarupa
 dep	svarupa/health	svarupa/design
 dep	svarupa/health	svarupa/extract
+dep	svarupa/health	svarupa/extract/packs
 dep	svarupa/layout	svarupa
 dep	svarupa/layout	svarupa/derive
 dep	svarupa/lock	svarupa
 dep	svarupa/lock	svarupa/extract
 dep	svarupa/query	svarupa
 dep	svarupa/query	svarupa/design
+dep	svarupa/query	svarupa/health
 dep	svarupa/setup	svarupa
+dep	svarupa/setup	svarupa/design
+dep	svarupa/setup	svarupa/extract
+dep	svarupa/setup	svarupa/health
 entrypoint	svarupa	svarupa
 environment	pypi
 module	scripts
