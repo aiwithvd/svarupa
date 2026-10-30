@@ -16,7 +16,15 @@ import tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 PY = ROOT / ".venv" / "bin" / "python"
-SUITE = ["tests/test_setup.py", "tests/test_diagnostics.py", "tests/test_detect.py"]
+SUITE = [
+    "tests/test_setup.py",
+    "tests/test_diagnostics.py",
+    "tests/test_detect.py",
+    "tests/test_setup_merge.py",
+    "tests/test_setup_rules.py",
+    "tests/test_setup_install.py",
+    "tests/test_setup_ide.py",
+]
 
 MUTATIONS: list[tuple[str, str, str, str]] = [
     (
@@ -34,8 +42,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     (
         "only the first planned file is checked for collisions",
         "svarupa/setup/__init__.py",
-        "    clashes = [p for p, content in planned if p.exists() and _differs(p, content)]",
-        "    clashes = [p for p, content in planned[:1] if p.exists() and _differs(p, content)]",
+        "    clashes = [p for p, content in planned if p.exists() and _differs(p, content, owned=True)]",
+        "    clashes = [p for p, content in planned[:1] if p.exists() and _differs(p, content, owned=True)]",
     ),
     (
         "an unreadable existing file counts as identical",
@@ -52,7 +60,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     (
         "an identical existing file is rewritten instead of reported unchanged",
         "svarupa/setup/__init__.py",
-        "        if path.exists() and not _differs(path, content):",
+        "        if path.exists() and not _differs(path, content, owned=i < n_owned):",
         "        if False:",
     ),
     (
@@ -92,10 +100,10 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
         "    if False:",
     ),
     (
-        "a broken symlink no longer counts as escaping",
+        "a broken merge symlink no longer counts as escaping",
         "svarupa/setup/__init__.py",
-        "    if path.is_symlink():\n        return True",
-        "    if path.is_symlink():\n        return False",
+        "        except OSError:\n            return True\n        if not target.is_file()",
+        "        except OSError:\n            return False\n        if not target.is_file()",
     ),
     (
         "a write failure escapes as a raw traceback again",
@@ -104,10 +112,58 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
         "        except MemoryError as exc:",
     ),
     (
+        "existing files are read with newline translation again (CRLF becomes LF)",
+        "svarupa/setup/__init__.py",
+        '    return path.read_bytes().decode("utf8")',
+        '    return path.read_text(encoding="utf8")',
+    ),
+    (
+        "an identical MCP entry is re-serialized instead of left alone",
+        "svarupa/setup/merge.py",
+        '    if existing and servers.get("svarupa") == entry:',
+        "    if False:",
+    ),
+    (
+        "markers are found mid-line again",
+        "svarupa/setup/merge.py",
+        r'        if line.rstrip("\r\n") == marker:',
+        "        if marker in line:",
+    ),
+    (
+        "a merge symlink is edited through to any file, not just a merge destination",
+        "svarupa/setup/__init__.py",
+        "        if not target.is_file() or target not in links:",
+        "        if not target.is_file():",
+    ),
+    (
+        "owned files are compared byte for byte again (CRLF checkout refused)",
+        "svarupa/setup/__init__.py",
+        '        return (text.replace("\\r\\n", "\\n") if owned else text) != content',
+        "        return text != content",
+    ),
+    (
+        "two different merges resolving to one file are applied twice",
+        "svarupa/setup/__init__.py",
+        "        if real in owned or (prior is not None and not _same_block(prior, m)):",
+        "        if False:",
+    ),
+    (
+        "the collision refusal stops suggesting --update",
+        "svarupa/setup/__init__.py",
+        "re-run with --update.",
+        "re-run with it.",
+    ),
+    (
+        "a symlinked whole file is followed like a merge target",
+        "svarupa/setup/__init__.py",
+        "        if links is None:\n            return True",
+        "        if links is None:\n            return False",
+    ),
+    (
         "the CLI hardcodes force=True",
         "svarupa/cli.py",
-        "    result = install(target, Path(args.dest), args.force)",
-        "    result = install(target, Path(args.dest), True)",
+        "    result = install(target, Path(args.dest), args.force or args.update, dry_run=args.dry_run)",
+        "    result = install(target, Path(args.dest), True, dry_run=args.dry_run)",
     ),
     (
         "the workflow fetch is depth 1",
@@ -162,6 +218,30 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
         "svarupa/detect.py",
         '        ".svarupa",',
         "",
+    ),
+    (
+        "text after the marked block is dropped",
+        "svarupa/setup/merge.py",
+        "    return existing[:start] + block + existing[stop:]\n",
+        "    return existing[:start] + block\n",
+    ),
+    (
+        "other MCP servers are dropped",
+        "svarupa/setup/merge.py",
+        '    servers["svarupa"] = entry\n',
+        '    doc[key] = {"svarupa": entry}\n',
+    ),
+    (
+        "detection ignores Cursor",
+        "svarupa/setup/ide.py",
+        '        "cursor": (".cursor",),\n',
+        '        "cursor": (),\n',
+    ),
+    (
+        "a refused merge still writes the other files",
+        "svarupa/setup/__init__.py",
+        "    merged = [(p, _merged(p, m)) for p, m in _by_target(merges, planned)]\n",
+        "    merged = []\n",
     ),
 ]
 

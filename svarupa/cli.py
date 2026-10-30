@@ -29,7 +29,8 @@ from svarupa.lock import (
     diff,
     drift_check,
 )
-from svarupa.setup import TARGETS, install
+from svarupa.setup import TARGETS, Installed, Target, install
+from svarupa.setup.ide import IdeTarget
 
 # Exit codes are a machine contract: 0 answered, 1 no usable answer (an error
 # or a refusal), 2 argparse usage error, 3 answered and the architecture
@@ -465,7 +466,7 @@ def _design(argv: list[str]) -> int:
     return 0
 
 
-def _setup(argv: list[str]) -> int:
+def _setup_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="svarupa setup",
         description="Install an integration into a repository.",
@@ -483,13 +484,45 @@ def _setup(argv: list[str]) -> int:
     parser.add_argument(
         "--force", action="store_true", help="overwrite an existing file that differs"
     )
-    args = parser.parse_args(argv)
-    target = TARGETS[args.target]()
-    result = install(target, Path(args.dest), args.force)
+    parser.add_argument(
+        "--update",
+        action="store_true",
+        help="refresh Svarupa's own files and marked blocks after the design changed",
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true", help="show what would change and write nothing"
+    )
+    parser.add_argument(
+        "--all",
+        action="store_true",
+        help="with ide: install every tool, not only detected ones",
+    )
+    return parser
+
+
+def _print_install(result: Installed, dry_run: bool) -> None:
+    if dry_run:
+        for path, action in result.actions:
+            print(f"  {action:<9} {path}")
+        return
     for path in result.written:
         print(f"  wrote     {path}")
     for path in result.unchanged:
         print(f"  unchanged {path}")
+
+
+def _setup(argv: list[str]) -> int:
+    parser = _setup_parser()
+    args = parser.parse_args(argv)
+    if args.all and args.target != "ide":
+        parser.error("--all is only for the ide target")
+    target: Target = (
+        IdeTarget(Path(args.dest), every=args.all)
+        if args.target == "ide"
+        else TARGETS[args.target](Path(args.dest))
+    )
+    result = install(target, Path(args.dest), args.force or args.update, dry_run=args.dry_run)
+    _print_install(result, args.dry_run)
     print()
     for step in target.next_steps():
         print(f"  next: {step}")

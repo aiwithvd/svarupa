@@ -57,6 +57,14 @@ somewhere other than `<repo>/.svarupa/`. The artifact holds:
   informational by default (add `--fail-on-change` to gate it); the health
   step fails the job on new problems (new violations or a worse grade), and
   the file describes the one-line change that makes it report-only.
+- `svarupa setup ide` teaches your AI coding tools (Claude Code, Cursor,
+  GitHub Copilot, Windsurf, and AGENTS.md readers such as Codex) the Svarupa
+  workflow and this repository's rules. It adds Svarupa's MCP server to the
+  project configs of Claude Code, Cursor and Copilot, and prints it as a
+  snippet to add for Windsurf and Codex (their configs are global). It only edits text between
+  `<!-- svarupa:begin -->` and `<!-- svarupa:end -->`; refresh with `--update`, preview with `--dry-run`.
+  Windsurf gets a shorter version, because Windsurf limits rule files to 6,000
+  characters each (12,000 in total).
 - Code facts come from language packs: Python, TypeScript, JavaScript, Go
   and Java today. Other detected languages are listed as detected but not
   analyzed (SVA-X-012), never guessed.

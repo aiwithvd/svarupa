@@ -166,6 +166,8 @@ is informational by default; add `--fail-on-change` to gate it. The health
 step fails the job on new problems (new violations or a worse grade); a
 comment in the installed file shows the one-line change to make it report-only.
 
+`svarupa setup ide` installs the same rules for Claude Code, Cursor, GitHub Copilot, Windsurf and AGENTS.md, with the MCP server where the tool has a project config.
+
 ## Rules the tool holds itself to, which you can rely on
 
 - The committed lockfile is byte-deterministic across machines, platforms

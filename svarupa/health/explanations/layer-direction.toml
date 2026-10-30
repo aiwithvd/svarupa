@@ -1,3 +1,3 @@
 what = "A module imports a layer it should not, according to this unit's design style (for example, the database layer imports the web layer)."
 why = "Layers keep each concern replaceable. When a lower layer reaches up, a change in the web code can break data access, and the layers can no longer be tested alone."
-fix = "Move the shared code down into the lower layer, or pass the value in from above as a parameter. The style's rules are listed in docs/design.md."
+fix = "Move the shared code down into the lower layer, or pass the value in from above as a parameter. This repository's rules are listed by `svarupa query .svarupa get_design_rules`."
