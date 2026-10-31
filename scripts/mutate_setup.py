@@ -24,6 +24,7 @@ SUITE = [
     "tests/test_setup_rules.py",
     "tests/test_setup_install.py",
     "tests/test_setup_ide.py",
+    "tests/test_stale_rules.py",
 ]
 
 MUTATIONS: list[tuple[str, str, str, str]] = [
@@ -242,6 +243,12 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
         "svarupa/setup/__init__.py",
         "    merged = [(p, _merged(p, m)) for p, m in _by_target(merges, planned)]\n",
         "    merged = []\n",
+    ),
+    (
+        "an edited rules block is never stale",
+        "svarupa/setup/stale.py",
+        "        return _lf(merge_block(text, body)) != _lf(text)\n",
+        "        return False\n",
     ),
 ]
 

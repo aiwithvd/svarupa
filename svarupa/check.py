@@ -155,11 +155,16 @@ def _title(check: str) -> str:
     return BY_ID[check].title if check in BY_ID else check
 
 
+_REFRESH = "run `svarupa setup ide --update`"
+
+
 @dataclass(frozen=True, slots=True)
 class Delta:
     new: tuple[Finding, ...]
     fixed: tuple[Finding, ...]
     grades: tuple[tuple[str, str | None, str | None], ...]  # (area, base, head), changed only
+    # AI tool rules files that no longer match the design: a warning, never a failure.
+    stale: tuple[str, ...] = ()
 
     def worse(self) -> list[str]:
         return [
@@ -184,18 +189,23 @@ class Delta:
             "fixed": [f.to_json() for f in self.fixed],
             "grades": {area: [before, after] for area, before, after in self.grades},
             "failed": failed,
+            "stale_rules": list(self.stale),
         }
 
-    def render(self) -> str:
+    def _new_lines(self) -> list[str]:
         from svarupa.health.explain import explanation
 
+        lines = ["new:"]
+        for f in self.new:
+            lines.append(f"  {f.file}:{f.line} {f.check}: {f.message}")
+            if f.check in BY_ID:
+                lines.append(f"    fix: {explanation(f.check).fix}")
+        return lines
+
+    def render(self) -> str:
         lines = [f"{len(self.new)} new, {len(self.fixed)} fixed"]
         if self.new:
-            lines.append("new:")
-            for f in self.new:
-                lines.append(f"  {f.file}:{f.line} {f.check}: {f.message}")
-                if f.check in BY_ID:
-                    lines.append(f"    fix: {explanation(f.check).fix}")
+            lines += self._new_lines()
         if self.fixed:
             lines.append("fixed:")
             lines += [f"  {f.file}:{f.line} {f.check}: {f.message}" for f in self.fixed]
@@ -205,6 +215,8 @@ class Delta:
                 f"  {area} {before or 'not assessed'} -> {after or 'not assessed'}"
                 for area, before, after in self.grades
             ]
+        if self.stale:
+            lines.append(f"stale rules: {', '.join(self.stale)}; {_REFRESH}")
         return "\n".join(lines)
 
     def render_github(self, prefix: str = "") -> str:
@@ -224,6 +236,11 @@ class Delta:
             before, after = grades[area]
             lines.append(
                 f"::warning title=Health grade::{_data(f'{area} {before} -> {after}')}"
+            )
+        for rel in self.stale:
+            lines.append(
+                f"::warning file={_prop(_join(prefix, rel))},title=Stale rules::"
+                f"{_data(f'These AI tool rules no longer match the design; {_REFRESH}')}"
             )
         lines.append(self.render())
         return "\n".join(lines)

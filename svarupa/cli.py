@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import sys
 import textwrap
+from dataclasses import replace
 from pathlib import Path
 
 from svarupa import __version__
@@ -615,6 +616,7 @@ def _check(argv: list[str]) -> int:
         snapshot,
         snapshot_from_json,
     )
+    from svarupa.setup.stale import stale_rules
 
     parser = _check_parser()
     args = parser.parse_args(argv)
@@ -632,7 +634,7 @@ def _check(argv: list[str]) -> int:
     except (CheckError, OSError, ValueError) as exc:
         print(f"svarupa check: {exc}", file=sys.stderr)
         return 1
-    delta = compare(base, head)
+    delta = replace(compare(base, head), stale=tuple(stale_rules(root)))
     failed = delta.failed(args.min_severity)
     emit(delta, fmt, failed, repo_prefix(root) if fmt in ("github", "gitlab") else "")
     return EXIT_CHANGED if failed else 0
