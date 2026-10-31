@@ -15,7 +15,7 @@ from typing import Protocol
 
 from svarupa.extract.base import FileFacts
 
-__all__ = ["GoModules", "JvmPackages", "ModuleContext", "ModuleResolver"]
+__all__ = ["CSharpNamespaces", "GoModules", "JvmPackages", "ModuleContext", "ModuleResolver"]
 
 
 class ModuleResolver(Protocol):
@@ -159,3 +159,45 @@ class JvmPackages:
         if any(spec == ns or spec.startswith(ns + ".") for ns in self.by_ns if ns):
             return False  # our own package: a miss here is a resolution failure
         return any(spec == d or spec.startswith(d + ".") for d in self.deps)
+
+
+class CSharpNamespaces:
+    """C#: a `using` names a namespace, not a file.
+
+    `using A.B;` imports every file that declares namespace `A.B`; a file
+    that declares several belongs to each of them. A nested namespace
+    (`A.B.C`) is not part of `A.B`. `using static A.B.C` and `using X = A.B.C`
+    name a type, so they narrow to the files of `A.B` that declare `C`; when
+    none does, they fall back to all of `A.B`.
+    """
+
+    top_level_only = False
+    package_scoped_bare = False
+    fields_without_this = True
+
+    def __init__(self, context: ModuleContext) -> None:
+        by_ns: dict[str, set[str]] = {}
+        types: dict[str, set[str]] = {}
+        for f in context.facts:
+            if f.lang != "csharp":
+                continue
+            for ns in f.namespaces or ((f.namespace,) if f.namespace else ()):
+                by_ns.setdefault(ns, set()).add(f.path)
+            for s in f.symbols:
+                if s.kind in ("class", "interface"):
+                    types.setdefault(s.qualified_name, set()).add(f.path)
+        self.by_ns = {ns: tuple(sorted(p)) for ns, p in by_ns.items()}
+        self.types = {t: tuple(sorted(p)) for t, p in types.items()}
+
+    def targets(self, spec: str, _from_file: str, /) -> tuple[str, ...]:
+        if spec in self.by_ns:
+            return self.by_ns[spec]
+        parts = spec.split(".")
+        for n in range(len(parts) - 1, 0, -1):
+            hits = self.types.get(".".join(parts[: n + 1]))
+            if hits and ".".join(parts[:n]) in self.by_ns:
+                return tuple(p for p in hits if p in self.by_ns[".".join(parts[:n])])
+        return self.by_ns.get(".".join(parts[:-1]), ())
+
+    def is_external(self, spec: str, /) -> bool:
+        return spec.split(".")[0] in ("System", "Microsoft")

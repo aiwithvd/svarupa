@@ -177,3 +177,78 @@ def test_jvm_external_needs_the_jdk_or_a_declared_group() -> None:
     assert not r.is_external("org.springframeworkx.Thing")
     assert not r.is_external("com.acme.missing.Thing")
     assert not r.is_external("com.acme.shop.model")
+
+
+from svarupa.extract.packs.modules import CSharpNamespaces  # noqa: E402
+
+
+def _cs(path: str, namespaces: tuple[str, ...], *types: str) -> FileFacts:
+    ev = Evidence(file=path, start_line=1, end_line=1)
+    syms = tuple(SymbolRef(t.rsplit(".", 1)[-1], t, "class", ev) for t in types)
+    return FileFacts(
+        path=path,
+        lang="csharp",
+        namespace=namespaces[0] if namespaces else "",
+        namespaces=namespaces,
+        symbols=syms,
+    )
+
+
+CSHARP = (
+    _cs("Data/OrderRepo.cs", ("Shop.Data",), "Shop.Data.OrderRepo"),
+    _cs("Data/Db.cs", ("Shop.Data",), "Shop.Data.Db"),
+    _cs("Data/Sql/Raw.cs", ("Shop.Data.Sql",), "Shop.Data.Sql.Raw"),
+    _cs("Misc/Two.cs", ("Shop.Misc", "Shop.Data"), "Shop.Misc.A", "Shop.Data.Extra"),
+)
+
+
+def csharp() -> CSharpNamespaces:
+    return CSharpNamespaces(
+        ModuleContext(files=frozenset(f.path for f in CSHARP), facts=CSHARP, deps=frozenset())
+    )
+
+
+def test_a_namespace_names_every_file_declaring_it() -> None:
+    assert csharp().targets("Shop.Data", "x") == (
+        "Data/Db.cs",
+        "Data/OrderRepo.cs",
+        "Misc/Two.cs",
+    )
+
+
+def test_a_file_belongs_to_every_namespace_it_declares() -> None:
+    assert csharp().targets("Shop.Misc", "x") == ("Misc/Two.cs",)
+
+
+def test_a_nested_namespace_is_not_part_of_its_parent() -> None:
+    r = csharp()
+    assert "Data/Sql/Raw.cs" not in r.targets("Shop.Data", "x")
+    assert r.targets("Shop.Data.Sql", "x") == ("Data/Sql/Raw.cs",)
+
+
+def test_a_type_name_narrows_to_the_files_declaring_it() -> None:
+    r = csharp()
+    assert r.targets("Shop.Data.Db", "x") == ("Data/Db.cs",)
+    assert r.targets("Shop.Data.Extra", "x") == ("Misc/Two.cs",)
+
+
+def test_an_unknown_member_of_a_known_namespace_names_the_namespace() -> None:
+    assert csharp().targets("Shop.Data.Gone", "x") == (
+        "Data/Db.cs",
+        "Data/OrderRepo.cs",
+        "Misc/Two.cs",
+    )
+
+
+def test_an_undeclared_namespace_resolves_to_nothing() -> None:
+    assert csharp().targets("Shop.Nowhere", "x") == ()
+
+
+def test_csharp_external_is_the_framework_only() -> None:
+    r = csharp()
+    assert r.is_external("System")
+    assert r.is_external("System.Text")
+    assert r.is_external("Microsoft.Extensions.Logging")
+    assert not r.is_external("Systemic")
+    assert not r.is_external("Shop.Nowhere")
+    assert not r.is_external("Shop.Data")

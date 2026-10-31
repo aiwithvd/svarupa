@@ -10,16 +10,18 @@ from __future__ import annotations
 
 from tree_sitter import Node as TSNode
 
-from svarupa.extract.base import CallShape, CallSite, DecoratorRef, ImportRef
+from svarupa.extract.base import CallShape, CallSite, DecoratorRef, FieldType, ImportRef
 from svarupa.extract.packs.model import (
     Call,
     Custom,
     Define,
+    Field,
     Grammar,
     Import,
     Maturity,
     Pack,
 )
+from svarupa.extract.packs.modules import CSharpNamespaces
 from svarupa.extract.packs.walker import Ctx, Frame
 
 __all__ = ["PACK"]
@@ -125,6 +127,8 @@ def namespace_declaration(ctx: Ctx, node: TSNode, frame: Frame, depth: int) -> N
     block = node.type == "namespace_declaration"
     full = _full_name(ctx, node, name) if block else ctx.text(name)
     ctx.namespace = ctx.namespace or full
+    if full not in ctx.namespaces:
+        ctx.namespaces.append(full)
     ctx.prefix = full
     if not block:
         return  # file scoped: what follows in the file belongs to it
@@ -252,6 +256,33 @@ def _type_rule(kind: str) -> Define:
     )
 
 
+def _declarator_name(node: TSNode) -> TSNode | None:
+    return node.child_by_field_name("name") or next(
+        (c for c in node.children if c.type == "identifier"), None
+    )
+
+
+def _typed_names(node: TSNode) -> tuple[TSNode | None, list[TSNode | None]]:
+    """(type node, name nodes) of a field or property declaration."""
+    if node.type == "property_declaration":
+        return node.child_by_field_name("type"), [node.child_by_field_name("name")]
+    decl = next((c for c in node.children if c.type == "variable_declaration"), None)
+    if decl is None:
+        return None, []
+    return decl.child_by_field_name("type"), [
+        _declarator_name(d) for d in decl.children if d.type == "variable_declarator"
+    ]
+
+
+def declared_field(ctx: Ctx, node: TSNode, cls: str) -> list[FieldType]:
+    """`IRepo _repo;` and `List<Line> Lines { get; }` give the member its type."""
+    ty, names = _typed_names(node)
+    type_name = _type_name(ctx.text(ty)) if ty is not None else ""
+    if not type_name:
+        return []
+    return [FieldType(cls, ctx.text(n), type_name) for n in names if n is not None]
+
+
 def _initializer(ctx: Ctx, node: TSNode, frame: Frame, name: str) -> None:
     """`C() : base(Init())`: Define walks only the body, so walk this too."""
     init = next((c for c in node.children if c.type == "constructor_initializer"), None)
@@ -291,8 +322,11 @@ PACK = Pack(
         "method_declaration": _member_rule(),
         "constructor_declaration": _member_rule(),
         "local_function_statement": _member_rule(),
+        "field_declaration": Field(hook=declared_field),
+        "property_declaration": Field(hook=declared_field),
         "invocation_expression": Call(hook=invocation),
         "object_creation_expression": Call(hook=creation),
     },
+    modules=CSharpNamespaces,
     qualified_prefix=lambda path: path.rsplit(".", 1)[0].replace("/", "."),
 )

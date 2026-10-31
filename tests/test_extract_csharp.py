@@ -181,3 +181,29 @@ def test_global_using_and_generic_calls() -> None:
     facts = parse("global using Shop.Data;\nclass C\n{\n    void M() { Run<int>(); }\n}\n")
     assert [i.specifier for i in facts.imports] == ["Shop.Data"]
     assert [c.name for c in facts.calls] == ["Run"]
+
+
+def test_a_file_records_every_namespace_it_declares() -> None:
+    facts = parse("namespace A.B { class X {} }\nnamespace C { namespace D { class Y {} } }\n")
+    assert facts.namespaces == ("A.B", "C", "C.D")
+    assert facts.namespace == "A.B"
+    assert parse(FILE_SCOPED).namespaces == ("Shop.Api",)
+    assert parse("class A {}\n", "a.cs").namespaces == ()
+
+
+def test_field_and_property_types_are_recorded() -> None:
+    facts = parse(
+        "namespace S;\n"
+        "class Svc\n{\n"
+        "    private readonly IOrderRepo _repo;\n"
+        "    public List<Line> Lines { get; set; }\n"
+        "    private Db a, b;\n"
+        "    public Svc(IOrderRepo repo) { _repo = repo; }\n"
+        "}\n"
+    )
+    assert [(f.owner, f.field, f.type_name) for f in facts.fields] == [
+        ("Svc", "_repo", "IOrderRepo"),
+        ("Svc", "Lines", "List"),
+        ("Svc", "a", "Db"),
+        ("Svc", "b", "Db"),
+    ]

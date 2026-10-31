@@ -105,6 +105,7 @@ class Ctx:
         self.ctor_assigns: list[tuple[str, str]] = []
         self.reexports: list[str] = []
         self.namespace = ""
+        self.namespaces: list[str] = []
         self.too_deep = False
 
     def text(self, node: TSNode) -> str:
@@ -531,6 +532,7 @@ class Ctx:
             diagnostics=tuple(diags),
             ctor_assigns=tuple(self.ctor_assigns),
             namespace=self.namespace,
+            namespaces=tuple(self.namespaces),
             functions=tuple(functions),
             risks=tuple(risks),
         )

@@ -252,6 +252,9 @@ class FileFacts:
     # The language's own namespace for the file (Java `package a.b;`), or "".
     # Languages whose imports name packages resolve through it.
     namespace: str = ""
+    # Every namespace the file declares, in document order (C# allows several
+    # per file); empty for languages with one or none.
+    namespaces: tuple[str, ...] = ()
     # Per-function metrics, in document order; empty for packs without a
     # MetricsSpec or a file whose tree nests past the depth cap.
     functions: tuple[FunctionMetrics, ...] = ()

@@ -386,11 +386,20 @@
    "recv_call": null
   }
  ],
- "fields": [],
+ "fields": [
+  {
+   "owner": "OrdersController",
+   "field": "_repo",
+   "type_name": "IRepo"
+  }
+ ],
  "reexports": [],
  "diagnostics": [],
  "ctor_assigns": [],
  "namespace": "Shop.Api",
+ "namespaces": [
+  "Shop.Api"
+ ],
  "functions": [],
  "risks": []
 }

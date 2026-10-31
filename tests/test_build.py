@@ -304,6 +304,16 @@ def test_module_dependencies_aggregate_from_file_imports(tmp_path: Path) -> None
     assert ("src/api", "src/auth") in g.module_deps
 
 
+def test_csharp_usings_make_module_dependencies(tmp_path: Path) -> None:
+    write(tmp_path, "Api/C.cs", "using Shop.Domain;\nnamespace Shop.Api;\nclass C {}\n")
+    write(tmp_path, "Domain/S.cs", "using Shop.Data;\nnamespace Shop.Domain;\nclass S {}\n")
+    write(tmp_path, "Data/R.cs", "namespace Shop.Data;\nclass R {}\n")
+    write(tmp_path, "Data/Q.cs", "namespace Shop.Data;\nclass Q {}\n")
+    g = full(tmp_path)
+    assert {("Api", "Domain"), ("Domain", "Data")} <= set(g.module_deps)
+    assert ("Data", "Api") not in g.module_deps
+
+
 def test_intra_module_imports_do_not_become_dependencies(tmp_path: Path) -> None:
     """A module does not depend on itself.
 

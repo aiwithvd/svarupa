@@ -1,0 +1,365 @@
+{
+ "nodes": [
+  {
+   "id": "Api/OrdersController.cs",
+   "kind": "module",
+   "label": "OrdersController.cs",
+   "qualified_name": "Api/OrdersController.cs",
+   "evidence": [
+    {
+     "file": "Api/OrdersController.cs",
+     "start_line": 1,
+     "end_line": 1,
+     "rev": null
+    }
+   ],
+   "lang": "csharp",
+   "attrs": [],
+   "producer": "csharp.module"
+  },
+  {
+   "id": "Api/OrdersController.cs#Shop.Api.OrdersController",
+   "kind": "class",
+   "label": "OrdersController",
+   "qualified_name": "Shop.Api.OrdersController",
+   "evidence": [
+    {
+     "file": "Api/OrdersController.cs",
+     "start_line": 6,
+     "end_line": 10,
+     "rev": null
+    }
+   ],
+   "lang": "csharp",
+   "attrs": [
+    [
+     "exported",
+     "true"
+    ]
+   ],
+   "producer": "csharp.symbols"
+  },
+  {
+   "id": "Api/OrdersController.cs#Shop.Api.OrdersController.Create",
+   "kind": "method",
+   "label": "Create",
+   "qualified_name": "Shop.Api.OrdersController.Create",
+   "evidence": [
+    {
+     "file": "Api/OrdersController.cs",
+     "start_line": 9,
+     "end_line": 9,
+     "rev": null
+    }
+   ],
+   "lang": "csharp",
+   "attrs": [
+    [
+     "class",
+     "OrdersController"
+    ],
+    [
+     "exported",
+     "true"
+    ]
+   ],
+   "producer": "csharp.symbols"
+  },
+  {
+   "id": "Data/Db.cs",
+   "kind": "module",
+   "label": "Db.cs",
+   "qualified_name": "Data/Db.cs",
+   "evidence": [
+    {
+     "file": "Data/Db.cs",
+     "start_line": 1,
+     "end_line": 1,
+     "rev": null
+    }
+   ],
+   "lang": "csharp",
+   "attrs": [],
+   "producer": "csharp.module"
+  },
+  {
+   "id": "Data/Db.cs#Shop.Data.Db",
+   "kind": "class",
+   "label": "Db",
+   "qualified_name": "Shop.Data.Db",
+   "evidence": [
+    {
+     "file": "Data/Db.cs",
+     "start_line": 3,
+     "end_line": 3,
+     "rev": null
+    }
+   ],
+   "lang": "csharp",
+   "attrs": [
+    [
+     "exported",
+     "true"
+    ]
+   ],
+   "producer": "csharp.symbols"
+  },
+  {
+   "id": "Data/OrderRepo.cs",
+   "kind": "module",
+   "label": "OrderRepo.cs",
+   "qualified_name": "Data/OrderRepo.cs",
+   "evidence": [
+    {
+     "file": "Data/OrderRepo.cs",
+     "start_line": 1,
+     "end_line": 1,
+     "rev": null
+    }
+   ],
+   "lang": "csharp",
+   "attrs": [],
+   "producer": "csharp.module"
+  },
+  {
+   "id": "Data/OrderRepo.cs#Shop.Data.OrderRepo",
+   "kind": "class",
+   "label": "OrderRepo",
+   "qualified_name": "Shop.Data.OrderRepo",
+   "evidence": [
+    {
+     "file": "Data/OrderRepo.cs",
+     "start_line": 3,
+     "end_line": 6,
+     "rev": null
+    }
+   ],
+   "lang": "csharp",
+   "attrs": [
+    [
+     "exported",
+     "true"
+    ]
+   ],
+   "producer": "csharp.symbols"
+  },
+  {
+   "id": "Data/OrderRepo.cs#Shop.Data.OrderRepo.Save",
+   "kind": "method",
+   "label": "Save",
+   "qualified_name": "Shop.Data.OrderRepo.Save",
+   "evidence": [
+    {
+     "file": "Data/OrderRepo.cs",
+     "start_line": 5,
+     "end_line": 5,
+     "rev": null
+    }
+   ],
+   "lang": "csharp",
+   "attrs": [
+    [
+     "class",
+     "OrderRepo"
+    ],
+    [
+     "exported",
+     "true"
+    ]
+   ],
+   "producer": "csharp.symbols"
+  },
+  {
+   "id": "Domain/OrderService.cs",
+   "kind": "module",
+   "label": "OrderService.cs",
+   "qualified_name": "Domain/OrderService.cs",
+   "evidence": [
+    {
+     "file": "Domain/OrderService.cs",
+     "start_line": 1,
+     "end_line": 1,
+     "rev": null
+    }
+   ],
+   "lang": "csharp",
+   "attrs": [],
+   "producer": "csharp.module"
+  },
+  {
+   "id": "Domain/OrderService.cs#Shop.Domain.OrderService",
+   "kind": "class",
+   "label": "OrderService",
+   "qualified_name": "Shop.Domain.OrderService",
+   "evidence": [
+    {
+     "file": "Domain/OrderService.cs",
+     "start_line": 5,
+     "end_line": 9,
+     "rev": null
+    }
+   ],
+   "lang": "csharp",
+   "attrs": [
+    [
+     "exported",
+     "true"
+    ]
+   ],
+   "producer": "csharp.symbols"
+  },
+  {
+   "id": "Domain/OrderService.cs#Shop.Domain.OrderService.Place",
+   "kind": "method",
+   "label": "Place",
+   "qualified_name": "Shop.Domain.OrderService.Place",
+   "evidence": [
+    {
+     "file": "Domain/OrderService.cs",
+     "start_line": 8,
+     "end_line": 8,
+     "rev": null
+    }
+   ],
+   "lang": "csharp",
+   "attrs": [
+    [
+     "class",
+     "OrderService"
+    ],
+    [
+     "exported",
+     "true"
+    ]
+   ],
+   "producer": "csharp.symbols"
+  }
+ ],
+ "edges": [
+  {
+   "src": "Api/OrdersController.cs",
+   "dst": "Domain/OrderService.cs",
+   "kind": "imports",
+   "evidence": [
+    {
+     "file": "Api/OrdersController.cs",
+     "start_line": 2,
+     "end_line": 2,
+     "rev": null
+    }
+   ],
+   "confidence": "RESOLVED",
+   "resolution": "resolved",
+   "arity": 1,
+   "attrs": [],
+   "producer": "csharp.imports"
+  },
+  {
+   "src": "Api/OrdersController.cs#Shop.Api.OrdersController.Create",
+   "dst": "Domain/OrderService.cs#Shop.Domain.OrderService.Place",
+   "kind": "calls",
+   "evidence": [
+    {
+     "file": "Api/OrdersController.cs",
+     "start_line": 9,
+     "end_line": 9,
+     "rev": null
+    }
+   ],
+   "confidence": "RESOLVED",
+   "resolution": "resolved",
+   "arity": 1,
+   "attrs": [
+    [
+     "shape",
+     "qualified"
+    ]
+   ],
+   "producer": "csharp.calls"
+  },
+  {
+   "src": "Domain/OrderService.cs",
+   "dst": "Data/Db.cs",
+   "kind": "imports",
+   "evidence": [
+    {
+     "file": "Domain/OrderService.cs",
+     "start_line": 1,
+     "end_line": 1,
+     "rev": null
+    }
+   ],
+   "confidence": "RESOLVED",
+   "resolution": "resolved",
+   "arity": 1,
+   "attrs": [],
+   "producer": "csharp.imports"
+  },
+  {
+   "src": "Domain/OrderService.cs",
+   "dst": "Data/OrderRepo.cs",
+   "kind": "imports",
+   "evidence": [
+    {
+     "file": "Domain/OrderService.cs",
+     "start_line": 1,
+     "end_line": 1,
+     "rev": null
+    }
+   ],
+   "confidence": "RESOLVED",
+   "resolution": "resolved",
+   "arity": 1,
+   "attrs": [],
+   "producer": "csharp.imports"
+  },
+  {
+   "src": "Domain/OrderService.cs#Shop.Domain.OrderService.Place",
+   "dst": "Data/OrderRepo.cs#Shop.Data.OrderRepo.Save",
+   "kind": "calls",
+   "evidence": [
+    {
+     "file": "Domain/OrderService.cs",
+     "start_line": 8,
+     "end_line": 8,
+     "rev": null
+    }
+   ],
+   "confidence": "RESOLVED",
+   "resolution": "resolved",
+   "arity": 1,
+   "attrs": [
+    [
+     "shape",
+     "qualified"
+    ]
+   ],
+   "producer": "csharp.calls"
+  }
+ ],
+ "scorecard": {
+  "measures": "the share of intra-repository references pinned to a target, not whether the target is correct; a wrong edge counts as resolved",
+  "rows": [
+   {
+    "lang": "csharp",
+    "kind": "calls",
+    "resolved": 2,
+    "candidate": 0,
+    "external": 0,
+    "unresolved": 0,
+    "pinned_pct": 100.0
+   },
+   {
+    "lang": "csharp",
+    "kind": "imports",
+    "resolved": 2,
+    "candidate": 0,
+    "external": 1,
+    "unresolved": 0,
+    "pinned_pct": 100.0
+   }
+  ],
+  "unresolved_samples": {}
+ },
+ "diagnostics": []
+}
