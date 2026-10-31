@@ -139,6 +139,7 @@ and prove the change is clean:
    how to fix it. If the violation is right on purpose, propose an exception
    with a reason in `.svarupa/design.yaml` and say so; never weaken a rule
    silently. Use `--min-severity major` only when the user asked for it.
+   If the check reports stale rules, run `svarupa setup ide --update`.
 
 ## Architecture diff between commits
 
