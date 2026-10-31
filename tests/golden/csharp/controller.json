@@ -232,8 +232,15 @@
   },
   {
    "specifier": "Shop.Data.Db",
-   "names": [],
-   "alias_of": [],
+   "names": [
+    "Db"
+   ],
+   "alias_of": [
+    [
+     "Db",
+     "Db"
+    ]
+   ],
    "evidence": {
     "file": "Api/OrdersController.cs",
     "start_line": 4,

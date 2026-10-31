@@ -167,8 +167,8 @@ class CSharpNamespaces:
     `using A.B;` imports every file that declares namespace `A.B`; a file
     that declares several belongs to each of them. A nested namespace
     (`A.B.C`) is not part of `A.B`. `using static A.B.C` and `using X = A.B.C`
-    name a type, so they narrow to the files of `A.B` that declare `C`; when
-    none does, they fall back to all of `A.B`.
+    name a type, so they narrow to the files of `A.B` that declare `C`. A name
+    that is neither a declared namespace nor a declared type is unresolved.
     """
 
     top_level_only = False
@@ -181,7 +181,7 @@ class CSharpNamespaces:
         for f in context.facts:
             if f.lang != "csharp":
                 continue
-            for ns in f.namespaces or ((f.namespace,) if f.namespace else ()):
+            for ns in f.namespaces:
                 by_ns.setdefault(ns, set()).add(f.path)
             for s in f.symbols:
                 if s.kind in ("class", "interface"):
@@ -197,7 +197,7 @@ class CSharpNamespaces:
             hits = self.types.get(".".join(parts[: n + 1]))
             if hits and ".".join(parts[:n]) in self.by_ns:
                 return tuple(p for p in hits if p in self.by_ns[".".join(parts[:n])])
-        return self.by_ns.get(".".join(parts[:-1]), ())
+        return ()
 
     def is_external(self, spec: str, /) -> bool:
         return spec.split(".")[0] in ("System", "Microsoft")

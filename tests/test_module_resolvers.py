@@ -83,7 +83,11 @@ def test_languages_without_a_resolver_are_untouched() -> None:
     assert r.resolve_module("pkg", "app/main.toy", 0, "toy") is None
 
 
-from svarupa.extract.packs.modules import GoModules, ModuleContext  # noqa: E402
+from svarupa.extract.packs.modules import (  # noqa: E402
+    CSharpNamespaces,
+    GoModules,
+    ModuleContext,
+)
 
 GO_FILES = frozenset(
     {
@@ -179,9 +183,6 @@ def test_jvm_external_needs_the_jdk_or_a_declared_group() -> None:
     assert not r.is_external("com.acme.shop.model")
 
 
-from svarupa.extract.packs.modules import CSharpNamespaces  # noqa: E402
-
-
 def _cs(path: str, namespaces: tuple[str, ...], *types: str) -> FileFacts:
     ev = Evidence(file=path, start_line=1, end_line=1)
     syms = tuple(SymbolRef(t.rsplit(".", 1)[-1], t, "class", ev) for t in types)
@@ -232,12 +233,8 @@ def test_a_type_name_narrows_to_the_files_declaring_it() -> None:
     assert r.targets("Shop.Data.Extra", "x") == ("Misc/Two.cs",)
 
 
-def test_an_unknown_member_of_a_known_namespace_names_the_namespace() -> None:
-    assert csharp().targets("Shop.Data.Gone", "x") == (
-        "Data/Db.cs",
-        "Data/OrderRepo.cs",
-        "Misc/Two.cs",
-    )
+def test_an_unknown_member_of_a_known_namespace_is_unresolved() -> None:
+    assert csharp().targets("Shop.Data.Gone", "x") == ()
 
 
 def test_an_undeclared_namespace_resolves_to_nothing() -> None:

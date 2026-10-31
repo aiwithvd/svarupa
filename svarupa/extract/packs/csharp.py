@@ -145,10 +145,15 @@ def import_(ctx: Ctx, node: TSNode) -> ImportRef | None:
     if path is None or node.parent is None or node.parent.type == "block":
         return None
     dotted = ctx.text(path).split("<")[0]
+    alias = node.child_by_field_name("name")
+    last = dotted.rsplit(".", 1)[-1]
+    # An alias names a type, so `H.Go()` calls into it. A static using stays
+    # `names=()`: its bare `Go()` is a call on `this` and cannot be routed.
+    names_type = alias is not None
     return ImportRef(
         specifier=dotted,
-        names=(),
-        alias_of={},
+        names=(last,) if names_type else (),
+        alias_of={ctx.text(alias): last} if alias is not None else {},
         evidence=ctx.node_evidence(node),
         is_from=True,
     )
