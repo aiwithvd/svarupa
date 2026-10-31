@@ -19,6 +19,7 @@ from svarupa.extract.packs.model import (
     Grammar,
     Import,
     Maturity,
+    MetricsSpec,
     Pack,
 )
 from svarupa.extract.packs.modules import CSharpNamespaces
@@ -251,6 +252,68 @@ def creation(ctx: Ctx, node: TSNode, frame: Frame) -> CallSite | None:
     )
 
 
+def _count_params(fn: TSNode) -> int:
+    params = fn.child_by_field_name("parameters")
+    if params is None:
+        return 0
+    if params.type == "implicit_parameter":
+        return 1  # `x => x`
+    return sum(1 for c in params.children if c.type == "parameter")
+
+
+def _has_body(node: TSNode) -> bool:
+    """`get;` has no body; `get { ... }` and `get => x` do."""
+    if node.type != "accessor_declaration":
+        return True
+    return any(c.type in ("block", "arrow_expression_clause") for c in node.children)
+
+
+# A `case` label is its own `switch_section`, so stacked labels count once
+# each. A switch expression arm counts like a Java switch rule; `default`
+# and the `_ =>` discard arm are not decisions.
+METRICS = MetricsSpec(
+    function_types=frozenset(
+        {
+            "method_declaration",
+            "constructor_declaration",
+            "local_function_statement",
+            "lambda_expression",
+            "accessor_declaration",
+        }
+    ),
+    branch_types=frozenset(
+        {
+            "if_statement",
+            "for_statement",
+            "foreach_statement",
+            "while_statement",
+            "do_statement",
+            "catch_clause",
+            "conditional_expression",
+            "switch_section",
+            "switch_expression_arm",
+        }
+    ),
+    nesting_types=frozenset(
+        {
+            "if_statement",
+            "for_statement",
+            "foreach_statement",
+            "while_statement",
+            "do_statement",
+            "switch_statement",
+            "switch_expression",
+            "try_statement",
+        }
+    ),
+    count_params=_count_params,
+    boolean_ops=(("binary_expression", frozenset({"&&", "||", "??"})),),
+    not_branch=(("switch_section", "default"), ("switch_expression_arm", "discard")),
+    else_if_parents=frozenset({"if_statement"}),
+    is_function=_has_body,
+)
+
+
 def _type_rule(kind: str) -> Define:
     return Define(
         kind=kind,
@@ -315,6 +378,7 @@ PACK = Pack(
         default="language",
     ),
     maturity=Maturity.EXPERIMENTAL,
+    metrics=METRICS,
     rules={
         "using_directive": Import(hook=import_),
         "namespace_declaration": Custom(hook=namespace_declaration),

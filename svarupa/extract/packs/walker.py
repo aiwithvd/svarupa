@@ -245,7 +245,11 @@ class Ctx:
             node = stack.pop()
             # Named nodes only: Python's `lambda` keyword token shares the
             # node's type name and would be measured as a second function.
-            if node.is_named and node.type in spec.function_types:
+            if (
+                node.is_named
+                and node.type in spec.function_types
+                and (spec.is_function is None or spec.is_function(node))
+            ):
                 out.append(self._measure(node, spec))
             stack.extend(reversed(node.children))
         return out

@@ -165,6 +165,8 @@ class MetricsSpec:
     not_branch: tuple[tuple[str, str], ...] = ()
     # An `if` directly under one of these is an `else if`: no extra nesting.
     else_if_parents: frozenset[str] = frozenset()
+    # Optional filter on function_types: False skips a node with no body.
+    is_function: Callable[[TSNode], bool] | None = None
 
 
 CalleeHook = Callable[["Ctx", TSNode], str | None]

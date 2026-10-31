@@ -126,6 +126,83 @@ def test_java_metrics() -> None:
     assert metrics("java", "A.java", JAVA)["m"] == (8, 2, 2, 16)
 
 
+CSHARP = """class A {
+  int M(int a, string b) {
+    if (a > 0 || b == null) {
+      while (a > 0) {
+        a--;
+      }
+    } else if (a < 0) {
+    }
+    switch (a) {
+      case 1: break;
+      default: break;
+    }
+    try {
+    } catch (Exception e) {
+    }
+    var c = b ?? "x";
+    return a > 1 ? 1 : 0;
+  }
+}
+"""
+
+
+def test_csharp_metrics() -> None:
+    assert metrics("csharp", "A.cs", CSHARP)["M"] == (9, 2, 2, 17)
+
+
+def test_csharp_else_if_adds_no_nesting() -> None:
+    src = "class A { void M(int a) {\n if (a > 0) {\n } else if (a > 1) {\n } else if (a > 2) {\n }\n} }"
+    assert metrics("csharp", "A.cs", src)["M"] == (4, 1, 1, 6)
+
+
+def test_csharp_switch_expression_arms_count_but_the_discard_arm_does_not() -> None:
+    src = "class A { int M(int a) => a switch { 1 => 2, 2 => 3, _ => 4 }; }"
+    assert metrics("csharp", "A.cs", src)["M"] == (3, 1, 1, 1)
+
+
+def test_csharp_stacked_case_labels_each_count() -> None:
+    src = "class A { void M(int a) { switch (a) { case 1: case 2: break; default: break; } } }"
+    assert metrics("csharp", "A.cs", src)["M"][0] == 3
+
+
+def test_csharp_constructor_lambda_and_local_function_are_measured_on_their_own() -> None:
+    src = """class A {
+  A(int x, int y) { if (x > 0) { } }
+  void M(int a) {
+    Func<int, int> f = v => v > 0 ? 1 : 2;
+    int L(int q) { if (q > 0) { return 1; } return 0; }
+    if (a > 0) { }
+  }
+}
+"""
+    got = metrics("csharp", "A.cs", src)
+    assert got["A"][:2] == (2, 2)
+    assert got["M"][0] == 2
+    assert got["L"][:2] == (2, 1)
+    assert got["f"][:2] == (2, 1)
+
+
+def test_csharp_lambda_parameters() -> None:
+    src = "class A { void M() { F(x => x); F((a, b) => a); F(() => 1); } }"
+    f = extractor("csharp").parse("A.cs", src.encode())
+    assert [m.params for m in f.functions if m.name != "M"] == [1, 2, 0]
+
+
+def test_csharp_accessors_with_bodies_are_functions_and_auto_accessors_are_not() -> None:
+    src = """class A {
+  int P { get; set; }
+  int Q {
+    get { return 1; }
+    set { if (value > 0) { x = value; } }
+  }
+}
+"""
+    f = extractor("csharp").parse("A.cs", src.encode())
+    assert [m.complexity for m in f.functions] == [1, 2]
+
+
 def test_metrics_reach_the_graph(tmp_path) -> None:
     from svarupa.build import build
     from svarupa.detect import detect

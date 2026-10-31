@@ -407,6 +407,46 @@
  "namespaces": [
   "Shop.Api"
  ],
- "functions": [],
+ "functions": [
+  {
+   "name": "OrdersController",
+   "evidence": {
+    "file": "Api/OrdersController.cs",
+    "start_line": 14,
+    "end_line": 17,
+    "rev": null
+   },
+   "complexity": 1,
+   "params": 1,
+   "nesting": 0,
+   "lines": 4
+  },
+  {
+   "name": "Create",
+   "evidence": {
+    "file": "Api/OrdersController.cs",
+    "start_line": 19,
+    "end_line": 30,
+    "rev": null
+   },
+   "complexity": 1,
+   "params": 1,
+   "nesting": 0,
+   "lines": 12
+  },
+  {
+   "name": "Audit",
+   "evidence": {
+    "file": "Api/OrdersController.cs",
+    "start_line": 32,
+    "end_line": 32,
+    "rev": null
+   },
+   "complexity": 1,
+   "params": 0,
+   "nesting": 0,
+   "lines": 1
+  }
+ ],
  "risks": []
 }
