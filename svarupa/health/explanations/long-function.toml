@@ -84,6 +84,7 @@ Order PlaceOrder(OrderRequest req)
     // 15 lines that read and check the request
     // 20 lines that price the cart
     // 15 lines that save and send the email
+    return order;
 }
 '''
 after = '''
