@@ -186,6 +186,8 @@ class CSharpNamespaces:
             for s in f.symbols:
                 if s.kind in ("class", "interface"):
                     types.setdefault(s.qualified_name, set()).add(f.path)
+        # NuGet package ids are case-insensitive (`xunit` provides `Xunit`).
+        self.deps = frozenset(d.lower() for d in context.deps)
         self.by_ns = {ns: tuple(sorted(p)) for ns, p in by_ns.items()}
         self.types = {t: tuple(sorted(p)) for t, p in types.items()}
 
@@ -200,4 +202,21 @@ class CSharpNamespaces:
         return ()
 
     def is_external(self, spec: str, /) -> bool:
-        return spec.split(".")[0] in ("System", "Microsoft")
+        # A namespace the repo declares is never external, whatever it is named.
+        if spec in self.by_ns:
+            return False
+        if spec.split(".")[0] in ("System", "Microsoft"):
+            return True
+        spec = spec.lower()
+        head = spec.split(".")[:2]
+        for dep in self.deps:
+            if spec == dep or spec.startswith(dep + "."):
+                return True
+            # A package id rarely equals its namespace: the package
+            # `Ardalis.Specification.EntityFrameworkCore` declares namespace
+            # `Ardalis.Specification`. So a using that shares the first two
+            # dot segments of a package id counts as that package too.
+            parts = dep.split(".")
+            if len(parts) >= 2 and len(head) == 2 and parts[:2] == head:
+                return True
+        return False

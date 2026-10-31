@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from svarupa.extract.base import CallShape, FileFacts
 from svarupa.extract.packs import extractor
 
@@ -207,3 +209,32 @@ def test_field_and_property_types_are_recorded() -> None:
         ("Svc", "a", "Db"),
         ("Svc", "b", "Db"),
     ]
+
+
+def test_nuget_package_ids_come_from_csproj_and_central_props(tmp_path: Path) -> None:
+    from svarupa.detect import detect
+    from svarupa.extract import declared_dependencies
+
+    (tmp_path / "Api").mkdir()
+    (tmp_path / "Api" / "Api.csproj").write_text(
+        '<Project Sdk="Microsoft.NET.Sdk">\n<ItemGroup>\n'
+        '<PackageReference Include="Dapper" Version="2.0.0" />\n'
+        '<PackageReference Include="MediatR" />\n'
+        "</ItemGroup>\n</Project>\n"
+    )
+    (tmp_path / "Directory.Packages.props").write_text(
+        '<Project><ItemGroup><PackageVersion Include="Ardalis.Result" Version="1" />'
+        "</ItemGroup></Project>\n"
+    )
+    (tmp_path / "Api" / "A.cs").write_text("namespace Api;\nclass A {}\n")
+    assert {"Dapper", "MediatR", "Ardalis.Result"} <= declared_dependencies(detect(tmp_path))
+
+
+def test_a_csproj_with_a_dtd_is_refused(tmp_path: Path) -> None:
+    from svarupa.detect import detect
+    from svarupa.extract import declared_dependencies
+
+    (tmp_path / "A.csproj").write_text(
+        '<!DOCTYPE p [<!ENTITY x "y">]><Project><PackageReference Include="Evil" /></Project>'
+    )
+    assert "Evil" not in declared_dependencies(detect(tmp_path))

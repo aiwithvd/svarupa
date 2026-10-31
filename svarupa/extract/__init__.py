@@ -363,6 +363,29 @@ def _norm_dep(raw: str) -> str | None:
     return token if token.isidentifier() else None
 
 
+def _nuget_packages(text: str) -> set[str]:
+    """Package ids from a .csproj or Directory.Packages.props.
+
+    Reads `PackageReference Include` and `PackageVersion Include`. Parsed with
+    the standard library and never executed: MSBuild conditions, imports and
+    properties are ignored, and a document that declares a DTD or entities is
+    refused first, as for a pom.xml.
+    """
+    if "<!DOCTYPE" in text or "<!ENTITY" in text:
+        return set()
+    try:
+        root = ET.fromstring(text)
+    except ET.ParseError:
+        return set()
+    out: set[str] = set()
+    for el in root.iter():
+        if el.tag.rsplit("}", 1)[-1] not in ("PackageReference", "PackageVersion"):
+            continue
+        if (pid := (el.get("Include") or "").strip()) and "$(" not in pid:
+            out.add(pid)
+    return out
+
+
 def declared_dependencies(scan: Scan) -> frozenset[str]:
     """Third-party names the project declares.
 
@@ -416,6 +439,8 @@ def declared_dependencies(scan: Scan) -> frozenset[str]:
             names.update(_maven_groups(text))
         elif name in ("build.gradle", "build.gradle.kts"):
             names.update(_gradle_groups(text))
+        elif name == "Directory.Packages.props" or name.endswith(".csproj"):
+            names.update(_nuget_packages(text))
         elif name == "libs.versions.toml":
             names.update(_catalog_groups(text))
 

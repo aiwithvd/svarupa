@@ -249,3 +249,33 @@ def test_csharp_external_is_the_framework_only() -> None:
     assert not r.is_external("Systemic")
     assert not r.is_external("Shop.Nowhere")
     assert not r.is_external("Shop.Data")
+
+
+def csharp_with(*deps: str) -> CSharpNamespaces:
+    return CSharpNamespaces(
+        ModuleContext(files=frozenset(f.path for f in CSHARP), facts=CSHARP, deps=frozenset(deps))
+    )
+
+
+def test_csharp_nuget_package_namespaces_are_external() -> None:
+    r = csharp_with("Newtonsoft.Json", "Dapper", "Ardalis.Specification.EntityFrameworkCore")
+    assert r.is_external("Newtonsoft.Json")
+    assert r.is_external("Newtonsoft.Json.Linq")
+    assert r.is_external("Dapper")
+    # Namespace shorter than the package id: shares the first two segments.
+    assert r.is_external("Ardalis.Specification")
+    assert r.is_external("Ardalis.Specification.Filters")
+    assert not r.is_external("Newtonsoft")
+    assert not r.is_external("Dappery")
+    assert not r.is_external("Ardalis.Result")
+
+
+def test_csharp_declared_namespace_wins_over_a_package() -> None:
+    r = csharp_with("Shop.Data.Tools", "Shop.Misc")
+    assert not r.is_external("Shop.Data")
+    assert not r.is_external("Shop.Misc")
+    assert r.is_external("Shop.Other.Thing") is False
+
+
+def test_csharp_package_ids_match_case_insensitively() -> None:
+    assert csharp_with("xunit").is_external("Xunit.Abstractions")
