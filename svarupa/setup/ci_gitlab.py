@@ -90,6 +90,8 @@ health_check:
 __JOB_SETUP__    - |
       svarupa check . --base "$CI_MERGE_REQUEST_DIFF_BASE_SHA" --format gitlab \\
         > gl-code-quality-report.json && code=0 || code=$?
+      # A check that could not run leaves the file empty; GitLab needs JSON.
+      [ -s gl-code-quality-report.json ] || echo '[]' > gl-code-quality-report.json
       exit "$code"
   artifacts:
     when: always

@@ -68,14 +68,14 @@ type OrderService struct {
 [example.java]
 before = '''
 class OrderService {
-    Money price(Order o) { }
+    Money price(Order o) { return o.total(); }
     void chargeCard(Order o) { }
     void refund(Order o) { }
     void sendEmail(Order o) { }
 }
 '''
 after = '''
-class Pricing { Money price(Order o) { } }
+class Pricing { Money price(Order o) { return o.total(); } }
 class Payments { void chargeCard(Order o) { } void refund(Order o) { } }
 
 class OrderService {
