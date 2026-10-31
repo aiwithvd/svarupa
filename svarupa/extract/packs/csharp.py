@@ -8,10 +8,13 @@ are `attribute_list` children of a declaration, and `public` is a
 
 from __future__ import annotations
 
+import re
+
 from tree_sitter import Node as TSNode
 
 from svarupa.extract.base import CallShape, CallSite, DecoratorRef, FieldType, ImportRef
 from svarupa.extract.packs.model import (
+    LAST_NAMED,
     Call,
     Custom,
     Define,
@@ -21,6 +24,9 @@ from svarupa.extract.packs.model import (
     Maturity,
     MetricsSpec,
     Pack,
+    RiskSpec,
+    Sink,
+    Unsafe,
 )
 from svarupa.extract.packs.modules import CSharpNamespaces
 from svarupa.extract.packs.walker import Ctx, Frame
@@ -411,6 +417,100 @@ def _member_rule() -> Define:
     )
 
 
+def _called_name(node: TSNode | None) -> str | None:
+    """`Foo` for `Foo` and `Foo<T>`."""
+    if node is None:
+        return None
+    if node.type == "generic_name":
+        node = next((c for c in node.children if c.type == "identifier"), node)
+    return _text(node)
+
+
+def risk_callee(ctx: Ctx, node: TSNode) -> str | None:
+    """`conn.Query`, `x?.Foo` as `x.Foo`, `new SqlCommand`; None otherwise."""
+    if node.type == "object_creation_expression":
+        typ = node.child_by_field_name("type")
+        return f"new {ctx.text(typ)}" if typ is not None else None
+    function = node.child_by_field_name("function")
+    if function is None or function.end_byte - function.start_byte > 200:
+        return None
+    if function.type == "conditional_access_expression":  # `x?.Foo()` reads as `x.Foo`
+        return ctx.text(function).replace("?.", ".")
+    if function.type == "member_access_expression":
+        obj = function.child_by_field_name("expression")
+        name = _called_name(function.child_by_field_name("name"))
+        return f"{ctx.text(obj)}.{name}".replace("?.", ".") if obj and name else None
+    return _called_name(function) if function.type in ("identifier", "generic_name") else None
+
+
+def _p(pattern: str) -> re.Pattern[str]:
+    return re.compile(pattern, re.DOTALL)
+
+
+_INVOKE = frozenset({"invocation_expression"})
+_NEW = frozenset({"object_creation_expression"})
+_ASSIGN = frozenset({"assignment_expression"})
+_ACCESS = frozenset({"member_access_expression"})
+# A database receiver: `conn`, `_db`, `catalogConnection`.
+_CONN = r"_?(?:conn|connection|db)|\w*Connection"
+_STORE = _CONN + r"|_?context|\w*(?:Context|Repository|Repo)"
+_VERBS = (
+    r"(?:Find\w*|First\w*|Single\w*|Where|ToList\w*|Any\w*|Count\w*|Add\w*|Update|Remove"
+    r"|SaveChanges\w*|Query\w*|Execute\w*)"
+)
+
+# fmt: off
+RISKS = RiskSpec(
+    call_types=frozenset({"invocation_expression", "object_creation_expression"}),
+    callee=risk_callee,
+    string_types=frozenset({"string_literal", "verbatim_string_literal", "raw_string_literal", "interpolated_string_expression"}),
+    interpolations=(("interpolated_string_expression", "interpolation"),),
+    concat=(("binary_expression", frozenset({"+"})),),
+    format_callee=re.compile(r"^[Ss]tring\.Format$"),
+    assigns=(
+        ("variable_declarator", "name", LAST_NAMED),
+        ("assignment_expression", "left", "right"),
+    ),
+    unwrap=frozenset({"parenthesized_expression", "argument", "await_expression"}),
+    sinks=(
+        # `FromSqlInterpolated` and `ExecuteSqlInterpolated` bind parameters: not sinks.
+        Sink("sql", re.compile(r"(?:^|\.)(?:ExecuteSqlRaw|ExecuteSqlRawAsync|FromSqlRaw|SqlQueryRaw)$")),
+        Sink("sql", re.compile(r"^new (?:[\w.]+\.)?(?:SqlCommand|NpgsqlCommand|MySqlCommand|SqliteCommand)$")),
+        Sink("sql", re.compile(r"(?:^|\.)(?:" + _CONN + r")\.(?:Query|QueryAsync|Execute|ExecuteAsync|QueryFirst\w*|QuerySingle\w*)$")),
+        Sink("shell", re.compile(r"(?:^|\.)Process\.Start$|^new (?:[\w.]+\.)?ProcessStartInfo$")),
+        Sink("code", re.compile(r"(?:^|\.)CSharpScript\.(?:EvaluateAsync|RunAsync)$")),
+    ),
+    unsafe=(
+        Unsafe("tls-verify-off", "certificate validation off", _ASSIGN, _p(r"(?:\w+\.)*ServerCertificateCustomValidationCallback\s*=.*=>\s*true")),
+        Unsafe("tls-verify-off", "certificate validation off", _ACCESS, _p(r".*DangerousAcceptAnyServerCertificateValidator")),
+        Unsafe("unsafe-deserialize", "BinaryFormatter", _NEW, _p(r"new (?:[\w.]+\.)?BinaryFormatter\(.*")),
+        Unsafe("unsafe-deserialize", "type names read from the data", _ASSIGN, _p(r"(?:\w+\.)*TypeNameHandling\s*=\s*(?:\w+\.)*TypeNameHandling\.(?:All|Auto|Objects)")),
+        Unsafe("weak-hash", "MD5 or SHA-1", _INVOKE, _p(r"(?:\w+\.)*(?:MD5|SHA1)\.Create\(.*")),
+        Unsafe("weak-hash", "MD5 or SHA-1", _NEW, _p(r"new (?:[\w.]+\.)?(?:MD5CryptoServiceProvider|SHA1Managed|SHA1CryptoServiceProvider)\(.*")),
+        Unsafe("cors-any-origin", "CORS allows any origin", _INVOKE, _p(r".*\.AllowAnyOrigin\(\s*\)")),
+    ),
+    auth_markers=frozenset({"Authorize"}),
+    loops=(
+        ("for_statement", "body"),
+        ("foreach_statement", "body"),
+        ("while_statement", "body"),
+        ("do_statement", "body"),
+    ),
+    loop_callee=re.compile(r"\.(?:ForEach|Select|SelectMany)$"),
+    arg_wrapper="argument",
+    datastore_calls=re.compile(r"(?:^|\.)(?:" + _STORE + r")\.(?:\w+\.)?" + _VERBS + "$"),
+    async_marker="async",
+    async_holder="modifier",
+    blocking=re.compile(
+        r"(?:^|\.)Thread\.Sleep$|\.Wait$|\.GetAwaiter\(\)\.GetResult$"
+        r"|(?:^|\.)File\.(?:ReadAll|WriteAll)(?:Text|Bytes|Lines)$"
+    ),
+    catch_types=frozenset({"catch_clause"}),
+    quiet=frozenset({"comment"}),
+)
+# fmt: on
+
+
 PACK = Pack(
     lang="csharp",
     grammar=Grammar(
@@ -421,6 +521,7 @@ PACK = Pack(
     ),
     maturity=Maturity.EXPERIMENTAL,
     metrics=METRICS,
+    risks=RISKS,
     rules={
         "using_directive": Import(hook=import_),
         "namespace_declaration": Custom(hook=namespace_declaration),

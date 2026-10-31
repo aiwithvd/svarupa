@@ -662,3 +662,179 @@ def test_non_database_calls_in_loops_are_not_queries() -> None:
 }
 """
     assert [r[2] for r in risks("javascript", "m.js", js)] == [4]
+
+
+CS_TRUE = """class A {
+  void F(string id, string name) {
+    db.Orders.FromSqlRaw("select * from t where id = " + id);
+    db.Orders.FromSqlRaw($"select * from t where id = {id}");
+    db.Database.ExecuteSqlRaw("delete from t where n = '" + name + "'");
+    var cmd = new SqlCommand("select * from t where id = " + id, conn);
+    conn.Query("select * from t where id = " + id);
+    Process.Start("sh", "-c " + name);
+    new ProcessStartInfo("cmd", $"/c {name}");
+    CSharpScript.EvaluateAsync($"1 + {name}");
+    handler.ServerCertificateCustomValidationCallback = (m, c, ch, e) => true;
+    var h = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator;
+    new BinaryFormatter();
+    settings.TypeNameHandling = TypeNameHandling.All;
+    MD5.Create();
+    new SHA1CryptoServiceProvider();
+    policy.AllowAnyOrigin();
+  }
+}
+"""
+
+CS_SAFE = """class A {
+  void F(string id, string name) {
+    db.Orders.FromSqlInterpolated($"select * from t where id = {id}");
+    db.Database.ExecuteSqlInterpolated($"delete from t where id = {id}");
+    db.Orders.FromSqlRaw("select * from t where id = 1");
+    var cmd = new SqlCommand("select * from t where id = @id", conn);
+    conn.Query("select * from t where id = @id", new { id });
+    cache.Query("a" + id);
+    Process.Start("ls");
+    new ProcessStartInfo("ls", "-l");
+    CSharpScript.EvaluateAsync("1 + 1");
+    handler.ServerCertificateCustomValidationCallback = (m, c, ch, e) => e == SslPolicyErrors.None;
+    var f = new JsonSerializer();
+    settings.TypeNameHandling = TypeNameHandling.None;
+    SHA256.Create();
+    new SHA256Managed();
+    policy.WithOrigins("https://a.example");
+    app.UseDeveloperExceptionPage();
+    var c = new HttpClient();
+  }
+}
+"""
+
+
+def test_csharp_true_cases_are_recorded() -> None:
+    assert tags("csharp", "A.cs", CS_TRUE) == [
+        ("sql", 3),
+        ("sql", 4),
+        ("sql", 5),
+        ("sql", 6),
+        ("sql", 7),
+        ("shell", 8),
+        ("shell", 9),
+        ("code", 10),
+        ("tls-verify-off", 11),
+        ("tls-verify-off", 12),
+        ("unsafe-deserialize", 13),
+        ("unsafe-deserialize", 14),
+        ("weak-hash", 15),
+        ("weak-hash", 16),
+        ("cors-any-origin", 17),
+    ]
+
+
+def test_csharp_safe_twins_are_not_recorded() -> None:
+    assert tags("csharp", "A.cs", CS_SAFE) == []
+
+
+def test_csharp_unsafe_detail_carries_no_source_literal() -> None:
+    src = 'class A { void F(string i) { db.Orders.FromSqlRaw("select " + i); '
+    src += "x.TypeNameHandling = TypeNameHandling.Auto; } }"
+    for r in extractor("csharp").parse("A.cs", src.encode()).risks:
+        assert "select" not in r.detail and "Auto" not in r.detail
+
+
+def test_csharp_null_conditional_call_is_a_sink() -> None:
+    src = 'class A { void F(string i) { db?.Orders.FromSqlRaw("select " + i); } }'
+    assert tags("csharp", "A.cs", src) == [("sql", 1)]
+
+
+def test_csharp_built_variable_reaches_a_sink() -> None:
+    src = """class A {
+  void F(string id) {
+    var q = $"select * from t where id = {id}";
+    conn.Query(q);
+    var ok = "select 1";
+    conn.Query(ok);
+  }
+}
+"""
+    assert tags("csharp", "A.cs", src) == [("sql", 4)]
+
+
+CS_RUNTIME = """class S {
+  async Task Load(List<int> ids) {
+    foreach (var id in ids) {
+      await _db.Users.FindAsync(id);
+    }
+    for (var i = 0; i < 3; i++) {
+      _orderRepository.FindById(i);
+    }
+    ids.ForEach(id => _orderRepository.FindByUser(id));
+    foreach (var u in _userRepository.FindAll()) {
+      Log(u);
+    }
+    Thread.Sleep(10);
+    task.Wait();
+    task.GetAwaiter().GetResult();
+    var t = File.ReadAllText(path);
+    var r = task.Result;
+    await Task.Delay(10);
+    await File.ReadAllTextAsync(path);
+    try {
+      Run();
+    } catch (Exception e) {
+      // ignore
+    }
+    try {
+      Run();
+    } catch (Exception e) {
+      throw;
+    }
+  }
+  void Sync() {
+    Thread.Sleep(10);
+    File.ReadAllText(path);
+  }
+}
+"""
+
+
+def test_csharp_runtime_facts_are_recorded() -> None:
+    assert risks("csharp", "S.cs", CS_RUNTIME) == [
+        ("in-loop", "query", 4, "Load"),
+        ("in-loop", "query", 7, "Load"),
+        ("in-loop", "query", 9, "(anonymous)"),
+        ("blocking-async", "io", 13, "Load"),
+        ("blocking-async", "io", 14, "Load"),
+        ("blocking-async", "io", 15, "Load"),
+        ("blocking-async", "io", 16, "Load"),
+        ("empty-catch", "catch", 22, "Load"),
+    ]
+
+
+def test_csharp_async_lambda_and_local_function_are_async() -> None:
+    src = """class S {
+  void Run() {
+    var f = async () => { Thread.Sleep(1); };
+    async Task L() { Thread.Sleep(1); }
+    var g = () => { Thread.Sleep(1); };
+  }
+}
+"""
+    assert [r[2] for r in risks("csharp", "S.cs", src)] == [3, 4]
+
+
+def test_csharp_null_conditional_query_in_a_loop() -> None:
+    src = """class S {
+  void F(List<int> ids) {
+    foreach (var id in ids) {
+      _db?.Users.Find(id);
+    }
+  }
+}
+"""
+    assert risks("csharp", "S.cs", src) == [("in-loop", "query", 4, "F")]
+
+
+def test_csharp_names_the_authorize_marker() -> None:
+    from svarupa.extract.packs import PACKS
+
+    spec = next(p for p in PACKS if p.lang == "csharp").risks
+    assert spec is not None and "Authorize" in spec.auth_markers
