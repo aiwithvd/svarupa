@@ -521,7 +521,7 @@ PACK = Pack(
         module="tree_sitter_c_sharp",
         default="language",
     ),
-    maturity=Maturity.EXPERIMENTAL,
+    maturity=Maturity.STABLE,
     metrics=METRICS,
     risks=RISKS,
     rules={

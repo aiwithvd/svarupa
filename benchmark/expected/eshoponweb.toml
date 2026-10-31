@@ -1,0 +1,238 @@
+# eShopOnWeb @ 4da8212117e8
+# Read: README.md, every .cs file under src/ApplicationCore, src/Infrastructure,
+# src/PublicApi, src/BlazorShared and src/Web (services, controllers, pages,
+# features and configuration).
+# Not expected on purpose:
+# - tests/: test projects are classified as test code.
+# - calls to the Ardalis.Specification repository methods (AddAsync,
+#   FirstOrDefaultAsync, ListAsync): IRepository<T> only inherits them from an
+#   external package, so they are not declared in the repo.
+# - calls on `var` locals whose type comes from those repository calls
+#   (`basket.AddItem(...)`), on LINQ results, and through MediatR.
+# - Razor .cshtml views, which are not C# files.
+# - endpoints: routes are ASP.NET attributes and minimal API lambdas, not
+#   framework route declarations that this benchmark counts.
+# - datastores: SQL Server and an in-memory EF Core provider are chosen in
+#   code (Dependencies.cs), with no compose file.
+# - the root namespace is Microsoft.eShopWeb, which starts with Microsoft.
+#   Facts below still hold because the namespaces are declared in the repo.
+
+# Modules
+[[must]]
+record = ["module", "src/ApplicationCore/Services"]
+why = "src/ApplicationCore/Services/OrderService.cs:12 public class OrderService : IOrderService"
+
+[[must]]
+record = ["module", "src/ApplicationCore/Interfaces"]
+why = "src/ApplicationCore/Interfaces/IUriComposer.cs:3 public interface IUriComposer"
+
+[[must]]
+record = ["module", "src/ApplicationCore/Entities/BasketAggregate"]
+why = "src/ApplicationCore/Entities/BasketAggregate/Basket.cs:8 public class Basket : BaseEntity, IAggregateRoot"
+
+[[must]]
+record = ["module", "src/ApplicationCore/Entities/OrderAggregate"]
+why = "src/ApplicationCore/Entities/OrderAggregate/Order.cs:8 public class Order : BaseEntity, IAggregateRoot"
+
+[[must]]
+record = ["module", "src/ApplicationCore/Specifications"]
+why = "src/ApplicationCore/Specifications/CustomerOrdersSpecification.cs:6 public class CustomerOrdersSpecification : Specification<Order>"
+
+[[must]]
+record = ["module", "src/Infrastructure/Data"]
+why = "src/Infrastructure/Data/EfRepository.cs:6 public class EfRepository<T> : RepositoryBase<T>, IReadRepository<T>, IRepository<T> where T : class, IAggregateRoot"
+
+[[must]]
+record = ["module", "src/Infrastructure/Identity"]
+why = "src/Infrastructure/Identity/IdentityTokenClaimService.cs:14 public class IdentityTokenClaimService : ITokenClaimsService"
+
+[[must]]
+record = ["module", "src/Infrastructure/Logging"]
+why = "src/Infrastructure/Logging/LoggerAdapter.cs:6 public class LoggerAdapter<T> : IAppLogger<T>"
+
+[[must]]
+record = ["module", "src/Web/Services"]
+why = "src/Web/Services/BasketViewModelService.cs:10 public class BasketViewModelService : IBasketViewModelService"
+
+[[must]]
+record = ["module", "src/Web/Controllers"]
+why = "src/Web/Controllers/OrderController.cs:13 public class OrderController : Controller"
+
+[[must]]
+record = ["module", "src/Web/Configuration"]
+why = "src/Web/Configuration/ConfigureCoreServices.cs:10 public static class ConfigureCoreServices"
+
+[[must]]
+record = ["module", "src/PublicApi"]
+why = "src/PublicApi/BaseMessage.cs:8 public abstract class BaseMessage"
+
+[[must]]
+record = ["module", "src/BlazorShared"]
+why = "src/BlazorShared/BaseUrlConfiguration.cs:3 public class BaseUrlConfiguration"
+
+# Deps
+[[must]]
+record = ["dep", "src/ApplicationCore/Services", "src/ApplicationCore/Interfaces"]
+why = "src/ApplicationCore/Services/OrderService.cs:7 using Microsoft.eShopWeb.ApplicationCore.Interfaces;"
+
+[[must]]
+record = ["dep", "src/ApplicationCore/Services", "src/ApplicationCore/Specifications"]
+why = "src/ApplicationCore/Services/OrderService.cs:8 using Microsoft.eShopWeb.ApplicationCore.Specifications;"
+
+[[must]]
+record = ["dep", "src/ApplicationCore/Services", "src/ApplicationCore/Entities/OrderAggregate"]
+why = "src/ApplicationCore/Services/OrderService.cs:6 using Microsoft.eShopWeb.ApplicationCore.Entities.OrderAggregate;"
+
+[[must]]
+record = ["dep", "src/ApplicationCore/Entities/BasketAggregate", "src/ApplicationCore/Interfaces"]
+why = "src/ApplicationCore/Entities/BasketAggregate/Basket.cs:4 using Microsoft.eShopWeb.ApplicationCore.Interfaces;"
+
+[[must]]
+record = ["dep", "src/ApplicationCore/Specifications", "src/ApplicationCore/Entities/OrderAggregate"]
+why = "src/ApplicationCore/Specifications/CustomerOrdersSpecification.cs:2 using Microsoft.eShopWeb.ApplicationCore.Entities.OrderAggregate;"
+
+[[must]]
+record = ["dep", "src/Infrastructure/Data", "src/ApplicationCore/Interfaces"]
+why = "src/Infrastructure/Data/EfRepository.cs:2 using Microsoft.eShopWeb.ApplicationCore.Interfaces;"
+
+[[must]]
+record = ["dep", "src/Infrastructure/Data/Config", "src/ApplicationCore/Entities"]
+why = "src/Infrastructure/Data/Config/CatalogBrandConfiguration.cs:3 using Microsoft.eShopWeb.ApplicationCore.Entities;"
+
+[[must]]
+record = ["dep", "src/Infrastructure/Identity", "src/ApplicationCore/Constants"]
+why = "src/Infrastructure/Identity/IdentityTokenClaimService.cs:8 using Microsoft.eShopWeb.ApplicationCore.Constants;"
+
+[[must]]
+record = ["dep", "src/Infrastructure", "src/Infrastructure/Data"]
+why = "src/Infrastructure/Dependencies.cs:2 using Microsoft.eShopWeb.Infrastructure.Data;"
+
+[[must]]
+record = ["dep", "src/Infrastructure/Logging", "src/ApplicationCore/Interfaces"]
+why = "src/Infrastructure/Logging/LoggerAdapter.cs:1 using Microsoft.eShopWeb.ApplicationCore.Interfaces;"
+
+[[must]]
+record = ["dep", "src/Web/Features/MyOrders", "src/ApplicationCore/Specifications"]
+why = "src/Web/Features/MyOrders/GetMyOrdersHandler.cs:4 using Microsoft.eShopWeb.ApplicationCore.Specifications;"
+
+[[must]]
+record = ["dep", "src/Web/Services", "src/ApplicationCore/Interfaces"]
+why = "src/Web/Services/BasketViewModelService.cs:3 using Microsoft.eShopWeb.ApplicationCore.Interfaces;"
+
+[[must]]
+record = ["dep", "src/Web/Services", "src/Web/Extensions"]
+why = "src/Web/Services/CachedCatalogViewModelService.cs:4 using Microsoft.eShopWeb.Web.Extensions;"
+
+[[must]]
+record = ["dep", "src/Web/Configuration", "src/Infrastructure/Data/Queries"]
+why = "src/Web/Configuration/ConfigureCoreServices.cs:4 using Microsoft.eShopWeb.Infrastructure.Data.Queries;"
+
+[[must]]
+record = ["dep", "src/Web/Configuration", "src/ApplicationCore/Services"]
+why = "src/Web/Configuration/ConfigureCoreServices.cs:2 using Microsoft.eShopWeb.ApplicationCore.Services;"
+
+[[must]]
+record = ["dep", "src/Web/Controllers", "src/Web/Features/MyOrders"]
+why = "src/Web/Controllers/OrderController.cs:5 using Microsoft.eShopWeb.Web.Features.MyOrders;"
+
+[[must]]
+record = ["dep", "src/Web/HealthChecks", "src/BlazorShared"]
+why = "src/Web/HealthChecks/ApiHealthCheck.cs:4 using BlazorShared;"
+
+[[must]]
+record = ["dep", "src/PublicApi", "src/Infrastructure/Data"]
+why = "src/PublicApi/Program.cs:12 using Microsoft.eShopWeb.Infrastructure.Data;"
+
+# Calls
+[[must]]
+call = "src/ApplicationCore/Services/OrderService.cs -> src/ApplicationCore/Interfaces/IUriComposer.cs#ComposePicUri"
+why = "src/ApplicationCore/Services/OrderService.cs:44 _uriComposer.ComposePicUri(catalogItem.PictureUri)"
+
+[[must]]
+call = "src/Web/Services/BasketViewModelService.cs -> src/ApplicationCore/Interfaces/IUriComposer.cs#ComposePicUri"
+why = "src/Web/Services/BasketViewModelService.cs:68 PictureUrl = _uriComposer.ComposePicUri(catalogItem.PictureUri),"
+
+[[must]]
+call = "src/Web/Services/CatalogViewModelService.cs -> src/ApplicationCore/Interfaces/IUriComposer.cs#ComposePicUri"
+why = "src/Web/Services/CatalogViewModelService.cs:58 PictureUri = _uriComposer.ComposePicUri(i.PictureUri),"
+
+[[must]]
+call = "src/PublicApi/CatalogItemEndpoints/CatalogItemListPagedEndpoint.cs -> src/ApplicationCore/Interfaces/IUriComposer.cs#ComposePicUri"
+why = "src/PublicApi/CatalogItemEndpoints/CatalogItemListPagedEndpoint.cs:59 item.PictureUri = _uriComposer.ComposePicUri(item.PictureUri);"
+
+[[must]]
+call = "src/Web/Services/BasketViewModelService.cs -> src/ApplicationCore/Interfaces/IBasketQueryService.cs#CountTotalBasketItems"
+why = "src/Web/Services/BasketViewModelService.cs:89 var counter = await _basketQueryService.CountTotalBasketItems(username);"
+
+[[must]]
+call = "src/Web/Services/BasketViewModelService.cs -> src/Web/Services/BasketViewModelService.cs#CreateBasketForUser"
+why = "src/Web/Services/BasketViewModelService.cs:35 return await CreateBasketForUser(userName);"
+
+[[must]]
+call = "src/Web/Services/BasketViewModelService.cs -> src/Web/Services/BasketViewModelService.cs#GetBasketItems"
+why = "src/Web/Services/BasketViewModelService.cs:83 Items = await GetBasketItems(basket.Items)"
+
+[[must]]
+call = "src/Web/Services/CatalogViewModelService.cs -> src/Web/Services/CatalogViewModelService.cs#GetBrands"
+why = "src/Web/Services/CatalogViewModelService.cs:61 Brands = (await GetBrands()).ToList(),"
+
+[[must]]
+call = "src/Web/Services/CachedCatalogViewModelService.cs -> src/Web/Services/CatalogViewModelService.cs#GetBrands"
+why = "src/Web/Services/CachedCatalogViewModelService.cs:27 return await _catalogViewModelService.GetBrands();"
+
+[[must]]
+call = "src/Web/Services/CachedCatalogViewModelService.cs -> src/Web/Extensions/CacheHelpers.cs#GenerateBrandsCacheKey"
+why = "src/Web/Services/CachedCatalogViewModelService.cs:24 CacheHelpers.GenerateBrandsCacheKey()"
+
+[[must]]
+call = "src/Web/Pages/Basket/Index.cshtml.cs -> src/ApplicationCore/Interfaces/IBasketService.cs#AddItemToBasket"
+why = "src/Web/Pages/Basket/Index.cshtml.cs:47 var basket = await _basketService.AddItemToBasket(username,"
+
+[[must]]
+call = "src/Web/Pages/Basket/Index.cshtml.cs -> src/Web/Interfaces/IBasketViewModelService.cs#GetOrCreateBasketForUser"
+why = "src/Web/Pages/Basket/Index.cshtml.cs:30 BasketModel = await _basketViewModelService.GetOrCreateBasketForUser(GetOrSetBasketCookieAndUserName());"
+
+[[must]]
+call = "src/Web/Pages/Basket/Checkout.cshtml.cs -> src/ApplicationCore/Interfaces/IOrderService.cs#CreateOrderAsync"
+why = "src/Web/Pages/Basket/Checkout.cshtml.cs:57 await _orderService.CreateOrderAsync("
+
+[[must]]
+call = "src/Web/Pages/Basket/Checkout.cshtml.cs -> src/ApplicationCore/Interfaces/IBasketService.cs#DeleteBasketAsync"
+why = "src/Web/Pages/Basket/Checkout.cshtml.cs:58 await _basketService.DeleteBasketAsync(BasketModel.Id);"
+
+[[must]]
+call = "src/Web/Pages/Basket/Checkout.cshtml.cs -> src/Web/Pages/Basket/Checkout.cshtml.cs#SetBasketModelAsync"
+why = "src/Web/Pages/Basket/Checkout.cshtml.cs:41 await SetBasketModelAsync();"
+
+[[must]]
+call = "src/PublicApi/AuthEndpoints/AuthenticateEndpoint.cs -> src/ApplicationCore/Interfaces/ITokenClaimsService.cs#GetTokenAsync"
+why = "src/PublicApi/AuthEndpoints/AuthenticateEndpoint.cs:54 response.Token = await _tokenClaimsService.GetTokenAsync(request.Username);"
+
+# Probes
+[[must_not]]
+record = ["dep", "src/ApplicationCore/Services", "src/Infrastructure/Data"]
+why = "ApplicationCore does not reference Infrastructure; no file under src/ApplicationCore imports Microsoft.eShopWeb.Infrastructure"
+
+[[must_not]]
+record = ["dep", "src/ApplicationCore/Interfaces", "src/Web/Services"]
+why = "ApplicationCore does not reference Web; no file under src/ApplicationCore imports Microsoft.eShopWeb.Web"
+
+[[must_not]]
+record = ["dep", "src/Infrastructure/Data", "src/Web/Configuration"]
+why = "Infrastructure does not reference the Web project; no file under src/Infrastructure imports Microsoft.eShopWeb.Web"
+
+[[must_not]]
+record = ["dep", "src/PublicApi", "src/Web/Services"]
+why = "PublicApi and Web are separate hosts; no file under src/PublicApi imports Microsoft.eShopWeb.Web"
+
+[[must_not]]
+call = "src/Web/Services/BasketViewModelService.cs -> src/Infrastructure/Data/Queries/BasketQueryService.cs#CountTotalBasketItems"
+why = "BasketViewModelService holds an IBasketQueryService from ApplicationCore.Interfaces; the BasketQueryService implementation is only wired up in ConfigureCoreServices"
+
+[[must_not]]
+call = "src/ApplicationCore/Services/OrderService.cs -> src/ApplicationCore/Services/UriComposer.cs#ComposePicUri"
+why = "OrderService depends on the IUriComposer interface, not the UriComposer class (the field type is IUriComposer)"
+
+[[must_not]]
+record = ["module", "tests/UnitTests/Web/Extensions/CacheHelpersTests"]
+why = "unit test sources are not application modules"
