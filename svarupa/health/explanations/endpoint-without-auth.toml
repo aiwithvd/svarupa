@@ -25,10 +25,10 @@ router.post("/orders", requireAuth, createOrder);
 [example.java]
 before = '''
 @PostMapping("/orders")
-Order create(@RequestBody OrderIn in) { }
+Order create(@RequestBody OrderIn in) { return orders.create(in); }
 '''
 after = '''
 @PostMapping("/orders")
 @PreAuthorize("isAuthenticated()")
-Order create(@RequestBody OrderIn in) { }
+Order create(@RequestBody OrderIn in) { return orders.create(in); }
 '''

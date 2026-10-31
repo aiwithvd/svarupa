@@ -524,6 +524,8 @@ def _setup(argv: list[str]) -> int:
     )
     result = install(target, Path(args.dest), args.force or args.update, dry_run=args.dry_run)
     _print_install(result, args.dry_run)
+    if args.dry_run:
+        return 0  # nothing was installed, so there is nothing to do next
     print()
     for step in target.next_steps():
         print(f"  next: {step}")
@@ -545,6 +547,7 @@ def _explain(argv: list[str]) -> int:
     parser.add_argument(
         "--lang",
         default=None,
+        choices=[*LANGS, "javascript"],
         help=f"show only this language's example ({', '.join(LANGS)}, javascript)",
     )
     args = parser.parse_args(argv)

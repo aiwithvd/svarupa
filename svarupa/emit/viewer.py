@@ -629,7 +629,7 @@ def _js() -> Markup:
     var isFrame = node.classList.contains('sv-boundary');
     eyebrowEl.textContent = isFrame ? 'Frame' : 'Passport';
     subEl.textContent = node.getAttribute('data-sublabel') || '';
-    var line = isFrame ? null : ABOUT[id];
+    var line = isFrame || !Object.prototype.hasOwnProperty.call(ABOUT, id) ? null : ABOUT[id];
     aboutEl.textContent = line ? line[0] : '';
     whyEl.hidden = !(line && line[1]);
     if (line && line[1]) whyEl.setAttribute('data-why', line[1]);

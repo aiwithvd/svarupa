@@ -46,6 +46,18 @@ def _marker_lines(text: str, marker: str) -> list[tuple[int, int]]:
     return found
 
 
+def _end_after(existing: str, start: int) -> int:
+    """Where the end marker after `start` ends, or why there is none."""
+    ends = [e for e in _marker_lines(existing, END) if e[0] > start]
+    if ends:
+        return ends[0][1]
+    if _marker_lines(existing, END):
+        raise MergeError(
+            "has a svarupa end marker before the begin marker; put the end marker after it"
+        )
+    raise MergeError("has a svarupa begin marker but no end marker; add the end marker")
+
+
 def merge_block(existing: str | None, body: str) -> str:
     """`existing` with the Svarupa block added or replaced.
 
@@ -61,10 +73,7 @@ def merge_block(existing: str | None, body: str) -> str:
         sep = "" if existing.endswith("\n") else nl
         return f"{existing}{sep}{nl}{block}"
     start = begins[0][0]
-    ends = [e for e in _marker_lines(existing, END) if e[0] > start]
-    if not ends:
-        raise MergeError("has a svarupa begin marker but no end marker; add the end marker")
-    stop = ends[0][1]
+    stop = _end_after(existing, start)
     if existing.startswith("\r\n", stop):
         stop += 2
     elif existing.startswith("\n", stop):
