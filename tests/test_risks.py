@@ -833,8 +833,59 @@ def test_csharp_null_conditional_query_in_a_loop() -> None:
     assert risks("csharp", "S.cs", src) == [("in-loop", "query", 4, "F")]
 
 
-def test_csharp_names_the_authorize_marker() -> None:
-    from svarupa.extract.packs import PACKS
+def test_csharp_cannot_fire_endpoint_without_auth_yet() -> None:
+    from svarupa.health.explain import required_languages
 
-    spec = next(p for p in PACKS if p.lang == "csharp").risks
-    assert spec is not None and "Authorize" in spec.auth_markers
+    assert "csharp" not in required_languages("endpoint-without-auth")
+
+
+CS_SAFE_CASES = {
+    "http-context-in-loop": (
+        "class S { void F(List<int> ids) {\n"
+        "  foreach (var i in ids) { httpContext.Items.Add(i, i); context.Items.Add(i, i); }\n"
+        "} }\n"
+    ),
+    "add-in-loop-then-save": (
+        "class S { async Task F(List<int> ids) {\n"
+        "  foreach (var i in ids) { _db.Orders.Add(i); _db.Orders.Remove(i); _db.Update(i); }\n"
+        "  await _db.SaveChangesAsync();\n"
+        "} }\n"
+    ),
+    "block-lambda-validator-checks": (
+        "class A { void F() {\n"
+        "  h.ServerCertificateCustomValidationCallback = (m, c, ch, e) => { return e == 0; };\n"
+        "} }\n"
+    ),
+    "constant-concat-into-raw": 'class A { void F() { db.Orders.FromSqlRaw("a" + "b"); } }\n',
+    "sync-wait": "class A { void F() { semaphore.Wait(); } }\n",
+}
+
+
+def test_csharp_safe_twins_by_name() -> None:
+    for name, src in CS_SAFE_CASES.items():
+        assert tags("csharp", "A.cs", src) == [], name
+
+
+def test_csharp_block_bodied_validators_that_accept_all_are_recorded() -> None:
+    src = """class A {
+  void F() {
+    h.ServerCertificateCustomValidationCallback = (m, c, ch, e) => { return true; };
+    h.ServerCertificateCustomValidationCallback = delegate { return true; };
+  }
+}
+"""
+    assert tags("csharp", "A.cs", src) == [("tls-verify-off", 3), ("tls-verify-off", 4)]
+
+
+def test_csharp_context_queries_in_a_loop_still_fire() -> None:
+    src = """class S {
+  void F(List<int> ids) {
+    foreach (var i in ids) {
+      _db.Orders.Find(i);
+      _dbContext.Orders.First(i);
+      _orderRepo.FindById(i);
+    }
+  }
+}
+"""
+    assert [r[2] for r in risks("csharp", "S.cs", src)] == [4, 5, 6]

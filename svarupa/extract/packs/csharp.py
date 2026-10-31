@@ -453,9 +453,10 @@ _ASSIGN = frozenset({"assignment_expression"})
 _ACCESS = frozenset({"member_access_expression"})
 # A database receiver: `conn`, `_db`, `catalogConnection`.
 _CONN = r"_?(?:conn|connection|db)|\w*Connection"
-_STORE = _CONN + r"|_?context|\w*(?:Context|Repository|Repo)"
+# `HttpContext` and a bare `context` are not databases: only a Db-named context.
+_STORE = _CONN + r"|_?(?:db|\w*Db)\w*[Cc]ontext|\w*(?:Repository|Repo)"
 _VERBS = (
-    r"(?:Find\w*|First\w*|Single\w*|Where|ToList\w*|Any\w*|Count\w*|Add\w*|Update|Remove"
+    r"(?:Find\w*|First\w*|Single\w*|Where|ToList\w*|Any\w*|Count\w*"
     r"|SaveChanges\w*|Query\w*|Execute\w*)"
 )
 
@@ -481,7 +482,7 @@ RISKS = RiskSpec(
         Sink("code", re.compile(r"(?:^|\.)CSharpScript\.(?:EvaluateAsync|RunAsync)$")),
     ),
     unsafe=(
-        Unsafe("tls-verify-off", "certificate validation off", _ASSIGN, _p(r"(?:\w+\.)*ServerCertificateCustomValidationCallback\s*=.*=>\s*true")),
+        Unsafe("tls-verify-off", "certificate validation off", _ASSIGN, _p(r"(?:\w+\.)*ServerCertificateCustomValidationCallback\s*=.*(?:=>\s*(?:true|\{\s*return true;\s*\})|delegate\s*(?:\([^)]*\))?\s*\{\s*return true;\s*\})")),
         Unsafe("tls-verify-off", "certificate validation off", _ACCESS, _p(r".*DangerousAcceptAnyServerCertificateValidator")),
         Unsafe("unsafe-deserialize", "BinaryFormatter", _NEW, _p(r"new (?:[\w.]+\.)?BinaryFormatter\(.*")),
         Unsafe("unsafe-deserialize", "type names read from the data", _ASSIGN, _p(r"(?:\w+\.)*TypeNameHandling\s*=\s*(?:\w+\.)*TypeNameHandling\.(?:All|Auto|Objects)")),
@@ -489,7 +490,8 @@ RISKS = RiskSpec(
         Unsafe("weak-hash", "MD5 or SHA-1", _NEW, _p(r"new (?:[\w.]+\.)?(?:MD5CryptoServiceProvider|SHA1Managed|SHA1CryptoServiceProvider)\(.*")),
         Unsafe("cors-any-origin", "CORS allows any origin", _INVOKE, _p(r".*\.AllowAnyOrigin\(\s*\)")),
     ),
-    auth_markers=frozenset({"Authorize"}),
+    # No auth_markers: ASP.NET routes are not extracted, and a marker would
+    # leak into the shared defaults. Add `Authorize` once routes are extracted.
     loops=(
         ("for_statement", "body"),
         ("foreach_statement", "body"),
