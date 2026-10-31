@@ -19,7 +19,7 @@ jobs:
       - uses: astral-sh/setup-uv@v5
 
       - name: install svarupa
-        run: uv tool install 'svarupa==2026.10.2'
+        run: uv tool install 'svarupa==2026.10.3'
 
       - name: regenerate the base lockfile from base-branch code
         shell: bash
