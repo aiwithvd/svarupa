@@ -29,3 +29,12 @@ EvaluationContext ctx = new StandardEvaluationContext(order);
 ctx.setVariable("factor", Double.parseDouble(userValue));
 parser.parseExpression("price * #factor").getValue(ctx);
 '''
+
+[example.csharp]
+before = '''
+var total = await CSharpScript.EvaluateAsync<decimal>("Price * " + userValue);
+'''
+after = '''
+var factor = decimal.Parse(userValue, CultureInfo.InvariantCulture);
+var total = order.Price * factor;
+'''

@@ -55,3 +55,24 @@ try {
     log.warn("welcome email failed for user {}", user.id(), e);
 }
 '''
+
+[example.csharp]
+before = '''
+try
+{
+    await SendEmailAsync(user);
+}
+catch (SmtpException)
+{
+}
+'''
+after = '''
+try
+{
+    await SendEmailAsync(user);
+}
+catch (SmtpException ex)
+{
+    _logger.LogWarning(ex, "welcome email failed for user {UserId}", user.Id);
+}
+'''

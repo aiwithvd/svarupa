@@ -24,3 +24,19 @@ async function loadConfig() {
   return JSON.parse(await fs.promises.readFile("config.json", "utf8"));
 }
 '''
+
+[example.csharp]
+before = '''
+async Task RefreshAsync(string path)
+{
+    Thread.Sleep(1000);
+    var text = File.ReadAllText(path);
+}
+'''
+after = '''
+async Task RefreshAsync(string path)
+{
+    await Task.Delay(1000);
+    var text = await File.ReadAllTextAsync(path);
+}
+'''

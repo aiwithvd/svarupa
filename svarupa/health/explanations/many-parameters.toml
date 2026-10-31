@@ -50,3 +50,19 @@ record Address(String street, String city, String zip, String country) {}
 
 User createUser(String name, String email, Address address)
 '''
+
+[example.csharp]
+before = '''
+User CreateUser(string name, string email, string street, string city, string zip, string country)
+{
+    return new User(name, email, street, city, zip, country);
+}
+'''
+after = '''
+record Address(string Street, string City, string Zip, string Country);
+
+User CreateUser(string name, string email, Address address)
+{
+    return new User(name, email, address);
+}
+'''

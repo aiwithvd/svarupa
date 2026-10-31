@@ -46,3 +46,15 @@ after = '''
 Map<Long, Customer> byId = customerRepository.findAllById(ids).stream()
     .collect(Collectors.toMap(Customer::id, c -> c));
 '''
+
+[example.csharp]
+before = '''
+foreach (var o in orders)
+{
+    var customer = db.Customers.Find(o.CustomerId);
+}
+'''
+after = '''
+var ids = orders.Select(o => o.CustomerId).ToList();
+var byId = db.Customers.Where(c => ids.Contains(c.Id)).ToDictionary(c => c.Id);
+'''
