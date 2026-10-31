@@ -130,3 +130,71 @@ def test_a_draft_with_no_previous_tag_has_no_compare_link() -> None:
 
 def test_the_shell_script_parses() -> None:
     subprocess.run(["bash", "-n", str(ROOT / "scripts" / "release.sh")], check=True)
+
+
+# --------------------------------------------------------------------------
+# Resuming a publish: the GitHub Release and pin steps can run twice
+# --------------------------------------------------------------------------
+
+
+def _run_release_fn(tmp_path: Path, gh_script: str, call: str) -> tuple[int, str]:
+    """Source release.sh with a fake `gh` on PATH, run one function, return
+    (exit code, the fake gh's call log)."""
+    import os
+    import shutil
+
+    if not shutil.which("bash"):
+        pytest.skip("bash is not installed")
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    log = tmp_path / "gh.log"
+    gh = bindir / "gh"
+    gh.write_text(f'#!/bin/sh\necho "$*" >> "{log}"\n{gh_script}\n', encoding="utf8")
+    gh.chmod(0o755)
+    (tmp_path / "a.whl").write_text("x", encoding="utf8")
+    env = {**os.environ, "PATH": f"{bindir}{os.pathsep}{os.environ['PATH']}"}
+    script = ROOT / "scripts" / "release.sh"
+    proc = subprocess.run(
+        ["bash", "-c", f'source "{script}"; {call}'],
+        env=env,
+        capture_output=True,
+        text=True,
+        cwd=ROOT,
+    )
+    return proc.returncode, log.read_text(encoding="utf8") if log.exists() else ""
+
+
+def test_sourcing_the_script_runs_nothing(tmp_path: Path) -> None:
+    code, calls = _run_release_fn(tmp_path, "exit 0", "true")
+    assert code == 0 and calls == ""
+
+
+def test_an_existing_release_gets_its_files_and_notes_updated(tmp_path: Path) -> None:
+    # `gh release view` succeeds: the release exists from an earlier, half-done run.
+    code, calls = _run_release_fn(
+        tmp_path, "exit 0", f'github_release v1.0.0 docs/releases/v2026.10.2.md "{tmp_path}"'
+    )
+    assert code == 0, calls
+    assert "release create" not in calls
+    assert "release upload v1.0.0" in calls and "--clobber" in calls
+    assert "release edit v1.0.0" in calls
+
+
+def test_a_failed_create_falls_back_to_upload_when_the_release_now_exists(
+    tmp_path: Path,
+) -> None:
+    # view fails first (no release), create fails (a retry made the asset twice),
+    # then view succeeds: the release exists, so the files are re-uploaded.
+    fake = (
+        'case "$1 $2" in\n'
+        '  "release view") if [ -f "$0.created" ]; then exit 0; else exit 1; fi ;;\n'
+        '  "release create") touch "$0.created"; exit 1 ;;\n'
+        "  *) exit 0 ;;\n"
+        "esac"
+    )
+    code, calls = _run_release_fn(
+        tmp_path, fake, f'github_release v1.0.0 docs/releases/v2026.10.2.md "{tmp_path}"'
+    )
+    assert code == 0, calls
+    assert "release create v1.0.0" in calls
+    assert "release upload v1.0.0" in calls and "--clobber" in calls
