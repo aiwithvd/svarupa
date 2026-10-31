@@ -13,6 +13,10 @@
 #       Release from the notes file, verify a clean install, and open a PR
 #       that moves the dogfood CI pin to the new version.
 #
+#   scripts/release.sh publish-finish
+#       Resume a publish that stopped after PyPI (for example the GitHub
+#       Release upload failed): every remaining step is safe to run again.
+#
 # Needs: git, gh (logged in), uv, curl, python3. Run from anywhere inside the
 # repository.
 
@@ -186,7 +190,8 @@ publish() {
   Then re-run: gh run rerun $run_id --repo $REPO --failed
   and finish with: scripts/release.sh publish-finish"
     fi
-    die "release workflow failed: gh run view $run_id --repo $REPO --log-failed"
+    die "release workflow failed: gh run view $run_id --repo $REPO --log-failed
+  After fixing it, finish with: scripts/release.sh publish-finish"
   fi
 
   finish "$version"
@@ -194,6 +199,23 @@ publish() {
 
 # Everything after PyPI has the package. Split out so a release whose
 # workflow was re-run by hand can be completed.
+# The GitHub Release for $1 with notes $2 and the files in $3. Safe to run
+# again: an existing release (from an earlier, half-finished run) gets its
+# files re-uploaded and its notes set, instead of failing on "already exists".
+github_release() {
+  local tag="$1" notes="$2" dir="$3"
+  if ! gh release view "$tag" --repo "$REPO" >/dev/null 2>&1; then
+    if gh release create "$tag" --repo "$REPO" --title "$tag" \
+      --notes-file "$notes" --latest "$dir"/*; then
+      return
+    fi
+    gh release view "$tag" --repo "$REPO" >/dev/null 2>&1 \
+      || die "could not create the GitHub Release for $tag; re-run scripts/release.sh publish-finish"
+  fi
+  gh release upload "$tag" --repo "$REPO" --clobber "$dir"/*
+  gh release edit "$tag" --repo "$REPO" --title "$tag" --notes-file "$notes" --latest
+}
+
 finish() {
   local version="$1" tag="v$1" dir installed
   say "waiting for $PACKAGE $version on PyPI"
@@ -204,15 +226,19 @@ finish() {
   curl -fsS "https://pypi.org/pypi/$PACKAGE/$version/json" \
     | python3 -c 'import json, sys; [print(u["url"]) for u in json.load(sys.stdin)["urls"]]' \
     | while read -r url; do curl -fsS -o "$dir/${url##*/}" "$url"; done
-  gh release create "$tag" --repo "$REPO" --title "$tag" \
-    --notes-file "docs/releases/$tag.md" --latest "$dir"/*
+  github_release "$tag" "docs/releases/$tag.md" "$dir"
 
   say "verifying a clean install"
   installed="$(uvx --refresh --from "$PACKAGE==$version" "$PACKAGE" --version)"
   [ "$installed" = "$PACKAGE $version" ] || die "clean install reports '$installed'"
 
   say "opening a PR that pins the dogfood workflow to $version"
-  git switch --quiet -c "chore/pin-$tag"
+  if [ "$(gh pr list --repo "$REPO" --head "chore/pin-$tag" --state all --json number -q length)" != "0" ]; then
+    say "the pin PR for $tag already exists"
+    say "released $PACKAGE $version"
+    return
+  fi
+  git switch --quiet -C "chore/pin-$tag"
   uv run --quiet svarupa setup ci_github --force >/dev/null
   if [ -n "$(git status --porcelain)" ]; then
     git commit --quiet -am "Pin the architecture workflow to svarupa==$version"
@@ -228,13 +254,16 @@ finish() {
   echo "  GitHub: https://github.com/$REPO/releases/tag/$tag"
 }
 
-case "${1:-}" in
-  prepare) shift; prepare "$@" ;;
-  publish) publish ;;
-  publish-finish)
-    need git gh uv curl python3
-    require_clean_main
-    finish "$(pkg_version)"
-    ;;
-  *) sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
-esac
+# Run only when executed, so tests can source the functions.
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  case "${1:-}" in
+    prepare) shift; prepare "$@" ;;
+    publish) publish ;;
+    publish-finish)
+      need git gh uv curl python3
+      require_clean_main
+      finish "$(pkg_version)"
+      ;;
+    *) sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+  esac
+fi
