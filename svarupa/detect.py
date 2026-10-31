@@ -72,6 +72,7 @@ LANG_BY_EXT: dict[str, str] = {
     ".go": "go",
     ".rs": "rust",
     ".java": "java",
+    ".cs": "csharp",
     ".sql": "sql",
 }
 

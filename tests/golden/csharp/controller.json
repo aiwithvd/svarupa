@@ -1,0 +1,396 @@
+{
+ "path": "Api/OrdersController.cs",
+ "lang": "csharp",
+ "symbols": [
+  {
+   "name": "OrdersController",
+   "qualified_name": "Shop.Api.OrdersController",
+   "kind": "class",
+   "evidence": {
+    "file": "Api/OrdersController.cs",
+    "start_line": 8,
+    "end_line": 33,
+    "rev": null
+   },
+   "enclosing_class": null,
+   "bases": [
+    "ControllerBase",
+    "IOrders"
+   ],
+   "exported": true,
+   "decorators": [
+    {
+     "name": "ApiController",
+     "arg": null,
+     "evidence": {
+      "file": "Api/OrdersController.cs",
+      "start_line": 8,
+      "end_line": 8,
+      "rev": null
+     },
+     "arg_dynamic": false,
+     "methods": null
+    },
+    {
+     "name": "Route",
+     "arg": "api/orders",
+     "evidence": {
+      "file": "Api/OrdersController.cs",
+      "start_line": 9,
+      "end_line": 9,
+      "rev": null
+     },
+     "arg_dynamic": false,
+     "methods": null
+    }
+   ]
+  },
+  {
+   "name": "OrdersController",
+   "qualified_name": "Shop.Api.OrdersController.OrdersController",
+   "kind": "method",
+   "evidence": {
+    "file": "Api/OrdersController.cs",
+    "start_line": 14,
+    "end_line": 17,
+    "rev": null
+   },
+   "enclosing_class": "OrdersController",
+   "bases": [],
+   "exported": true,
+   "decorators": []
+  },
+  {
+   "name": "Create",
+   "qualified_name": "Shop.Api.OrdersController.Create",
+   "kind": "method",
+   "evidence": {
+    "file": "Api/OrdersController.cs",
+    "start_line": 19,
+    "end_line": 30,
+    "rev": null
+   },
+   "enclosing_class": "OrdersController",
+   "bases": [],
+   "exported": true,
+   "decorators": [
+    {
+     "name": "HttpPost",
+     "arg": null,
+     "evidence": {
+      "file": "Api/OrdersController.cs",
+      "start_line": 19,
+      "end_line": 19,
+      "rev": null
+     },
+     "arg_dynamic": false,
+     "methods": null
+    },
+    {
+     "name": "Authorize",
+     "arg": "admin",
+     "evidence": {
+      "file": "Api/OrdersController.cs",
+      "start_line": 20,
+      "end_line": 20,
+      "rev": null
+     },
+     "arg_dynamic": false,
+     "methods": null
+    }
+   ]
+  },
+  {
+   "name": "Audit",
+   "qualified_name": "Shop.Api.OrdersController.Audit",
+   "kind": "method",
+   "evidence": {
+    "file": "Api/OrdersController.cs",
+    "start_line": 32,
+    "end_line": 32,
+    "rev": null
+   },
+   "enclosing_class": "OrdersController",
+   "bases": [],
+   "exported": false,
+   "decorators": []
+  },
+  {
+   "name": "IOrders",
+   "qualified_name": "Shop.Api.IOrders",
+   "kind": "interface",
+   "evidence": {
+    "file": "Api/OrdersController.cs",
+    "start_line": 35,
+    "end_line": 35,
+    "rev": null
+   },
+   "enclosing_class": null,
+   "bases": [
+    "IDisposable"
+   ],
+   "exported": true,
+   "decorators": []
+  },
+  {
+   "name": "Line",
+   "qualified_name": "Shop.Api.Line",
+   "kind": "class",
+   "evidence": {
+    "file": "Api/OrdersController.cs",
+    "start_line": 36,
+    "end_line": 36,
+    "rev": null
+   },
+   "enclosing_class": null,
+   "bases": [],
+   "exported": true,
+   "decorators": []
+  },
+  {
+   "name": "Point",
+   "qualified_name": "Shop.Api.Point",
+   "kind": "class",
+   "evidence": {
+    "file": "Api/OrdersController.cs",
+    "start_line": 37,
+    "end_line": 37,
+    "rev": null
+   },
+   "enclosing_class": null,
+   "bases": [],
+   "exported": true,
+   "decorators": []
+  },
+  {
+   "name": "Status",
+   "qualified_name": "Shop.Api.Status",
+   "kind": "class",
+   "evidence": {
+    "file": "Api/OrdersController.cs",
+    "start_line": 38,
+    "end_line": 38,
+    "rev": null
+   },
+   "enclosing_class": null,
+   "bases": [],
+   "exported": true,
+   "decorators": []
+  }
+ ],
+ "imports": [
+  {
+   "specifier": "System",
+   "names": [],
+   "alias_of": [],
+   "evidence": {
+    "file": "Api/OrdersController.cs",
+    "start_line": 1,
+    "end_line": 1,
+    "rev": null
+   },
+   "is_relative": false,
+   "level": 0,
+   "type_only": false,
+   "is_from": true,
+   "is_reexport": false,
+   "is_star": false
+  },
+  {
+   "specifier": "Shop.Data",
+   "names": [],
+   "alias_of": [],
+   "evidence": {
+    "file": "Api/OrdersController.cs",
+    "start_line": 2,
+    "end_line": 2,
+    "rev": null
+   },
+   "is_relative": false,
+   "level": 0,
+   "type_only": false,
+   "is_from": true,
+   "is_reexport": false,
+   "is_star": false
+  },
+  {
+   "specifier": "Shop.Util.Math",
+   "names": [],
+   "alias_of": [],
+   "evidence": {
+    "file": "Api/OrdersController.cs",
+    "start_line": 3,
+    "end_line": 3,
+    "rev": null
+   },
+   "is_relative": false,
+   "level": 0,
+   "type_only": false,
+   "is_from": true,
+   "is_reexport": false,
+   "is_star": false
+  },
+  {
+   "specifier": "Shop.Data.Db",
+   "names": [],
+   "alias_of": [],
+   "evidence": {
+    "file": "Api/OrdersController.cs",
+    "start_line": 4,
+    "end_line": 4,
+    "rev": null
+   },
+   "is_relative": false,
+   "level": 0,
+   "type_only": false,
+   "is_from": true,
+   "is_reexport": false,
+   "is_star": false
+  }
+ ],
+ "calls": [
+  {
+   "name": "FindAsync",
+   "shape": "qualified",
+   "receiver": "_repo",
+   "evidence": {
+    "file": "Api/OrdersController.cs",
+    "start_line": 23,
+    "end_line": 23,
+    "rev": null
+   },
+   "enclosing": "Shop.Api.OrdersController.Create",
+   "enclosing_class": "OrdersController",
+   "first_str_arg": null,
+   "ident_args": [],
+   "first_arg_ident": null,
+   "recv_call": null
+  },
+  {
+   "name": "Helper",
+   "shape": "bare",
+   "receiver": null,
+   "evidence": {
+    "file": "Api/OrdersController.cs",
+    "start_line": 24,
+    "end_line": 24,
+    "rev": null
+   },
+   "enclosing": "Shop.Api.OrdersController.Create",
+   "enclosing_class": "OrdersController",
+   "first_str_arg": null,
+   "ident_args": [],
+   "first_arg_ident": null,
+   "recv_call": null
+  },
+  {
+   "name": "Audit",
+   "shape": "self",
+   "receiver": "this",
+   "evidence": {
+    "file": "Api/OrdersController.cs",
+    "start_line": 25,
+    "end_line": 25,
+    "rev": null
+   },
+   "enclosing": "Shop.Api.OrdersController.Create",
+   "enclosing_class": "OrdersController",
+   "first_str_arg": null,
+   "ident_args": [],
+   "first_arg_ident": null,
+   "recv_call": null
+  },
+  {
+   "name": "Log",
+   "shape": "self",
+   "receiver": "this",
+   "evidence": {
+    "file": "Api/OrdersController.cs",
+    "start_line": 26,
+    "end_line": 26,
+    "rev": null
+   },
+   "enclosing": "Shop.Api.OrdersController.Create",
+   "enclosing_class": "OrdersController",
+   "first_str_arg": null,
+   "ident_args": [],
+   "first_arg_ident": null,
+   "recv_call": null
+  },
+  {
+   "name": "Dispose",
+   "shape": "super",
+   "receiver": "base",
+   "evidence": {
+    "file": "Api/OrdersController.cs",
+    "start_line": 27,
+    "end_line": 27,
+    "rev": null
+   },
+   "enclosing": "Shop.Api.OrdersController.Create",
+   "enclosing_class": "OrdersController",
+   "first_str_arg": null,
+   "ident_args": [],
+   "first_arg_ident": null,
+   "recv_call": null
+  },
+  {
+   "name": "Items",
+   "shape": "member",
+   "receiver": "Order.Build()",
+   "evidence": {
+    "file": "Api/OrdersController.cs",
+    "start_line": 28,
+    "end_line": 28,
+    "rev": null
+   },
+   "enclosing": "Shop.Api.OrdersController.Create",
+   "enclosing_class": "OrdersController",
+   "first_str_arg": null,
+   "ident_args": [],
+   "first_arg_ident": null,
+   "recv_call": null
+  },
+  {
+   "name": "Build",
+   "shape": "qualified",
+   "receiver": "Order",
+   "evidence": {
+    "file": "Api/OrdersController.cs",
+    "start_line": 28,
+    "end_line": 28,
+    "rev": null
+   },
+   "enclosing": "Shop.Api.OrdersController.Create",
+   "enclosing_class": "OrdersController",
+   "first_str_arg": null,
+   "ident_args": [],
+   "first_arg_ident": null,
+   "recv_call": null
+  },
+  {
+   "name": "Ok",
+   "shape": "self",
+   "receiver": "this",
+   "evidence": {
+    "file": "Api/OrdersController.cs",
+    "start_line": 29,
+    "end_line": 29,
+    "rev": null
+   },
+   "enclosing": "Shop.Api.OrdersController.Create",
+   "enclosing_class": "OrdersController",
+   "first_str_arg": null,
+   "ident_args": [],
+   "first_arg_ident": null,
+   "recv_call": null
+  }
+ ],
+ "fields": [],
+ "reexports": [],
+ "diagnostics": [],
+ "ctor_assigns": [],
+ "namespace": "Shop.Api",
+ "functions": [],
+ "risks": []
+}

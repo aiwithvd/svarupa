@@ -41,6 +41,7 @@ dependencies = [
   "pathspec>=0.12,<2",
   # tomllib is stdlib from 3.11; manifests are parsed, never grepped.
   "tomli>=2; python_version<'3.11'",
+  "tree-sitter-c-sharp==0.23.5",
 ]
 
 [project.optional-dependencies]
