@@ -19,7 +19,7 @@ jobs:
       - uses: astral-sh/setup-uv@v5
 
       - name: install svarupa
-        run: uv tool install 'svarupa==0.2.1'
+        run: uv tool install 'svarupa==2026.10.1'
 
       - name: regenerate the base lockfile from base-branch code
         shell: bash
@@ -59,6 +59,27 @@ jobs:
             echo '## Architecture delta'
             echo '````'
             cat /tmp/delta.txt
+            echo '````'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$code"
+
+      # Fails the job only for problems this pull request adds: a new health
+      # violation or a lower grade (exit 3), or a check that could not run
+      # (exit 1). Old findings never fail it. Runs even when the delta step
+      # failed, so neither result hides the other. To make it report-only,
+      # change the last line to `exit 0`.
+      - name: health of this change
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          svarupa check . --base "$BASE_SHA" --format github \
+            > /tmp/health.txt 2>&1 && code=0 || code=$?
+          cat /tmp/health.txt
+          {
+            echo '## Health of this change'
+            echo '````'
+            grep -v '^::' /tmp/health.txt || true
             echo '````'
           } >> "$GITHUB_STEP_SUMMARY"
           exit "$code"
