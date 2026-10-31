@@ -311,3 +311,12 @@ def test_a_unit_without_a_clear_design_gets_migration_moves(tmp_path: Path) -> N
     assert unit.chosen is None
     assert any("shop/repository/store.py:1" in move for move in unit.moves)
     assert any("shop/misc" in move for move in unit.moves)
+
+
+def test_a_two_project_csharp_repo_has_two_units(tmp_path: Path) -> None:
+    proj = '<Project Sdk="Microsoft.NET.Sdk"></Project>\n'
+    write(tmp_path, "Api/Api.csproj", proj)
+    write(tmp_path, "Api/Orders.cs", "namespace Api;\n\npublic class Orders { public int N() { return 1; } }\n")
+    write(tmp_path, "Core/Core.csproj", proj)
+    write(tmp_path, "Core/Item.cs", "namespace Core;\n\npublic class Item { public int N() { return 1; } }\n")
+    assert [u.unit.id for u in run(tmp_path).units] == ["Api", "Core"]

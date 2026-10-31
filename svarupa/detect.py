@@ -98,6 +98,7 @@ CONFIG_NAMES: dict[str, str] = {
     "build.gradle": "manifest-gradle",
     "build.gradle.kts": "manifest-gradle",
     "libs.versions.toml": "manifest-gradle",
+    "Directory.Packages.props": "manifest-nuget",
     "requirements.txt": "manifest-python",
     "pnpm-workspace.yaml": "workspace-pnpm",
     "go.work": "workspace-go",
@@ -110,6 +111,7 @@ CONFIG_GLOBS: tuple[tuple[str, str], ...] = (
     (r"^openapi\.(ya?ml|json)$", "openapi"),
     (r"^swagger\.(ya?ml|json)$", "openapi"),
     (r".*\.tf$", "terraform"),
+    (r".*\.csproj$", "manifest-nuget"),
     (r"^\.github/workflows/.*\.ya?ml$", "ci-github"),
     (r"^\.gitlab-ci\.ya?ml$", "ci-gitlab"),
 )
