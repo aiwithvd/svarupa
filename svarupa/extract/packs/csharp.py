@@ -21,7 +21,6 @@ from svarupa.extract.packs.model import (
     Pack,
 )
 from svarupa.extract.packs.walker import Ctx, Frame
-from svarupa.model import Evidence
 
 __all__ = ["PACK"]
 
@@ -30,7 +29,15 @@ _SKIP = ("(", ")", ",", "comment")
 
 
 def _public(_ctx: Ctx, node: TSNode, _name: str) -> bool:
-    return any(c.type == "modifier" and c.text == b"public" for c in node.children)
+    if any(c.type == "modifier" and c.text == b"public" for c in node.children):
+        return True
+    body = node.parent  # interface members are public without saying so
+    return (
+        node.type != "interface_declaration"
+        and body is not None
+        and body.parent is not None
+        and body.parent.type == "interface_declaration"
+    )
 
 
 def _string(ctx: Ctx, node: TSNode) -> str | None:
@@ -52,10 +59,19 @@ def _first_arg(ctx: Ctx, args: TSNode | None) -> tuple[str | None, bool]:
     for child in args.children:
         if child.type in _SKIP:
             continue
-        inner = child.children[-1] if child.type == "attribute_argument" else child
+        if child.type == "attribute_argument":
+            if child.child_by_field_name("name") is not None:
+                return None, False  # `Roles = "A"` is not the first positional value
+            inner = child.children[-1]
+        else:
+            inner = child
         value = _string(ctx, inner)
         return value, value is None
     return None, False
+
+
+def _first_string(ctx: Ctx, args: TSNode | None) -> str | None:
+    return _first_arg(ctx, args)[0]
 
 
 def _attribute(ctx: Ctx, node: TSNode) -> DecoratorRef | None:
@@ -65,7 +81,7 @@ def _attribute(ctx: Ctx, node: TSNode) -> DecoratorRef | None:
     args = next((c for c in node.children if c.type == "attribute_argument_list"), None)
     arg, dynamic = _first_arg(ctx, args)
     return DecoratorRef(
-        name=ctx.text(name),
+        name=ctx.text(name).rsplit(".", 1)[-1],
         arg=arg,
         evidence=ctx.node_evidence(node),
         arg_dynamic=dynamic,
@@ -88,6 +104,18 @@ def _walk_children(ctx: Ctx, node: TSNode, frame: Frame, depth: int) -> None:
         ctx.visit(child, frame, depth + 1)
 
 
+def _full_name(ctx: Ctx, node: TSNode, name: TSNode) -> str:
+    """A block namespace's name joined with the block namespaces around it."""
+    parts = [ctx.text(name)]
+    up = node.parent
+    while up is not None:
+        outer = up.child_by_field_name("name") if up.type == "namespace_declaration" else None
+        if outer is not None:
+            parts.append(ctx.text(outer))
+        up = up.parent
+    return ".".join(reversed(parts))
+
+
 def namespace_declaration(ctx: Ctx, node: TSNode, frame: Frame, depth: int) -> None:
     name = node.child_by_field_name("name")
     if name is None:
@@ -95,9 +123,8 @@ def namespace_declaration(ctx: Ctx, node: TSNode, frame: Frame, depth: int) -> N
         return
     outer = ctx.prefix
     block = node.type == "namespace_declaration"
-    inside = outer != ctx.pack.qualified_prefix(ctx.path)  # already in a namespace
-    full = f"{outer}.{ctx.text(name)}" if block and inside else ctx.text(name)
-    ctx.namespace = full
+    full = _full_name(ctx, node, name) if block else ctx.text(name)
+    ctx.namespace = ctx.namespace or full
     ctx.prefix = full
     if not block:
         return  # file scoped: what follows in the file belongs to it
@@ -113,7 +140,7 @@ def import_(ctx: Ctx, node: TSNode) -> ImportRef | None:
     path = next((c for c in reversed(node.children) if c.type in _NAMES), None)
     if path is None or node.parent is None or node.parent.type == "block":
         return None
-    dotted = ctx.text(path)
+    dotted = ctx.text(path).split("<")[0]
     return ImportRef(
         specifier=dotted,
         names=(),
@@ -123,14 +150,21 @@ def import_(ctx: Ctx, node: TSNode) -> ImportRef | None:
     )
 
 
+def _base_type(node: TSNode) -> TSNode:
+    """`Base(x)` in a primary constructor base list names `Base`."""
+    if node.type == "primary_constructor_base_type":
+        return node.child_by_field_name("type") or node
+    return node
+
+
 def bases(ctx: Ctx, node: TSNode) -> tuple[str, ...]:
     base_list = next((c for c in node.children if c.type == "base_list"), None)
     if base_list is None:
         return ()
     out = (
-        _type_name(ctx.text(c))
+        _type_name(ctx.text(_base_type(c)))
         for c in base_list.children
-        if c.is_named and c.type != "comment"
+        if c.is_named and c.type not in ("comment", "argument_list")
     )
     return tuple(b for b in out if b)
 
@@ -142,13 +176,13 @@ def _target(function: TSNode) -> TSNode | None:
     return function
 
 
-_Site = tuple[Evidence, str | None, str | None]
-
-
 def _member_call(
-    ctx: Ctx, name: str, obj: TSNode, ev_site: _Site, first: str | None
+    ctx: Ctx, target: TSNode, obj: TSNode, frame: Frame, first: str | None
 ) -> CallSite:
-    ev, fn, cls = ev_site
+    name = ctx.text(target)
+    row = target.start_point[0]
+    ev = ctx.evidence(row, row)
+    fn, cls = frame.fn, frame.cls
     if obj.type == "this":
         return CallSite(name, CallShape.SELF, "this", ev, fn, cls, first)
     if obj.type == "base":
@@ -163,27 +197,37 @@ def _member_call(
     return CallSite(name, CallShape.MEMBER, ctx.text(obj), ev, fn, cls, first)
 
 
+def _split_function(function: TSNode) -> tuple[TSNode | None, TSNode]:
+    """(receiver, name node) of the called expression."""
+    if function.type == "member_access_expression":
+        return function.child_by_field_name("expression"), (
+            function.child_by_field_name("name") or function
+        )
+    if function.type == "conditional_access_expression":  # `x?.Foo()`
+        binding = function.children[-1]
+        name = binding.child_by_field_name("name")
+        if binding.type == "member_binding_expression" and name is not None:
+            return function.child_by_field_name("condition"), name
+    return None, function
+
+
 def invocation(ctx: Ctx, node: TSNode, frame: Frame) -> CallSite | None:
     function = node.child_by_field_name("function")
     if function is None:
         return None
-    first, _ = _first_arg(ctx, node.child_by_field_name("arguments"))
-    obj: TSNode | None = None
-    if function.type == "member_access_expression":
-        obj = function.child_by_field_name("expression")
-        function = function.child_by_field_name("name") or function
-    target = _target(function)
+    first = _first_string(ctx, node.child_by_field_name("arguments"))
+    obj, named = _split_function(function)
+    target = _target(named)
     if target is None or target.type != "identifier":
         return None
     name = ctx.text(target)
     row = target.start_point[0]
-    site = (ctx.evidence(row, row), frame.fn, frame.cls)
+    ev = ctx.evidence(row, row)
     if obj is not None:
-        return _member_call(ctx, name, obj, site, first)
-    ev, fn, cls = site
-    if cls:
-        return CallSite(name, CallShape.SELF, "this", ev, fn, cls, first)
-    return CallSite(name, CallShape.BARE, None, ev, fn, cls, first)
+        return _member_call(ctx, target, obj, frame, first)
+    if frame.cls:
+        return CallSite(name, CallShape.SELF, "this", ev, frame.fn, frame.cls, first)
+    return CallSite(name, CallShape.BARE, None, ev, frame.fn, frame.cls, first)
 
 
 def creation(ctx: Ctx, node: TSNode, frame: Frame) -> CallSite | None:
@@ -192,7 +236,7 @@ def creation(ctx: Ctx, node: TSNode, frame: Frame) -> CallSite | None:
         return None
     name = _type_name(ctx.text(ty))
     row = ty.start_point[0]
-    first, _ = _first_arg(ctx, node.child_by_field_name("arguments"))
+    first = _first_string(ctx, node.child_by_field_name("arguments"))
     return CallSite(
         name, CallShape.BARE, None, ctx.evidence(row, row), frame.fn, frame.cls, first
     )
@@ -208,12 +252,21 @@ def _type_rule(kind: str) -> Define:
     )
 
 
+def _initializer(ctx: Ctx, node: TSNode, frame: Frame, name: str) -> None:
+    """`C() : base(Init())`: Define walks only the body, so walk this too."""
+    init = next((c for c in node.children if c.type == "constructor_initializer"), None)
+    if init is not None:
+        inner = Frame((*frame.stack, name), frame.cls, ctx.qual((*frame.stack, name)))
+        ctx.visit(init, inner, 1)
+
+
 def _member_rule() -> Define:
     return Define(
         kind="function",
         kind_in_class="method",
         exported_by=_public,
         decorators_from=attributes_of,
+        after=_initializer,
     )
 
 

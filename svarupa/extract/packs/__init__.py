@@ -15,7 +15,13 @@ from svarupa.extract.packs.walker import PackExtractor
 
 __all__ = ["ANALYZED_ELSEWHERE", "BY_DETECTED", "PACKS", "extractor", "load_extractors"]
 
-PACKS: tuple[Pack, ...] = (python.PACK, typescript.PACK, javascript.PACK, go.PACK, java.PACK, csharp.PACK
+PACKS: tuple[Pack, ...] = (
+    python.PACK,
+    typescript.PACK,
+    javascript.PACK,
+    go.PACK,
+    java.PACK,
+    csharp.PACK,
 )
 
 # detect.LANG_BY_EXT label -> pack.

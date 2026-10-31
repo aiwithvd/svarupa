@@ -123,3 +123,61 @@ def test_a_syntax_error_keeps_the_parseable_part() -> None:
     facts = parse("namespace N;\nclass Good { void M() {} }\nclass Bad { void ( }\n")
     assert [d.code for d in facts.diagnostics] == ["SVA-X-001"]
     assert "N.Good" in {s.qualified_name for s in facts.symbols}
+
+
+def test_nested_block_namespaces_compose_even_when_equal_to_the_path_prefix() -> None:
+    facts = parse("namespace A { namespace B { class X {} } }\n", "A.cs")
+    assert [s.qualified_name for s in facts.symbols] == ["A.B.X"]
+
+
+def test_the_file_namespace_is_the_first_one_declared() -> None:
+    facts = parse("namespace A.B { class X {} }\nnamespace C { class Y {} }\n", "f.cs")
+    assert facts.namespace == "A.B"
+    assert [s.qualified_name for s in facts.symbols] == ["A.B.X", "C.Y"]
+
+
+def test_primary_constructor_bases_lose_their_arguments() -> None:
+    facts = parse("record Dto(int Id) : BaseDto(Id), IFoo;\nclass C(int x) : Base(x) {}\n")
+    assert [s.bases for s in facts.symbols] == [("BaseDto", "IFoo"), ("Base",)]
+
+
+def test_null_conditional_calls_are_kept() -> None:
+    facts = parse(
+        "class C\n{\n    void M()\n    {\n        _log?.Info(1);\n        a.B()?.C();\n    }\n}\n"
+    )
+    got = [(c.name, c.shape, c.receiver) for c in facts.calls]
+    assert ("Info", CallShape.QUALIFIED, "_log") in got
+    assert [n for n, _, _ in got if n in ("B", "C")] == ["C", "B"]
+
+
+def test_constructor_initializer_calls_are_kept() -> None:
+    facts = parse("class C\n{\n    C() : base(Init()) {}\n}\n")
+    assert [c.name for c in facts.calls] == ["Init"]
+
+
+def test_alias_with_generics_drops_the_type_arguments() -> None:
+    facts = parse("using L = System.Collections.Generic.List<Shop.Order>;\n")
+    assert [i.specifier for i in facts.imports] == ["System.Collections.Generic.List"]
+
+
+def test_named_attribute_arguments_are_not_the_first_argument() -> None:
+    facts = parse('class C\n{\n    [Authorize(Roles = "A")]\n    void M() {}\n}\n')
+    (dec,) = next(s for s in facts.symbols if s.name == "M").decorators
+    assert dec.arg is None
+
+
+def test_qualified_attribute_names_use_the_last_segment() -> None:
+    facts = parse('[Microsoft.AspNetCore.Mvc.Route("x")]\nclass C {}\n')
+    (dec,) = facts.symbols[0].decorators
+    assert (dec.name, dec.arg) == ("Route", "x")
+
+
+def test_interface_members_are_exported() -> None:
+    facts = parse("interface IFoo\n{\n    void M();\n    void D() {}\n}\n")
+    assert {s.name: s.exported for s in facts.symbols} == {"IFoo": False, "M": True, "D": True}
+
+
+def test_global_using_and_generic_calls() -> None:
+    facts = parse("global using Shop.Data;\nclass C\n{\n    void M() { Run<int>(); }\n}\n")
+    assert [i.specifier for i in facts.imports] == ["Shop.Data"]
+    assert [c.name for c in facts.calls] == ["Run"]
