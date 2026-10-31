@@ -253,7 +253,9 @@ def test_csharp_external_is_the_framework_only() -> None:
 
 def csharp_with(*deps: str) -> CSharpNamespaces:
     return CSharpNamespaces(
-        ModuleContext(files=frozenset(f.path for f in CSHARP), facts=CSHARP, deps=frozenset(deps))
+        ModuleContext(
+            files=frozenset(f.path for f in CSHARP), facts=CSHARP, deps=frozenset(deps)
+        )
     )
 
 

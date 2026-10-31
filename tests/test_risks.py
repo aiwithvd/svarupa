@@ -892,7 +892,14 @@ def test_csharp_context_queries_in_a_loop_still_fire() -> None:
 
 
 def test_csharp_common_data_receivers_query_in_a_loop() -> None:
-    for recv in ("_context.Orders", "context.Orders", "_repository", "_repo", "orderRepo", "_catalogDbContext.Items"):
+    for recv in (
+        "_context.Orders",
+        "context.Orders",
+        "_repository",
+        "_repo",
+        "orderRepo",
+        "_catalogDbContext.Items",
+    ):
         src = f"class S {{ void F(List<int> ids) {{ foreach (var i in ids) {{ {recv}.FindById(i); }} }} }}\n"
         assert risks("csharp", "S.cs", src) == [("in-loop", "query", 1, "F")], recv
 

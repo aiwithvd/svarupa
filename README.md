@@ -66,8 +66,9 @@ somewhere other than `<repo>/.svarupa/`. The artifact holds:
   Windsurf gets a shorter version, because Windsurf limits rule files to 6,000
   characters each (12,000 in total).
 - Code facts come from language packs: Python, TypeScript, JavaScript, Go,
-  Java and C# today, all stable. Other detected languages are listed as
-  detected but not analyzed (SVA-X-012), never guessed. Known gaps per
+  Java and C# today. JavaScript is experimental; the others are stable.
+  Other detected languages are listed as detected but not analyzed
+  (SVA-X-012), never guessed. Known gaps per
   language are in `docs/health.md`.
 
 ![The architecture tab of the demo repository](docs/images/demo-architecture.png)

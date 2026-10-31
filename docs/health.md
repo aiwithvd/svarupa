@@ -163,12 +163,14 @@ Redis, MongoDB and Kafka clients) are not flagged either.
 
 ## Language gaps
 
-Each language pack is stable: it passed the benchmark. These gaps are known
-and are not guessed around.
+The Python, TypeScript, Go, Java and C# packs are stable: each passed the
+benchmark. The JavaScript pack is experimental. These gaps are known and are
+not guessed around.
 
 **C#**
 
-- A call to a System type without a `using` stays unresolved.
+- Calls to framework types such as `Console.WriteLine` stay unresolved, even
+  with `using System;`.
 - `global using` applies only to the file that writes it, not to the whole
   project.
 - A partial class split across files is ambiguous: its calls and members
@@ -176,6 +178,11 @@ and are not guessed around.
 - A bare call after `using static` is unresolved.
 - ASP.NET routes are not extracted, so `endpoint-without-auth` does not fire
   for C#.
+- `.Result` on a task is not flagged as a blocking call in async code.
+- Building `ProcessStartInfo.Arguments` or `SqlCommand.CommandText` by
+  assignment is not flagged.
+- `query-in-loop` only knows common receiver names, such as `_db`,
+  `_context`, `...DbContext`, `conn` and `...Repository`.
 
 ## Exceptions
 

@@ -34,6 +34,7 @@ dependencies = [
   "tree-sitter-typescript==0.23.2",
   "tree-sitter-go==0.25.0",
   "tree-sitter-java==0.23.5",
+  "tree-sitter-c-sharp==0.23.5",
   "networkx>=3.2,<4",
   "PyYAML>=6,<7",
   # MPL-2.0: file-level copyleft; as an unmodified dependency it imposes
@@ -41,7 +42,6 @@ dependencies = [
   "pathspec>=0.12,<2",
   # tomllib is stdlib from 3.11; manifests are parsed, never grepped.
   "tomli>=2; python_version<'3.11'",
-  "tree-sitter-c-sharp==0.23.5",
 ]
 
 [project.optional-dependencies]

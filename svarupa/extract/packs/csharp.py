@@ -1,4 +1,4 @@
-"""C# language pack (experimental).
+"""C# language pack (stable).
 
 A namespace replaces the path-based prefix: `namespace Shop.Api;` and
 `namespace Shop.Api { ... }` qualify their types the same way. Attributes
