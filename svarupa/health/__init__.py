@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 
 from svarupa.build import Graph
 from svarupa.detect import Scan, read_text
+from svarupa.extract.packs import BY_DETECTED
 from svarupa.health.auth import auth_checks
 from svarupa.health.catalog import AREAS, BY_ID, CATALOG, Check
 from svarupa.health.checks import (
@@ -48,8 +49,9 @@ __all__ = [
     "source_texts",
 ]
 
-# Languages whose source is code a person maintains (SQL schemas are not).
-_CODE = frozenset({"python", "typescript", "javascript", "go", "java"})
+# Languages whose source is code a person maintains (SQL schemas are not):
+# every language that has a pack, so a new pack is counted without a second edit.
+_CODE = frozenset(BY_DETECTED)
 
 
 def source_texts(scan: Scan, graph: Graph) -> dict[str, str]:
