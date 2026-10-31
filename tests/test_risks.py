@@ -889,3 +889,15 @@ def test_csharp_context_queries_in_a_loop_still_fire() -> None:
 }
 """
     assert [r[2] for r in risks("csharp", "S.cs", src)] == [4, 5, 6]
+
+
+def test_csharp_common_data_receivers_query_in_a_loop() -> None:
+    for recv in ("_context.Orders", "context.Orders", "_repository", "_repo", "orderRepo", "_catalogDbContext.Items"):
+        src = f"class S {{ void F(List<int> ids) {{ foreach (var i in ids) {{ {recv}.FindById(i); }} }} }}\n"
+        assert risks("csharp", "S.cs", src) == [("in-loop", "query", 1, "F")], recv
+
+
+def test_csharp_http_context_in_a_loop_stays_safe() -> None:
+    for recv in ("httpContext", "HttpContext", "_httpContext", "context"):
+        src = f"class S {{ void F(List<int> ids) {{ foreach (var i in ids) {{ {recv}.Items.Add(i, i); }} }} }}\n"
+        assert risks("csharp", "S.cs", src) == [], recv

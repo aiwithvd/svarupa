@@ -453,8 +453,9 @@ _ASSIGN = frozenset({"assignment_expression"})
 _ACCESS = frozenset({"member_access_expression"})
 # A database receiver: `conn`, `_db`, `catalogConnection`.
 _CONN = r"_?(?:conn|connection|db)|\w*Connection"
-# `HttpContext` and a bare `context` are not databases: only a Db-named context.
-_STORE = _CONN + r"|_?(?:db|\w*Db)\w*[Cc]ontext|\w*(?:Repository|Repo)"
+# `HttpContext` is not a database: a context counts only as the exact name
+# `context` / `_context` (the EF Core default) or a `...DbContext` name.
+_STORE = _CONN + r"|_?(?:db|\w*Db)\w*[Cc]ontext|_?context|\w*DbContext|_?\w*[Rr]epo(?:sitory)?"
 _VERBS = (
     r"(?:Find\w*|First\w*|Single\w*|Where|ToList\w*|Any\w*|Count\w*"
     r"|SaveChanges\w*|Query\w*|Execute\w*)"
