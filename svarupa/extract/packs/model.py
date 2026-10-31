@@ -167,6 +167,8 @@ class MetricsSpec:
     else_if_parents: frozenset[str] = frozenset()
     # Optional filter on function_types: False skips a node with no body.
     is_function: Callable[[TSNode], bool] | None = None
+    # Optional name for a function node the `name` field cannot name.
+    name_of: Callable[[TSNode], str | None] | None = None
 
 
 CalleeHook = Callable[["Ctx", TSNode], str | None]

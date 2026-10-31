@@ -261,11 +261,44 @@ def _count_params(fn: TSNode) -> int:
     return sum(1 for c in params.children if c.type == "parameter")
 
 
+_MEMBERS = ("property_declaration", "indexer_declaration", "event_declaration")
+
+
 def _has_body(node: TSNode) -> bool:
-    """`get;` has no body; `get { ... }` and `get => x` do."""
-    if node.type != "accessor_declaration":
-        return True
-    return any(c.type in ("block", "arrow_expression_clause") for c in node.children)
+    """`get;` has no body; `get { ... }` and `get => x` do. An arrow clause is
+    a function only as the body of a property or indexer (`int P => x;`)."""
+    if node.type == "accessor_declaration":
+        return any(c.type in ("block", "arrow_expression_clause") for c in node.children)
+    if node.type == "arrow_expression_clause":
+        return node.parent is not None and node.parent.type in _MEMBERS
+    return True
+
+
+def _text(node: TSNode | None) -> str | None:
+    return node.text.decode() if node is not None and node.text else None
+
+
+def _member_name(owner: TSNode | None, word: str | None) -> str | None:
+    """`Prop.get`, or `this.get` for an indexer."""
+    if owner is None or word is None:
+        return None
+    if owner.type == "indexer_declaration":
+        return f"this.{word}"
+    name = _text(owner.child_by_field_name("name"))
+    return f"{name}.{word}" if name else None
+
+
+def _function_name(node: TSNode) -> str | None:
+    """A name for the members whose `name` field does not name them."""
+    if node.type == "accessor_declaration":
+        owner = node.parent.parent if node.parent is not None else None
+        return _member_name(owner, _text(node.child_by_field_name("name")))
+    if node.type == "arrow_expression_clause":
+        return _member_name(node.parent, "get")
+    if node.type == "conversion_operator_declaration":
+        ty = _text(node.child_by_field_name("type"))
+        return f"operator {ty}" if ty else None
+    return _text(node.child_by_field_name("operator"))
 
 
 # A `case` label is its own `switch_section`, so stacked labels count once
@@ -279,6 +312,11 @@ METRICS = MetricsSpec(
             "local_function_statement",
             "lambda_expression",
             "accessor_declaration",
+            "arrow_expression_clause",
+            "operator_declaration",
+            "conversion_operator_declaration",
+            "destructor_declaration",
+            "anonymous_method_expression",
         }
     ),
     branch_types=frozenset(
@@ -307,10 +345,14 @@ METRICS = MetricsSpec(
         }
     ),
     count_params=_count_params,
-    boolean_ops=(("binary_expression", frozenset({"&&", "||", "??"})),),
+    boolean_ops=(
+        ("binary_expression", frozenset({"&&", "||", "??"})),
+        ("assignment_expression", frozenset({"??="})),
+    ),
     not_branch=(("switch_section", "default"), ("switch_expression_arm", "discard")),
     else_if_parents=frozenset({"if_statement"}),
     is_function=_has_body,
+    name_of=_function_name,
 )
 
 

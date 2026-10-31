@@ -7,6 +7,8 @@ on its own and adds nothing to the function around it.
 
 from __future__ import annotations
 
+import pytest
+
 from svarupa.extract.packs import extractor
 
 
@@ -201,6 +203,72 @@ def test_csharp_accessors_with_bodies_are_functions_and_auto_accessors_are_not()
 """
     f = extractor("csharp").parse("A.cs", src.encode())
     assert [m.complexity for m in f.functions] == [1, 2]
+
+
+@pytest.mark.parametrize(
+    ("body", "want"),
+    [
+        ("for (int i = 0; i < a; i++) { }", (2, 1)),
+        ("foreach (var x in a) { }", (2, 1)),
+        ("while (a > 0) { }", (2, 1)),
+        ("do { } while (a > 0);", (2, 1)),
+        ("if (a > 0) { }", (2, 1)),
+        ("switch (a) { case 1: break; }", (2, 1)),
+        ("try { } catch (Exception e) { }", (2, 1)),
+        ("try { } finally { }", (1, 1)),
+        ("var t = a > 0 && a < 5;", (2, 0)),
+        ("var t = a > 0 || a < 5;", (2, 0)),
+        ("var t = b ?? 1;", (2, 0)),
+        ("b ??= 1;", (2, 0)),
+        ("var t = a > 0 ? 1 : 2;", (2, 0)),
+        ("var t = a + 1;", (1, 0)),
+    ],
+)
+def test_csharp_each_construct_on_its_own(body: str, want: tuple[int, int]) -> None:
+    src = f"class A {{ void M(int a, int? b) {{ {body} }} }}"
+    got = metrics("csharp", "A.cs", src)["M"]
+    assert (got[0], got[2]) == want
+
+
+def test_csharp_accessors_are_named_after_their_property() -> None:
+    src = """class A {
+  int P { get { return 1; } set { x = value; } }
+  int Q => 1;
+  int this[int i] { get { return i; } }
+  ~A() { }
+}
+"""
+    f = extractor("csharp").parse("A.cs", src.encode())
+    assert [m.name for m in f.functions] == ["P.get", "P.set", "Q.get", "this.get", "A"]
+
+
+def test_csharp_remaining_members_are_measured() -> None:
+    src = """class A {
+  int Q => 1 > 0 ? 1 : 2;
+  public static A operator +(A l, A r) { if (l == null) { } return l; }
+  public static implicit operator int(A a) { return a == null ? 0 : 1; }
+  ~A() { if (x) { } }
+  void M() { Action f = delegate (int q) { if (q > 0) { } }; }
+}
+"""
+    f = extractor("csharp").parse("A.cs", src.encode())
+    got = {m.name: m.complexity for m in f.functions}
+    assert got["Q.get"] == 2
+    assert got["+"] == 2
+    assert got["A"] == 2
+    assert got["M"] == 1
+    assert sorted(m.complexity for m in f.functions) == [1, 2, 2, 2, 2, 2]
+
+
+def test_csharp_a_method_arrow_body_is_not_a_second_function() -> None:
+    f = extractor("csharp").parse("A.cs", b"class A { int M(int a) => a > 0 ? 1 : 2; }")
+    assert [(m.name, m.complexity) for m in f.functions] == [("M", 2)]
+
+
+def test_csharp_bodyless_accessors_leave_risk_scanning_alone() -> None:
+    src = b'class A { int P { get; set; } void M(string i) { Db.ExecuteSqlRaw("x" + i); } }'
+    f = extractor("csharp").parse("A.cs", src)
+    assert f.functions[0].name == "M"
 
 
 def test_metrics_reach_the_graph(tmp_path) -> None:

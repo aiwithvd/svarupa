@@ -262,7 +262,11 @@ class Ctx:
         while work:
             node, depth, parent = work.pop()
             kind = node.type
-            if kind in spec.function_types and node.is_named:
+            if (
+                kind in spec.function_types
+                and node.is_named
+                and (spec.is_function is None or spec.is_function(node))
+            ):
                 continue  # measured on its own
             if kind in spec.branch_types:
                 if not any((kind, c.type) in excluded for c in node.children):
@@ -286,6 +290,10 @@ class Ctx:
         )
 
     def _function_name(self, fn: TSNode) -> str:
+        spec = self.pack.metrics
+        named = spec.name_of(fn) if spec is not None and spec.name_of is not None else None
+        if named:
+            return named
         name = fn.child_by_field_name("name")
         if name is None and fn.parent is not None and fn.parent.type == "variable_declarator":
             name = fn.parent.child_by_field_name("name")
@@ -301,7 +309,9 @@ class Ctx:
         spec = self.pack.risks
         if spec is None or self.too_deep:
             return []
-        fn_types = self.pack.metrics.function_types if self.pack.metrics else frozenset[str]()
+        metrics = self.pack.metrics
+        fn_types = metrics.function_types if metrics else frozenset[str]()
+        is_fn = metrics.is_function if metrics else None
         by_type: dict[str, list[Unsafe]] = {}
         for rule in spec.unsafe:
             for t in rule.node_types:
@@ -319,7 +329,7 @@ class Ctx:
             work = [(c, looped) for c in reversed(scope.children)]
             while work:
                 node, in_loop = work.pop()
-                if node.is_named and node.type in fn_types:
+                if node.is_named and node.type in fn_types and (is_fn is None or is_fn(node)):
                     per_item = in_loop or self._per_item(node, spec)
                     scopes.append((node, self._function_name(node), per_item))
                     continue
