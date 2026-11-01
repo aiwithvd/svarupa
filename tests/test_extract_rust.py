@@ -123,6 +123,26 @@ def test_nested_use_lists_and_relative_roots() -> None:
     ]
 
 
+def test_self_beside_names_still_imports_the_module() -> None:
+    facts = parse("use crate::model::base::{self, Repo, Order as O};\n")
+    got = [(i.specifier, i.names, dict(i.alias_of)) for i in facts.imports]
+    assert got == [
+        ("crate.model.base", (), {}),
+        ("crate.model.base", ("Repo", "Order"), {"O": "Order"}),
+    ]
+
+
+def test_a_module_imported_with_self_resolves_its_calls(tmp_path: Path) -> None:
+    write(tmp_path, "src/lib.rs", "mod base;\nmod user;\n")
+    write(tmp_path, "src/base.rs", "pub struct Repo;\npub fn create() {}\n")
+    write(
+        tmp_path,
+        "src/user.rs",
+        "use crate::base::{self, Repo};\nfn run(_r: Repo) { base::create(); }\n",
+    )
+    assert ("src/user.rs#user.run", "src/base.rs#base.create") in calls_of(tmp_path)
+
+
 def test_a_mod_without_a_body_imports_the_child_module() -> None:
     facts = parse("mod handlers;\n", "src/lib.rs")
     (imp,) = facts.imports

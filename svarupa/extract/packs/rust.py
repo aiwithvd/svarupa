@@ -308,7 +308,18 @@ def _group(node: TSNode, base: str, ev: Evidence) -> list[ImportRef]:
 def _head_first(full: str, refs: list[ImportRef], ev: Evidence) -> list[ImportRef]:
     own = [r for r in refs if r.specifier == full and not r.is_star]
     rest = [r for r in refs if r not in own]
-    return rest if rest and not own else [_merged(full, own, ev), *rest]
+    if rest and not own:
+        return rest
+    # `{self, X}` imports the module itself as well as X from it
+    return [*_own_imports(full, own, ev), *rest]
+
+
+def _own_imports(full: str, own: list[ImportRef], ev: Evidence) -> list[ImportRef]:
+    itself = [r for r in own if not r.names]
+    named = [r for r in own if r.names]
+    if itself and named:
+        return [_merged(full, itself, ev), _merged(full, named, ev)]
+    return [_merged(full, own, ev)]
 
 
 def _refs(node: TSNode, base: str, ev: Evidence) -> list[ImportRef]:
