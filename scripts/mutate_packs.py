@@ -35,7 +35,12 @@ Each entry breaks one promise of the walker; a test must go red:
 * `System.*` is external in C#;
 * the C# `async` marker is found under `modifier`;
 * `FromSqlInterpolated` is not a raw sink;
-* a nested C# block namespace keeps its parent.
+* a nested C# block namespace keeps its parent;
+* an impl method belongs to its type in Rust;
+* `std` is external in Rust;
+* the Rust `async` marker is found under `function_modifiers`;
+* a `sqlx::query!` macro is not a raw sink;
+* `mod.rs` names its directory.
 """
 
 from __future__ import annotations
@@ -58,6 +63,7 @@ SUITE = [
     "tests/test_extract_go.py",
     "tests/test_extract_java.py",
     "tests/test_extract_csharp.py",
+    "tests/test_extract_rust.py",
     "tests/test_golden_repos.py",
     "tests/test_detect.py",
     "tests/test_metrics.py",
@@ -76,6 +82,18 @@ SUITE = [
     "tests/test_about.py",
     "tests/test_check.py",
 ]
+
+# A few mutations need a second edit to take effect. Both edits are applied
+# together: the name is the key, each extra edit is (file, old, new).
+EXTRA_EDITS: dict[str, tuple[str, str, str]] = {
+    # The walker finds no arguments on a macro, so the sink pattern alone is
+    # inert. Give a macro its token tree as arguments too.
+    "a sqlx query! macro counts as a raw sink": (
+        "svarupa/extract/packs/walker.py",
+        '            callee = spec.callee(self, node)\n            args = node.child_by_field_name("arguments")\n            self._append(',
+        '            callee = spec.callee(self, node)\n            args = node.child_by_field_name("arguments")\n            if args is None and t == "macro_invocation":\n                args = node.named_children[-1] if node.named_children else None\n            self._append(',
+    ),
+}
 
 MUTATIONS: list[tuple[str, str, str, str]] = [
     (
@@ -183,7 +201,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     (
         "else if nests deeper again",
         "svarupa/extract/packs/walker.py",
-        '                kind == "if_statement" and parent in spec.else_if_parents\n',
+        "                kind in spec.if_types and parent in spec.else_if_parents\n",
         "                False\n",
     ),
     (
@@ -372,7 +390,50 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
         "            parts.append(ctx.text(outer))\n",
         "            pass\n",
     ),
+    (
+        "a rust impl method loses its type",
+        "svarupa/extract/packs/rust.py",
+        "visit_items(ctx, body.children, Frame((*frame.stack, owner), owner, frame.fn), depth)",
+        "visit_items(ctx, body.children, frame, depth)",
+    ),
+    (
+        "std stops being external in rust",
+        "svarupa/extract/packs/modules.py",
+        "        if head in _RUST_STD:\n            return True",
+        "        if False:\n            return True",
+    ),
+    (
+        "the rust async marker is not found under function_modifiers",
+        "svarupa/extract/packs/rust.py",
+        '    async_holder="function_modifiers",\n',
+        '    async_holder="modifiers",\n',
+    ),
+    (
+        "a sqlx query! macro counts as a raw sink",
+        "svarupa/extract/packs/rust.py",
+        'Sink("sql", re.compile(r"^" + _SQLX_NAME + r"$")),',
+        'Sink("sql", re.compile(r"^" + _SQLX + r"$")),',
+    ),
+    (
+        "mod.rs stops naming its directory",
+        "svarupa/extract/packs/rust.py",
+        '    if parts and parts[-1] == "mod":\n        parts = parts[:-1]\n',
+        "",
+    ),
 ]
+
+
+def _apply_extra(name: str) -> None:
+    """Apply the second edit of a mutation that needs one. A missing pattern
+    stops the run: the mutation would be weaker than it claims."""
+    extra = EXTRA_EDITS.get(name)
+    if extra is None:
+        return
+    other = ROOT / extra[0]
+    body = other.read_text(encoding="utf8")
+    if extra[1] not in body:
+        raise SystemExit(f"extra pattern not found: {name}")
+    other.write_text(body.replace(extra[1], extra[2], 1), encoding="utf8")
 
 
 def main() -> int:
@@ -388,6 +449,7 @@ def main() -> int:
                 failures.append(f"{name}: pattern not found")
                 continue
             path.write_text(text.replace(old, new, 1), encoding="utf8")
+            _apply_extra(name)
             proc = subprocess.run(
                 [str(PY), "-m", "pytest", *SUITE, "-q", "-x"],
                 cwd=ROOT,

@@ -17,7 +17,7 @@ SonarQube's ratings and aligned with ISO/IEC 25010.
 
 Every check has a plain explanation: what it means, why it matters and how
 to fix it, with a short before/after in Python, TypeScript/JavaScript, Go,
-Java or C# where the fix is code. They live in `svarupa/health/explanations/` and
+Java, C# or Rust where the fix is code. They live in `svarupa/health/explanations/` and
 show in REPORT.md ("What these mean"), the Health tab ("why?"), graph.json
 (`health.checks[].explanation`) and MCP `get_health`. From the command line:
 
@@ -143,7 +143,7 @@ How each one decides:
   per item. A query is a call on a database client, ORM model or
   repository (`cursor.execute`, `User.objects.get`, `prisma.user.findMany`,
   `userRepository.findById`, `db.QueryRow`).
-- **Async.** A function marked `async` (Python, JavaScript, TypeScript, C#). A
+- **Async.** A function marked `async` (Python, JavaScript, TypeScript, C#, Rust). A
   function defined inside it is judged on its own.
 - **Shared datastore.** Only services built from this repository count, so
   an admin image like adminer is never an owner. Two services built from
@@ -164,8 +164,32 @@ Redis, MongoDB and Kafka clients) are not flagged either.
 ## Language gaps
 
 The Python, TypeScript, Go, Java and C# packs are stable: each passed the
-benchmark. The JavaScript pack is experimental. These gaps are known and are
-not guessed around.
+benchmark. The JavaScript and Rust packs are experimental. A pack is stable
+only when two of its benchmark repositories reach 90% recall with no false
+fact. The benchmark corpus has 15 repositories. The two Rust repositories
+score 91% (rust-web-app) and 63% (zero-to-production), and no probe fired, so
+Rust is not stable yet. These gaps are known and are not guessed around.
+
+**Rust**
+
+- `pub use` re-exports are not followed, so a call through a facade module
+  stays unresolved.
+- A call on a value that is typed only by a function parameter is not
+  resolved. This is true for every language, not only Rust.
+- A call through a module path with several segments, such as
+  `web::routes::f()`, is not resolved.
+- Each file under `tests/` is its own crate, so its `mod` and `crate::` paths
+  do not resolve.
+- Macros are not calls, and `macro_rules!` names are not symbols.
+- `const`, `static` and type aliases are not symbols.
+- Routes are not extracted, so `endpoint-without-auth` does not fire for
+  Rust.
+- Async closures and async blocks inside a sync `fn` are not checked for
+  blocking calls.
+- Some Diesel and SeaORM query styles inside loops are not caught.
+- `Hmac::<Sha1>` with the turbofish form is not flagged.
+- A call on a generic type parameter resolves to the trait, not to an
+  implementing type.
 
 **C#**
 

@@ -1049,6 +1049,9 @@ RS_QUIET = {
     "sqlx-query-as-macro-with-format": _rs(
         '  sqlx::query_as!(User, "select * from t where id = $1", format!("{}", id));'
     ),
+    "sqlx-query-macro-with-built-name": _rs(
+        '  let sql = format!("select {}", id);\n  sqlx::query!(sql);'
+    ),
     "sqlx-macro-chain": _rs('  sqlx::query!("select 1").fetch_one(&pool).await?;'),
     "diesel-literal": _rs('  diesel::sql_query("select 1");'),
     "concat-of-literals": _rs('  sqlx::query(concat!("select ", "1"));'),
