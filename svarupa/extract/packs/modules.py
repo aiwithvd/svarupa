@@ -245,7 +245,15 @@ def _rust_module(rest: list[str]) -> tuple[str, ...]:
 class _RustLayout:
     """Where each `.rs` file sits: a tree is one crate root and its modules."""
 
-    def __init__(self, files: frozenset[str], crate_dirs: set[str]) -> None:
+    def __init__(
+        self, files: frozenset[str], crate_dirs: set[str], facts: tuple[FileFacts, ...] = ()
+    ) -> None:
+        # file -> names it declares (struct, enum, trait, fn; not const, static or type)
+        self.declared = {
+            f.path: frozenset(s.name for s in f.symbols if s.kind != "method")
+            for f in facts
+            if f.lang == "rust"
+        }
         self.trees: dict[str, dict[tuple[str, ...], str]] = {}  # tree -> module -> file
         self.lib: dict[str, str] = {}  # tree -> its lib.rs
         self.where: dict[str, tuple[str, tuple[str, ...]]] = {}
@@ -299,16 +307,17 @@ class _RustLayout:
         module_only: bool = False,
     ) -> str | None:
         """The file of the module `base + tail`, or of the module `base + tail[:-1]`
-        when the last segment is an item in it. Nothing else: a path with two
-        segments that are not modules names nothing. `module_only` (a glob)
-        allows no item segment. `root` is the file standing for the empty module
+        when that file declares the last segment as an item. Nothing else: a path
+        with two segments that are not modules names nothing, and an item the file
+        does not declare names nothing. `module_only` (a glob) allows no item. `root` is the file standing for the empty module
         path, when it is not the tree's own."""
         files = self.trees.get(tree, {})
         for n in range(len(tail), max(len(tail) - (0 if module_only else 1), 0) - 1, -1):
             path = (*base, *tail[:n])
-            if not path and root is not None:
-                return root
-            if (hit := files.get(path)) is not None:
+            hit = root if not path and root is not None else files.get(path)
+            if hit is None:
+                continue
+            if n == len(tail) or tail[-1] in self.declared.get(hit, ()):
                 return hit
         return None
 
@@ -317,7 +326,7 @@ class RustCrates:
     """Rust: a `use` path names a module, and a module is a file.
 
     `crate.a.b.Item` is the module file of `a.b` (`a/b.rs` or `a/b/mod.rs`),
-    with at most one trailing segment that is an item in it. A path with two
+    with at most one trailing segment that is an item the file declares. A path with two
     segments that name no module file names nothing, and a glob (`use a::*`)
     needs its module itself. `self.x` is relative to the caller's module and
     `super.x` to its parent. `<crate>.a.b` enters another crate's library
@@ -347,7 +356,9 @@ class RustCrates:
         for name, directory in sorted(context.rust_crates, key=lambda c: (c[1], c[0])):
             self.names.setdefault(name.replace("-", "_"), directory)
         self.uses = frozenset(context.rust_uses)
-        self.layout = _RustLayout(context.files, {d for _, d in context.rust_crates})
+        self.layout = _RustLayout(
+            context.files, {d for _, d in context.rust_crates}, context.facts
+        )
 
     def _relative(self, parts: list[str], from_file: str, module_only: bool) -> str | None:
         """`crate.`, `self.` and `super.` paths, from the caller's module."""

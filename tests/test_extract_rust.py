@@ -340,7 +340,9 @@ def test_use_paths_resolve_to_module_files(tmp_path: Path) -> None:
     write(tmp_path, "Cargo.toml", '[package]\nname = "shop"\n[dependencies]\nserde = "1"\n')
     write(tmp_path, "src/lib.rs", "mod db;\nmod handlers;\n")
     write(tmp_path, "src/db.rs", "pub struct Repo;\nimpl Repo { pub fn find(&self) {} }\n")
-    write(tmp_path, "src/handlers/mod.rs", "mod orders;\nuse super::db::Repo;\n")
+    write(
+        tmp_path, "src/handlers/mod.rs", "mod orders;\nuse super::db::Repo;\npub struct Item;\n"
+    )
     write(
         tmp_path,
         "src/handlers/orders.rs",
@@ -457,15 +459,20 @@ def test_a_bare_call_to_an_unimported_name_is_not_guessed(tmp_path: Path) -> Non
         ("use super::nope::X;", set()),
         ("use super::nope::*;", set()),
         ("use crate::{db::Repo, nope::Q};", {"src/db.rs"}),
-        ("use crate::a::Gone;", {"src/a/mod.rs"}),
+        ("use crate::a::Gone;", set()),
+        ("use crate::a::Real;", {"src/a/mod.rs"}),
+        ("use crate::nope::{X};", set()),
+        ("use crate::Kind::{A, B};", {"src/lib.rs"}),
+        ("use crate::db::Missing;", set()),
         ("use crate::db::Repo;", {"src/db.rs"}),
         ("use crate::db::*;", {"src/db.rs"}),
-        ("use super::Gone;", {"src/a/mod.rs"}),
+        ("use super::Gone;", set()),
+        ("use super::Real;", {"src/a/mod.rs"}),
     ],
 )
 def test_a_bad_path_makes_no_edge(tmp_path: Path, use: str, expected: set[str]) -> None:
-    write(tmp_path, "src/lib.rs", "mod a;\nmod db;\n")
-    write(tmp_path, "src/a/mod.rs", "mod b;\n")
+    write(tmp_path, "src/lib.rs", "mod a;\nmod db;\npub enum Kind { A, B }\n")
+    write(tmp_path, "src/a/mod.rs", "mod b;\npub struct Real;\n")
     write(tmp_path, "src/db.rs", "pub struct Repo;\n")
     write(tmp_path, "src/a/b.rs", use + "\n")
     got = {dst for src, dst in imports_of(tmp_path) if src == "src/a/b.rs"}

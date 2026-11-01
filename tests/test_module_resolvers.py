@@ -306,6 +306,28 @@ RUST_FILES = frozenset(
 )
 
 
+RUST_DECLARES = {
+    "src/lib.rs": ("Thing", "Kind"),
+    "src/db.rs": ("Repo",),
+    "src/handlers/mod.rs": ("Thing",),
+    "src/handlers/orders.rs": ("make", "Item"),
+    "src/bin/other/main.rs": ("Thing",),
+    "crates/shop-core/src/lib.rs": ("Thing",),
+    "crates/shop-core/src/model.rs": ("Order",),
+}
+
+
+def _rust_facts() -> tuple[FileFacts, ...]:
+    return tuple(
+        FileFacts(
+            path=path,
+            lang="rust",
+            symbols=tuple(SymbolRef(n, n, "class", ev(path)) for n in names),
+        )
+        for path, names in RUST_DECLARES.items()
+    )
+
+
 def rust(
     deps: frozenset[str] = frozenset(),
     crates: tuple[tuple[str, str], ...] = (
@@ -314,7 +336,9 @@ def rust(
         ("shop_api", "crates/shop-api"),
     ),
 ) -> RustCrates:
-    return RustCrates(ModuleContext(files=RUST_FILES, facts=(), deps=deps, rust_crates=crates))
+    return RustCrates(
+        ModuleContext(files=RUST_FILES, facts=_rust_facts(), deps=deps, rust_crates=crates)
+    )
 
 
 def test_rust_crate_paths_find_the_longest_module_file() -> None:
@@ -406,10 +430,13 @@ def test_rust_a_path_falls_back_at_most_one_segment_past_a_module() -> None:
     r = rust()
     for caller in ("src/lib.rs", "src/handlers/orders.rs", "src/handlers/deep/leaf.rs"):
         assert r.targets("crate.nope.X", caller) == (), caller
-        assert r.targets("crate.nope", caller) == ("src/lib.rs",), caller  # `nope` is an item
+        assert r.targets("crate.nope", caller) == (), caller  # lib.rs declares no `nope`
+        assert r.targets("crate.Kind", caller) == ("src/lib.rs",), caller
         assert r.targets("crate.db.nope.Y", caller) == (), caller
         assert r.targets("crate.handlers.nope.Y.Z", caller) == (), caller
-        assert r.targets("crate.handlers.nope", caller) == ("src/handlers/mod.rs",), caller
+        assert r.targets("crate.handlers.nope", caller) == (), caller
+        assert r.targets("crate.handlers.Thing", caller) == ("src/handlers/mod.rs",), caller
+        assert r.targets("crate.db.Gone", caller) == (), caller
     assert r.targets("super.nope.X", "src/handlers/orders.rs") == ()
     assert r.targets("super.db.nope.Y", "src/handlers/orders.rs") == ()
     assert r.targets("self.nope.X", "src/handlers/mod.rs") == ()
@@ -442,7 +469,19 @@ def test_rust_a_repo_crate_named_like_std_shadows_it_only_for_its_users() -> Non
             rust_uses=(("app", "core"),),
         )
     )
-    assert r.targets("core.fmt.X", "app/src/main.rs") == ("libs/core/src/fmt.rs",)
-    assert r.targets("core.fmt.X", "libs/core/src/lib.rs") == ("libs/core/src/fmt.rs",)
+    assert r.targets("core.fmt", "app/src/main.rs") == ("libs/core/src/fmt.rs",)
+    assert r.targets("core.fmt", "libs/core/src/lib.rs") == ("libs/core/src/fmt.rs",)
     assert r.targets("core.fmt.Debug", "other/src/lib.rs") == ()
     assert r.is_external("core.fmt.Debug")
+
+
+def test_rust_an_item_fallback_needs_the_file_to_declare_it() -> None:
+    r = rust()
+    # a brace list `use crate::Kind::{A, B}` has the spec `crate.Kind`
+    assert r.targets("crate.Kind", "src/db.rs") == ("src/lib.rs",)
+    assert r.targets("crate.nope", "src/db.rs") == ()
+    assert r.targets("crate.db.Repo", "src/lib.rs") == ("src/db.rs",)
+    assert r.targets("crate.db.Order", "src/lib.rs") == ()
+    assert r.targets("shop_core.Order", "crates/shop-api/src/main.rs") == ()
+    assert r.targets("self.Item", "src/handlers/orders.rs") == ("src/handlers/orders.rs",)
+    assert r.targets("self.Other", "src/handlers/orders.rs") == ()
