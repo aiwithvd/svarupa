@@ -816,3 +816,22 @@ def test_a_call_through_an_imported_submodule_resolves(tmp_path: Path, stmt: str
     )
     calls = {(e.src, e.dst) for e in run(tmp_path).edges if e.kind is EdgeKind.CALLS}
     assert ("app/routes.py#app.routes.make", "app/crud.py#app.crud.create_user") in calls
+
+
+def test_an_override_wins_over_the_method_it_overrides(tmp_path: Path) -> None:
+    """The nearest class in the MRO that defines the name is the one called.
+
+    Collecting every same-named method along the chain made an override and
+    the method it hides a two-way CANDIDATE, though only one can run.
+    """
+    write(
+        tmp_path,
+        "src/a.py",
+        "class Base:\n    def m(self):\n        pass\n\n\n"
+        "class Child(Base):\n    def m(self):\n        pass\n\n"
+        "    def go(self):\n        return self.m()\n",
+    )
+    calls = [e for e in run(tmp_path).edges if e.kind is EdgeKind.CALLS]
+    assert len(calls) == 1
+    assert calls[0].resolution is Resolution.RESOLVED
+    assert calls[0].dst.endswith("Child.m")

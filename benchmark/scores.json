@@ -55,16 +55,14 @@
   "design_found": []
  },
  "clean-architecture": {
-  "recall": 0.9773,
-  "found": 43,
+  "recall": 1.0,
+  "found": 44,
   "total": 44,
-  "missed": [
-   "call:src/Infrastructure/Identity/IdentityService.cs -> src/Infrastructure/Identity/IdentityService.cs#DeleteUserAsync"
-  ],
+  "missed": [],
   "fired": [],
   "by_kind": {
    "call": [
-    16,
+    17,
     17
    ],
    "dep": [
@@ -80,17 +78,14 @@
   "design_found": []
  },
  "eshoponweb": {
-  "recall": 0.9574,
-  "found": 45,
+  "recall": 1.0,
+  "found": 47,
   "total": 47,
-  "missed": [
-   "call:src/Web/Services/CachedCatalogViewModelService.cs -> src/Web/Services/CatalogViewModelService.cs#GetBrands",
-   "call:src/Web/Services/CatalogViewModelService.cs -> src/Web/Services/CatalogViewModelService.cs#GetBrands"
-  ],
+  "missed": [],
   "fired": [],
   "by_kind": {
    "call": [
-    14,
+    16,
     16
    ],
    "dep": [
