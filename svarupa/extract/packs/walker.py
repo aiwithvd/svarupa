@@ -119,7 +119,7 @@ class Ctx:
         return self.evidence(node.start_point[0], node.end_point[0])
 
     def qual(self, names: tuple[str, ...]) -> str:
-        return ".".join((self.prefix, *names)) if names else self.prefix
+        return ".".join(p for p in (self.prefix, *names) if p)
 
     def decorator(self, node: TSNode) -> DecoratorRef | None:
         hook = self.pack.decorator

@@ -1,0 +1,420 @@
+{
+ "path": "crates/shop-core/src/orders.rs",
+ "lang": "rust",
+ "symbols": [
+  {
+   "name": "Shop",
+   "qualified_name": "shop_core.orders.Shop",
+   "kind": "class",
+   "evidence": {
+    "file": "crates/shop-core/src/orders.rs",
+    "start_line": 8,
+    "end_line": 11,
+    "rev": null
+   },
+   "enclosing_class": null,
+   "bases": [],
+   "exported": true,
+   "decorators": [
+    {
+     "name": "derive",
+     "arg": null,
+     "evidence": {
+      "file": "crates/shop-core/src/orders.rs",
+      "start_line": 7,
+      "end_line": 7,
+      "rev": null
+     },
+     "arg_dynamic": true,
+     "methods": null
+    }
+   ]
+  },
+  {
+   "name": "Status",
+   "qualified_name": "shop_core.orders.Status",
+   "kind": "class",
+   "evidence": {
+    "file": "crates/shop-core/src/orders.rs",
+    "start_line": 13,
+    "end_line": 13,
+    "rev": null
+   },
+   "enclosing_class": null,
+   "bases": [],
+   "exported": true,
+   "decorators": []
+  },
+  {
+   "name": "Store",
+   "qualified_name": "shop_core.orders.Store",
+   "kind": "interface",
+   "evidence": {
+    "file": "crates/shop-core/src/orders.rs",
+    "start_line": 15,
+    "end_line": 20,
+    "rev": null
+   },
+   "enclosing_class": null,
+   "bases": [],
+   "exported": true,
+   "decorators": []
+  },
+  {
+   "name": "save",
+   "qualified_name": "shop_core.orders.Store.save",
+   "kind": "method",
+   "evidence": {
+    "file": "crates/shop-core/src/orders.rs",
+    "start_line": 16,
+    "end_line": 16,
+    "rev": null
+   },
+   "enclosing_class": "Store",
+   "bases": [],
+   "exported": true,
+   "decorators": []
+  },
+  {
+   "name": "describe",
+   "qualified_name": "shop_core.orders.Store.describe",
+   "kind": "method",
+   "evidence": {
+    "file": "crates/shop-core/src/orders.rs",
+    "start_line": 17,
+    "end_line": 19,
+    "rev": null
+   },
+   "enclosing_class": "Store",
+   "bases": [],
+   "exported": true,
+   "decorators": []
+  },
+  {
+   "name": "save",
+   "qualified_name": "shop_core.orders.Shop.save",
+   "kind": "method",
+   "evidence": {
+    "file": "crates/shop-core/src/orders.rs",
+    "start_line": 23,
+    "end_line": 30,
+    "rev": null
+   },
+   "enclosing_class": "Shop",
+   "bases": [
+    "Store"
+   ],
+   "exported": true,
+   "decorators": []
+  },
+  {
+   "name": "new",
+   "qualified_name": "shop_core.orders.Shop.new",
+   "kind": "method",
+   "evidence": {
+    "file": "crates/shop-core/src/orders.rs",
+    "start_line": 35,
+    "end_line": 37,
+    "rev": null
+   },
+   "enclosing_class": "Shop",
+   "bases": [],
+   "exported": true,
+   "decorators": [
+    {
+     "name": "inline",
+     "arg": null,
+     "evidence": {
+      "file": "crates/shop-core/src/orders.rs",
+      "start_line": 34,
+      "end_line": 34,
+      "rev": null
+     },
+     "arg_dynamic": false,
+     "methods": null
+    }
+   ]
+  },
+  {
+   "name": "secret",
+   "qualified_name": "shop_core.orders.Shop.secret",
+   "kind": "method",
+   "evidence": {
+    "file": "crates/shop-core/src/orders.rs",
+    "start_line": 39,
+    "end_line": 39,
+    "rev": null
+   },
+   "enclosing_class": "Shop",
+   "bases": [],
+   "exported": false,
+   "decorators": []
+  },
+  {
+   "name": "serve",
+   "qualified_name": "shop_core.orders.api.serve",
+   "kind": "function",
+   "evidence": {
+    "file": "crates/shop-core/src/orders.rs",
+    "start_line": 44,
+    "end_line": 46,
+    "rev": null
+   },
+   "enclosing_class": null,
+   "bases": [],
+   "exported": true,
+   "decorators": [
+    {
+     "name": "main",
+     "arg": null,
+     "evidence": {
+      "file": "crates/shop-core/src/orders.rs",
+      "start_line": 43,
+      "end_line": 43,
+      "rev": null
+     },
+     "arg_dynamic": false,
+     "methods": null
+    }
+   ]
+  }
+ ],
+ "imports": [
+  {
+   "specifier": "std.collections.HashMap",
+   "names": [],
+   "alias_of": [],
+   "evidence": {
+    "file": "crates/shop-core/src/orders.rs",
+    "start_line": 1,
+    "end_line": 1,
+    "rev": null
+   },
+   "is_relative": false,
+   "level": 0,
+   "type_only": false,
+   "is_from": true,
+   "is_reexport": false,
+   "is_star": false
+  },
+  {
+   "specifier": "crate.db",
+   "names": [
+    "Repo",
+    "Order"
+   ],
+   "alias_of": [
+    [
+     "O",
+     "Order"
+    ]
+   ],
+   "evidence": {
+    "file": "crates/shop-core/src/orders.rs",
+    "start_line": 2,
+    "end_line": 2,
+    "rev": null
+   },
+   "is_relative": false,
+   "level": 0,
+   "type_only": false,
+   "is_from": true,
+   "is_reexport": false,
+   "is_star": false
+  },
+  {
+   "specifier": "crate.db.inner",
+   "names": [
+    "A",
+    "B"
+   ],
+   "alias_of": [],
+   "evidence": {
+    "file": "crates/shop-core/src/orders.rs",
+    "start_line": 2,
+    "end_line": 2,
+    "rev": null
+   },
+   "is_relative": false,
+   "level": 0,
+   "type_only": false,
+   "is_from": true,
+   "is_reexport": false,
+   "is_star": false
+  },
+  {
+   "specifier": "super.Kind",
+   "names": [],
+   "alias_of": [],
+   "evidence": {
+    "file": "crates/shop-core/src/orders.rs",
+    "start_line": 3,
+    "end_line": 3,
+    "rev": null
+   },
+   "is_relative": true,
+   "level": 1,
+   "type_only": false,
+   "is_from": true,
+   "is_reexport": false,
+   "is_star": false
+  },
+  {
+   "specifier": "self.handlers",
+   "names": [],
+   "alias_of": [],
+   "evidence": {
+    "file": "crates/shop-core/src/orders.rs",
+    "start_line": 5,
+    "end_line": 5,
+    "rev": null
+   },
+   "is_relative": true,
+   "level": 0,
+   "type_only": false,
+   "is_from": true,
+   "is_reexport": false,
+   "is_star": false
+  }
+ ],
+ "calls": [
+  {
+   "name": "find",
+   "shape": "self_field",
+   "receiver": "repo",
+   "evidence": {
+    "file": "crates/shop-core/src/orders.rs",
+    "start_line": 24,
+    "end_line": 24,
+    "rev": null
+   },
+   "enclosing": "shop_core.orders.Shop.save",
+   "enclosing_class": "Shop",
+   "first_str_arg": null,
+   "ident_args": [],
+   "first_arg_ident": null,
+   "recv_call": null
+  },
+  {
+   "name": "describe",
+   "shape": "self",
+   "receiver": "self",
+   "evidence": {
+    "file": "crates/shop-core/src/orders.rs",
+    "start_line": 25,
+    "end_line": 25,
+    "rev": null
+   },
+   "enclosing": "shop_core.orders.Shop.save",
+   "enclosing_class": "Shop",
+   "first_str_arg": null,
+   "ident_args": [],
+   "first_arg_ident": null,
+   "recv_call": null
+  },
+  {
+   "name": "new",
+   "shape": "qualified",
+   "receiver": "Shop",
+   "evidence": {
+    "file": "crates/shop-core/src/orders.rs",
+    "start_line": 26,
+    "end_line": 26,
+    "rev": null
+   },
+   "enclosing": "shop_core.orders.Shop.save",
+   "enclosing_class": "Shop",
+   "first_str_arg": null,
+   "ident_args": [],
+   "first_arg_ident": null,
+   "recv_call": null
+  },
+  {
+   "name": "helper",
+   "shape": "bare",
+   "receiver": null,
+   "evidence": {
+    "file": "crates/shop-core/src/orders.rs",
+    "start_line": 27,
+    "end_line": 27,
+    "rev": null
+   },
+   "enclosing": "shop_core.orders.Shop.save",
+   "enclosing_class": "Shop",
+   "first_str_arg": null,
+   "ident_args": [],
+   "first_arg_ident": null,
+   "recv_call": null
+  },
+  {
+   "name": "save",
+   "shape": "qualified",
+   "receiver": "x",
+   "evidence": {
+    "file": "crates/shop-core/src/orders.rs",
+    "start_line": 28,
+    "end_line": 28,
+    "rev": null
+   },
+   "enclosing": "shop_core.orders.Shop.save",
+   "enclosing_class": "Shop",
+   "first_str_arg": null,
+   "ident_args": [],
+   "first_arg_ident": null,
+   "recv_call": null
+  },
+  {
+   "name": "open",
+   "shape": "qualified",
+   "receiver": "Repo",
+   "evidence": {
+    "file": "crates/shop-core/src/orders.rs",
+    "start_line": 36,
+    "end_line": 36,
+    "rev": null
+   },
+   "enclosing": "shop_core.orders.Shop.new",
+   "enclosing_class": "Shop",
+   "first_str_arg": null,
+   "ident_args": [],
+   "first_arg_ident": null,
+   "recv_call": null
+  },
+  {
+   "name": "run",
+   "shape": "bare",
+   "receiver": null,
+   "evidence": {
+    "file": "crates/shop-core/src/orders.rs",
+    "start_line": 45,
+    "end_line": 45,
+    "rev": null
+   },
+   "enclosing": "shop_core.orders.api.serve",
+   "enclosing_class": null,
+   "first_str_arg": null,
+   "ident_args": [],
+   "first_arg_ident": null,
+   "recv_call": null
+  }
+ ],
+ "fields": [
+  {
+   "owner": "Shop",
+   "field": "repo",
+   "type_name": "Repo"
+  },
+  {
+   "owner": "Shop",
+   "field": "cache",
+   "type_name": "HashMap"
+  }
+ ],
+ "reexports": [],
+ "diagnostics": [],
+ "ctor_assigns": [],
+ "namespace": "",
+ "namespaces": [],
+ "functions": [],
+ "risks": []
+}

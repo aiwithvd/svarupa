@@ -1,0 +1,6 @@
+path: src/lib.rs
+---
+use serde::{Deserialize, Serialize};
+use self::models::*;
+use a::b as c;
+mod models;

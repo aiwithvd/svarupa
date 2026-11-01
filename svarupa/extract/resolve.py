@@ -31,6 +31,7 @@ from svarupa.extract.base import (
     FileFacts,
     ImportRef,
     Scorecard,
+    SymbolRef,
     node_id,
     sorted_edges,
     sorted_nodes,
@@ -232,6 +233,10 @@ def _d_fields() -> dict[tuple[str, str, str], str]:
     return {}
 
 
+def _d_extra() -> dict[tuple[str, str], tuple[str, ...]]:
+    return {}
+
+
 @dataclass
 class _Index:
     by_file: dict[str, FileFacts] = field(default_factory=_d_facts)
@@ -244,6 +249,9 @@ class _Index:
     bases_of: dict[str, tuple[str, ...]] = field(default_factory=_d_bases)
     field_types: dict[tuple[str, str, str], str] = field(default_factory=_d_fields)
     files: set[str] = field(default_factory=_s_str)
+    # Bases a class gets from the methods declared for it elsewhere (a Rust
+    # `impl Trait for Type`), keyed by the class's identity.
+    extra_bases: dict[tuple[str, str], tuple[str, ...]] = field(default_factory=_d_extra)
 
 
 class Resolver:
@@ -268,6 +276,7 @@ class Resolver:
         self.diagnostics: list[Diagnostic] = []
         self.idx = self._build_index()
         self.roots = self._source_roots(source_roots)
+        self._attach_foreign_members()
 
     def _source_roots(self, declared: Sequence[str]) -> tuple[str, ...]:
         """Every directory an absolute import could be rooted at.
@@ -338,6 +347,38 @@ class Resolver:
             lst.sort()
         return idx
 
+    def _attach_foreign_members(self) -> None:
+        """Join a method to its class when it is declared in another file.
+
+        A Rust `impl Shop { .. }` can sit in a different file from `struct
+        Shop`, so the method's owner key names a class that is not there. It
+        is joined to the class the receiver name resolves to, and the bases a
+        method carries (the trait of `impl Trait for Shop`) become bases of
+        that class. A method whose class is in its own file is untouched.
+        """
+        idx = self.idx
+        for f in self.facts:
+            for s in f.symbols:
+                own = (f.path, s.qualified_name.rsplit(".", 1)[0])
+                home = self._class_home(f, s, own)
+                if home is None:
+                    continue
+                if home != own:
+                    idx.methods_of.setdefault(home, []).append((f.path, s.qualified_name))
+                known = idx.extra_bases.get(home, ())
+                idx.extra_bases[home] = (*known, *(b for b in s.bases if b not in known))
+
+    def _class_home(
+        self, f: FileFacts, s: SymbolRef, own: tuple[str, str]
+    ) -> tuple[str, str] | None:
+        """The class a method belongs to: its file's own, else the one its
+        receiver name resolves to."""
+        if s.kind != "method" or not s.enclosing_class:
+            return None
+        if own in self.idx.class_by_id:
+            return own
+        return self._resolve_class_name(s.enclosing_class, f.path)
+
     # ------------------------------------------------------------------
 
     def _package_root(self, spec: str, lang: str) -> str:
@@ -388,7 +429,7 @@ class Resolver:
         out = [cls_id]
         sym = self.idx.class_by_id.get(cls_id)
         bases = getattr(sym, "bases", ()) if sym is not None else ()
-        for base in bases:
+        for base in (*bases, *self.idx.extra_bases.get(cls_id, ())):
             resolved = self._resolve_class_name(base, cls_id[0])
             if resolved is not None:
                 out.extend(self._mro_ids(resolved, seen | {cls_id}))
@@ -1091,10 +1132,17 @@ class Resolver:
         self, f: FileFacts, cls: str, field_name: str, name: str
     ) -> list[tuple[str, str]] | None:
         """`name` called on a field of `cls`, through the field's declared type."""
-        type_name = self.idx.field_types.get((f.path, cls, field_name))
+        home = f.path
+        type_name = self.idx.field_types.get((home, cls, field_name))
+        if type_name is None:
+            # The class may be declared in another file than the method
+            # (a Rust `impl`): its fields, and the names they use, are there.
+            found = self._resolve_class_name(cls, f.path)
+            home = found[0] if found is not None else home
+            type_name = self.idx.field_types.get((home, cls, field_name))
         if type_name is None:
             return []
-        owner, ambiguous = self._resolve_class_name_x(type_name, f.path)
+        owner, ambiguous = self._resolve_class_name_x(type_name, home)
         if owner is None:
             # `_resolve_class_name` returns None both for "not in the repo"
             # and for "in the repo twice". Collapsing those into EXTERNAL is

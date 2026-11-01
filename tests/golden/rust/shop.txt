@@ -1,0 +1,49 @@
+path: crates/shop-core/src/orders.rs
+---
+use std::collections::HashMap;
+use crate::db::{Repo, Order as O, inner::{A, B}};
+use super::Kind;
+
+mod handlers;
+
+#[derive(Debug)]
+pub struct Shop {
+    repo: Repo,
+    cache: Arc<Mutex<HashMap<u32, O>>>,
+}
+
+pub enum Status { Open, Closed }
+
+pub trait Store {
+    fn save(&self);
+    fn describe(&self) -> String {
+        format!("store {}", 1)
+    }
+}
+
+impl Store for Shop {
+    fn save(&self) {
+        self.repo.find(1);
+        self.describe();
+        Shop::new();
+        helper();
+        x.save();
+        println!("saved");
+    }
+}
+
+impl Shop {
+    #[inline]
+    pub fn new() -> Shop {
+        Shop { repo: Repo::open() }
+    }
+
+    fn secret(&self) {}
+}
+
+mod api {
+    #[tokio::main]
+    pub async fn serve() {
+        run::<u8>().await;
+    }
+}
