@@ -13,7 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol
 
-from svarupa.extract.base import FileFacts
+from svarupa.extract.base import FileFacts, ImportRef
 
 __all__ = [
     "CSharpNamespaces",
@@ -22,6 +22,7 @@ __all__ = [
     "ModuleContext",
     "ModuleResolver",
     "RustCrates",
+    "reexport_pairs",
 ]
 
 
@@ -38,6 +39,10 @@ class ModuleResolver(Protocol):
     # True when `use a::b;` can import a module `b` (Rust), so `b::f()` and a
     # bare name need module-scope rules.
     names_modules: bool
+    # True when a module can re-export names it imports (Rust `pub use`), so a
+    # lookup in it follows its re-export imports. False: a name is defined in
+    # the package or it is not there.
+    follows_reexports: bool
 
     def targets(self, spec: str, from_file: str, /) -> tuple[str, ...]:
         """Repository files the specifier names, sorted; () when none."""
@@ -74,6 +79,7 @@ class GoModules:
     package_scoped_bare = True
     fields_without_this = False
     names_modules = False
+    follows_reexports = False
 
     def __init__(self, context: ModuleContext) -> None:
         self.modules = tuple(sorted(context.go_modules, key=lambda m: (-len(m[0]), m[0])))
@@ -147,6 +153,7 @@ class JvmPackages:
     package_scoped_bare = False
     fields_without_this = True
     names_modules = False
+    follows_reexports = False
 
     def __init__(self, context: ModuleContext) -> None:
         by_ns: dict[str, list[str]] = {}
@@ -189,6 +196,7 @@ class CSharpNamespaces:
     package_scoped_bare = False
     fields_without_this = True
     names_modules = False
+    follows_reexports = False
 
     def __init__(self, context: ModuleContext) -> None:
         by_ns: dict[str, set[str]] = {}
@@ -235,6 +243,23 @@ class CSharpNamespaces:
             if len(parts) >= 2 and len(head) == 2 and parts[:2] == head:
                 return True
         return False
+
+
+def reexport_pairs(imp: ImportRef) -> tuple[str, list[tuple[str, str]]] | None:
+    """What a non-glob `pub use` exports: the module path to look in and the
+    (exported name, real name) pairs. `use a::{B, C as D}` is `a` with B and D;
+    `use a::B` is `a` with B. A module alias (`use a as b`) names no item."""
+    if imp.is_star:
+        return None
+    if imp.names:
+        taken = set(imp.alias_of.values())
+        pairs = [(a, r) for a, r in imp.alias_of.items()]
+        pairs += [(n, n) for n in imp.names if n not in taken]
+        return imp.specifier, pairs
+    head, _, last = imp.specifier.rpartition(".")
+    if head and not imp.alias_of:
+        return head, [(last, last)]
+    return None
 
 
 _RUST_STD = frozenset({"std", "core", "alloc", "proc_macro", "test"})
@@ -328,6 +353,52 @@ class _RustLayout:
         return None
 
 
+def _widen_declared(crates: RustCrates, facts: tuple[FileFacts, ...]) -> None:
+    """A module declares what it re-exports, so `use crate::model::Item`
+    lands on `model` when `model` has `pub use user::Item`. A name counts
+    only when the module it comes from is in the repository and declares
+    it in turn: a re-export of an external crate adds nothing. Repeats
+    until nothing grows, which also ends a cycle."""
+    declared = crates.layout.declared
+    edges = [
+        (f.path, imp)
+        for f in facts
+        if f.lang == "rust"
+        for imp in f.imports
+        if imp.is_reexport and f.path in crates.layout.where
+    ]
+    grew = True
+    while grew:
+        grew = False
+        for path, imp in edges:
+            have = declared.get(path, frozenset())
+            got = _exported(crates, path, imp)
+            if not got <= have:
+                declared[path] = have | got
+                grew = True
+
+
+def _exported(crates: RustCrates, path: str, imp: ImportRef) -> frozenset[str]:
+    """The names `imp` (a re-export in `path`) adds, as far as known now."""
+    declared = crates.layout.declared
+    if imp.is_star:
+        names: set[str] = set()
+        for t in crates.targets(f"{imp.specifier}.*", path):
+            if t != path:
+                names |= declared.get(t, frozenset())
+        return frozenset(names)
+    step = reexport_pairs(imp)
+    if step is None:
+        return frozenset()
+    spec, pairs = step
+    targets = [t for t in crates.targets(spec, path) if t != path]
+    return frozenset(
+        exported
+        for exported, real in pairs
+        if any(real in declared.get(t, ()) for t in targets)
+    )
+
+
 class RustCrates:
     """Rust: a `use` path names a module, and a module is a file.
 
@@ -355,6 +426,7 @@ class RustCrates:
     fields_without_this = False
     # `use a::b;` can import a module `b`, so `b::f()` looks in `a.b` first.
     names_modules = True
+    follows_reexports = True
 
     def __init__(self, context: ModuleContext) -> None:
         self.deps = frozenset(d.replace("-", "_") for d in context.deps)
@@ -365,6 +437,7 @@ class RustCrates:
         self.layout = _RustLayout(
             context.files, {d for _, d in context.rust_crates}, context.facts
         )
+        _widen_declared(self, context.facts)
 
     def _relative(self, parts: list[str], from_file: str, module_only: bool) -> str | None:
         """`crate.`, `self.` and `super.` paths, from the caller's module."""

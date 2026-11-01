@@ -13,6 +13,7 @@ class TwoFiles:
     top_level_only = True
     package_scoped_bare = False
     fields_without_this = False
+    follows_reexports = False
     names_modules = False
 
     def targets(self, spec: str, _from_file: str, /) -> tuple[str, ...]:
@@ -486,3 +487,54 @@ def test_rust_an_item_fallback_needs_the_file_to_declare_it() -> None:
     assert r.targets("shop_core.Order", "crates/shop-api/src/main.rs") == ()
     assert r.targets("self.Item", "src/handlers/orders.rs") == ("src/handlers/orders.rs",)
     assert r.targets("self.Other", "src/handlers/orders.rs") == ()
+
+
+def test_rust_a_module_declares_what_it_reexports() -> None:
+    def pub(path: str, spec: str, names: tuple[str, ...] = (), **kw: object) -> FileFacts:
+        imp = ImportRef(
+            specifier=spec,
+            names=names,
+            alias_of=kw.get("alias_of", {}),  # type: ignore[arg-type]
+            evidence=ev(path),
+            is_reexport=kw.get("reexport", True),  # type: ignore[arg-type]
+            is_star=bool(kw.get("star", False)),
+        )
+        return FileFacts(path=path, lang="rust", imports=(imp,))
+
+    base = {f.path: f for f in _rust_facts()}
+    facts = {
+        **base,
+        "src/handlers/mod.rs": FileFacts(
+            path="src/handlers/mod.rs",
+            lang="rust",
+            symbols=base["src/handlers/mod.rs"].symbols,
+            imports=(
+                pub(
+                    "src/handlers/mod.rs", "orders", ("make",), alias_of={"build": "make"}
+                ).imports
+                + pub("src/handlers/mod.rs", "serde", ("Serialize",)).imports
+                + pub("src/handlers/mod.rs", "self.orders", reexport=False).imports
+            ),
+        ),
+        "src/db.rs": FileFacts(
+            path="src/db.rs",
+            lang="rust",
+            symbols=base["src/db.rs"].symbols,
+            imports=pub("src/db.rs", "crate.handlers", star=True).imports,
+        ),
+    }
+    r = RustCrates(
+        ModuleContext(
+            files=RUST_FILES,
+            facts=tuple(facts.values()),
+            deps=frozenset({"serde"}),
+            rust_crates=(("shop", ""),),
+        )
+    )
+    declared = r.layout.declared
+    assert "build" in declared["src/handlers/mod.rs"]
+    assert "make" in declared["src/handlers/orders.rs"]
+    assert "Serialize" not in declared["src/handlers/mod.rs"]
+    assert {"Thing", "build"} <= declared["src/db.rs"]
+    assert r.targets("crate.db.build", "src/lib.rs") == ("src/db.rs",)
+    assert r.targets("crate.db.Serialize", "src/lib.rs") == ()

@@ -564,3 +564,139 @@ def test_unresolved_member_receiver_is_one_line() -> None:
     for c in facts.calls:
         assert c.receiver is None or "\n" not in c.receiver
         assert c.receiver is None or "(" not in c.receiver
+
+
+# ----------------------------------------------------------------------
+# pub use re-exports
+
+
+def test_only_pub_and_pub_crate_use_are_reexports() -> None:
+    src = (
+        "pub use a::X;\npub(crate) use b::Y;\nuse c::Z;\npub(super) use d::W;\n"
+        "pub use e::{P, Q as R};\npub use f::*;\n"
+    )
+    got = [(i.specifier, i.is_reexport) for i in parse(src).imports]
+    assert got == [
+        ("a.X", True),
+        ("b.Y", True),
+        ("c.Z", False),
+        ("d.W", False),
+        ("e", True),
+        ("f", True),
+    ]
+
+
+def facade(tmp_path: Path, model: str, caller: str, extra: dict[str, str] | None = None) -> set:
+    write(tmp_path, "src/lib.rs", "mod model;\nmod app;\n")
+    write(tmp_path, "src/model/mod.rs", model)
+    write(tmp_path, "src/model/user.rs", "pub fn create() {}\npub fn list() {}\n")
+    write(tmp_path, "src/app.rs", caller)
+    for rel, text in (extra or {}).items():
+        write(tmp_path, rel, text)
+    return calls_of(tmp_path)
+
+
+RUN = "src/app.rs#app.run"
+CREATE = "src/model/user.rs#model.user.create"
+
+
+def test_a_named_facade_resolves_to_the_definition(tmp_path: Path) -> None:
+    found = facade(
+        tmp_path,
+        "mod user;\npub use user::{create, list};\n",
+        "use crate::model::create;\nuse crate::model;\nfn run() { create(); model::list(); }\n",
+    )
+    assert (RUN, CREATE) in found
+    assert (RUN, "src/model/user.rs#model.user.list") in found
+
+
+def test_a_single_path_facade_and_pub_crate(tmp_path: Path) -> None:
+    found = facade(
+        tmp_path,
+        "mod user;\npub(crate) use user::create;\n",
+        "use crate::model::create;\nfn run() { create(); }\n",
+    )
+    assert (RUN, CREATE) in found
+
+
+def test_a_renamed_facade_resolves_to_the_definition(tmp_path: Path) -> None:
+    found = facade(
+        tmp_path,
+        "mod user;\npub use user::create as make;\n",
+        "use crate::model::make;\nfn run() { make(); }\n",
+    )
+    assert (RUN, CREATE) in found
+
+
+def test_the_old_name_is_not_exported_by_a_rename(tmp_path: Path) -> None:
+    found = facade(
+        tmp_path,
+        "mod user;\npub use user::create as make;\n",
+        "use crate::model::create;\nfn run() { create(); }\n",
+    )
+    assert not [c for c in found if c[0] == RUN]
+
+
+def test_a_glob_facade_resolves_to_the_definition(tmp_path: Path) -> None:
+    found = facade(
+        tmp_path,
+        "mod user;\npub use user::*;\n",
+        "use crate::model::create;\nuse crate::model::*;\nfn run() { create(); list(); }\n",
+    )
+    assert (RUN, CREATE) in found
+    assert (RUN, "src/model/user.rs#model.user.list") in found
+
+
+def test_a_two_level_facade_chain_resolves(tmp_path: Path) -> None:
+    found = facade(
+        tmp_path,
+        "mod user;\npub use user::*;\n",
+        "use crate::create;\nfn run() { create(); }\n",
+        {"src/lib.rs": "mod model;\nmod app;\npub use model::create;\n"},
+    )
+    assert (RUN, CREATE) in found
+
+
+def test_an_external_reexport_stays_external(tmp_path: Path) -> None:
+    write(tmp_path, "Cargo.toml", '[package]\nname = "shop"\n[dependencies]\nserde = "1"\n')
+    found = facade(
+        tmp_path,
+        "pub use serde::Serialize;\n",
+        "use crate::model::Serialize;\nfn run() { Serialize(); }\n",
+        {"src/other.rs": "pub fn Serialize() {}\n"},
+    )
+    assert not [c for c in found if c[0] == RUN]
+
+
+def test_a_reexport_cycle_terminates_and_still_resolves(tmp_path: Path) -> None:
+    found = facade(
+        tmp_path,
+        "pub use crate::other::*;\n",
+        "use crate::model::create;\nuse crate::model::missing;\n"
+        "fn run() { create(); missing(); }\n",
+        {"src/other.rs": "pub use crate::model::*;\npub use crate::model::user::*;\n"},
+    )
+    assert not [c for c in found if c[0] == RUN and c[1].endswith("missing")]
+
+
+def test_a_cycle_between_two_globs_finds_the_real_definition(tmp_path: Path) -> None:
+    write(tmp_path, "src/lib.rs", "mod a;\nmod b;\nmod app;\n")
+    write(tmp_path, "src/a.rs", "pub use crate::b::*;\n")
+    write(tmp_path, "src/b.rs", "pub use crate::a::*;\npub fn real() {}\n")
+    write(
+        tmp_path,
+        "src/app.rs",
+        "use crate::a::real;\nuse crate::a::nope;\nfn run() { real(); nope(); }\n",
+    )
+    found = calls_of(tmp_path)
+    assert (RUN, "src/b.rs#b.real") in found
+    assert not [c for c in found if c[1].endswith("nope")]
+
+
+def test_a_plain_use_does_not_reexport(tmp_path: Path) -> None:
+    found = facade(
+        tmp_path,
+        "mod user;\nuse user::create;\npub(super) use user::list;\n",
+        "use crate::model::create;\nuse crate::model::list;\nfn run() { create(); list(); }\n",
+    )
+    assert not [c for c in found if c[0] == RUN]

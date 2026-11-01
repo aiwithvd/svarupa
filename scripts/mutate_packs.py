@@ -40,7 +40,9 @@ Each entry breaks one promise of the walker; a test must go red:
 * `std` is external in Rust;
 * the Rust `async` marker is found under `function_modifiers`;
 * a `sqlx::query!` macro is not a raw sink;
-* `mod.rs` names its directory.
+* `mod.rs` names its directory;
+* `pub use` re-exports in Rust;
+* a plain `use` does not re-export in Rust.
 """
 
 from __future__ import annotations
@@ -419,6 +421,18 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
         "svarupa/extract/packs/rust.py",
         '    if parts and parts[-1] == "mod":\n        parts = parts[:-1]\n',
         "",
+    ),
+    (
+        "pub use no longer re-exports in rust",
+        "svarupa/extract/packs/rust.py",
+        "refs = (replace(r, is_reexport=True) for r in refs)",
+        "refs = (r for r in refs)",
+    ),
+    (
+        "a plain use re-exports in rust",
+        "svarupa/extract/packs/rust.py",
+        'return vis is not None and "".join',
+        'return vis is None or "".join',
     ),
 ]
 

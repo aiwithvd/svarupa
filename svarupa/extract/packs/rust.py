@@ -364,13 +364,21 @@ def _in_module(ref: ImportRef, inline: list[str]) -> ImportRef:
     return _ref(spec, ref.names, dict(ref.alias_of), ref.evidence, ref.is_star)
 
 
+def _reexports(node: TSNode) -> bool:
+    """`pub use` and `pub(crate) use` put the names in the module's own scope
+    for its callers. A plain `use` and `pub(super)` or `pub(in ..)` do not."""
+    vis = next((c for c in node.children if c.type == "visibility_modifier"), None)
+    return vis is not None and "".join(_text(vis).split()) in ("pub", "pub(crate)")
+
+
 def use_declaration(ctx: Ctx, node: TSNode, _frame: Frame, _depth: int) -> None:
     arg = node.child_by_field_name("argument")
     if arg is not None:
         inline = _inline_mods(ctx)
-        ctx.imports.extend(
-            _in_module(r, inline) for r in _refs(arg, "", ctx.node_evidence(node))
-        )
+        refs = (_in_module(r, inline) for r in _refs(arg, "", ctx.node_evidence(node)))
+        if _reexports(node) and not inline:
+            refs = (replace(r, is_reexport=True) for r in refs)
+        ctx.imports.extend(refs)
 
 
 def extern_crate(ctx: Ctx, node: TSNode, _frame: Frame, _depth: int) -> None:
