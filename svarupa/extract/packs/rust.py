@@ -13,6 +13,7 @@ methods of a trait or of a trait impl are public without saying so.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from dataclasses import replace
 
@@ -34,6 +35,9 @@ from svarupa.extract.packs.model import (
     Maturity,
     MetricsSpec,
     Pack,
+    RiskSpec,
+    Sink,
+    Unsafe,
 )
 from svarupa.extract.packs.modules import RustCrates
 from svarupa.extract.packs.walker import Ctx, Frame
@@ -492,6 +496,169 @@ _METHOD = Define(
     bases=impl_trait,
 )
 
+_SHELLS = frozenset({"sh", "bash", "cmd"})
+_MAX_CHAIN = 40
+
+
+def _first_arg(call: TSNode) -> TSNode | None:
+    args = call.child_by_field_name("arguments")
+    return args.named_children[0] if args is not None and args.named_children else None
+
+
+def _literal_text(node: TSNode | None) -> str | None:
+    if node is None or node.type != "string_literal":
+        return None
+    return "".join(_text(c) for c in node.named_children if c.type == "string_content")
+
+
+_NAMES = frozenset({"identifier", "self", "scoped_identifier", "field_identifier"})
+_PASS_THROUGH = frozenset(
+    {"await_expression", "try_expression", "parenthesized_expression", "reference_expression"}
+)
+
+
+def _call_root(ctx: Ctx, node: TSNode, depth: int) -> str | None:
+    """A call in the middle of a chain is rooted in its own callee."""
+    callee = _callee_at(ctx, node, depth)
+    is_command = callee is not None and re.search(r"(?:^|::)Command::new$", callee)
+    if is_command and _literal_text(_first_arg(node)) in _SHELLS:
+        return "ShellCommand"
+    return callee
+
+
+def _receiver(ctx: Ctx, node: TSNode, depth: int) -> str | None:
+    """The text a method chain is rooted in: `sqlx::query`, `self.pool`.
+
+    A call is its own callee, so `sqlx::query(q).bind(x)` is rooted in
+    `sqlx::query.bind`. `Command::new("sh")` is rooted in `ShellCommand`: the
+    program is a literal shell, which makes every later `.arg` a shell string.
+    """
+    t = node.type
+    if depth > _MAX_CHAIN:
+        return None
+    if t in _NAMES:
+        return _text(node)
+    if t == "call_expression":
+        return _call_root(ctx, node, depth + 1)
+    if t == "macro_invocation":
+        return _macro_name(node)
+    if t in _PASS_THROUGH and node.named_children:
+        return _receiver(ctx, node.named_children[-1], depth + 1)
+    return _field_root(ctx, node, depth + 1) if t == "field_expression" else None
+
+
+def _field_root(ctx: Ctx, node: TSNode, depth: int) -> str | None:
+    value = node.child_by_field_name("value")
+    field = node.child_by_field_name("field")
+    base = _receiver(ctx, value, depth) if value is not None else None
+    return f"{base}.{_text(field)}" if base and field is not None else None
+
+
+def _macro_name(node: TSNode) -> str | None:
+    name = node.child_by_field_name("macro")
+    return f"{_text(name)}!" if name is not None else None
+
+
+def _callee_at(ctx: Ctx, node: TSNode, depth: int) -> str | None:
+    if node.type == "macro_invocation":
+        return _macro_name(node)
+    function = node.child_by_field_name("function")
+    if function is not None and function.type == "generic_function":
+        function = function.child_by_field_name("function")  # `query_as::<_, U>`
+    if function is None:
+        return None
+    if function.type in ("identifier", "scoped_identifier"):
+        return _text(function)
+    if function.type == "field_expression":
+        field = function.child_by_field_name("field")
+        value = function.child_by_field_name("value")
+        if field is None or value is None:
+            return None
+        base = _receiver(ctx, value, depth)
+        return f"{base}.{_text(field)}" if base else f".{_text(field)}"
+    return None
+
+
+def risk_callee(ctx: Ctx, node: TSNode) -> str | None:
+    """`sqlx::query`, `conn.execute`, `sqlx::query.bind.fetch_all` for a chain
+    rooted in a call, `format!` for a macro; None for anything else."""
+    return _callee_at(ctx, node, 0)
+
+
+def _p(pattern: str) -> re.Pattern[str]:
+    return re.compile(pattern, re.DOTALL)
+
+
+_CALL = frozenset({"call_expression"})
+_PATH = frozenset({"scoped_identifier"})
+# A database receiver: `conn`, `self.db`, `read_conn`.
+_CONN = r"(?:conn|connection|client|tx|db|pool|\w*_conn)"
+_SQLX = r"(?:(?:\w+::)*sqlx::)?(?:query|query_as|query_scalar)!?"
+# A diesel chain starts at a table or `sql_query`: `users::table.filter.load`.
+_DIESEL = r"(?:(?:\w+::)*table|(?:\w+::)*sql_query)"
+
+# fmt: off
+RISKS = RiskSpec(
+    call_types=frozenset({"call_expression", "macro_invocation"}),
+    callee=risk_callee,
+    string_types=frozenset({"string_literal", "raw_string_literal"}),
+    interpolations=(),
+    concat=(("binary_expression", frozenset({"+"})),),
+    # Rust has no `"x".format(..)`; `format!` is handled by `format_macros`.
+    format_callee=re.compile(r"(?!)"),
+    format_macros=frozenset({"format!", "std::format!"}),
+    string_ctors=re.compile(r"^String::from$|\.(?:to_string|to_owned)$"),
+    appends=re.compile(r"\.push_str$"),
+    assigns=(
+        ("let_declaration", "pattern", "value"),
+        ("assignment_expression", "left", "right"),
+        ("compound_assignment_expr", "left", "right"),
+    ),
+    unwrap=frozenset({"parenthesized_expression", "reference_expression", "await_expression", "try_expression"}),
+    sinks=(
+        # `sqlx::query!` and `query_as!` are macros checked at compile time: never sinks.
+        Sink("sql", re.compile(r"^" + _SQLX.removesuffix("!?") + r"$")),
+        Sink("sql", re.compile(r"(?:^|::)sql_query$")),
+        Sink("sql", re.compile(r"(?:^|\.)" + _CONN + r"\.(?:execute|query|query_row|prepare|batch_execute)$")),
+        # The program is built, or a built `.arg` follows a literal shell.
+        Sink("shell", re.compile(r"(?:^|::)Command::new$")),
+        Sink("shell", re.compile(r"^ShellCommand(?:\.\w+)*\.args?$")),
+    ),
+    unsafe=(
+        Unsafe("tls-verify-off", "certificate validation off", _CALL, _p(r".*danger_accept_invalid_(?:certs|hostnames)\(\s*true\s*\)")),
+        Unsafe("weak-hash", "MD5 or SHA-1", _CALL, _p(r"(?:[\w:]*::)?md5::compute\(.*")),
+        Unsafe("weak-hash", "MD5 or SHA-1", _CALL, _p(r"(?:[\w:]*::)?(?:Md5|Sha1)::new\(\s*\)")),
+        Unsafe("weak-hash", "MD5 or SHA-1", _PATH, _p(r"(?:\w+::)*sha1::Sha1")),
+        Unsafe("cors-any-origin", "CORS allows any origin", _CALL, _p(r"(?:[\w:]*::)?(?:CorsLayer::(?:very_)?permissive|Cors::permissive)\(\s*\)")),
+        Unsafe("cors-any-origin", "CORS allows any origin", _CALL, _p(r".*\.allow_origin\(\s*(?:(?:[\w:]*::)?Any|(?:[\w:]*::)?AllowOrigin::any\(\s*\))\s*\)")),
+        Unsafe("cors-any-origin", "CORS allows any origin", _CALL, _p(r".*\.allow_any_origin\(\s*\)")),
+    ),
+    # No auth_markers: routes are not extracted for Rust.
+    loops=(
+        ("for_expression", "body"),
+        ("while_expression", "body"),
+        ("loop_expression", "body"),
+    ),
+    loop_callee=re.compile(r"\.(?:for_each|map|try_for_each)$"),
+    datastore_calls=re.compile(
+        r"^" + _SQLX + r"(?:\.\w+)*\.(?:fetch_one|fetch_all|fetch_optional|fetch|execute)$"
+        r"|(?:^|\.)" + _DIESEL + r"(?:\.\w+)*\.(?:load|get_result|get_results|first|execute)$"
+        r"|(?:^|\.)" + _CONN + r"\.(?:execute|query|query_row|fetch_one|fetch_all|fetch_optional|fetch)$"
+    ),
+    async_marker="async",
+    async_holder="function_modifiers",
+    blocking=re.compile(
+        r"^(?:std::)?thread::sleep$"
+        r"|^(?:std::)?fs::(?:read|read_to_string|write|read_dir|copy|remove_file)$"
+        r"|\.blocking_(?:send|recv|lock|read|write)$"
+        r"|reqwest::blocking::"
+    ),
+    # No catch rule: Rust has no catch.
+    quiet=frozenset({"line_comment", "block_comment"}),
+)
+# fmt: on
+
+
 PACK = Pack(
     lang="rust",
     grammar=Grammar(
@@ -502,6 +669,7 @@ PACK = Pack(
     ),
     maturity=Maturity.EXPERIMENTAL,
     metrics=METRICS,
+    risks=RISKS,
     qualified_prefix=qualified_prefix,
     modules=RustCrates,
     decorator=decorator,

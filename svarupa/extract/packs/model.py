@@ -218,6 +218,16 @@ class RiskSpec:
     assigns: tuple[tuple[str, str, str], ...]
     # Wrappers whose last named child is the value: (x), await x, kw=x.
     unwrap: frozenset[str] = frozenset()
+    # Macros that format a string (Rust `format!`), by the callee name the pack
+    # gives them. Built only with an argument after the format string, or a
+    # `{name}` capture in it: `format!("select 1")` is a literal.
+    format_macros: frozenset[str] = frozenset()
+    # Calls that make a string out of a literal (`"a".to_string()`): in a join
+    # they are a string part, not a runtime part.
+    string_ctors: re.Pattern[str] | None = None
+    # A call that appends to its receiver (`sql.push_str(x)`): a dynamic
+    # argument makes the receiver variable built.
+    appends: re.Pattern[str] | None = None
     sinks: tuple[Sink, ...] = ()
     unsafe: tuple[Unsafe, ...] = ()
     auth_markers: frozenset[str] = frozenset()

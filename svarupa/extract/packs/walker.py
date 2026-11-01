@@ -59,6 +59,8 @@ __all__ = ["Ctx", "Frame", "PackExtractor", "language_for"]
 
 _IDENT = re.compile(r"[A-Za-z_$][\w$]*")
 _MAX_NODE = 2000  # bytes: longer nodes are never an unsafe one-liner
+# `{name}` inside a format string; `{{` is an escaped brace.
+_CAPTURE = re.compile(r"(?<!\{)\{[A-Za-z_]")
 _ARGS = re.compile(r"\([^()]*\)")
 
 
@@ -363,7 +365,7 @@ class Ctx:
         if holder is None:
             return any(not c.is_named and c.type == marker for c in fn.children)
         word = marker.encode()
-        return any(c.type == holder and c.text == word for c in fn.children)
+        return any(c.type == holder and c.text and word in c.text.split() for c in fn.children)
 
     def _risk_node(
         self,
@@ -394,6 +396,7 @@ class Ctx:
         if t in spec.call_types:
             callee = spec.callee(self, node)
             args = node.child_by_field_name("arguments")
+            self._append(callee, args, spec, built)
             if callee is not None and args is not None:
                 for sink in spec.sinks:
                     if not sink.callee.search(callee):
@@ -421,6 +424,24 @@ class Ctx:
                             "unsafe", rule.check, rule.label, self.node_evidence(node), scope
                         )
                     )
+
+    def _append(
+        self, callee: str | None, args: TSNode | None, spec: RiskSpec, built: set[str]
+    ) -> None:
+        """`sql.push_str(&x)`: a dynamic argument makes `sql` built."""
+        if callee is None or args is None or spec.appends is None:
+            return
+        recv, dot, _ = callee.rpartition(".")
+        if not dot or not _IDENT.fullmatch(recv) or not spec.appends.search(callee):
+            return
+        first = args.named_children[0] if args.named_children else None
+        if first is not None and not self._literal(first, spec):
+            built.add(recv)
+
+    def _literal(self, node: TSNode, spec: RiskSpec) -> bool:
+        while node.type in spec.unwrap and node.named_children:
+            node = node.named_children[-1]
+        return node.type in spec.string_types and not self._built(node, spec, set())
 
     def _argument_list(self, fn: TSNode, spec: RiskSpec) -> TSNode | None:
         """The argument list a function is passed in, past the pack's wrapper."""
@@ -517,7 +538,14 @@ class Ctx:
             return True, self._built(node, spec, built)
         if self._built(node, spec, built):
             return True, True
-        return False, True
+        return (True, False) if self._makes_string(node, spec) else (False, True)
+
+    def _makes_string(self, node: TSNode, spec: RiskSpec) -> bool:
+        """A call that turns a literal into a string (`"a".to_string()`)."""
+        if spec.string_ctors is None or node.type not in spec.call_types:
+            return False
+        callee = spec.callee(self, node)
+        return callee is not None and spec.string_ctors.search(callee) is not None
 
     def _built(self, node: TSNode, spec: RiskSpec, built: set[str]) -> bool:
         """Whether this expression is a string built at runtime."""
@@ -537,9 +565,24 @@ class Ctx:
             return has_string and dynamic
         if t in spec.call_types:
             callee = spec.callee(self, node)
+            if callee is not None and callee in spec.format_macros:
+                return self._interpolates(node, spec)
             return callee is not None and spec.format_callee.search(callee) is not None
         if t == "identifier":
             return self.text(node) in built
+        return False
+
+    def _interpolates(self, macro: TSNode, spec: RiskSpec) -> bool:
+        """A format macro with an argument after the format string, or a
+        `{name}` capture inside it."""
+        tokens = macro.named_children[-1] if macro.named_children else None
+        if tokens is None:
+            return False
+        for c in tokens.named_children:
+            if c.type not in spec.string_types and c.type not in spec.quiet:
+                return True
+            if c.type in spec.string_types and _CAPTURE.search(self.text(c)):
+                return True
         return False
 
     def run(self, tree: Tree) -> FileFacts:
