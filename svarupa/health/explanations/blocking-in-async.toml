@@ -40,3 +40,17 @@ async Task RefreshAsync(string path)
     var text = await File.ReadAllTextAsync(path);
 }
 '''
+
+[example.rust]
+before = '''
+async fn refresh(path: &str) -> std::io::Result<String> {
+    std::thread::sleep(Duration::from_secs(1));
+    std::fs::read_to_string(path)
+}
+'''
+after = '''
+async fn refresh(path: &str) -> std::io::Result<String> {
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    tokio::fs::read_to_string(path).await
+}
+'''

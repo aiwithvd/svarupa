@@ -104,3 +104,33 @@ class OrderService
     private readonly Payments _payments;
 }
 '''
+
+[example.rust]
+before = '''
+struct OrderService;
+
+impl OrderService {
+    fn price(&self, o: &Order) -> Money { o.total() }
+    fn charge_card(&self, o: &Order) {}
+    fn refund(&self, o: &Order) {}
+    fn send_email(&self, o: &Order) {}
+}
+'''
+after = '''
+struct Pricing;
+struct Payments;
+
+impl Pricing {
+    fn price(&self, o: &Order) -> Money { o.total() }
+}
+
+impl Payments {
+    fn charge_card(&self, o: &Order) {}
+    fn refund(&self, o: &Order) {}
+}
+
+struct OrderService {
+    pricing: Pricing,
+    payments: Payments,
+}
+'''

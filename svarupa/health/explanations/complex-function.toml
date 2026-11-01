@@ -123,3 +123,29 @@ decimal Shipping(Order o)
     return Rates.GetValueOrDefault(o.Country, 30);
 }
 '''
+
+[example.rust]
+before = '''
+fn shipping(o: &Order) -> u32 {
+    if o.country == "US" {
+        if o.weight > 10 {
+            return 20;
+        }
+        10
+    } else if o.country == "CA" {
+        15
+    } else {
+        30
+    }
+}
+'''
+after = '''
+fn shipping(o: &Order) -> u32 {
+    match (o.country.as_str(), o.weight > 10) {
+        ("US", true) => 20,
+        ("US", false) => 10,
+        ("CA", _) => 15,
+        _ => 30,
+    }
+}
+'''

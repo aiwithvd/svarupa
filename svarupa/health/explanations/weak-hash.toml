@@ -43,3 +43,11 @@ after = '''
 using var sha = SHA256.Create();
 var hash = sha.ComputeHash(data);
 '''
+
+[example.rust]
+before = '''
+let hash = Md5::digest(data);
+'''
+after = '''
+let hash = Sha256::digest(data);
+'''

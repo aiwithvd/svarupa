@@ -28,6 +28,7 @@ def test_an_explanation_has_text_and_examples() -> None:
             "go",
             "java",
             "python",
+            "rust",
             "typescript",
         ]
     )
@@ -77,8 +78,9 @@ def test_required_languages_follow_the_packs() -> None:
         "go",
         "java",
         "csharp",
+        "rust",
     }
-    assert required_languages("blocking-in-async") == {"python", "typescript", "csharp"}
+    assert required_languages("blocking-in-async") == {"python", "typescript", "csharp", "rust"}
     assert required_languages("code-injection") == {"python", "typescript", "java", "csharp"}
     assert required_languages("debug-enabled") == {"python", "go"}
     assert required_languages("module-cycle") == frozenset()
@@ -95,7 +97,7 @@ def test_example_text_is_dedented_and_trimmed() -> None:
         },
     )
     assert dict(e.examples)["go"] == Example("a\n  b", "c")
-    assert explain.LANGS == ("python", "typescript", "go", "java", "csharp")
+    assert explain.LANGS == ("python", "typescript", "go", "java", "csharp", "rust")
 
 
 from svarupa.health import CATALOG  # noqa: E402
@@ -224,3 +226,39 @@ def test_csharp_examples_fire_before_and_stay_quiet_after() -> None:
 
 def test_csharp_has_no_example_for_endpoint_without_auth() -> None:
     assert example_for("endpoint-without-auth", "csharp") is None
+
+
+# What each risk check records when its Rust example runs through the extractor.
+_RS_FACTS = {
+    "sql-injection": ("sink-built", "sql"),
+    "command-injection": ("sink-built", "shell"),
+    "tls-verify-off": ("unsafe", "tls-verify-off"),
+    "weak-hash": ("unsafe", "weak-hash"),
+    "cors-any-origin": ("unsafe", "cors-any-origin"),
+    "query-in-loop": ("in-loop", "query"),
+    "blocking-in-async": ("blocking-async", "io"),
+}
+
+
+def _rust_facts(code: str) -> set[tuple[str, str]]:
+    from svarupa.extract.packs import extractor
+
+    # A snippet that declares its own function goes as is; the rest in an async function.
+    src = code if "fn " in code else "async fn f() {\n" + code + "\n}\n"
+    return {(r.kind, r.tag) for r in extractor("rust").parse("a.rs", src.encode()).risks}
+
+
+def test_rust_examples_fire_before_and_stay_quiet_after() -> None:
+    for check, fact in _RS_FACTS.items():
+        ex = example_for(check, "rust")
+        assert ex is not None, check
+        assert fact in _rust_facts(ex.before), check
+        assert _rust_facts(ex.after) == set(), check
+
+
+@pytest.mark.parametrize(
+    "check",
+    ["code-injection", "unsafe-deserialize", "swallowed-error", "endpoint-without-auth"],
+)
+def test_rust_has_no_example_for_checks_its_pack_cannot_fire(check: str) -> None:
+    assert example_for(check, "rust") is None

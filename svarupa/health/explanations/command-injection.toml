@@ -44,3 +44,17 @@ psi.ArgumentList.Add(filename);
 psi.ArgumentList.Add("out.png");
 Process.Start(psi);
 '''
+
+[example.rust]
+before = '''
+Command::new("sh")
+    .arg("-c")
+    .arg(format!("convert {} out.png", filename))
+    .status()?;
+'''
+after = '''
+Command::new("convert")
+    .arg(filename)
+    .arg("out.png")
+    .status()?;
+'''
