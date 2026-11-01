@@ -36,7 +36,7 @@ from svarupa.extract.base import (
     sorted_edges,
     sorted_nodes,
 )
-from svarupa.extract.packs.modules import ModuleResolver
+from svarupa.extract.packs.modules import ModuleResolver, reexport_pairs
 from svarupa.model import (
     Confidence,
     Edge,
@@ -702,8 +702,11 @@ class Resolver:
             # Package languages have no re-exports: a name is defined in the
             # package or it is not there. Chasing this file's own imports
             # would invent a definition (Java `import c.*` inside a.Util does
-            # not put c's names into a.Util).
-            return None
+            # not put c's names into a.Util). A language that opts in follows
+            # only the imports it marks as re-exports.
+            if not module.follows_reexports:
+                return None
+            return self._follow_marked(facts, file, name, depth)
 
         for imp in facts.imports:
             # F8: `export * from './x'` names nothing, so the only way to chase
@@ -728,6 +731,32 @@ class Resolver:
             ):
                 return found
         return None
+
+    def _follow_marked(
+        self, facts: FileFacts, file: str, name: str, depth: int
+    ) -> tuple[str, str] | None:
+        """Chase the imports the language marks as re-exports (Rust `pub use`),
+        for `name`."""
+        for imp in facts.imports:
+            step = self._marked_step(imp, name) if imp.is_reexport else None
+            if step is None:
+                continue
+            spec, real = step
+            for target in self._resolve_targets(spec, file, imp.level, facts.lang):
+                if target != file and (found := self._follow_reexport(target, real, depth + 1)):
+                    return found
+        return None
+
+    @staticmethod
+    def _marked_step(imp: ImportRef, name: str) -> tuple[str, str] | None:
+        """Where a re-export sends `name`: the module path and the real name.
+        A glob searches its module; a list or a single path names what it
+        exports, under its alias when it has one."""
+        if imp.is_star:
+            return f"{imp.specifier}.*", name
+        step = reexport_pairs(imp)
+        real = next((r for e, r in step[1] if e == name), None) if step else None
+        return (step[0], real) if step and real is not None else None
 
     # ------------------------------------------------------------------
 

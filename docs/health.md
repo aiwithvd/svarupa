@@ -169,17 +169,17 @@ The Python, TypeScript, Go, Java and C# packs are stable: each passed the
 benchmark. The JavaScript and Rust packs are experimental. A pack is stable
 only when two of its benchmark repositories reach 90% recall with no false
 fact. The benchmark corpus has 15 repositories. The two Rust repositories
-score 91% (rust-web-app) and 63% (zero-to-production), and no probe fired, so
+score 96% (rust-web-app) and 77% (zero-to-production), and no probe fired, so
 Rust is not stable yet. These gaps are known and are not guessed around.
 
 **Rust**
 
-- `pub use` re-exports are not followed, so a call through a facade module
-  stays unresolved.
 - A call on a value that is typed only by a function parameter is not
   resolved. This is true for every language, not only Rust.
 - A call through a module path with several segments, such as
   `web::routes::f()`, is not resolved.
+- A `pub use` inside an inline `mod { }` block is not followed. A `pub use`
+  at the top of a module file is.
 - Each file under `tests/` is its own crate, so its `mod` and `crate::` paths
   do not resolve.
 - Macros are not calls, and `macro_rules!` names are not symbols.
