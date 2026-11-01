@@ -35,6 +35,9 @@ class ModuleResolver(Protocol):
     # True when `field.m()` without `this.` is a call on the class's field
     # (Java); languages that require `this.` leave it False.
     fields_without_this: bool
+    # True when `use a::b;` can import a module `b` (Rust), so `b::f()` and a
+    # bare name need module-scope rules.
+    names_modules: bool
 
     def targets(self, spec: str, from_file: str, /) -> tuple[str, ...]:
         """Repository files the specifier names, sorted; () when none."""
@@ -70,6 +73,7 @@ class GoModules:
     top_level_only = True
     package_scoped_bare = True
     fields_without_this = False
+    names_modules = False
 
     def __init__(self, context: ModuleContext) -> None:
         self.modules = tuple(sorted(context.go_modules, key=lambda m: (-len(m[0]), m[0])))
@@ -142,6 +146,7 @@ class JvmPackages:
     top_level_only = False
     package_scoped_bare = False
     fields_without_this = True
+    names_modules = False
 
     def __init__(self, context: ModuleContext) -> None:
         by_ns: dict[str, list[str]] = {}
@@ -183,6 +188,7 @@ class CSharpNamespaces:
     top_level_only = False
     package_scoped_bare = False
     fields_without_this = True
+    names_modules = False
 
     def __init__(self, context: ModuleContext) -> None:
         by_ns: dict[str, set[str]] = {}

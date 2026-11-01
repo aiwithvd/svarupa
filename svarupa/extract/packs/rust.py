@@ -368,7 +368,9 @@ def use_declaration(ctx: Ctx, node: TSNode, _frame: Frame, _depth: int) -> None:
     arg = node.child_by_field_name("argument")
     if arg is not None:
         inline = _inline_mods(ctx)
-        ctx.imports.extend(_in_module(r, inline) for r in _refs(arg, "", ctx.node_evidence(node)))
+        ctx.imports.extend(
+            _in_module(r, inline) for r in _refs(arg, "", ctx.node_evidence(node))
+        )
 
 
 def extern_crate(ctx: Ctx, node: TSNode, _frame: Frame, _depth: int) -> None:
@@ -505,6 +507,32 @@ def _wildcard_arm(node: TSNode) -> bool:
     return pattern is not None and [c.type for c in pattern.children] == ["_"]
 
 
+_TEST_ATTR = re.compile(r"^#\[\s*(?:\w+::)*(?:test|rstest)\b")
+_CFG_TEST = re.compile(r"^#\[\s*cfg\(\s*test\s*\)\s*\]")
+
+
+def _attributes(node: TSNode) -> list[str]:
+    """The text of the attributes written before an item."""
+    out: list[str] = []
+    prev = node.prev_named_sibling
+    while prev is not None and (prev.type == "attribute_item" or prev.type in _COMMENTS):
+        if prev.type == "attribute_item":
+            out.append(_text(prev))
+        prev = prev.prev_named_sibling
+    return out
+
+
+def _is_test(node: TSNode) -> bool:
+    """A `#[cfg(test)]` item, or a function marked `#[test]`, `#[tokio::test]`
+    or `#[rstest]`: unit tests live in the source file, not in a test file."""
+    if node.type not in ("function_item", "mod_item", "impl_item"):
+        return False
+    attrs = _attributes(node)
+    if any(_CFG_TEST.match(a) for a in attrs):
+        return True
+    return node.type == "function_item" and any(_TEST_ATTR.match(a) for a in attrs)
+
+
 # `?` is error propagation with no branch the reader writes, so it is not
 # counted. `if let` and `while let` count once, as the `if` or `while`. An
 # else-if is an `if_expression` under an `else_clause`: no extra nesting.
@@ -529,6 +557,7 @@ METRICS = MetricsSpec(
     if_types=frozenset({"if_expression"}),
     skips_branch=_wildcard_arm,
     name_of=_function_name,
+    is_test=_is_test,
 )
 
 _METHOD = Define(
@@ -636,7 +665,7 @@ _TYPE = frozenset({"generic_type"})
 # A database receiver: `conn`, `self.db`, `read_conn`.
 _CONN = r"(?:conn|connection|client|tx|db|pool|\w*_conn)"
 _SQLX_NAME = r"(?:(?:\w+::)*sqlx::)?(?:query|query_as|query_scalar)"
-_SQLX = _SQLX_NAME + "!?"  # the macro form roots a chain, but is never a sink
+_SQLX = _SQLX_NAME + "!?"  # the macro form roots a chain
 # A diesel chain starts at a table or `sql_query`: `users::table.filter.load`.
 _DIESEL = r"(?:(?:\w+::)*table|(?:\w+::)*sql_query)"
 
@@ -664,7 +693,10 @@ RISKS = RiskSpec(
     ),
     unwrap=frozenset({"parenthesized_expression", "reference_expression", "await_expression", "try_expression"}),
     sinks=(
-        # `sqlx::query!` and `query_as!` are macros checked at compile time: never sinks.
+        # `sqlx::query!` and `query_as!` are macros checked at compile time. A
+        # macro is never a sink because it has no `arguments` field, so the
+        # walker never reads its argument. Excluding `!` in `_SQLX_NAME` is a
+        # second guard.
         Sink("sql", re.compile(r"^" + _SQLX_NAME + r"$")),
         Sink("sql", re.compile(r"(?:^|::)sql_query$")),
         Sink("sql", re.compile(r"(?:^|\.)" + _CONN + r"\.(?:execute|query|query_row|prepare|batch_execute)$")),

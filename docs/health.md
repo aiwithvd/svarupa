@@ -101,8 +101,9 @@ the exception, see below).
 How each one decides:
 
 - **Built strings.** A string is built when it uses concatenation, an
-  f-string or template literal, `%`, `.format`, `fmt.Sprintf` or
-  `String.format`, inline or through a variable assigned that way earlier
+  f-string or template literal, `%`, `.format`, `fmt.Sprintf`,
+  `String.format`, or in Rust `format!`, `push_str` onto a variable and
+  `"a".to_string() + x`, inline or through a variable assigned that way earlier
   in the same function. Reassigning the variable to a literal clears it.
   A parameterized query (`execute("... %s", (x,))`) is never flagged. There
   is no taint tracking across functions.
@@ -139,10 +140,11 @@ How each one decides:
 How each one decides:
 
 - **Loops.** Only the loop body counts: `for u in User.objects.all():` runs
-  one query. A function passed to `forEach`, `map` or `flatMap` runs once
-  per item. A query is a call on a database client, ORM model or
-  repository (`cursor.execute`, `User.objects.get`, `prisma.user.findMany`,
-  `userRepository.findById`, `db.QueryRow`).
+  one query. A function passed to `forEach`, `map` or `flatMap` (in Rust
+  `for_each`, `map` or `try_for_each`) runs once per item. A query is a call
+  on a database client, ORM model or repository (`cursor.execute`,
+  `User.objects.get`, `prisma.user.findMany`, `userRepository.findById`,
+  `db.QueryRow`, `sqlx::query(..).fetch_one`, `users::table.load`).
 - **Async.** A function marked `async` (Python, JavaScript, TypeScript, C#, Rust). A
   function defined inside it is judged on its own.
 - **Shared datastore.** Only services built from this repository count, so
@@ -188,8 +190,13 @@ Rust is not stable yet. These gaps are known and are not guessed around.
   blocking calls.
 - Some Diesel and SeaORM query styles inside loops are not caught.
 - `Hmac::<Sha1>` with the turbofish form is not flagged.
-- A call on a generic type parameter resolves to the trait, not to an
-  implementing type.
+- Calls on a generic parameter (`S: Store`) are not resolved. A call through a
+  `Box<dyn Store>` field resolves to the trait method, not to an implementing
+  type.
+- Unit tests inside a source file (`#[cfg(test)]` modules and functions marked
+  `#[test]`, `#[tokio::test]` or `#[rstest]`) are skipped by the metrics and
+  risk checks, but the `duplicated-block` check reads text and still counts
+  repeated lines inside them.
 
 **C#**
 

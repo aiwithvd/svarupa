@@ -177,6 +177,10 @@ class MetricsSpec:
     is_function: Callable[[TSNode], bool] | None = None
     # Optional name for a function node the `name` field cannot name.
     name_of: Callable[[TSNode], str | None] | None = None
+    # Optional test for code that lives inside a source file but is a test
+    # (a `#[cfg(test)]` module): True skips the node and all it holds from
+    # metrics and risks. Test files are already dropped by path in `detect`.
+    is_test: Callable[[TSNode], bool] | None = None
 
 
 CalleeHook = Callable[["Ctx", TSNode], str | None]

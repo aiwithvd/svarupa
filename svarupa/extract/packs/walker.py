@@ -247,6 +247,8 @@ class Ctx:
         stack = [root]
         while stack:
             node = stack.pop()
+            if spec.is_test is not None and node.is_named and spec.is_test(node):
+                continue
             # Named nodes only: Python's `lambda` keyword token shares the
             # node's type name and would be measured as a second function.
             if (
@@ -266,6 +268,8 @@ class Ctx:
         while work:
             node, depth, parent = work.pop()
             kind = node.type
+            if spec.is_test is not None and node.is_named and spec.is_test(node):
+                continue
             if (
                 kind in spec.function_types
                 and node.is_named
@@ -318,6 +322,7 @@ class Ctx:
         metrics = self.pack.metrics
         fn_types = metrics.function_types if metrics else frozenset[str]()
         is_fn = metrics.is_function if metrics else None
+        is_test = metrics.is_test if metrics else None
         by_type: dict[str, list[Unsafe]] = {}
         for rule in spec.unsafe:
             for t in rule.node_types:
@@ -333,6 +338,8 @@ class Ctx:
             work = [(c, looped) for c in reversed(scope.children)]
             while work:
                 node, in_loop = work.pop()
+                if is_test is not None and node.is_named and is_test(node):
+                    continue
                 if node.is_named and node.type in fn_types and (is_fn is None or is_fn(node)):
                     per_item = in_loop or self._per_item(node, spec)
                     scopes.append((node, self._function_name(node), per_item))

@@ -13,6 +13,7 @@ class TwoFiles:
     top_level_only = True
     package_scoped_bare = False
     fields_without_this = False
+    names_modules = False
 
     def targets(self, spec: str, _from_file: str, /) -> tuple[str, ...]:
         return ("pkg/a.toy", "pkg/b.toy") if spec == "pkg" else ()

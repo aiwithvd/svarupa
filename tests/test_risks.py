@@ -1216,7 +1216,7 @@ def test_async_marker_is_not_matched_inside_a_longer_word() -> None:
     assert risks("rust", "src/a.rs", src) == []
 
 
-_RS_LOOP = "  for id in ids {\n    sqlx::query(\"q\").fetch_one(&pool);\n  }\n"
+_RS_LOOP = '  for id in ids {\n    sqlx::query("q").fetch_one(&pool);\n  }\n'
 
 
 def test_rust_test_code_has_no_risks_but_production_code_does() -> None:

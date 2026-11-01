@@ -1088,7 +1088,8 @@ class Resolver:
     def _names_modules(self, lang: str) -> bool:
         """Whether `use a::b;` can import a module `b` in this language (Rust),
         so `b::f()` and a bare name need module-scope rules."""
-        return bool(getattr(self.modules.get(lang), "names_modules", False))
+        module = self.modules.get(lang)
+        return module is not None and module.names_modules
 
     def _glob_lookup(self, f: FileFacts, name: str) -> list[tuple[str, str]]:
         """`name` defined in a module the file glob-imports (`use a::*;`)."""
