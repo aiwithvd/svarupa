@@ -1,0 +1,193 @@
+{
+ "nodes": [
+  {
+   "id": "src/lib.rs",
+   "kind": "module",
+   "label": "lib.rs",
+   "qualified_name": "src/lib.rs",
+   "evidence": [
+    {
+     "file": "src/lib.rs",
+     "start_line": 1,
+     "end_line": 1,
+     "rev": null
+    }
+   ],
+   "lang": "rust",
+   "attrs": [],
+   "producer": "rust.module"
+  },
+  {
+   "id": "src/lib.rs#Root",
+   "kind": "class",
+   "label": "Root",
+   "qualified_name": "Root",
+   "evidence": [
+    {
+     "file": "src/lib.rs",
+     "start_line": 4,
+     "end_line": 4,
+     "rev": null
+    }
+   ],
+   "lang": "rust",
+   "attrs": [
+    [
+     "exported",
+     "true"
+    ]
+   ],
+   "producer": "rust.symbols"
+  },
+  {
+   "id": "src/token/mod.rs",
+   "kind": "module",
+   "label": "mod.rs",
+   "qualified_name": "src/token/mod.rs",
+   "evidence": [
+    {
+     "file": "src/token/mod.rs",
+     "start_line": 1,
+     "end_line": 1,
+     "rev": null
+    }
+   ],
+   "lang": "rust",
+   "attrs": [],
+   "producer": "rust.module"
+  },
+  {
+   "id": "src/token/mod.rs#token.Tok",
+   "kind": "class",
+   "label": "Tok",
+   "qualified_name": "token.Tok",
+   "evidence": [
+    {
+     "file": "src/token/mod.rs",
+     "start_line": 1,
+     "end_line": 1,
+     "rev": null
+    }
+   ],
+   "lang": "rust",
+   "attrs": [
+    [
+     "exported",
+     "true"
+    ]
+   ],
+   "producer": "rust.symbols"
+  },
+  {
+   "id": "src/util.rs",
+   "kind": "module",
+   "label": "util.rs",
+   "qualified_name": "src/util.rs",
+   "evidence": [
+    {
+     "file": "src/util.rs",
+     "start_line": 1,
+     "end_line": 1,
+     "rev": null
+    }
+   ],
+   "lang": "rust",
+   "attrs": [],
+   "producer": "rust.module"
+  },
+  {
+   "id": "src/util.rs#util.helper",
+   "kind": "function",
+   "label": "helper",
+   "qualified_name": "util.helper",
+   "evidence": [
+    {
+     "file": "src/util.rs",
+     "start_line": 1,
+     "end_line": 1,
+     "rev": null
+    }
+   ],
+   "lang": "rust",
+   "attrs": [
+    [
+     "exported",
+     "true"
+    ]
+   ],
+   "producer": "rust.symbols"
+  }
+ ],
+ "edges": [
+  {
+   "src": "src/lib.rs",
+   "dst": "src/token/mod.rs",
+   "kind": "imports",
+   "evidence": [
+    {
+     "file": "src/lib.rs",
+     "start_line": 1,
+     "end_line": 1,
+     "rev": null
+    }
+   ],
+   "confidence": "RESOLVED",
+   "resolution": "resolved",
+   "arity": 1,
+   "attrs": [],
+   "producer": "rust.imports"
+  },
+  {
+   "src": "src/lib.rs",
+   "dst": "src/util.rs",
+   "kind": "imports",
+   "evidence": [
+    {
+     "file": "src/lib.rs",
+     "start_line": 2,
+     "end_line": 2,
+     "rev": null
+    }
+   ],
+   "confidence": "RESOLVED",
+   "resolution": "resolved",
+   "arity": 1,
+   "attrs": [],
+   "producer": "rust.imports"
+  },
+  {
+   "src": "src/token/mod.rs",
+   "dst": "src/lib.rs",
+   "kind": "imports",
+   "evidence": [
+    {
+     "file": "src/token/mod.rs",
+     "start_line": 8,
+     "end_line": 8,
+     "rev": null
+    }
+   ],
+   "confidence": "RESOLVED",
+   "resolution": "resolved",
+   "arity": 1,
+   "attrs": [],
+   "producer": "rust.imports"
+  }
+ ],
+ "scorecard": {
+  "measures": "the share of intra-repository references pinned to a target, not whether the target is correct; a wrong edge counts as resolved",
+  "rows": [
+   {
+    "lang": "rust",
+    "kind": "imports",
+    "resolved": 3,
+    "candidate": 0,
+    "external": 0,
+    "unresolved": 0,
+    "pinned_pct": 100.0
+   }
+  ],
+  "unresolved_samples": {}
+ },
+ "diagnostics": []
+}

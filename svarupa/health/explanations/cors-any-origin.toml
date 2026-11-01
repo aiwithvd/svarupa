@@ -41,3 +41,12 @@ services.AddCors(o => o.AddDefaultPolicy(p => p.AllowAnyOrigin()));
 after = '''
 services.AddCors(o => o.AddDefaultPolicy(p => p.WithOrigins("https://app.example.com")));
 '''
+
+[example.rust]
+before = '''
+let cors = CorsLayer::permissive();
+'''
+after = '''
+let origin = "https://app.example.com".parse::<HeaderValue>()?;
+let cors = CorsLayer::new().allow_origin(origin);
+'''

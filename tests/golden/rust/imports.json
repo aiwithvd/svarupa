@@ -1,0 +1,94 @@
+{
+ "path": "src/lib.rs",
+ "lang": "rust",
+ "symbols": [],
+ "imports": [
+  {
+   "specifier": "serde",
+   "names": [
+    "Deserialize",
+    "Serialize"
+   ],
+   "alias_of": [],
+   "evidence": {
+    "file": "src/lib.rs",
+    "start_line": 1,
+    "end_line": 1,
+    "rev": null
+   },
+   "is_relative": false,
+   "level": 0,
+   "type_only": false,
+   "is_from": true,
+   "is_reexport": false,
+   "is_star": false
+  },
+  {
+   "specifier": "self.models",
+   "names": [],
+   "alias_of": [],
+   "evidence": {
+    "file": "src/lib.rs",
+    "start_line": 2,
+    "end_line": 2,
+    "rev": null
+   },
+   "is_relative": true,
+   "level": 0,
+   "type_only": false,
+   "is_from": true,
+   "is_reexport": false,
+   "is_star": true
+  },
+  {
+   "specifier": "a",
+   "names": [
+    "b"
+   ],
+   "alias_of": [
+    [
+     "c",
+     "b"
+    ]
+   ],
+   "evidence": {
+    "file": "src/lib.rs",
+    "start_line": 3,
+    "end_line": 3,
+    "rev": null
+   },
+   "is_relative": false,
+   "level": 0,
+   "type_only": false,
+   "is_from": true,
+   "is_reexport": false,
+   "is_star": false
+  },
+  {
+   "specifier": "self.models",
+   "names": [],
+   "alias_of": [],
+   "evidence": {
+    "file": "src/lib.rs",
+    "start_line": 4,
+    "end_line": 4,
+    "rev": null
+   },
+   "is_relative": true,
+   "level": 0,
+   "type_only": false,
+   "is_from": true,
+   "is_reexport": false,
+   "is_star": false
+  }
+ ],
+ "calls": [],
+ "fields": [],
+ "reexports": [],
+ "diagnostics": [],
+ "ctor_assigns": [],
+ "namespace": "",
+ "namespaces": [],
+ "functions": [],
+ "risks": []
+}

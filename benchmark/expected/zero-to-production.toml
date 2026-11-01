@@ -1,0 +1,307 @@
+# zero-to-production @ 970987c5f793
+# Read: Cargo.toml, README.md and every .rs file under src/ (the zero2prod crate:
+# startup, configuration, domain, routes, authentication, idempotency, the
+# issue delivery worker and telemetry).
+# Not expected on purpose:
+# - tests/: the black-box API tests are classified as test code.
+# - sql: migrations/ and the sqlx::query! macro bodies are not Rust symbols.
+# - routes: actix routes are wired with App::route(...).to(handler) in
+#   startup.rs, not declared with attribute macros.
+# - calls through macro-generated or trait-resolved values (form.0.try_into(),
+#   session.get_user_id() on the TypedSession local in middleware.rs,
+#   application.run_until_stopped() on a value returned by build()).
+# - consts and type aliases (USER_ID_KEY, PgTransaction): not symbols yet.
+# - datastores: Postgres and Redis are configured through YAML under
+#   configuration/, not through a compose file.
+# - src is one crate, so the module for lib.rs, main.rs and the flat files is
+#   the directory src itself; dependencies between flat files are not module
+#   dependencies.
+
+[[must]]
+record = ["module", "src"]
+why = "src/lib.rs:1 pub mod authentication;"
+
+[[must]]
+record = ["module", "src/authentication"]
+why = "src/authentication/password.rs:42 pub async fn validate_credentials("
+
+[[must]]
+record = ["module", "src/domain"]
+why = "src/domain/subscriber_email.rs:4 pub struct SubscriberEmail(String);"
+
+[[must]]
+record = ["module", "src/idempotency"]
+why = "src/idempotency/persistence.rs:49 pub async fn save_response("
+
+[[must]]
+record = ["module", "src/routes"]
+why = "src/routes/subscriptions.rs:61 pub async fn subscribe("
+
+[[must]]
+record = ["module", "src/routes/admin"]
+why = "src/routes/admin/dashboard.rs:9 pub async fn admin_dashboard("
+
+[[must]]
+record = ["module", "src/routes/admin/newsletter"]
+why = "src/routes/admin/newsletter/post.rs:31 pub async fn publish_newsletter("
+
+[[must]]
+record = ["module", "src/routes/admin/password"]
+why = "src/routes/admin/password/post.rs:16 pub async fn change_password("
+
+[[must]]
+record = ["module", "src/routes/login"]
+why = "src/routes/login/post.rs:24 pub async fn login("
+
+[[must]]
+record = ["module", "src/routes/home"]
+why = "src/routes/home/mod.rs:3 pub async fn home() -> HttpResponse {"
+
+[[must]]
+record = ["dep", "src", "src/authentication"]
+why = "src/startup.rs:1 use crate::authentication::reject_anonymous_users;"
+
+[[must]]
+record = ["dep", "src", "src/routes"]
+why = "src/startup.rs:4 use crate::routes::{"
+
+[[must]]
+record = ["dep", "src", "src/domain"]
+why = "src/configuration.rs:1 use crate::domain::SubscriberEmail;"
+
+[[must]]
+record = ["dep", "src/routes", "src/domain"]
+why = "src/routes/subscriptions.rs:1 use crate::domain::{NewSubscriber, SubscriberEmail, SubscriberName};"
+
+[[must]]
+record = ["dep", "src/routes", "src"]
+why = "src/routes/subscriptions.rs:2 use crate::email_client::EmailClient;"
+
+[[must]]
+record = ["dep", "src/authentication", "src"]
+why = "src/authentication/password.rs:1 use crate::telemetry::spawn_blocking_with_tracing;"
+
+[[must]]
+record = ["dep", "src/routes/admin/password", "src/authentication"]
+why = "src/routes/admin/password/post.rs:1 use crate::authentication::{validate_credentials, AuthError, Credentials, UserId};"
+
+[[must]]
+record = ["dep", "src/routes/admin/password", "src/routes/admin"]
+why = "src/routes/admin/password/post.rs:2 use crate::routes::admin::dashboard::get_username;"
+
+[[must]]
+record = ["dep", "src/routes/admin/password", "src"]
+why = "src/routes/admin/password/post.rs:3 use crate::utils::{e500, see_other};"
+
+[[must]]
+record = ["dep", "src/routes/admin/newsletter", "src/idempotency"]
+why = "src/routes/admin/newsletter/post.rs:2 use crate::idempotency::{save_response, try_processing, IdempotencyKey, NextAction};"
+
+[[must]]
+record = ["dep", "src/routes/admin/newsletter", "src/authentication"]
+why = "src/routes/admin/newsletter/post.rs:1 use crate::authentication::UserId;"
+
+[[must]]
+record = ["dep", "src/routes/login", "src/authentication"]
+why = "src/routes/login/post.rs:2 use crate::authentication::{validate_credentials, Credentials};"
+
+[[must]]
+record = ["dep", "src/routes/login", "src/routes"]
+why = "src/routes/login/post.rs:3 use crate::routes::error_chain_fmt;"
+
+[[must]]
+record = ["dep", "src/routes/admin", "src"]
+why = "src/routes/admin/dashboard.rs:1 use crate::session_state::TypedSession;"
+
+[[must]]
+call = "src/main.rs -> src/startup.rs#build"
+why = "src/main.rs:14 Application::build(configuration.clone()).await?"
+
+[[must]]
+call = "src/main.rs -> src/configuration.rs#get_configuration"
+why = "src/main.rs:13 get_configuration().expect(...)"
+
+[[must]]
+call = "src/main.rs -> src/issue_delivery_worker.rs#run_worker_until_stopped"
+why = "src/main.rs:16 run_worker_until_stopped(configuration)"
+
+[[must]]
+call = "src/main.rs -> src/telemetry.rs#get_subscriber"
+why = "src/main.rs:10 get_subscriber(\"zero2prod\".into(), ...)"
+
+[[must]]
+call = "src/main.rs -> src/telemetry.rs#init_subscriber"
+why = "src/main.rs:11 init_subscriber(subscriber)"
+
+[[must]]
+call = "src/startup.rs -> src/configuration.rs#client"
+why = "src/startup.rs:31 configuration.email_client.client() through the email_client: EmailClientSettings field"
+
+[[must]]
+call = "src/startup.rs -> src/configuration.rs#connect_options"
+why = "src/startup.rs:62 configuration.connect_options() with configuration: &DatabaseSettings"
+
+[[must]]
+call = "src/issue_delivery_worker.rs -> src/startup.rs#get_connection_pool"
+why = "src/issue_delivery_worker.rs:9 get_connection_pool(&configuration.database)"
+
+[[must]]
+call = "src/issue_delivery_worker.rs -> src/configuration.rs#client"
+why = "src/issue_delivery_worker.rs:10 configuration.email_client.client()"
+
+[[must]]
+call = "src/issue_delivery_worker.rs -> src/domain/subscriber_email.rs#parse"
+why = "src/issue_delivery_worker.rs:53 SubscriberEmail::parse(email.clone())"
+
+[[must]]
+call = "src/issue_delivery_worker.rs -> src/email_client.rs#send_email"
+why = "src/issue_delivery_worker.rs:57 email_client.send_email(...) with email_client: &EmailClient"
+
+[[must]]
+call = "src/routes/subscriptions.rs -> src/domain/subscriber_name.rs#parse"
+why = "src/routes/subscriptions.rs:24 SubscriberName::parse(value.name)?"
+
+[[must]]
+call = "src/routes/subscriptions.rs -> src/domain/subscriber_email.rs#parse"
+why = "src/routes/subscriptions.rs:25 SubscriberEmail::parse(value.email)?"
+
+[[must]]
+call = "src/routes/subscriptions.rs -> src/email_client.rs#send_email"
+why = "src/routes/subscriptions.rs:125 email_client.send_email(...) with email_client: &EmailClient"
+
+[[must]]
+call = "src/routes/subscriptions.rs -> src/domain/subscriber_email.rs#as_ref"
+why = "src/routes/subscriptions.rs:144 new_subscriber.email.as_ref() through the email: SubscriberEmail field"
+
+[[must]]
+call = "src/routes/subscriptions.rs -> src/domain/subscriber_name.rs#as_ref"
+why = "src/routes/subscriptions.rs:145 new_subscriber.name.as_ref() through the name: SubscriberName field"
+
+[[must]]
+call = "src/configuration.rs -> src/domain/subscriber_email.rs#parse"
+why = "src/configuration.rs:75 SubscriberEmail::parse(self.sender_email.clone())"
+
+[[must]]
+call = "src/configuration.rs -> src/email_client.rs#new"
+why = "src/configuration.rs:66 EmailClient::new(...)"
+
+[[must]]
+call = "src/email_client.rs -> src/domain/subscriber_email.rs#as_ref"
+why = "src/email_client.rs:37 self.sender.as_ref() through the sender: SubscriberEmail field"
+
+[[must]]
+call = "src/routes/login/post.rs -> src/authentication/password.rs#validate_credentials"
+why = "src/routes/login/post.rs:34 validate_credentials(credentials, &pool)"
+
+[[must]]
+call = "src/routes/login/post.rs -> src/session_state.rs#renew"
+why = "src/routes/login/post.rs:37 session.renew() with session: TypedSession"
+
+[[must]]
+call = "src/routes/login/post.rs -> src/session_state.rs#insert_user_id"
+why = "src/routes/login/post.rs:39 session.insert_user_id(user_id)"
+
+[[must]]
+call = "src/routes/login/post.rs -> src/routes/subscriptions.rs#error_chain_fmt"
+why = "src/routes/login/post.rs:73 error_chain_fmt(self, f)"
+
+[[must]]
+call = "src/authentication/password.rs -> src/telemetry.rs#spawn_blocking_with_tracing"
+why = "src/authentication/password.rs:61 spawn_blocking_with_tracing(move || {...})"
+
+[[must]]
+call = "src/authentication/middleware.rs -> src/utils.rs#see_other"
+why = "src/authentication/middleware.rs:43 see_other(\"/login\")"
+
+[[must]]
+call = "src/routes/admin/logout.rs -> src/session_state.rs#log_out"
+why = "src/routes/admin/logout.rs:10 session.log_out() is TypedSession::log_out at session_state.rs:25, not this file's log_out function"
+
+[[must]]
+call = "src/routes/admin/logout.rs -> src/session_state.rs#get_user_id"
+why = "src/routes/admin/logout.rs:7 session.get_user_id()"
+
+[[must]]
+call = "src/routes/admin/dashboard.rs -> src/session_state.rs#get_user_id"
+why = "src/routes/admin/dashboard.rs:13 session.get_user_id()"
+
+[[must]]
+call = "src/routes/admin/password/post.rs -> src/routes/admin/dashboard.rs#get_username"
+why = "src/routes/admin/password/post.rs:29 get_username(*user_id, &pool)"
+
+[[must]]
+call = "src/routes/admin/password/post.rs -> src/authentication/password.rs#validate_credentials"
+why = "src/routes/admin/password/post.rs:34 validate_credentials(credentials, &pool)"
+
+[[must]]
+call = "src/routes/admin/password/post.rs -> src/authentication/password.rs#change_password"
+why = "src/routes/admin/password/post.rs:43 crate::authentication::change_password(...), not the handler defined at line 16"
+
+[[must]]
+call = "src/routes/admin/password/post.rs -> src/utils.rs#see_other"
+why = "src/routes/admin/password/post.rs:27 see_other(\"/admin/password\")"
+
+[[must]]
+call = "src/routes/admin/newsletter/post.rs -> src/idempotency/persistence.rs#try_processing"
+why = "src/routes/admin/newsletter/post.rs:44 try_processing(&pool, &idempotency_key, *user_id)"
+
+[[must]]
+call = "src/routes/admin/newsletter/post.rs -> src/idempotency/persistence.rs#save_response"
+why = "src/routes/admin/newsletter/post.rs:63 save_response(transaction, &idempotency_key, *user_id, response)"
+
+[[must]]
+call = "src/routes/subscriptions_confirm.rs -> src/routes/subscriptions.rs#error_chain_fmt"
+why = "src/routes/subscriptions_confirm.rs:23 error_chain_fmt(self, f)"
+
+[[must]]
+call = "src/idempotency/persistence.rs -> src/idempotency/key.rs#as_ref"
+why = "src/idempotency/persistence.rs:33 idempotency_key.as_ref() with idempotency_key: &IdempotencyKey"
+
+# Probes
+[[must_not]]
+call = "src/authentication/middleware.rs -> src/domain/subscriber_email.rs#fmt"
+why = "src/authentication/middleware.rs:16 self.0.fmt(f) is the Uuid's fmt (UserId(Uuid)); SubscriberEmail::fmt is a different Display impl"
+
+[[must_not]]
+call = "src/authentication/middleware.rs -> src/domain/subscriber_name.rs#parse"
+why = "middleware.rs never builds a SubscriberName"
+
+[[must_not]]
+call = "src/routes/subscriptions.rs -> src/idempotency/key.rs#try_from"
+why = "src/routes/subscriptions.rs:67 form.0.try_into() uses the TryFrom<FormData> impl for NewSubscriber in the same file, not IdempotencyKey's TryFrom<String> (key.rs:4)"
+
+[[must_not]]
+call = "src/configuration.rs -> src/idempotency/key.rs#try_from"
+why = "src/configuration.rs:91 try_into() builds an Environment with the impl at configuration.rs:128, not IdempotencyKey"
+
+[[must_not]]
+call = "src/routes/admin/password/post.rs -> src/routes/admin/password/get.rs#change_password_form"
+why = "post.rs defines and calls only change_password; the form handler in get.rs is wired in startup.rs"
+
+[[must_not]]
+call = "src/routes/admin/logout.rs -> src/routes/admin/dashboard.rs#log_out"
+why = "log_out is defined in logout.rs and TypedSession; dashboard.rs defines only admin_dashboard and get_username"
+
+[[must_not]]
+call = "src/email_client.rs -> src/domain/subscriber_name.rs#as_ref"
+why = "EmailClient holds a SubscriberEmail sender (email_client.rs:8), never a SubscriberName"
+
+[[must_not]]
+record = ["dep", "src/domain", "src/routes"]
+why = "domain files import only their own module and external crates; no file under src/domain uses crate::routes"
+
+[[must_not]]
+record = ["dep", "src/domain", "src/authentication"]
+why = "no file under src/domain imports crate::authentication"
+
+[[must_not]]
+record = ["dep", "src/authentication", "src/routes"]
+why = "authentication imports crate::session_state, crate::utils and crate::telemetry only; nothing from crate::routes"
+
+[[must_not]]
+record = ["dep", "src/idempotency", "src/routes"]
+why = "src/idempotency/persistence.rs imports only super::IdempotencyKey and external crates"
+
+[[must_not]]
+record = ["dep", "src/routes/login", "src/idempotency"]
+why = "login handlers do not use idempotency keys; only the newsletter post handler does"

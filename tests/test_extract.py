@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 from svarupa.detect import detect
-from svarupa.extract import declared_dependencies, extract
+from svarupa.extract import _EXTRACTORS, declared_dependencies, extract
 from svarupa.extract.base import CallShape, node_id
 from svarupa.extract.packs import extractor
 from svarupa.model import EdgeKind, Resolution
@@ -784,7 +784,11 @@ def test_a_decorated_method_keeps_kind_and_decorator() -> None:
     assert [d.name for d in build.decorators] == ["staticmethod"]
 
 
-def test_languages_without_a_pack_are_reported_once_each(tmp_path: Path) -> None:
+def test_languages_without_a_pack_are_reported_once_each(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Every detected language has a pack now, so take one away.
+    monkeypatch.delitem(_EXTRACTORS, "rust")
     write(tmp_path, "lib/a.rs", "fn a() {}\n")
     write(tmp_path, "lib/b.rs", "fn b() {}\n")
     write(tmp_path, "app.py", "def keep():\n    pass\n")

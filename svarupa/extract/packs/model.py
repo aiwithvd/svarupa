@@ -168,10 +168,19 @@ class MetricsSpec:
     not_branch: tuple[tuple[str, str], ...] = ()
     # An `if` directly under one of these is an `else if`: no extra nesting.
     else_if_parents: frozenset[str] = frozenset()
+    # The node types that are an `if` for the else-if rule above.
+    if_types: frozenset[str] = frozenset({"if_statement"})
+    # Optional veto on a branch_types node: True means it is not a decision
+    # (a wildcard `_` arm, which is the default and not a choice).
+    skips_branch: Callable[[TSNode], bool] | None = None
     # Optional filter on function_types: False skips a node with no body.
     is_function: Callable[[TSNode], bool] | None = None
     # Optional name for a function node the `name` field cannot name.
     name_of: Callable[[TSNode], str | None] | None = None
+    # Optional test for code that lives inside a source file but is a test
+    # (a `#[cfg(test)]` module): True skips the node and all it holds from
+    # metrics and risks. Test files are already dropped by path in `detect`.
+    is_test: Callable[[TSNode], bool] | None = None
 
 
 CalleeHook = Callable[["Ctx", TSNode], str | None]
@@ -213,6 +222,26 @@ class RiskSpec:
     assigns: tuple[tuple[str, str, str], ...]
     # Wrappers whose last named child is the value: (x), await x, kw=x.
     unwrap: frozenset[str] = frozenset()
+    # Macros that format a string (Rust `format!`), by the callee name the pack
+    # gives them. Built only with an argument after the format string, or a
+    # `{name}` capture in it: `format!("select 1")` is a literal.
+    format_macros: frozenset[str] = frozenset()
+    # Calls that make a string out of a literal (`"a".to_string()`): in a join
+    # they are a string part, not a runtime part.
+    string_ctors: re.Pattern[str] | None = None
+    # A call that appends to its receiver (`sql.push_str(x)`): a dynamic
+    # argument makes the receiver variable built.
+    appends: re.Pattern[str] | None = None
+    # Methods that return their receiver's string (`sql.as_str()`, `.clone()`).
+    same_value: re.Pattern[str] | None = None
+    # Node types whose first named child is the value (`sql[..]`).
+    view_types: frozenset[str] = frozenset()
+    # Node types that name a variable by their text (`self.sql`).
+    path_types: frozenset[str] = frozenset()
+    # Node types that hold a list of values (`["-c", cmd]`): built if any item is.
+    list_types: frozenset[str] = frozenset()
+    # Node types that await their call: an awaited call never blocks the loop.
+    await_types: frozenset[str] = frozenset()
     sinks: tuple[Sink, ...] = ()
     unsafe: tuple[Unsafe, ...] = ()
     auth_markers: frozenset[str] = frozenset()

@@ -66,7 +66,8 @@ somewhere other than `<repo>/.svarupa/`. The artifact holds:
   Windsurf gets a shorter version, because Windsurf limits rule files to 6,000
   characters each (12,000 in total).
 - Code facts come from language packs: Python, TypeScript, JavaScript, Go,
-  Java and C# today. JavaScript is experimental; the others are stable.
+  Java, C# and Rust today. JavaScript and Rust are experimental; the others
+  are stable.
   Other detected languages are listed as detected but not analyzed
   (SVA-X-012), never guessed. Known gaps per
   language are in `docs/health.md`.
@@ -146,14 +147,15 @@ development: license swaps, viewer work, layout fixes) produced a median of
 moves, not when code churns. See `docs/reviews/` for the numbers and the
 reasoning.
 
-**Benchmarked.** Every pull request is scored on 13 pinned public
-repositories (Python, TypeScript, JavaScript, Go, Java, C#) against facts checked
+**Benchmarked.** Every pull request is scored on 15 pinned public
+repositories (Python, TypeScript, JavaScript, Go, Java, C#, Rust) against facts checked
 by reading their source; a change that loses a found fact fails CI. A
 language pack is labelled stable only when two of its repositories reach 90%
 recall with no false fact. Recall covers what Svarupa claims to extract
 (modules, dependencies, compose services, calls, and routes for FastAPI,
-Flask, Express and NestJS), not features it does not extract yet. See
-`benchmark/`.
+Flask, Express and NestJS), not features it does not extract yet. The Rust
+pack is experimental: its two repositories score 91% (rust-web-app) and 63%
+(zero-to-production), so it has not reached the bar. See `benchmark/`.
 
 ---
 

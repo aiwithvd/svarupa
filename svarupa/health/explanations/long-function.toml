@@ -97,3 +97,22 @@ Order PlaceOrder(OrderRequest req)
     return order;
 }
 '''
+
+[example.rust]
+before = '''
+fn place_order(req: &OrderRequest) -> Order {
+    // 15 lines that read and check the request
+    // 20 lines that price the cart
+    // 15 lines that save and send the email
+    order
+}
+'''
+after = '''
+fn place_order(req: &OrderRequest) -> Order {
+    let form = read_order_form(req);
+    let total = price_cart(&form.items);
+    let order = save_order(&form, total);
+    send_confirmation(&order);
+    order
+}
+'''

@@ -43,3 +43,16 @@ db.Users.FromSqlRaw("SELECT * FROM Users WHERE Email = '" + email + "'");
 after = '''
 db.Users.FromSqlInterpolated($"SELECT * FROM Users WHERE Email = {email}");
 '''
+
+[example.rust]
+before = '''
+sqlx::query(&format!("SELECT * FROM users WHERE email = '{}'", email))
+    .fetch_all(&pool)
+    .await?;
+'''
+after = '''
+sqlx::query("SELECT * FROM users WHERE email = $1")
+    .bind(email)
+    .fetch_all(&pool)
+    .await?;
+'''

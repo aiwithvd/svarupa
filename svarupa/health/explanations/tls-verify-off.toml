@@ -45,3 +45,13 @@ var client = new HttpClient(handler);
 after = '''
 var client = new HttpClient();
 '''
+
+[example.rust]
+before = '''
+let client = reqwest::Client::builder()
+    .danger_accept_invalid_certs(true)
+    .build()?;
+'''
+after = '''
+let client = reqwest::Client::builder().build()?;
+'''

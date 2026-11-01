@@ -59,6 +59,9 @@ __all__ = ["Ctx", "Frame", "PackExtractor", "language_for"]
 
 _IDENT = re.compile(r"[A-Za-z_$][\w$]*")
 _MAX_NODE = 2000  # bytes: longer nodes are never an unsafe one-liner
+# `{name}` inside a format string; `{{` is an escaped brace.
+_CAPTURE = re.compile(r"(?<!\{)\{[A-Za-z_]")
+_PATH = re.compile(r"[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*")
 _ARGS = re.compile(r"\([^()]*\)")
 
 
@@ -91,6 +94,11 @@ class Frame:
         return Frame(self.stack, self.cls, self.fn)
 
 
+def _is_test(hook: Callable[[TSNode], bool] | None, node: TSNode) -> bool:
+    """Whether the pack calls this node test code that lives in a source file."""
+    return hook is not None and node.is_named and hook(node)
+
+
 class Ctx:
     """One file's walk: the source, the pack, and the facts so far."""
 
@@ -119,7 +127,7 @@ class Ctx:
         return self.evidence(node.start_point[0], node.end_point[0])
 
     def qual(self, names: tuple[str, ...]) -> str:
-        return ".".join((self.prefix, *names)) if names else self.prefix
+        return ".".join(p for p in (self.prefix, *names) if p)
 
     def decorator(self, node: TSNode) -> DecoratorRef | None:
         hook = self.pack.decorator
@@ -244,6 +252,8 @@ class Ctx:
         stack = [root]
         while stack:
             node = stack.pop()
+            if _is_test(spec.is_test, node):
+                continue
             # Named nodes only: Python's `lambda` keyword token shares the
             # node's type name and would be measured as a second function.
             if (
@@ -263,6 +273,8 @@ class Ctx:
         while work:
             node, depth, parent = work.pop()
             kind = node.type
+            if _is_test(spec.is_test, node):
+                continue
             if (
                 kind in spec.function_types
                 and node.is_named
@@ -270,12 +282,14 @@ class Ctx:
             ):
                 continue  # measured on its own
             if kind in spec.branch_types:
-                if not any((kind, c.type) in excluded for c in node.children):
+                if not any((kind, c.type) in excluded for c in node.children) and not (
+                    spec.skips_branch is not None and spec.skips_branch(node)
+                ):
                     complexity += 1
             elif kind in ops and any(c.type in ops[kind] for c in node.children):
                 complexity += 1
             nests = kind in spec.nesting_types and not (
-                kind == "if_statement" and parent in spec.else_if_parents
+                kind in spec.if_types and parent in spec.else_if_parents
             )
             here = depth + 1 if nests else depth
             deepest = max(deepest, here)
@@ -313,6 +327,7 @@ class Ctx:
         metrics = self.pack.metrics
         fn_types = metrics.function_types if metrics else frozenset[str]()
         is_fn = metrics.is_function if metrics else None
+        is_test = metrics.is_test if metrics else None
         by_type: dict[str, list[Unsafe]] = {}
         for rule in spec.unsafe:
             for t in rule.node_types:
@@ -328,6 +343,8 @@ class Ctx:
             work = [(c, looped) for c in reversed(scope.children)]
             while work:
                 node, in_loop = work.pop()
+                if _is_test(is_test, node):
+                    continue
                 if node.is_named and node.type in fn_types and (is_fn is None or is_fn(node)):
                     per_item = in_loop or self._per_item(node, spec)
                     scopes.append((node, self._function_name(node), per_item))
@@ -361,7 +378,7 @@ class Ctx:
         if holder is None:
             return any(not c.is_named and c.type == marker for c in fn.children)
         word = marker.encode()
-        return any(c.type == holder and c.text == word for c in fn.children)
+        return any(c.type == holder and c.text and word in c.text.split() for c in fn.children)
 
     def _risk_node(
         self,
@@ -392,6 +409,7 @@ class Ctx:
         if t in spec.call_types:
             callee = spec.callee(self, node)
             args = node.child_by_field_name("arguments")
+            self._append(callee, args, spec, built)
             if callee is not None and args is not None:
                 for sink in spec.sinks:
                     if not sink.callee.search(callee):
@@ -419,6 +437,24 @@ class Ctx:
                             "unsafe", rule.check, rule.label, self.node_evidence(node), scope
                         )
                     )
+
+    def _append(
+        self, callee: str | None, args: TSNode | None, spec: RiskSpec, built: set[str]
+    ) -> None:
+        """`sql.push_str(&x)`: a dynamic argument makes `sql` built."""
+        if callee is None or args is None or spec.appends is None:
+            return
+        recv, dot, _ = callee.rpartition(".")
+        if not dot or not _PATH.fullmatch(recv) or not spec.appends.search(callee):
+            return
+        first = args.named_children[0] if args.named_children else None
+        if first is not None and not self._literal(first, spec):
+            built.add(recv)
+
+    def _literal(self, node: TSNode, spec: RiskSpec) -> bool:
+        while node.type in spec.unwrap and node.named_children:
+            node = node.named_children[-1]
+        return node.type in spec.string_types and not self._built(node, spec, set())
 
     def _argument_list(self, fn: TSNode, spec: RiskSpec) -> TSNode | None:
         """The argument list a function is passed in, past the pack's wrapper."""
@@ -467,7 +503,13 @@ class Ctx:
             out.append(
                 RiskFact("in-loop", "query", _plain(callee), self.node_evidence(node), scope)
             )
-        if is_async and spec.blocking is not None and spec.blocking.search(callee):
+        awaited = node.parent is not None and node.parent.type in spec.await_types
+        if (
+            is_async
+            and not awaited
+            and spec.blocking is not None
+            and spec.blocking.search(callee)
+        ):
             out.append(
                 RiskFact(
                     "blocking-async", "io", _plain(callee), self.node_evidence(node), scope
@@ -515,7 +557,14 @@ class Ctx:
             return True, self._built(node, spec, built)
         if self._built(node, spec, built):
             return True, True
-        return False, True
+        return (True, False) if self._makes_string(node, spec) else (False, True)
+
+    def _makes_string(self, node: TSNode, spec: RiskSpec) -> bool:
+        """A call that turns a literal into a string (`"a".to_string()`)."""
+        if spec.string_ctors is None or node.type not in spec.call_types:
+            return False
+        callee = spec.callee(self, node)
+        return callee is not None and spec.string_ctors.search(callee) is not None
 
     def _built(self, node: TSNode, spec: RiskSpec, built: set[str]) -> bool:
         """Whether this expression is a string built at runtime."""
@@ -535,9 +584,30 @@ class Ctx:
             return has_string and dynamic
         if t in spec.call_types:
             callee = spec.callee(self, node)
+            if callee is not None and callee in spec.format_macros:
+                return self._interpolates(node, spec)
+            if callee is not None and spec.same_value and spec.same_value.search(callee):
+                return callee.rpartition(".")[0] in built
             return callee is not None and spec.format_callee.search(callee) is not None
-        if t == "identifier":
+        if t == "identifier" or t in spec.path_types:
             return self.text(node) in built
+        if t in spec.view_types and node.named_children:
+            return self._built(node.named_children[0], spec, built)
+        if t in spec.list_types:
+            return any(self._built(c, spec, built) for c in node.named_children)
+        return False
+
+    def _interpolates(self, macro: TSNode, spec: RiskSpec) -> bool:
+        """A format macro with an argument after the format string, or a
+        `{name}` capture inside it."""
+        tokens = macro.named_children[-1] if macro.named_children else None
+        if tokens is None:
+            return False
+        for c in tokens.named_children:
+            if c.type not in spec.string_types and c.type not in spec.quiet:
+                return True
+            if c.type in spec.string_types and _CAPTURE.search(self.text(c)):
+                return True
         return False
 
     def run(self, tree: Tree) -> FileFacts:

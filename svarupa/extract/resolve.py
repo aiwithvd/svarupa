@@ -31,6 +31,7 @@ from svarupa.extract.base import (
     FileFacts,
     ImportRef,
     Scorecard,
+    SymbolRef,
     node_id,
     sorted_edges,
     sorted_nodes,
@@ -232,6 +233,16 @@ def _d_fields() -> dict[tuple[str, str, str], str]:
     return {}
 
 
+def _is_named(qualified: str, name: str) -> bool:
+    """Whether a qualified class name ends in `name`; a type at a crate root
+    (Rust `src/lib.rs`) has no module prefix at all."""
+    return qualified == name or qualified.endswith(f".{name}")
+
+
+def _d_extra() -> dict[tuple[str, str], tuple[str, ...]]:
+    return {}
+
+
 @dataclass
 class _Index:
     by_file: dict[str, FileFacts] = field(default_factory=_d_facts)
@@ -244,6 +255,9 @@ class _Index:
     bases_of: dict[str, tuple[str, ...]] = field(default_factory=_d_bases)
     field_types: dict[tuple[str, str, str], str] = field(default_factory=_d_fields)
     files: set[str] = field(default_factory=_s_str)
+    # Bases a class gets from the methods declared for it elsewhere (a Rust
+    # `impl Trait for Type`), keyed by the class's identity.
+    extra_bases: dict[tuple[str, str], tuple[str, ...]] = field(default_factory=_d_extra)
 
 
 class Resolver:
@@ -268,6 +282,7 @@ class Resolver:
         self.diagnostics: list[Diagnostic] = []
         self.idx = self._build_index()
         self.roots = self._source_roots(source_roots)
+        self._attach_foreign_members()
 
     def _source_roots(self, declared: Sequence[str]) -> tuple[str, ...]:
         """Every directory an absolute import could be rooted at.
@@ -338,6 +353,50 @@ class Resolver:
             lst.sort()
         return idx
 
+    def _attach_foreign_members(self) -> None:
+        """Join a method to its class when it is declared in another file.
+
+        A Rust `impl Shop { .. }` can sit in a different file from `struct
+        Shop`, so the method's owner key names a class that is not there. It
+        is joined to the class the receiver name resolves to, and the bases a
+        method carries (the trait of `impl Trait for Shop`) become bases of
+        that class. A method whose class is in its own file is untouched.
+        """
+        idx = self.idx
+        for f in self.facts:
+            for s in f.symbols:
+                own = (f.path, s.qualified_name.rsplit(".", 1)[0])
+                home = self._class_home(f, s, own)
+                if home is None:
+                    continue
+                if home != own:
+                    idx.methods_of.setdefault(home, []).append((f.path, s.qualified_name))
+                known = idx.extra_bases.get(home, ())
+                idx.extra_bases[home] = (*known, *(b for b in s.bases if b not in known))
+
+    def _class_home(
+        self, f: FileFacts, s: SymbolRef, own: tuple[str, str]
+    ) -> tuple[str, str] | None:
+        """The class a method belongs to: its file's own, else the one its
+        receiver name resolves to."""
+        if s.kind != "method" or not s.enclosing_class:
+            return None
+        if own in self.idx.class_by_id:
+            return own
+        if self._imported_externally(f, s.enclosing_class):
+            return None  # `impl X for io::Error` is not our `Error`
+        return self._resolve_class_name(s.enclosing_class, f.path)
+
+    def _imported_externally(self, f: FileFacts, name: str) -> bool:
+        """Whether `name` is brought in from a dependency, by name or by the
+        last segment of a plain import path."""
+        for imp in f.imports:
+            if name in imp.names or name in imp.alias_of or imp.specifier.endswith(f".{name}"):
+                if imp.is_relative:
+                    return False
+                return self._is_external(self._package_root(imp.specifier, f.lang), f.lang)
+        return False
+
     # ------------------------------------------------------------------
 
     def _package_root(self, spec: str, lang: str) -> str:
@@ -388,7 +447,7 @@ class Resolver:
         out = [cls_id]
         sym = self.idx.class_by_id.get(cls_id)
         bases = getattr(sym, "bases", ()) if sym is not None else ()
-        for base in bases:
+        for base in (*bases, *self.idx.extra_bases.get(cls_id, ())):
             resolved = self._resolve_class_name(base, cls_id[0])
             if resolved is not None:
                 out.extend(self._mro_ids(resolved, seen | {cls_id}))
@@ -429,7 +488,7 @@ class Resolver:
         self, name: str, from_file: str
     ) -> tuple[tuple[str, str] | None, bool]:
         """Resolve, and say whether a None means absent or ambiguous."""
-        repo_wide = [cid for cid in self.idx.class_by_id if cid[1].endswith(f".{name}")]
+        repo_wide = [cid for cid in self.idx.class_by_id if _is_named(cid[1], name)]
         hit = self._resolve_class_name(name, from_file)
         return hit, hit is None and len(repo_wide) > 1
 
@@ -437,7 +496,7 @@ class Resolver:
         same_file = [
             cid
             for cid in self.idx.class_by_id
-            if cid[0] == from_file and cid[1].endswith(f".{name}")
+            if cid[0] == from_file and _is_named(cid[1], name)
         ]
         if len(same_file) == 1:
             return same_file[0]
@@ -453,12 +512,12 @@ class Resolver:
                 hit = [
                     cid
                     for cid in self.idx.class_by_id
-                    if cid[0] == target and cid[1].endswith(f".{name}")
+                    if cid[0] == target and _is_named(cid[1], name)
                 ]
                 if len(hit) == 1:
                     return hit[0]
 
-        repo_wide = [cid for cid in self.idx.class_by_id if cid[1].endswith(f".{name}")]
+        repo_wide = [cid for cid in self.idx.class_by_id if _is_named(cid[1], name)]
         return repo_wide[0] if len(repo_wide) == 1 else None
 
     def resolve_module(self, spec: str, from_file: str, level: int, lang: str) -> str | None:
@@ -757,7 +816,12 @@ class Resolver:
         out: list[Edge] = []
         for imp in f.imports:
             top = self._package_root(imp.specifier, f.lang)
-            targets = self._resolve_targets(imp.specifier, f.path, imp.level, f.lang)
+            spec = (
+                f"{imp.specifier}.*"
+                if imp.is_star and self._names_modules(f.lang)
+                else imp.specifier
+            )
+            targets = self._resolve_targets(spec, f.path, imp.level, f.lang)
             target = targets[0] if targets else None
 
             if target is None and f.lang == "python" and imp.is_from:
@@ -872,7 +936,7 @@ class Resolver:
                         f.path,
                         imp.level,
                     )
-                    if f.lang == "python"
+                    if f.lang == "python" or self._names_modules(f.lang)
                     else None
                 )
                 if sibling is not None and sibling != target and sibling != f.path:
@@ -931,6 +995,17 @@ class Resolver:
                     import_names[n] = (imp.specifier or n, imp.level)
             if not imp.is_from and imp.specifier:
                 import_names[imp.specifier.split(".")[0]] = (imp.specifier, 0)
+            if (
+                imp.is_from
+                and not imp.names
+                and not imp.alias_of
+                and not imp.is_star
+                and "." in imp.specifier
+                and self._names_modules(f.lang)
+            ):
+                # `use a::b::C;` and `mod x;` name their last segment
+                head, _, last = imp.specifier.rpartition(".")
+                import_names.setdefault(last, (head, imp.level))
 
         for call in f.calls:
             src_id = node_id(f.path, call.enclosing) if call.enclosing else f.path
@@ -986,6 +1061,49 @@ class Resolver:
                     )
                 )
         return out
+
+    def _qualified_in_modules(
+        self,
+        f: FileFacts,
+        recv: str,
+        imported: tuple[str, int],
+        name: str,
+        alias_targets: Mapping[str, str],
+    ) -> list[tuple[str, str]] | None:
+        """`recv::name()` where `recv` came in through `use spec::recv`: the
+        module `spec.recv` first (a type's methods are found in its file), then
+        a name defined in `spec` itself."""
+        spec, level = imported
+        real = alias_targets.get(recv, recv)
+        owner = self._resolve_class_name(real, f.path)
+        if owner is not None:
+            hits = self._nearest_methods(self._mro_ids(owner), name)
+            if hits:
+                return hits[:MAX_CANDIDATE_ARITY]
+        found = self._lookup_in_module(f, f"{spec}.{real}", level, name)
+        if found != []:
+            return found
+        return self._lookup_in_module(f, spec, level, name)
+
+    def _names_modules(self, lang: str) -> bool:
+        """Whether `use a::b;` can import a module `b` in this language (Rust),
+        so `b::f()` and a bare name need module-scope rules."""
+        module = self.modules.get(lang)
+        return module is not None and module.names_modules
+
+    def _glob_lookup(self, f: FileFacts, name: str) -> list[tuple[str, str]]:
+        """`name` defined in a module the file glob-imports (`use a::*;`)."""
+        out: list[tuple[str, str]] = []
+        for imp in f.imports:
+            if not imp.is_star:
+                continue
+            for target in self._resolve_targets(imp.specifier, f.path, imp.level, f.lang):
+                if (
+                    target != f.path
+                    and (hit := self._follow_reexport(target, name)) is not None
+                ):
+                    out.append(hit)
+        return _dedupe(out)
 
     def _definition_evidence(self, file: str, qualname: str) -> Evidence | None:
         facts = self.idx.by_file.get(file)
@@ -1050,6 +1168,10 @@ class Resolver:
             if name in import_names:
                 spec, level = import_names[name]
                 return self._lookup_in_module(f, spec, level, name)
+            if self._names_modules(f.lang):
+                # Module scope: this file, its `use` names, its globs. A name
+                # defined elsewhere in the repository is not in scope.
+                return self._glob_lookup(f, name)[:MAX_CANDIDATE_ARITY]
             hits = _dedupe([h for h in self.idx.by_name.get(name, []) if h not in methods])
             module = self.modules.get(f.lang)
             if module is not None and module.package_scoped_bare:
@@ -1066,6 +1188,10 @@ class Resolver:
             recv = call.receiver or ""
             if recv in import_names:
                 spec, level = import_names[recv]
+                if self._names_modules(f.lang):
+                    return self._qualified_in_modules(
+                        f, recv, (spec, level), name, alias_targets
+                    )
                 found = self._lookup_in_module(f, spec, level, name)
                 if found == [] and f.lang == "python":
                     # `from app import crud` may name the submodule app/crud.py
@@ -1099,10 +1225,17 @@ class Resolver:
         self, f: FileFacts, cls: str, field_name: str, name: str
     ) -> list[tuple[str, str]] | None:
         """`name` called on a field of `cls`, through the field's declared type."""
-        type_name = self.idx.field_types.get((f.path, cls, field_name))
+        home = f.path
+        type_name = self.idx.field_types.get((home, cls, field_name))
+        if type_name is None:
+            # The class may be declared in another file than the method
+            # (a Rust `impl`): its fields, and the names they use, are there.
+            found = self._resolve_class_name(cls, f.path)
+            home = found[0] if found is not None else home
+            type_name = self.idx.field_types.get((home, cls, field_name))
         if type_name is None:
             return []
-        owner, ambiguous = self._resolve_class_name_x(type_name, f.path)
+        owner, ambiguous = self._resolve_class_name_x(type_name, home)
         if owner is None:
             # `_resolve_class_name` returns None both for "not in the repo"
             # and for "in the repo twice". Collapsing those into EXTERNAL is

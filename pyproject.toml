@@ -35,6 +35,7 @@ dependencies = [
   "tree-sitter-go==0.25.0",
   "tree-sitter-java==0.23.5",
   "tree-sitter-c-sharp==0.23.5",
+  "tree-sitter-rust==0.24.2",
   "networkx>=3.2,<4",
   "PyYAML>=6,<7",
   # MPL-2.0: file-level copyleft; as an unmodified dependency it imposes

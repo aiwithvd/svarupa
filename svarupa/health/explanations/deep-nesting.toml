@@ -115,3 +115,32 @@ foreach (var o in orders)
     foreach (var it in o.Items.Where(i => i.InStock)) Ship(it);
 }
 '''
+
+[example.rust]
+before = '''
+fn ship_all(orders: &[Order]) {
+    for o in orders {
+        if o.paid {
+            if !o.items.is_empty() {
+                for it in &o.items {
+                    if it.in_stock {
+                        ship(it);
+                    }
+                }
+            }
+        }
+    }
+}
+'''
+after = '''
+fn ship_all(orders: &[Order]) {
+    for o in orders {
+        if !o.paid || o.items.is_empty() {
+            continue;
+        }
+        for it in o.items.iter().filter(|i| i.in_stock) {
+            ship(it);
+        }
+    }
+}
+'''

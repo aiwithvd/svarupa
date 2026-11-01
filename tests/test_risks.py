@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from svarupa.extract.packs import extractor
 
 
@@ -908,3 +910,323 @@ def test_csharp_http_context_in_a_loop_stays_safe() -> None:
     for recv in ("httpContext", "HttpContext", "_httpContext", "context"):
         src = f"class S {{ void F(List<int> ids) {{ foreach (var i in ids) {{ {recv}.Items.Add(i, i); }} }} }}\n"
         assert risks("csharp", "S.cs", src) == [], recv
+
+
+# Rust. Each case is one function so a failure names the rule.
+def _rs(body: str, head: str = "fn f()") -> str:
+    return f"{head} {{\n{body}\n}}\n"
+
+
+RS_FIRES = {
+    "sqlx-format-ref": (_rs('  sqlx::query(&format!("select {}", id));'), [("sql", 2)]),
+    "sqlx-format-inline-capture": (
+        _rs('  sqlx::query(&format!("select {id}"));'),
+        [("sql", 2)],
+    ),
+    "sqlx-chain-await": (
+        _rs('  sqlx::query(&format!("select {}", id)).bind(1).fetch_all(&pool).await?;'),
+        [("sql", 2)],
+    ),
+    "sqlx-built-variable": (
+        _rs('  let sql = format!("select {}", id);\n  sqlx::query(&sql).execute(&pool);'),
+        [("sql", 3)],
+    ),
+    "sqlx-mut-variable-push-str": (
+        _rs("  let mut sql = String::new();\n  sql.push_str(&name);\n  sqlx::query(&sql);"),
+        [("sql", 4)],
+    ),
+    "sqlx-plus-concat": (
+        _rs('  let sql = "select ".to_string() + &name;\n  sqlx::query(&sql);'),
+        [("sql", 3)],
+    ),
+    "sqlx-plus-assign": (
+        _rs('  let mut sql = String::from("select ");\n  sql += &name;\n  sqlx::query(&sql);'),
+        [("sql", 4)],
+    ),
+    "sqlx-query-as-generic": (
+        _rs('  sqlx::query_as::<_, User>(&format!("select {}", id));'),
+        [("sql", 2)],
+    ),
+    "diesel-sql-query": (
+        _rs('  diesel::sql_query(format!("select {}", id));'),
+        [("sql", 2)],
+    ),
+    "connection-execute": (
+        _rs('  conn.execute(&format!("delete {}", id), &[]);'),
+        [("sql", 2)],
+    ),
+    "self-client-query": (
+        _rs('  self.client.query(&format!("select {}", id), &[]);'),
+        [("sql", 2)],
+    ),
+    "shell-built-program": (
+        _rs('  Command::new(&format!("{}/run", dir));'),
+        [("shell", 2)],
+    ),
+    "shell-sh-c-built-arg": (
+        _rs('  Command::new("sh").arg("-c").arg(format!("ls {}", dir)).output();'),
+        [("shell", 2)],
+    ),
+    "shell-bash-variable": (
+        _rs('  let cmd = format!("ls {}", dir);\n  Command::new("bash").arg("-c").arg(&cmd);'),
+        [("shell", 3)],
+    ),
+    "tls-certs": (
+        _rs("  Client::builder().danger_accept_invalid_certs(true).build();"),
+        [("tls-verify-off", 2)],
+    ),
+    "tls-hostnames": (
+        _rs("  Client::builder().danger_accept_invalid_hostnames( true ).build();"),
+        [("tls-verify-off", 2)],
+    ),
+    "weak-md5-compute": (_rs("  let d = md5::compute(data);"), [("weak-hash", 2)]),
+    "weak-md5-new": (_rs("  let h = Md5::new();"), [("weak-hash", 2)]),
+    "weak-sha1-new": (_rs("  let h = Sha1::new();"), [("weak-hash", 2)]),
+    "weak-sha1-path": (_rs("  let h = sha1::Sha1::new();"), [("weak-hash", 2)]),
+    "weak-sha1-digest": (_rs("  let h = Sha1::digest(data);"), [("weak-hash", 2)]),
+    "weak-md5-digest": (_rs("  let h = md5::Md5::digest(data);"), [("weak-hash", 2)]),
+    "weak-sha1-default": (_rs("  let h = Sha1::default();"), [("weak-hash", 2)]),
+    "weak-hmac-sha1-type": ("type HmacSha1 = Hmac<Sha1>;\n", [("weak-hash", 1)]),
+    "sqlx-as-str": (
+        _rs('  let sql = format!("select {}", id);\n  sqlx::query(sql.as_str());'),
+        [("sql", 3)],
+    ),
+    "sqlx-clone": (
+        _rs('  let sql = format!("select {}", id);\n  sqlx::query(&sql.clone());'),
+        [("sql", 3)],
+    ),
+    "sqlx-index": (
+        _rs('  let sql = format!("select {}", id);\n  sqlx::query(&sql[..]);'),
+        [("sql", 3)],
+    ),
+    "sqlx-field-push-str": (
+        _rs("  self.sql.push_str(&name);\n  sqlx::query(&self.sql);"),
+        [("sql", 3)],
+    ),
+    "shell-args-array": (
+        _rs(
+            '  Command::new("sh").args(["-c", &cmd_text(x)]).output();'.replace(
+                "&cmd_text(x)", '&format!("ls {}", d)'
+            )
+        ),
+        [("shell", 2)],
+    ),
+    "shell-args-ref-array-variable": (
+        _rs(
+            '  let cmd = format!("ls {}", d);\n  Command::new("bash").args(&["-c", &cmd]).output();'
+        ),
+        [("shell", 3)],
+    ),
+    "cors-permissive": (_rs("  let c = CorsLayer::permissive();"), [("cors-any-origin", 2)]),
+    "cors-very-permissive": (
+        _rs("  let c = CorsLayer::very_permissive();"),
+        [("cors-any-origin", 2)],
+    ),
+    "cors-allow-origin-any": (
+        _rs("  let c = CorsLayer::new().allow_origin(Any);"),
+        [("cors-any-origin", 2)],
+    ),
+    "cors-allow-origin-any-fn": (
+        _rs("  let c = CorsLayer::new().allow_origin(AllowOrigin::any());"),
+        [("cors-any-origin", 2)],
+    ),
+    "cors-actix-permissive": (_rs("  let c = Cors::permissive();"), [("cors-any-origin", 2)]),
+    "cors-actix-any": (
+        _rs("  let c = Cors::default().allow_any_origin();"),
+        [("cors-any-origin", 2)],
+    ),
+}
+
+
+RS_QUIET = {
+    "sqlx-bind": _rs(
+        '  sqlx::query("select * from t where id = $1").bind(id).fetch_all(&pool);'
+    ),
+    "sqlx-literal-only": _rs('  sqlx::query("select 1");'),
+    "sqlx-format-without-args": _rs('  sqlx::query(&format!("select 1"));'),
+    "sqlx-bind-built-value": _rs('  sqlx::query("select $1").bind(format!("%{}%", q));'),
+    "sqlx-query-macro": _rs('  sqlx::query!("select * from t where id = $1", id);'),
+    "sqlx-query-as-macro-with-format": _rs(
+        '  sqlx::query_as!(User, "select * from t where id = $1", format!("{}", id));'
+    ),
+    "sqlx-query-macro-with-built-name": _rs(
+        '  let sql = format!("select {}", id);\n  sqlx::query!(sql);'
+    ),
+    "sqlx-macro-chain": _rs('  sqlx::query!("select 1").fetch_one(&pool).await?;'),
+    "diesel-literal": _rs('  diesel::sql_query("select 1");'),
+    "concat-of-literals": _rs('  sqlx::query(concat!("select ", "1"));'),
+    "reassigned-literal": _rs(
+        '  let mut sql = format!("select {}", id);\n  sql = "select 1".to_string();\n  sqlx::query(&sql);'
+    ),
+    "as-str-of-literal": _rs('  let sql = "select 1";\n  sqlx::query(sql.as_str());'),
+    "push-str-literal": _rs(
+        '  let mut sql = String::new();\n  sql.push_str("select 1");\n  sqlx::query(&sql);'
+    ),
+    "http-client-query": _rs('  self.http.get(&format!("https://x/{}", id));'),
+    "shell-literal-program": _rs('  Command::new("git").arg(name).output();'),
+    "shell-literal-chain": _rs('  Command::new("git").arg("-C").arg(format!("{}", dir));'),
+    "shell-sh-literal-args": _rs('  Command::new("sh").arg("-c").arg("ls");'),
+    "tls-verify-on": _rs("  Client::builder().danger_accept_invalid_certs(false).build();"),
+    "strong-hash": _rs("  let h = Sha256::new();"),
+    "cors-explicit-origin": _rs("  let c = CorsLayer::new().allow_origin(origin);"),
+    "cors-permissive-name-only": _rs("  let permissive = 1;"),
+    "sync-sleep": _rs("  std::thread::sleep(d);"),
+    "bare-sync-sleep": _rs("  thread::sleep(d);"),
+    "sync-fs": _rs("  let s = std::fs::read_to_string(p);"),
+    "import-sha1": "use sha1::Sha1;\n",
+    "import-md5": "use md5::Md5;\n",
+    "hmac-sha256-type": "type H = Hmac<Sha256>;\n",
+    "shell-args-array-literal": _rs('  Command::new("sh").args(["-c", "ls"]).output();'),
+    "git-args-array-built": _rs(
+        '  Command::new("git").args(["-C", &format!("{}", d)]).output();'
+    ),
+    "async-tokio-fs-use-bare": _rs("  fs::read_to_string(p).await?;", "async fn f()"),
+    "async-tokio-fs-write-bare": _rs("  fs::write(p, s).await?;", "async fn f()"),
+    "async-tokio-fs-read-bare": _rs("  fs::read(p).await;", "async fn f()"),
+    "async-tokio-sleep": _rs("  tokio::time::sleep(d).await;", "async fn f()"),
+    "async-tokio-fs": _rs("  let s = tokio::fs::read_to_string(p).await?;", "async fn f()"),
+    "async-spawn-blocking": _rs(
+        "  tokio::task::spawn_blocking(|| std::thread::sleep(d)).await;", "async fn f()"
+    ),
+    "any-in-one-query": _rs(
+        '  sqlx::query("select * from t where id = ANY($1)").bind(ids).fetch_all(&pool).await?;'
+    ),
+    "query-outside-loop": _rs(
+        '  let r = sqlx::query("select 1").fetch_one(&pool).await?;\n  for i in ids { total += i; }'
+    ),
+    "iterable-query": _rs(
+        '  for r in sqlx::query("select 1").fetch_all(&pool).await? { println!("{:?}", r); }'
+    ),
+    "plain-first-in-loop": _rs("  for i in ids { let a = v.first(); let b = it.load(); }"),
+}
+
+
+@pytest.mark.parametrize("name", list(RS_FIRES))
+def test_rust_true_case_is_recorded(name: str) -> None:
+    src, want = RS_FIRES[name]
+    assert tags("rust", "src/a.rs", src) == want
+
+
+@pytest.mark.parametrize("name", list(RS_QUIET))
+def test_rust_safe_twin_is_quiet(name: str) -> None:
+    assert tags("rust", "src/a.rs", RS_QUIET[name]) == []
+
+
+RS_RUNTIME = {
+    "async-thread-sleep": (
+        _rs("  std::thread::sleep(d);", "async fn f()"),
+        [("blocking-async", "io", 2, "f")],
+    ),
+    "pub-async-thread-sleep-bare": (
+        _rs("  thread::sleep(d);", "pub async fn f()"),
+        [("blocking-async", "io", 2, "f")],
+    ),
+    "async-unsafe-modifiers": (
+        _rs("  thread::sleep(d);", "pub async unsafe fn f()"),
+        [("blocking-async", "io", 2, "f")],
+    ),
+    "async-std-fs": (
+        _rs("  let s = std::fs::read_to_string(p);", "async fn f()"),
+        [("blocking-async", "io", 2, "f")],
+    ),
+    "async-bare-fs-write": (
+        _rs("  fs::write(p, b);", "async fn f()"),
+        [("blocking-async", "io", 2, "f")],
+    ),
+    "async-blocking-lock": (
+        _rs("  let g = m.blocking_lock();", "async fn f()"),
+        [("blocking-async", "io", 2, "f")],
+    ),
+    "async-reqwest-blocking": (
+        _rs("  let r = reqwest::blocking::get(u);", "async fn f()"),
+        [("blocking-async", "io", 2, "f")],
+    ),
+    "async-block-in-async-fn": (
+        _rs("  tokio::spawn(async move { std::thread::sleep(d); });", "async fn f()"),
+        [("blocking-async", "io", 2, "f")],
+    ),
+    "async-method": (
+        "impl S {\n  async fn f(&self) {\n    std::thread::sleep(d);\n  }\n}\n",
+        [("blocking-async", "io", 3, "S.f")],
+    ),
+    "sqlx-fetch-one-in-for": (
+        _rs(
+            '  for id in ids {\n    sqlx::query("select 1 where id = $1").bind(id).fetch_one(&pool).await?;\n  }'
+        ),
+        [("in-loop", "query", 3, "f")],
+    ),
+    "sqlx-query-as-in-while": (
+        _rs("  while go {\n    sqlx::query_as::<_, U>(Q).fetch_optional(&pool).await?;\n  }"),
+        [("in-loop", "query", 3, "f")],
+    ),
+    "sqlx-macro-fetch-in-loop": (
+        _rs('  loop {\n    sqlx::query!("select 1").fetch_one(&pool).await?;\n  }'),
+        [("in-loop", "query", 3, "f")],
+    ),
+    "diesel-load-in-for": (
+        _rs(
+            "  for id in ids {\n    users::table.filter(users::id.eq(id)).load(&mut conn)?;\n  }"
+        ),
+        [("in-loop", "query", 3, "f")],
+    ),
+    "conn-execute-in-for": (
+        _rs("  for id in ids {\n    conn.execute(Q, &[&id])?;\n  }"),
+        [("in-loop", "query", 3, "f")],
+    ),
+    "closure-for-each": (
+        _rs('  ids.iter().for_each(|id| {\n    sqlx::query("q").fetch_one(&pool);\n  });'),
+        [("in-loop", "query", 3, "(anonymous)")],
+    ),
+}
+
+
+@pytest.mark.parametrize("name", list(RS_RUNTIME))
+def test_rust_runtime_fact_is_recorded(name: str) -> None:
+    src, want = RS_RUNTIME[name]
+    assert risks("rust", "src/a.rs", src) == want
+
+
+def test_rust_risk_detail_carries_no_source_literal() -> None:
+    src = _rs('  Command::new("sh").arg("secret-flag").arg(format!("x {}", a));')
+    for r in extractor("rust").parse("src/a.rs", src.encode()).risks:
+        assert "secret-flag" not in r.detail and '"' not in r.detail
+
+
+def test_rust_cannot_fire_swallowed_error_or_endpoint_without_auth() -> None:
+    from svarupa.health.explain import required_languages
+
+    assert "rust" not in required_languages("swallowed-error")
+    assert "rust" not in required_languages("endpoint-without-auth")
+
+
+def test_rust_blocking_call_in_async_still_fires_without_await() -> None:
+    src = _rs("  fs::write(p, s);", "async fn f()")
+    assert risks("rust", "src/a.rs", src) == [("blocking-async", "io", 2, "f")]
+
+
+def test_async_marker_is_a_whole_word_in_a_multi_word_holder() -> None:
+    src = "class S { public static async Task N() {\n  Thread.Sleep(1);\n} }\n"
+    assert risks("csharp", "S.cs", src) == [("blocking-async", "io", 2, "N")]
+
+
+def test_async_marker_is_not_matched_inside_a_longer_word() -> None:
+    src = "class S { public static Task asyncThing() {\n  Thread.Sleep(1);\n} }\n"
+    assert risks("csharp", "S.cs", src) == []
+    src = "pub fn f() {\n  std::thread::sleep(d);\n}\n"
+    assert risks("rust", "src/a.rs", src) == []
+
+
+_RS_LOOP = '  for id in ids {\n    sqlx::query("q").fetch_one(&pool);\n  }\n'
+
+
+def test_rust_test_code_has_no_risks_but_production_code_does() -> None:
+    prod = f"fn work() {{\n{_RS_LOOP}}}\n"
+    assert risks("rust", "src/a.rs", prod) == [("in-loop", "query", 3, "work")]
+    in_test_fn = f"#[test]\nfn t() {{\n{_RS_LOOP}}}\n"
+    assert risks("rust", "src/a.rs", in_test_fn) == []
+    in_tokio = f"#[tokio::test]\nasync fn t() {{\n{_RS_LOOP}}}\n"
+    assert risks("rust", "src/a.rs", in_tokio) == []
+    in_mod = f"#[cfg(test)]\nmod tests {{\n  fn helper() {{\n{_RS_LOOP}}}\n}}\n"
+    assert risks("rust", "src/a.rs", in_mod) == []
+    in_plain_mod = f"mod tests {{\n  fn helper() {{\n{_RS_LOOP}}}\n}}\n"
+    assert len(risks("rust", "src/a.rs", in_plain_mod)) == 1

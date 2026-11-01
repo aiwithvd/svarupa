@@ -66,3 +66,22 @@ User CreateUser(string name, string email, Address address)
     return new User(name, email, address);
 }
 '''
+
+[example.rust]
+before = '''
+fn create_user(name: &str, email: &str, street: &str, city: &str, zip: &str, country: &str) -> User {
+    User::new(name, email, street, city, zip, country)
+}
+'''
+after = '''
+struct Address {
+    street: String,
+    city: String,
+    zip: String,
+    country: String,
+}
+
+fn create_user(name: &str, email: &str, address: Address) -> User {
+    User::new(name, email, address)
+}
+'''

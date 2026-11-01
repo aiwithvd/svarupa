@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import posixpath
 import re
 import xml.etree.ElementTree as ET
 from collections.abc import Iterator, Mapping
@@ -140,6 +141,8 @@ def extract(scan: Scan, declared_deps: frozenset[str] = frozenset()) -> ExtractR
         facts=tuple(facts),
         deps=declared_deps,
         go_modules=go_modules(scan),
+        rust_crates=rust_crates(scan),
+        rust_uses=rust_uses(scan),
     )
     modules: dict[str, ModuleResolver] = {
         lang: pack.modules(context)
@@ -347,6 +350,108 @@ def go_modules(scan: Scan) -> tuple[tuple[str, str], ...]:
     return tuple(sorted(out.items()))
 
 
+_CARGO_TABLES = ("dependencies", "dev-dependencies", "build-dependencies")
+
+
+def _table(data: object, key: str) -> dict[str, object]:
+    got = cast("dict[str, object]", data).get(key) if isinstance(data, dict) else None
+    return cast("dict[str, object]", got) if isinstance(got, dict) else {}
+
+
+def _cargo_dep_tables(data: dict[str, object]) -> Iterator[dict[str, object]]:
+    """Every dependency table of a Cargo.toml: the three kinds, the workspace's,
+    and the same under each `[target.<cfg>]`."""
+    for key in _CARGO_TABLES:
+        yield _table(data, key)
+    yield _table(_table(data, "workspace"), "dependencies")
+    for target in _table(data, "target").values():
+        for key in _CARGO_TABLES:
+            yield _table(target, key)
+
+
+def _crate_name(name: str) -> str:
+    return name.replace("-", "_")
+
+
+def _cargo_deps(data: dict[str, object]) -> set[str]:
+    """Crate names a Cargo.toml depends on. A renamed dependency
+    (`old = { package = "new" }`) is used as `old` and published as `new`."""
+    out: set[str] = set()
+    for table in _cargo_dep_tables(data):
+        for key, spec in table.items():
+            out.add(_crate_name(key))
+            real = (
+                cast("dict[str, object]", spec).get("package")
+                if isinstance(spec, dict)
+                else None
+            )
+            if isinstance(real, str):
+                out.add(_crate_name(real))
+    return out
+
+
+def _cargo_path_crates(data: dict[str, object], holder: str) -> set[tuple[str, str]]:
+    """Path dependencies, under the name the manifest uses them by."""
+    out: set[tuple[str, str]] = set()
+    for table in _cargo_dep_tables(data):
+        for key, spec in table.items():
+            path = (
+                cast("dict[str, object]", spec).get("path") if isinstance(spec, dict) else None
+            )
+            if not isinstance(path, str):
+                continue
+            target = posixpath.normpath(posixpath.join(holder, path))
+            if target != ".." and not target.startswith("../"):
+                out.add((_crate_name(key), "" if target == "." else target))
+    return out
+
+
+def _cargo_package_crates(data: dict[str, object], holder: str) -> set[tuple[str, str]]:
+    """The `[package]` name and the `[lib] name` of a manifest."""
+    out: set[tuple[str, str]] = set()
+    if isinstance(name := _table(data, "package").get("name"), str):
+        out.add((_crate_name(name), holder))
+        if isinstance(lib := _table(data, "lib").get("name"), str):
+            out.add((_crate_name(lib), holder))
+    return out
+
+
+def rust_crates(scan: Scan) -> tuple[tuple[str, str], ...]:
+    """(crate name, directory) for each crate the repository itself defines:
+    every `[package]` (and its `[lib] name`), and every path dependency under
+    the name it is used by. A crate outside the repository is not listed."""
+    out: set[tuple[str, str]] = set()
+    for rec in scan.files:
+        if Path(rec.path).name != "Cargo.toml":
+            continue
+        try:
+            data = load_toml(read_text(scan.root, rec.path))
+        except OSError:
+            continue
+        if data is None:
+            continue
+        holder = str(Path(rec.path).parent)
+        holder = "" if holder == "." else holder
+        out |= _cargo_package_crates(data, holder) | _cargo_path_crates(data, holder)
+    return tuple(sorted(out))
+
+
+def rust_uses(scan: Scan) -> tuple[tuple[str, str], ...]:
+    """(manifest directory, dependency name) for every dependency a Cargo.toml lists."""
+    out: set[tuple[str, str]] = set()
+    for rec in scan.files:
+        if Path(rec.path).name != "Cargo.toml":
+            continue
+        try:
+            data = load_toml(read_text(scan.root, rec.path))
+        except OSError:
+            continue
+        holder = str(Path(rec.path).parent)
+        for table in _cargo_dep_tables(data or {}):
+            out.update(("" if holder == "." else holder, _crate_name(k)) for k in table)
+    return tuple(sorted(out))
+
+
 def _norm_dep(raw: str) -> str | None:
     """PEP 508 requirement string -> importable top-level name, roughly.
 
@@ -435,6 +540,9 @@ def declared_dependencies(scan: Scan) -> frozenset[str]:
 
         elif name == "go.mod":
             names.update(_go_mod(text)[1])
+        elif name == "Cargo.toml":
+            if (cargo := load_toml(text)) is not None:
+                names.update(_cargo_deps(cargo))
         elif name == "pom.xml":
             names.update(_maven_groups(text))
         elif name in ("build.gradle", "build.gradle.kts"):

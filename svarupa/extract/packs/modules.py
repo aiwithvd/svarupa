@@ -15,7 +15,14 @@ from typing import Protocol
 
 from svarupa.extract.base import FileFacts
 
-__all__ = ["CSharpNamespaces", "GoModules", "JvmPackages", "ModuleContext", "ModuleResolver"]
+__all__ = [
+    "CSharpNamespaces",
+    "GoModules",
+    "JvmPackages",
+    "ModuleContext",
+    "ModuleResolver",
+    "RustCrates",
+]
 
 
 class ModuleResolver(Protocol):
@@ -28,6 +35,9 @@ class ModuleResolver(Protocol):
     # True when `field.m()` without `this.` is a call on the class's field
     # (Java); languages that require `this.` leave it False.
     fields_without_this: bool
+    # True when `use a::b;` can import a module `b` (Rust), so `b::f()` and a
+    # bare name need module-scope rules.
+    names_modules: bool
 
     def targets(self, spec: str, from_file: str, /) -> tuple[str, ...]:
         """Repository files the specifier names, sorted; () when none."""
@@ -47,6 +57,8 @@ class ModuleContext:
     facts: tuple[FileFacts, ...]
     deps: frozenset[str]
     go_modules: tuple[tuple[str, str], ...] = ()  # (module path, directory)
+    rust_crates: tuple[tuple[str, str], ...] = ()  # (crate name, crate directory)
+    rust_uses: tuple[tuple[str, str], ...] = ()  # (manifest directory, dependency name)
 
 
 class GoModules:
@@ -61,6 +73,7 @@ class GoModules:
     top_level_only = True
     package_scoped_bare = True
     fields_without_this = False
+    names_modules = False
 
     def __init__(self, context: ModuleContext) -> None:
         self.modules = tuple(sorted(context.go_modules, key=lambda m: (-len(m[0]), m[0])))
@@ -133,6 +146,7 @@ class JvmPackages:
     top_level_only = False
     package_scoped_bare = False
     fields_without_this = True
+    names_modules = False
 
     def __init__(self, context: ModuleContext) -> None:
         by_ns: dict[str, list[str]] = {}
@@ -174,6 +188,7 @@ class CSharpNamespaces:
     top_level_only = False
     package_scoped_bare = False
     fields_without_this = True
+    names_modules = False
 
     def __init__(self, context: ModuleContext) -> None:
         by_ns: dict[str, set[str]] = {}
@@ -220,3 +235,197 @@ class CSharpNamespaces:
             if len(parts) >= 2 and len(head) == 2 and parts[:2] == head:
                 return True
         return False
+
+
+_RUST_STD = frozenset({"std", "core", "alloc", "proc_macro", "test"})
+
+
+def _rust_module(rest: list[str]) -> tuple[str, ...]:
+    """The module path of a file below `src` (or `src/bin/<x>`)."""
+    names = [*rest[:-1], rest[-1].removesuffix(".rs")]
+    if names[-1] == "mod" or (len(names) == 1 and names[0] in ("lib", "main")):
+        names = names[:-1]
+    return tuple(names)
+
+
+class _RustLayout:
+    """Where each `.rs` file sits: a tree is one crate root and its modules."""
+
+    def __init__(
+        self, files: frozenset[str], crate_dirs: set[str], facts: tuple[FileFacts, ...] = ()
+    ) -> None:
+        # file -> names it declares (struct, enum, trait, fn; not const, static or type)
+        self.declared = {
+            f.path: frozenset(s.name for s in f.symbols if s.kind != "method")
+            for f in facts
+            if f.lang == "rust"
+        }
+        self.trees: dict[str, dict[tuple[str, ...], str]] = {}  # tree -> module -> file
+        self.lib: dict[str, str] = {}  # tree -> its lib.rs
+        self.where: dict[str, tuple[str, tuple[str, ...]]] = {}
+        self.crate_dir: dict[str, str] = {}  # file -> directory of its crate
+        for path in sorted(files):
+            if path.endswith(".rs"):
+                self._place(path, crate_dirs)
+
+    @staticmethod
+    def _src_at(parts: list[str], crate_dirs: set[str]) -> int | None:
+        srcs = [i for i, p in enumerate(parts[:-1]) if p == "src"]
+        known = [i for i in srcs if "/".join(parts[:i]) in crate_dirs]
+        return (known or srcs or [None])[0]
+
+    def _place_alone(self, path: str, crate_dirs: set[str]) -> None:
+        """tests/, examples/, build.rs: a crate root of its own."""
+        owner = [d for d in crate_dirs if d == "" or path.startswith(d + "/")]
+        self.crate_dir[path] = max(owner, key=len, default="")
+        self.where[path] = (path, ())
+        self.trees.setdefault(path, {})[()] = path
+
+    def _place(self, path: str, crate_dirs: set[str]) -> None:
+        parts = path.split("/")
+        at = self._src_at(parts, crate_dirs)
+        if at is None:
+            self._place_alone(path, crate_dirs)
+            return
+        base, rest = "/".join(parts[: at + 1]), parts[at + 1 :]
+        self.crate_dir[path] = "/".join(parts[:at])
+        if rest[0] == "bin" and len(rest) >= 2:
+            tree = f"{base}/bin/{rest[1].removesuffix('.rs')}"
+            module = _rust_module(rest[2:]) if len(rest) > 2 else ()
+        else:
+            tree, module = base, _rust_module(rest)
+        self.where[path] = (tree, module)
+        is_lib = tree == base and rest == ["lib.rs"]
+        if is_lib:
+            self.lib[tree] = path
+        files = self.trees.setdefault(tree, {})
+        # lib.rs names the root when the crate has both it and main.rs
+        if module not in files or is_lib:
+            files[module] = path
+
+    def longest(
+        self,
+        tree: str,
+        base: tuple[str, ...],
+        tail: list[str],
+        *,
+        root: str | None = None,
+        module_only: bool = False,
+    ) -> str | None:
+        """The file of the module `base + tail`, or of the module `base + tail[:-1]`
+        when that file declares the last segment as an item. Nothing else: a path
+        with two segments that are not modules names nothing, and an item the file
+        does not declare names nothing. `module_only` (a glob) allows no item. `root` is the file standing for the empty module
+        path, when it is not the tree's own."""
+        files = self.trees.get(tree, {})
+        for n in range(len(tail), max(len(tail) - (0 if module_only else 1), 0) - 1, -1):
+            path = (*base, *tail[:n])
+            hit = root if not path and root is not None else files.get(path)
+            if hit is None:
+                continue
+            if n == len(tail) or tail[-1] in self.declared.get(hit, ()):
+                return hit
+        return None
+
+
+class RustCrates:
+    """Rust: a `use` path names a module, and a module is a file.
+
+    `crate.a.b.Item` is the module file of `a.b` (`a/b.rs` or `a/b/mod.rs`),
+    with at most one trailing segment that is an item the file declares. A path with two
+    segments that name no module file names nothing, and a glob (`use a::*`)
+    needs its module itself. `self.x` is relative to the caller's module and
+    `super.x` to its parent. `<crate>.a.b` enters another crate's library
+    root, where `<crate>` is a `[package]` name (or a path dependency's key)
+    with `-` written as `_`. `src/main.rs` and `src/bin/*` are crate roots of
+    their own, and they reach the library of their crate by its name. A crate
+    nobody declares resolves to nothing. Every `[package]` Cargo.toml is a
+    crate (`[workspace] members` is not read); when two crates share a name
+    the one in the shortest directory wins. `std`, `core`, `alloc` and every
+    Cargo dependency are external; a crate of this repository never is, except
+    that one named like `std`, `core` or `alloc` shadows it only for itself and
+    for crates whose manifest lists it. An item inside an inline `mod` of a
+    file (`crate.a.inline.Item`) is not followed.
+    """
+
+    top_level_only = False
+    # Bare names are scoped by module (a `use` name or a glob), not by
+    # directory, so the resolver reads `names_modules` instead of a package.
+    package_scoped_bare = False
+    fields_without_this = False
+    # `use a::b;` can import a module `b`, so `b::f()` looks in `a.b` first.
+    names_modules = True
+
+    def __init__(self, context: ModuleContext) -> None:
+        self.deps = frozenset(d.replace("-", "_") for d in context.deps)
+        self.names: dict[str, str] = {}
+        for name, directory in sorted(context.rust_crates, key=lambda c: (c[1], c[0])):
+            self.names.setdefault(name.replace("-", "_"), directory)
+        self.uses = frozenset(context.rust_uses)
+        self.layout = _RustLayout(
+            context.files, {d for _, d in context.rust_crates}, context.facts
+        )
+
+    def _relative(self, parts: list[str], from_file: str, module_only: bool) -> str | None:
+        """`crate.`, `self.` and `super.` paths, from the caller's module."""
+        tree, base = self.layout.where[from_file]
+        # main.rs is a crate root of its own, next to the library's root
+        root = from_file if from_file.rsplit("/", 1)[-1] == "main.rs" and not base else None
+        at = 1
+        if parts[0] == "crate":
+            base = ()
+        elif parts[0] == "super":
+            at = 0
+        while at < len(parts) and parts[at] == "super":
+            if not base:
+                return None
+            base, at = base[:-1], at + 1
+        return self.layout.longest(
+            tree, base, parts[at:], root=None if base else root, module_only=module_only
+        )
+
+    def _crate_dir(self, head: str, from_file: str) -> str | None:
+        """The directory of the repo crate `head` names for this caller. A crate
+        named like the standard library shadows it only for itself and for the
+        crates whose manifest lists it."""
+        directory = self.names.get(head)
+        if directory is not None and head in _RUST_STD:
+            mine = self.layout.crate_dir.get(from_file)
+            if mine != directory and (mine, head) not in self.uses:
+                return None
+        return directory
+
+    def targets(self, spec: str, from_file: str, /) -> tuple[str, ...]:
+        """Files a path names. A trailing `*` (the resolver adds it for a glob)
+        means the module itself must exist."""
+        parts = spec.split(".")
+        module_only = parts[-1] == "*"
+        if module_only:
+            parts = parts[:-1]
+        here = self.layout.where.get(from_file)
+        directory = self._crate_dir(parts[0], from_file)
+        hit: str | None = None
+        if parts[0] in ("crate", "self", "super") and here is not None:
+            hit = self._relative(parts, from_file, module_only)
+        elif directory is not None:
+            tree = f"{directory}/src" if directory else "src"
+            if tree in self.layout.lib:
+                hit = self.layout.longest(tree, (), parts[1:], module_only=module_only)
+        elif here is not None and parts[0] not in _RUST_STD:
+            hit = self._child(here, parts, module_only)
+        return (hit,) if hit is not None else ()
+
+    def _child(
+        self, here: tuple[str, tuple[str, ...]], parts: list[str], module_only: bool
+    ) -> str | None:
+        """`use db::Repo` where `db` is a module in scope: it must exist."""
+        hit = self.layout.longest(here[0], here[1], parts, module_only=module_only)
+        return None if hit == self.layout.trees[here[0]].get(here[1]) else hit
+
+    def is_external(self, spec: str, /) -> bool:
+        head = spec.split(".")[0]
+        if head in _RUST_STD:
+            return True  # a repo crate of that name was already tried by `targets`
+        if head in self.names or head in ("crate", "self", "super"):
+            return False
+        return head in self.deps

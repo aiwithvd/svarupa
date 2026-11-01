@@ -1,0 +1,618 @@
+{
+ "nodes": [
+  {
+   "id": "crates/api/src/main.rs",
+   "kind": "module",
+   "label": "main.rs",
+   "qualified_name": "crates/api/src/main.rs",
+   "evidence": [
+    {
+     "file": "crates/api/src/main.rs",
+     "start_line": 1,
+     "end_line": 1,
+     "rev": null
+    }
+   ],
+   "lang": "rust",
+   "attrs": [],
+   "producer": "rust.module"
+  },
+  {
+   "id": "crates/api/src/main.rs#api.main",
+   "kind": "function",
+   "label": "main",
+   "qualified_name": "api.main",
+   "evidence": [
+    {
+     "file": "crates/api/src/main.rs",
+     "start_line": 6,
+     "end_line": 6,
+     "rev": null
+    }
+   ],
+   "lang": "rust",
+   "attrs": [
+    [
+     "exported",
+     "false"
+    ]
+   ],
+   "producer": "rust.symbols"
+  },
+  {
+   "id": "crates/api/src/routes.rs",
+   "kind": "module",
+   "label": "routes.rs",
+   "qualified_name": "crates/api/src/routes.rs",
+   "evidence": [
+    {
+     "file": "crates/api/src/routes.rs",
+     "start_line": 1,
+     "end_line": 1,
+     "rev": null
+    }
+   ],
+   "lang": "rust",
+   "attrs": [],
+   "producer": "rust.module"
+  },
+  {
+   "id": "crates/api/src/routes.rs#api.routes.Api",
+   "kind": "class",
+   "label": "Api",
+   "qualified_name": "api.routes.Api",
+   "evidence": [
+    {
+     "file": "crates/api/src/routes.rs",
+     "start_line": 4,
+     "end_line": 4,
+     "rev": null
+    }
+   ],
+   "lang": "rust",
+   "attrs": [
+    [
+     "exported",
+     "true"
+    ]
+   ],
+   "producer": "rust.symbols"
+  },
+  {
+   "id": "crates/api/src/routes.rs#api.routes.Api.create",
+   "kind": "method",
+   "label": "create",
+   "qualified_name": "api.routes.Api.create",
+   "evidence": [
+    {
+     "file": "crates/api/src/routes.rs",
+     "start_line": 7,
+     "end_line": 7,
+     "rev": null
+    }
+   ],
+   "lang": "rust",
+   "attrs": [
+    [
+     "class",
+     "Api"
+    ],
+    [
+     "exported",
+     "true"
+    ]
+   ],
+   "producer": "rust.symbols"
+  },
+  {
+   "id": "crates/api/src/routes.rs#api.routes.mount",
+   "kind": "function",
+   "label": "mount",
+   "qualified_name": "api.routes.mount",
+   "evidence": [
+    {
+     "file": "crates/api/src/routes.rs",
+     "start_line": 9,
+     "end_line": 9,
+     "rev": null
+    }
+   ],
+   "lang": "rust",
+   "attrs": [
+    [
+     "exported",
+     "true"
+    ]
+   ],
+   "producer": "rust.symbols"
+  },
+  {
+   "id": "crates/shop_core/src/db.rs",
+   "kind": "module",
+   "label": "db.rs",
+   "qualified_name": "crates/shop_core/src/db.rs",
+   "evidence": [
+    {
+     "file": "crates/shop_core/src/db.rs",
+     "start_line": 1,
+     "end_line": 1,
+     "rev": null
+    }
+   ],
+   "lang": "rust",
+   "attrs": [],
+   "producer": "rust.module"
+  },
+  {
+   "id": "crates/shop_core/src/db.rs#shop_core.db.Repo",
+   "kind": "class",
+   "label": "Repo",
+   "qualified_name": "shop_core.db.Repo",
+   "evidence": [
+    {
+     "file": "crates/shop_core/src/db.rs",
+     "start_line": 1,
+     "end_line": 1,
+     "rev": null
+    }
+   ],
+   "lang": "rust",
+   "attrs": [
+    [
+     "exported",
+     "true"
+    ]
+   ],
+   "producer": "rust.symbols"
+  },
+  {
+   "id": "crates/shop_core/src/db.rs#shop_core.db.Repo.save",
+   "kind": "method",
+   "label": "save",
+   "qualified_name": "shop_core.db.Repo.save",
+   "evidence": [
+    {
+     "file": "crates/shop_core/src/db.rs",
+     "start_line": 4,
+     "end_line": 4,
+     "rev": null
+    }
+   ],
+   "lang": "rust",
+   "attrs": [
+    [
+     "class",
+     "Repo"
+    ],
+    [
+     "exported",
+     "true"
+    ]
+   ],
+   "producer": "rust.symbols"
+  },
+  {
+   "id": "crates/shop_core/src/db/extra.rs",
+   "kind": "module",
+   "label": "extra.rs",
+   "qualified_name": "crates/shop_core/src/db/extra.rs",
+   "evidence": [
+    {
+     "file": "crates/shop_core/src/db/extra.rs",
+     "start_line": 1,
+     "end_line": 1,
+     "rev": null
+    }
+   ],
+   "lang": "rust",
+   "attrs": [],
+   "producer": "rust.module"
+  },
+  {
+   "id": "crates/shop_core/src/db/extra.rs#shop_core.db.extra.Repo.purge",
+   "kind": "method",
+   "label": "purge",
+   "qualified_name": "shop_core.db.extra.Repo.purge",
+   "evidence": [
+    {
+     "file": "crates/shop_core/src/db/extra.rs",
+     "start_line": 2,
+     "end_line": 2,
+     "rev": null
+    }
+   ],
+   "lang": "rust",
+   "attrs": [
+    [
+     "class",
+     "Repo"
+    ],
+    [
+     "exported",
+     "true"
+    ]
+   ],
+   "producer": "rust.symbols"
+  },
+  {
+   "id": "crates/shop_core/src/lib.rs",
+   "kind": "module",
+   "label": "lib.rs",
+   "qualified_name": "crates/shop_core/src/lib.rs",
+   "evidence": [
+    {
+     "file": "crates/shop_core/src/lib.rs",
+     "start_line": 1,
+     "end_line": 1,
+     "rev": null
+    }
+   ],
+   "lang": "rust",
+   "attrs": [],
+   "producer": "rust.module"
+  },
+  {
+   "id": "crates/shop_core/src/orders.rs",
+   "kind": "module",
+   "label": "orders.rs",
+   "qualified_name": "crates/shop_core/src/orders.rs",
+   "evidence": [
+    {
+     "file": "crates/shop_core/src/orders.rs",
+     "start_line": 1,
+     "end_line": 1,
+     "rev": null
+    }
+   ],
+   "lang": "rust",
+   "attrs": [],
+   "producer": "rust.module"
+  },
+  {
+   "id": "crates/shop_core/src/orders.rs#shop_core.orders.Service",
+   "kind": "class",
+   "label": "Service",
+   "qualified_name": "shop_core.orders.Service",
+   "evidence": [
+    {
+     "file": "crates/shop_core/src/orders.rs",
+     "start_line": 4,
+     "end_line": 4,
+     "rev": null
+    }
+   ],
+   "lang": "rust",
+   "attrs": [
+    [
+     "exported",
+     "true"
+    ]
+   ],
+   "producer": "rust.symbols"
+  },
+  {
+   "id": "crates/shop_core/src/orders.rs#shop_core.orders.Service.audit",
+   "kind": "method",
+   "label": "audit",
+   "qualified_name": "shop_core.orders.Service.audit",
+   "evidence": [
+    {
+     "file": "crates/shop_core/src/orders.rs",
+     "start_line": 8,
+     "end_line": 8,
+     "rev": null
+    }
+   ],
+   "lang": "rust",
+   "attrs": [
+    [
+     "class",
+     "Service"
+    ],
+    [
+     "exported",
+     "false"
+    ]
+   ],
+   "producer": "rust.symbols"
+  },
+  {
+   "id": "crates/shop_core/src/orders.rs#shop_core.orders.Service.place",
+   "kind": "method",
+   "label": "place",
+   "qualified_name": "shop_core.orders.Service.place",
+   "evidence": [
+    {
+     "file": "crates/shop_core/src/orders.rs",
+     "start_line": 7,
+     "end_line": 7,
+     "rev": null
+    }
+   ],
+   "lang": "rust",
+   "attrs": [
+    [
+     "class",
+     "Service"
+    ],
+    [
+     "exported",
+     "true"
+    ]
+   ],
+   "producer": "rust.symbols"
+  }
+ ],
+ "edges": [
+  {
+   "src": "crates/api/src/main.rs",
+   "dst": "crates/api/src/routes.rs",
+   "kind": "imports",
+   "evidence": [
+    {
+     "file": "crates/api/src/main.rs",
+     "start_line": 4,
+     "end_line": 4,
+     "rev": null
+    }
+   ],
+   "confidence": "RESOLVED",
+   "resolution": "resolved",
+   "arity": 1,
+   "attrs": [],
+   "producer": "rust.imports"
+  },
+  {
+   "src": "crates/api/src/main.rs",
+   "dst": "crates/shop_core/src/orders.rs",
+   "kind": "imports",
+   "evidence": [
+    {
+     "file": "crates/api/src/main.rs",
+     "start_line": 1,
+     "end_line": 1,
+     "rev": null
+    }
+   ],
+   "confidence": "RESOLVED",
+   "resolution": "resolved",
+   "arity": 1,
+   "attrs": [],
+   "producer": "rust.imports"
+  },
+  {
+   "src": "crates/api/src/main.rs#api.main",
+   "dst": "crates/api/src/routes.rs#api.routes.mount",
+   "kind": "calls",
+   "evidence": [
+    {
+     "file": "crates/api/src/main.rs",
+     "start_line": 6,
+     "end_line": 6,
+     "rev": null
+    }
+   ],
+   "confidence": "RESOLVED",
+   "resolution": "resolved",
+   "arity": 1,
+   "attrs": [
+    [
+     "shape",
+     "qualified"
+    ]
+   ],
+   "producer": "rust.calls"
+  },
+  {
+   "src": "crates/api/src/routes.rs",
+   "dst": "crates/api/src/main.rs",
+   "kind": "imports",
+   "evidence": [
+    {
+     "file": "crates/api/src/routes.rs",
+     "start_line": 1,
+     "end_line": 1,
+     "rev": null
+    }
+   ],
+   "confidence": "RESOLVED",
+   "resolution": "resolved",
+   "arity": 1,
+   "attrs": [],
+   "producer": "rust.imports"
+  },
+  {
+   "src": "crates/api/src/routes.rs",
+   "dst": "crates/shop_core/src/orders.rs",
+   "kind": "imports",
+   "evidence": [
+    {
+     "file": "crates/api/src/routes.rs",
+     "start_line": 2,
+     "end_line": 2,
+     "rev": null
+    }
+   ],
+   "confidence": "RESOLVED",
+   "resolution": "resolved",
+   "arity": 1,
+   "attrs": [],
+   "producer": "rust.imports"
+  },
+  {
+   "src": "crates/api/src/routes.rs#api.routes.Api.create",
+   "dst": "crates/shop_core/src/orders.rs#shop_core.orders.Service.place",
+   "kind": "calls",
+   "evidence": [
+    {
+     "file": "crates/api/src/routes.rs",
+     "start_line": 7,
+     "end_line": 7,
+     "rev": null
+    }
+   ],
+   "confidence": "RESOLVED",
+   "resolution": "resolved",
+   "arity": 1,
+   "attrs": [
+    [
+     "shape",
+     "self_field"
+    ]
+   ],
+   "producer": "rust.calls"
+  },
+  {
+   "src": "crates/shop_core/src/db/extra.rs#shop_core.db.extra.Repo.purge",
+   "dst": "crates/shop_core/src/db.rs#shop_core.db.Repo.save",
+   "kind": "calls",
+   "evidence": [
+    {
+     "file": "crates/shop_core/src/db/extra.rs",
+     "start_line": 2,
+     "end_line": 2,
+     "rev": null
+    }
+   ],
+   "confidence": "RESOLVED",
+   "resolution": "resolved",
+   "arity": 1,
+   "attrs": [
+    [
+     "shape",
+     "self"
+    ]
+   ],
+   "producer": "rust.calls"
+  },
+  {
+   "src": "crates/shop_core/src/lib.rs",
+   "dst": "crates/shop_core/src/db.rs",
+   "kind": "imports",
+   "evidence": [
+    {
+     "file": "crates/shop_core/src/lib.rs",
+     "start_line": 2,
+     "end_line": 2,
+     "rev": null
+    }
+   ],
+   "confidence": "RESOLVED",
+   "resolution": "resolved",
+   "arity": 1,
+   "attrs": [],
+   "producer": "rust.imports"
+  },
+  {
+   "src": "crates/shop_core/src/lib.rs",
+   "dst": "crates/shop_core/src/orders.rs",
+   "kind": "imports",
+   "evidence": [
+    {
+     "file": "crates/shop_core/src/lib.rs",
+     "start_line": 1,
+     "end_line": 1,
+     "rev": null
+    }
+   ],
+   "confidence": "RESOLVED",
+   "resolution": "resolved",
+   "arity": 1,
+   "attrs": [],
+   "producer": "rust.imports"
+  },
+  {
+   "src": "crates/shop_core/src/orders.rs",
+   "dst": "crates/shop_core/src/db.rs",
+   "kind": "imports",
+   "evidence": [
+    {
+     "file": "crates/shop_core/src/orders.rs",
+     "start_line": 1,
+     "end_line": 1,
+     "rev": null
+    }
+   ],
+   "confidence": "RESOLVED",
+   "resolution": "resolved",
+   "arity": 1,
+   "attrs": [],
+   "producer": "rust.imports"
+  },
+  {
+   "src": "crates/shop_core/src/orders.rs#shop_core.orders.Service.place",
+   "dst": "crates/shop_core/src/db.rs#shop_core.db.Repo.save",
+   "kind": "calls",
+   "evidence": [
+    {
+     "file": "crates/shop_core/src/orders.rs",
+     "start_line": 7,
+     "end_line": 7,
+     "rev": null
+    }
+   ],
+   "confidence": "RESOLVED",
+   "resolution": "resolved",
+   "arity": 1,
+   "attrs": [
+    [
+     "shape",
+     "self_field"
+    ]
+   ],
+   "producer": "rust.calls"
+  },
+  {
+   "src": "crates/shop_core/src/orders.rs#shop_core.orders.Service.place",
+   "dst": "crates/shop_core/src/orders.rs#shop_core.orders.Service.audit",
+   "kind": "calls",
+   "evidence": [
+    {
+     "file": "crates/shop_core/src/orders.rs",
+     "start_line": 7,
+     "end_line": 7,
+     "rev": null
+    }
+   ],
+   "confidence": "RESOLVED",
+   "resolution": "resolved",
+   "arity": 1,
+   "attrs": [
+    [
+     "shape",
+     "self"
+    ]
+   ],
+   "producer": "rust.calls"
+  }
+ ],
+ "scorecard": {
+  "measures": "the share of intra-repository references pinned to a target, not whether the target is correct; a wrong edge counts as resolved",
+  "rows": [
+   {
+    "lang": "rust",
+    "kind": "calls",
+    "resolved": 5,
+    "candidate": 0,
+    "external": 1,
+    "unresolved": 0,
+    "pinned_pct": 100.0
+   },
+   {
+    "lang": "rust",
+    "kind": "imports",
+    "resolved": 7,
+    "candidate": 0,
+    "external": 2,
+    "unresolved": 1,
+    "pinned_pct": 87.5
+   }
+  ],
+  "unresolved_samples": {
+   "rust/imports": [
+    "ghost.Nothing"
+   ]
+  }
+ },
+ "diagnostics": []
+}

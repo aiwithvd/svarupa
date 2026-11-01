@@ -157,6 +157,50 @@ REPOS: dict[str, dict[str, str]] = {
         ),
         "Data/Db.cs": "namespace Shop.Data;\n\npublic class Db {}\n",
     },
+    "rust_shop": {
+        "Cargo.toml": '[workspace]\nmembers = ["crates/*"]\n',
+        "crates/shop_core/Cargo.toml": '[package]\nname = "shop-core"\n[dependencies]\nanyhow = "1"\n',
+        "crates/shop_core/src/lib.rs": "pub mod orders;\npub mod db;\n",
+        "crates/shop_core/src/orders.rs": (
+            "use crate::db::Repo;\nuse anyhow::Result;\n\n"
+            "pub struct Service { repo: Repo }\n\n"
+            "impl Service {\n"
+            "    pub fn place(&self) -> Result<()> { self.audit(); self.repo.save() }\n"
+            "    fn audit(&self) {}\n"
+            "}\n"
+        ),
+        "crates/shop_core/src/db.rs": (
+            "pub struct Repo;\n\nimpl Repo {\n    pub fn save(&self) {}\n}\n"
+        ),
+        "crates/shop_core/src/db/extra.rs": "impl Repo {\n    pub fn purge(&self) { self.save(); }\n}\n",
+        "crates/api/Cargo.toml": (
+            '[package]\nname = "api"\n[dependencies]\n'
+            'shop-core = { path = "../shop_core" }\naxum = "0.7"\n'
+        ),
+        "crates/api/src/main.rs": (
+            "use shop_core::orders::Service;\nuse axum::Router;\nuse ghost::Nothing;\n"
+            "mod routes;\n\n"
+            "fn main() { let _ = Router::new(); routes::mount(Service::place); }\n"
+        ),
+        "crates/api/src/routes.rs": (
+            "use super::*;\nuse shop_core::orders::Service;\n\n"
+            "pub struct Api { service: Service }\n\n"
+            "impl Api {\n    pub fn create(&self) { self.service.place(); }\n}\n"
+            "pub fn mount() {}\n"
+        ),
+    },
+    "rust_inline_mods": {
+        "Cargo.toml": '[package]\nname = "tok"\n',
+        "src/lib.rs": "mod token;\nmod util;\n\npub struct Root;\n",
+        "src/token/mod.rs": (
+            "pub struct Tok;\n\n"
+            "#[cfg(test)]\nmod tests {\n"
+            "    use super::*;\n"
+            "    mod nested {\n        use super::super::Tok;\n        use super::super::super::Root;\n    }\n"
+            "}\n"
+        ),
+        "src/util.rs": "pub fn helper() {}\n",
+    },
 }
 
 
@@ -194,3 +238,18 @@ def test_repo_matches_golden(name: str, tmp_path: Path) -> None:
         return
     assert golden.exists(), f"no golden file; run with SVARUPA_UPDATE_GOLDEN=1: {golden}"
     assert got == golden.read_text(encoding="utf8")
+
+
+def test_inline_test_mod_super_does_not_climb_to_the_parent_file(tmp_path: Path) -> None:
+    result = build(tmp_path, REPOS["rust_inline_mods"])
+    imports = {(e.src, e.dst) for e in result.edges if e.kind.value == "imports"}
+    assert ("src/token/mod.rs", "src/lib.rs") in imports  # only via super::super::super
+    only_use_super = dict(REPOS["rust_inline_mods"])
+    only_use_super["src/token/mod.rs"] = (
+        "pub struct Tok;\n\n#[cfg(test)]\nmod tests {\n    use super::*;\n"
+        "    mod nested {\n        use super::super::Tok;\n    }\n}\n"
+    )
+    got = build(tmp_path / "only", only_use_super)
+    edges = {(e.src, e.dst) for e in got.edges if e.kind.value == "imports"}
+    assert ("src/token/mod.rs", "src/lib.rs") not in edges
+    assert not [d for d in got.diagnostics if "cycle" in str(d).lower()]
