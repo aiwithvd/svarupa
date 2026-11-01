@@ -254,13 +254,25 @@ def test_every_pack_language_counts_as_code() -> None:
 
     assert {p.lang for p in PACKS} <= _CODE
     assert set(BY_DETECTED) <= _CODE
-    assert {"python", "typescript", "javascript", "go", "java", "csharp"} <= _CODE
+    assert {"python", "typescript", "javascript", "go", "java", "csharp", "rust"} <= _CODE
 
 
 def test_a_csharp_repo_has_lines_and_a_sane_debt_ratio(tmp_path: Path) -> None:
     body = "".join(f"    public int M{i}() {{ return {i}; }}\n" for i in range(40))
     write(
         tmp_path, "Shop/Orders.cs", "namespace Shop;\n\npublic class Orders\n{\n" + body + "}\n"
+    )
+    h = health(tmp_path)
+    assert h.ncloc > 40
+    assert h.debt_ratio < 0.5
+
+
+def test_a_rust_repo_has_lines_and_a_sane_debt_ratio(tmp_path: Path) -> None:
+    body = "".join(f"    pub fn m{i}(&self) -> i32 {{ {i} }}\n" for i in range(40))
+    write(
+        tmp_path,
+        "src/orders.rs",
+        "pub struct Orders;\n\nimpl Orders {\n" + body + "}\n",
     )
     h = health(tmp_path)
     assert h.ncloc > 40

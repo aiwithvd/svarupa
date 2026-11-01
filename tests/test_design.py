@@ -328,3 +328,12 @@ def test_a_two_project_csharp_repo_has_two_units(tmp_path: Path) -> None:
         "namespace Core;\n\npublic class Item { public int N() { return 1; } }\n",
     )
     assert [u.unit.id for u in run(tmp_path).units] == ["Api", "Core"]
+
+
+def test_a_two_crate_rust_workspace_has_two_units(tmp_path: Path) -> None:
+    write(tmp_path, "Cargo.toml", '[workspace]\nmembers = ["api", "core"]\n')
+    write(tmp_path, "api/Cargo.toml", '[package]\nname = "api"\nversion = "0.1.0"\n')
+    write(tmp_path, "api/src/orders.rs", "pub fn n() -> i32 {\n    1\n}\n")
+    write(tmp_path, "core/Cargo.toml", '[package]\nname = "core"\nversion = "0.1.0"\n')
+    write(tmp_path, "core/src/item.rs", "pub fn n() -> i32 {\n    1\n}\n")
+    assert [u.unit.id for u in run(tmp_path).units] == ["api", "core"]

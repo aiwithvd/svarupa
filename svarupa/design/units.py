@@ -13,7 +13,7 @@ __all__ = ["find_units", "signals"]
 
 _MANIFESTS = frozenset(
     {"pyproject.toml", "requirements.txt", "package.json", "go.mod", "pom.xml",
-     "build.gradle", "build.gradle.kts"}
+     "build.gradle", "build.gradle.kts", "Cargo.toml"}
 )  # fmt: skip
 _CODE_SUFFIXES = frozenset(
     {
@@ -30,6 +30,7 @@ _CODE_SUFFIXES = frozenset(
         ".go",
         ".java",
         ".cs",
+        ".rs",
     }
 )
 _DATA_DIRS = frozenset(
