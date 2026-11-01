@@ -228,6 +228,16 @@ class RiskSpec:
     # A call that appends to its receiver (`sql.push_str(x)`): a dynamic
     # argument makes the receiver variable built.
     appends: re.Pattern[str] | None = None
+    # Methods that return their receiver's string (`sql.as_str()`, `.clone()`).
+    same_value: re.Pattern[str] | None = None
+    # Node types whose first named child is the value (`sql[..]`).
+    view_types: frozenset[str] = frozenset()
+    # Node types that name a variable by their text (`self.sql`).
+    path_types: frozenset[str] = frozenset()
+    # Node types that hold a list of values (`["-c", cmd]`): built if any item is.
+    list_types: frozenset[str] = frozenset()
+    # Node types that await their call: an awaited call never blocks the loop.
+    await_types: frozenset[str] = frozenset()
     sinks: tuple[Sink, ...] = ()
     unsafe: tuple[Unsafe, ...] = ()
     auth_markers: frozenset[str] = frozenset()

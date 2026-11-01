@@ -590,10 +590,11 @@ def _p(pattern: str) -> re.Pattern[str]:
 
 
 _CALL = frozenset({"call_expression"})
-_PATH = frozenset({"scoped_identifier"})
+_TYPE = frozenset({"generic_type"})
 # A database receiver: `conn`, `self.db`, `read_conn`.
 _CONN = r"(?:conn|connection|client|tx|db|pool|\w*_conn)"
-_SQLX = r"(?:(?:\w+::)*sqlx::)?(?:query|query_as|query_scalar)!?"
+_SQLX_NAME = r"(?:(?:\w+::)*sqlx::)?(?:query|query_as|query_scalar)"
+_SQLX = _SQLX_NAME + "!?"  # the macro form roots a chain, but is never a sink
 # A diesel chain starts at a table or `sql_query`: `users::table.filter.load`.
 _DIESEL = r"(?:(?:\w+::)*table|(?:\w+::)*sql_query)"
 
@@ -609,6 +610,11 @@ RISKS = RiskSpec(
     format_macros=frozenset({"format!", "std::format!"}),
     string_ctors=re.compile(r"^String::from$|\.(?:to_string|to_owned)$"),
     appends=re.compile(r"\.push_str$"),
+    same_value=re.compile(r"\.(?:as_str|clone|to_owned|as_ref)$"),
+    view_types=frozenset({"index_expression"}),
+    path_types=frozenset({"field_expression"}),
+    list_types=frozenset({"array_expression"}),
+    await_types=frozenset({"await_expression"}),
     assigns=(
         ("let_declaration", "pattern", "value"),
         ("assignment_expression", "left", "right"),
@@ -617,7 +623,7 @@ RISKS = RiskSpec(
     unwrap=frozenset({"parenthesized_expression", "reference_expression", "await_expression", "try_expression"}),
     sinks=(
         # `sqlx::query!` and `query_as!` are macros checked at compile time: never sinks.
-        Sink("sql", re.compile(r"^" + _SQLX.removesuffix("!?") + r"$")),
+        Sink("sql", re.compile(r"^" + _SQLX_NAME + r"$")),
         Sink("sql", re.compile(r"(?:^|::)sql_query$")),
         Sink("sql", re.compile(r"(?:^|\.)" + _CONN + r"\.(?:execute|query|query_row|prepare|batch_execute)$")),
         # The program is built, or a built `.arg` follows a literal shell.
@@ -627,8 +633,8 @@ RISKS = RiskSpec(
     unsafe=(
         Unsafe("tls-verify-off", "certificate validation off", _CALL, _p(r".*danger_accept_invalid_(?:certs|hostnames)\(\s*true\s*\)")),
         Unsafe("weak-hash", "MD5 or SHA-1", _CALL, _p(r"(?:[\w:]*::)?md5::compute\(.*")),
-        Unsafe("weak-hash", "MD5 or SHA-1", _CALL, _p(r"(?:[\w:]*::)?(?:Md5|Sha1)::new\(\s*\)")),
-        Unsafe("weak-hash", "MD5 or SHA-1", _PATH, _p(r"(?:\w+::)*sha1::Sha1")),
+        Unsafe("weak-hash", "MD5 or SHA-1", _CALL, _p(r"(?:[\w:]*::)?(?:Md5|Sha1)::(?:new|digest|default)\(.*")),
+        Unsafe("weak-hash", "MD5 or SHA-1", _TYPE, _p(r"(?:[\w:]*::)?Hmac<\s*(?:[\w:]*::)?(?:Md5|Sha1)\s*>")),
         Unsafe("cors-any-origin", "CORS allows any origin", _CALL, _p(r"(?:[\w:]*::)?(?:CorsLayer::(?:very_)?permissive|Cors::permissive)\(\s*\)")),
         Unsafe("cors-any-origin", "CORS allows any origin", _CALL, _p(r".*\.allow_origin\(\s*(?:(?:[\w:]*::)?Any|(?:[\w:]*::)?AllowOrigin::any\(\s*\))\s*\)")),
         Unsafe("cors-any-origin", "CORS allows any origin", _CALL, _p(r".*\.allow_any_origin\(\s*\)")),

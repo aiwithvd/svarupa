@@ -983,6 +983,40 @@ RS_FIRES = {
     "weak-md5-new": (_rs("  let h = Md5::new();"), [("weak-hash", 2)]),
     "weak-sha1-new": (_rs("  let h = Sha1::new();"), [("weak-hash", 2)]),
     "weak-sha1-path": (_rs("  let h = sha1::Sha1::new();"), [("weak-hash", 2)]),
+    "weak-sha1-digest": (_rs("  let h = Sha1::digest(data);"), [("weak-hash", 2)]),
+    "weak-md5-digest": (_rs("  let h = md5::Md5::digest(data);"), [("weak-hash", 2)]),
+    "weak-sha1-default": (_rs("  let h = Sha1::default();"), [("weak-hash", 2)]),
+    "weak-hmac-sha1-type": ("type HmacSha1 = Hmac<Sha1>;\n", [("weak-hash", 1)]),
+    "sqlx-as-str": (
+        _rs('  let sql = format!("select {}", id);\n  sqlx::query(sql.as_str());'),
+        [("sql", 3)],
+    ),
+    "sqlx-clone": (
+        _rs('  let sql = format!("select {}", id);\n  sqlx::query(&sql.clone());'),
+        [("sql", 3)],
+    ),
+    "sqlx-index": (
+        _rs('  let sql = format!("select {}", id);\n  sqlx::query(&sql[..]);'),
+        [("sql", 3)],
+    ),
+    "sqlx-field-push-str": (
+        _rs("  self.sql.push_str(&name);\n  sqlx::query(&self.sql);"),
+        [("sql", 3)],
+    ),
+    "shell-args-array": (
+        _rs(
+            '  Command::new("sh").args(["-c", &cmd_text(x)]).output();'.replace(
+                "&cmd_text(x)", '&format!("ls {}", d)'
+            )
+        ),
+        [("shell", 2)],
+    ),
+    "shell-args-ref-array-variable": (
+        _rs(
+            '  let cmd = format!("ls {}", d);\n  Command::new("bash").args(&["-c", &cmd]).output();'
+        ),
+        [("shell", 3)],
+    ),
     "cors-permissive": (_rs("  let c = CorsLayer::permissive();"), [("cors-any-origin", 2)]),
     "cors-very-permissive": (
         _rs("  let c = CorsLayer::very_permissive();"),
@@ -1021,6 +1055,7 @@ RS_QUIET = {
     "reassigned-literal": _rs(
         '  let mut sql = format!("select {}", id);\n  sql = "select 1".to_string();\n  sqlx::query(&sql);'
     ),
+    "as-str-of-literal": _rs('  let sql = "select 1";\n  sqlx::query(sql.as_str());'),
     "push-str-literal": _rs(
         '  let mut sql = String::new();\n  sql.push_str("select 1");\n  sqlx::query(&sql);'
     ),
@@ -1035,6 +1070,16 @@ RS_QUIET = {
     "sync-sleep": _rs("  std::thread::sleep(d);"),
     "bare-sync-sleep": _rs("  thread::sleep(d);"),
     "sync-fs": _rs("  let s = std::fs::read_to_string(p);"),
+    "import-sha1": "use sha1::Sha1;\n",
+    "import-md5": "use md5::Md5;\n",
+    "hmac-sha256-type": "type H = Hmac<Sha256>;\n",
+    "shell-args-array-literal": _rs('  Command::new("sh").args(["-c", "ls"]).output();'),
+    "git-args-array-built": _rs(
+        '  Command::new("git").args(["-C", &format!("{}", d)]).output();'
+    ),
+    "async-tokio-fs-use-bare": _rs("  fs::read_to_string(p).await?;", "async fn f()"),
+    "async-tokio-fs-write-bare": _rs("  fs::write(p, s).await?;", "async fn f()"),
+    "async-tokio-fs-read-bare": _rs("  fs::read(p).await;", "async fn f()"),
     "async-tokio-sleep": _rs("  tokio::time::sleep(d).await;", "async fn f()"),
     "async-tokio-fs": _rs("  let s = tokio::fs::read_to_string(p).await?;", "async fn f()"),
     "async-spawn-blocking": _rs(
@@ -1149,3 +1194,20 @@ def test_rust_cannot_fire_swallowed_error_or_endpoint_without_auth() -> None:
 
     assert "rust" not in required_languages("swallowed-error")
     assert "rust" not in required_languages("endpoint-without-auth")
+
+
+def test_rust_blocking_call_in_async_still_fires_without_await() -> None:
+    src = _rs("  fs::write(p, s);", "async fn f()")
+    assert risks("rust", "src/a.rs", src) == [("blocking-async", "io", 2, "f")]
+
+
+def test_async_marker_is_a_whole_word_in_a_multi_word_holder() -> None:
+    src = "class S { public static async Task N() {\n  Thread.Sleep(1);\n} }\n"
+    assert risks("csharp", "S.cs", src) == [("blocking-async", "io", 2, "N")]
+
+
+def test_async_marker_is_not_matched_inside_a_longer_word() -> None:
+    src = "class S { public static Task asyncThing() {\n  Thread.Sleep(1);\n} }\n"
+    assert risks("csharp", "S.cs", src) == []
+    src = "pub fn f() {\n  std::thread::sleep(d);\n}\n"
+    assert risks("rust", "src/a.rs", src) == []

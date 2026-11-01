@@ -61,6 +61,7 @@ _IDENT = re.compile(r"[A-Za-z_$][\w$]*")
 _MAX_NODE = 2000  # bytes: longer nodes are never an unsafe one-liner
 # `{name}` inside a format string; `{{` is an escaped brace.
 _CAPTURE = re.compile(r"(?<!\{)\{[A-Za-z_]")
+_PATH = re.compile(r"[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*")
 _ARGS = re.compile(r"\([^()]*\)")
 
 
@@ -432,7 +433,7 @@ class Ctx:
         if callee is None or args is None or spec.appends is None:
             return
         recv, dot, _ = callee.rpartition(".")
-        if not dot or not _IDENT.fullmatch(recv) or not spec.appends.search(callee):
+        if not dot or not _PATH.fullmatch(recv) or not spec.appends.search(callee):
             return
         first = args.named_children[0] if args.named_children else None
         if first is not None and not self._literal(first, spec):
@@ -490,7 +491,13 @@ class Ctx:
             out.append(
                 RiskFact("in-loop", "query", _plain(callee), self.node_evidence(node), scope)
             )
-        if is_async and spec.blocking is not None and spec.blocking.search(callee):
+        awaited = node.parent is not None and node.parent.type in spec.await_types
+        if (
+            is_async
+            and not awaited
+            and spec.blocking is not None
+            and spec.blocking.search(callee)
+        ):
             out.append(
                 RiskFact(
                     "blocking-async", "io", _plain(callee), self.node_evidence(node), scope
@@ -567,9 +574,15 @@ class Ctx:
             callee = spec.callee(self, node)
             if callee is not None and callee in spec.format_macros:
                 return self._interpolates(node, spec)
+            if callee is not None and spec.same_value and spec.same_value.search(callee):
+                return callee.rpartition(".")[0] in built
             return callee is not None and spec.format_callee.search(callee) is not None
-        if t == "identifier":
+        if t == "identifier" or t in spec.path_types:
             return self.text(node) in built
+        if t in spec.view_types and node.named_children:
+            return self._built(node.named_children[0], spec, built)
+        if t in spec.list_types:
+            return any(self._built(c, spec, built) for c in node.named_children)
         return False
 
     def _interpolates(self, macro: TSNode, spec: RiskSpec) -> bool:
