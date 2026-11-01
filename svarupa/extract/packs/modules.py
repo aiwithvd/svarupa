@@ -15,7 +15,14 @@ from typing import Protocol
 
 from svarupa.extract.base import FileFacts
 
-__all__ = ["CSharpNamespaces", "GoModules", "JvmPackages", "ModuleContext", "ModuleResolver"]
+__all__ = [
+    "CSharpNamespaces",
+    "GoModules",
+    "JvmPackages",
+    "ModuleContext",
+    "ModuleResolver",
+    "RustCrates",
+]
 
 
 class ModuleResolver(Protocol):
@@ -47,6 +54,7 @@ class ModuleContext:
     facts: tuple[FileFacts, ...]
     deps: frozenset[str]
     go_modules: tuple[tuple[str, str], ...] = ()  # (module path, directory)
+    rust_crates: tuple[tuple[str, str], ...] = ()  # (crate name, crate directory)
 
 
 class GoModules:
@@ -220,3 +228,140 @@ class CSharpNamespaces:
             if len(parts) >= 2 and len(head) == 2 and parts[:2] == head:
                 return True
         return False
+
+
+_RUST_STD = frozenset({"std", "core", "alloc", "proc_macro", "test"})
+
+
+def _rust_module(rest: list[str]) -> tuple[str, ...]:
+    """The module path of a file below `src` (or `src/bin/<x>`)."""
+    names = [*rest[:-1], rest[-1].removesuffix(".rs")]
+    if names[-1] == "mod" or (len(names) == 1 and names[0] in ("lib", "main")):
+        names = names[:-1]
+    return tuple(names)
+
+
+class _RustLayout:
+    """Where each `.rs` file sits: a tree is one crate root and its modules."""
+
+    def __init__(self, files: frozenset[str], crate_dirs: set[str]) -> None:
+        self.trees: dict[str, dict[tuple[str, ...], str]] = {}  # tree -> module -> file
+        self.lib: dict[str, str] = {}  # tree -> its lib.rs
+        self.where: dict[str, tuple[str, tuple[str, ...]]] = {}
+        for path in sorted(files):
+            if path.endswith(".rs"):
+                self._place(path, crate_dirs)
+
+    @staticmethod
+    def _src_at(parts: list[str], crate_dirs: set[str]) -> int | None:
+        srcs = [i for i, p in enumerate(parts[:-1]) if p == "src"]
+        known = [i for i in srcs if "/".join(parts[:i]) in crate_dirs]
+        return (known or srcs or [None])[0]
+
+    def _place(self, path: str, crate_dirs: set[str]) -> None:
+        parts = path.split("/")
+        at = self._src_at(parts, crate_dirs)
+        if at is None:  # tests/, examples/, build.rs: a crate root of its own
+            self.where[path] = (path, ())
+            self.trees.setdefault(path, {})[()] = path
+            return
+        base, rest = "/".join(parts[: at + 1]), parts[at + 1 :]
+        if rest[0] == "bin" and len(rest) >= 2:
+            tree = f"{base}/bin/{rest[1].removesuffix('.rs')}"
+            module = _rust_module(rest[2:]) if len(rest) > 2 else ()
+        else:
+            tree, module = base, _rust_module(rest)
+        self.where[path] = (tree, module)
+        is_lib = tree == base and rest == ["lib.rs"]
+        if is_lib:
+            self.lib[tree] = path
+        files = self.trees.setdefault(tree, {})
+        # lib.rs names the root when the crate has both it and main.rs
+        if module not in files or is_lib:
+            files[module] = path
+
+    def longest(
+        self,
+        tree: str,
+        base: tuple[str, ...],
+        tail: list[str],
+        least: int = 0,
+        root: str | None = None,
+    ) -> str | None:
+        """The file of the longest module prefix of `base + tail`. `root` is the
+        file standing for the empty module path, when it is not the tree's own."""
+        files = self.trees.get(tree, {})
+        for n in range(len(tail), least - 1, -1):
+            path = (*base, *tail[:n])
+            if not path and root is not None:
+                return root
+            if (hit := files.get(path)) is not None:
+                return hit
+        return None
+
+
+class RustCrates:
+    """Rust: a `use` path names a module, and a module is a file.
+
+    `crate.a.b.Item` is the longest prefix that is a module file of the
+    caller's crate (`a/b.rs` or `a/b/mod.rs`; a longer tail is an item, or an
+    inline module of that file). `self.x` is relative to the caller's module
+    and `super.x` to its parent. `<crate>.a.b` enters another crate's library
+    root, where `<crate>` is a `[package]` name (or a path dependency's key)
+    with `-` written as `_`. `src/main.rs` and `src/bin/*` are crate roots of
+    their own, and they reach the library of their crate by its name. A crate
+    nobody declares resolves to nothing. `std`, `core`, `alloc` and every
+    Cargo dependency are external; a crate of this repository never is.
+    """
+
+    top_level_only = False
+    # Bare names are scoped by module (a `use` name or a glob), not by
+    # directory, so the resolver reads `names_modules` instead of a package.
+    package_scoped_bare = False
+    fields_without_this = False
+    # `use a::b;` can import a module `b`, so `b::f()` looks in `a.b` first.
+    names_modules = True
+
+    def __init__(self, context: ModuleContext) -> None:
+        self.deps = frozenset(d.replace("-", "_") for d in context.deps)
+        self.names: dict[str, str] = {}
+        for name, directory in sorted(context.rust_crates, key=lambda c: (c[1], c[0])):
+            self.names.setdefault(name.replace("-", "_"), directory)
+        self.layout = _RustLayout(context.files, {d for _, d in context.rust_crates})
+
+    def _relative(self, parts: list[str], from_file: str) -> str | None:
+        """`crate.`, `self.` and `super.` paths, from the caller's module."""
+        tree, base = self.layout.where[from_file]
+        # main.rs is a crate root of its own, next to the library's root
+        root = from_file if from_file.rsplit("/", 1)[-1] == "main.rs" and not base else None
+        at = 1
+        if parts[0] == "crate":
+            base = ()
+        elif parts[0] == "super":
+            at = 0
+        while at < len(parts) and parts[at] == "super":
+            if not base:
+                return None
+            base, at = base[:-1], at + 1
+        return self.layout.longest(tree, base, parts[at:], root=None if base else root)
+
+    def targets(self, spec: str, from_file: str, /) -> tuple[str, ...]:
+        parts = spec.split(".")
+        here = self.layout.where.get(from_file)
+        hit: str | None = None
+        if parts[0] in ("crate", "self", "super") and here is not None:
+            hit = self._relative(parts, from_file)
+        elif parts[0] in self.names:
+            directory = self.names[parts[0]]
+            tree = f"{directory}/src" if directory else "src"
+            if tree in self.layout.lib:
+                hit = self.layout.longest(tree, (), parts[1:])
+        elif here is not None:  # `use db::Repo` where `db` is a module in scope
+            hit = self.layout.longest(here[0], here[1], parts, least=1)
+        return (hit,) if hit is not None else ()
+
+    def is_external(self, spec: str, /) -> bool:
+        head = spec.split(".")[0]
+        if head in self.names or head in ("crate", "self", "super"):
+            return False
+        return head in _RUST_STD or head in self.deps

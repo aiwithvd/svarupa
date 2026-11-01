@@ -34,6 +34,7 @@ from svarupa.extract.packs.model import (
     Maturity,
     Pack,
 )
+from svarupa.extract.packs.modules import RustCrates
 from svarupa.extract.packs.walker import Ctx, Frame
 from svarupa.model import Evidence
 
@@ -325,6 +326,16 @@ def use_declaration(ctx: Ctx, node: TSNode, _frame: Frame, _depth: int) -> None:
         ctx.imports.extend(_refs(arg, "", ctx.node_evidence(node)))
 
 
+def extern_crate(ctx: Ctx, node: TSNode, _frame: Frame, _depth: int) -> None:
+    """`extern crate foo as bar;` imports the crate `foo` under the name `bar`."""
+    name, alias = node.child_by_field_name("name"), node.child_by_field_name("alias")
+    if name is None or _text(name) == "self":
+        return
+    real = _text(name)
+    renamed = {_text(alias): real} if alias is not None and _text(alias) != "_" else {}
+    ctx.imports.append(_ref(real, (), renamed, ctx.node_evidence(node)))
+
+
 # ----------------------------------------------------------------------
 # calls
 
@@ -419,10 +430,12 @@ PACK = Pack(
     ),
     maturity=Maturity.EXPERIMENTAL,
     qualified_prefix=qualified_prefix,
+    modules=RustCrates,
     decorator=decorator,
     rules={
         "source_file": Custom(hook=source_file),
         "use_declaration": Custom(hook=use_declaration),
+        "extern_crate_declaration": Custom(hook=extern_crate),
         "mod_item": Custom(hook=mod_item),
         "impl_item": Custom(hook=impl_item),
         "struct_item": _CLASS,

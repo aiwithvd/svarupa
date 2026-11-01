@@ -281,3 +281,121 @@ def test_csharp_declared_namespace_wins_over_a_package() -> None:
 
 def test_csharp_package_ids_match_case_insensitively() -> None:
     assert csharp_with("xunit").is_external("Xunit.Abstractions")
+
+
+from svarupa.extract.packs.modules import RustCrates  # noqa: E402
+
+RUST_FILES = frozenset(
+    {
+        "Cargo.toml",
+        "src/lib.rs",
+        "src/main.rs",
+        "src/db.rs",
+        "src/handlers/mod.rs",
+        "src/handlers/orders.rs",
+        "src/handlers/deep/leaf.rs",
+        "src/bin/tool.rs",
+        "src/bin/other/main.rs",
+        "src/bin/other/util.rs",
+        "crates/shop-core/src/lib.rs",
+        "crates/shop-core/src/model.rs",
+        "crates/shop-api/src/main.rs",
+        "tests/it.rs",
+        "lone/src/main.rs",
+    }
+)
+
+
+def rust(
+    deps: frozenset[str] = frozenset(),
+    crates: tuple[tuple[str, str], ...] = (
+        ("shop", ""),
+        ("shop_core", "crates/shop-core"),
+        ("shop_api", "crates/shop-api"),
+    ),
+) -> RustCrates:
+    return RustCrates(ModuleContext(files=RUST_FILES, facts=(), deps=deps, rust_crates=crates))
+
+
+def test_rust_crate_paths_find_the_longest_module_file() -> None:
+    r = rust()
+    assert r.targets("crate.db", "src/lib.rs") == ("src/db.rs",)
+    assert r.targets("crate.db.Repo", "src/handlers/orders.rs") == ("src/db.rs",)
+    assert r.targets("crate.handlers.Thing", "src/db.rs") == ("src/handlers/mod.rs",)
+    assert r.targets("crate.handlers.orders.make", "src/db.rs") == ("src/handlers/orders.rs",)
+    assert r.targets("crate.handlers.deep.leaf", "src/db.rs") == ("src/handlers/deep/leaf.rs",)
+    assert r.targets("crate.Thing", "src/db.rs") == ("src/lib.rs",)
+
+
+def test_rust_self_and_super_are_relative_to_the_callers_module() -> None:
+    r = rust()
+    assert r.targets("self.orders", "src/handlers/mod.rs") == ("src/handlers/orders.rs",)
+    assert r.targets("super.db", "src/handlers/mod.rs") == ("src/db.rs",)
+    assert r.targets("super.super.orders.make", "src/handlers/deep/leaf.rs") == (
+        "src/handlers/orders.rs",
+    )
+    assert r.targets("super.super.super.db", "src/handlers/deep/leaf.rs") == ("src/db.rs",)
+    assert r.targets("super.x", "src/lib.rs") == ()
+    # `mod handlers;` in lib.rs and in a mod.rs
+    assert r.targets("self.handlers", "src/lib.rs") == ("src/handlers/mod.rs",)
+    assert r.targets("self.db", "src/main.rs") == ("src/db.rs",)
+    # `self.Item` is an item of the caller's own module (a file never imports itself)
+    assert r.targets("self.Item", "src/handlers/orders.rs") == ("src/handlers/orders.rs",)
+
+
+def test_rust_a_mod_name_in_scope_resolves_without_a_prefix() -> None:
+    r = rust()
+    assert r.targets("db.Repo", "src/lib.rs") == ("src/db.rs",)
+    assert r.targets("nope.Repo", "src/lib.rs") == ()
+
+
+def test_rust_binaries_and_the_lib_of_the_same_crate() -> None:
+    r = rust()
+    # main.rs is a root of its own; the lib is named by the crate name
+    assert r.targets("crate", "src/main.rs") == ("src/main.rs",)
+    assert r.targets("crate", "src/db.rs") == ("src/lib.rs",)
+    assert r.targets("shop.db.Repo", "src/main.rs") == ("src/db.rs",)
+    assert r.targets("shop.Thing", "src/main.rs") == ("src/lib.rs",)
+    assert r.targets("crate.util", "src/bin/other/main.rs") == ("src/bin/other/util.rs",)
+    assert r.targets("crate.Thing", "src/bin/other/main.rs") == ("src/bin/other/main.rs",)
+    assert r.targets("shop.db", "src/bin/tool.rs") == ("src/db.rs",)
+    assert r.targets("shop.db", "tests/it.rs") == ("src/db.rs",)
+
+
+def test_rust_a_binary_only_crate_cannot_be_imported() -> None:
+    r = rust(crates=(("lone", "lone"),))
+    assert r.targets("lone.x", "src/lib.rs") == ()
+    assert not r.is_external("lone.x")
+
+
+def test_rust_a_workspace_member_resolves_into_its_crate() -> None:
+    r = rust()
+    assert r.targets("shop_core.model.Order", "crates/shop-api/src/main.rs") == (
+        "crates/shop-core/src/model.rs",
+    )
+    assert r.targets("shop_core.Thing", "crates/shop-api/src/main.rs") == (
+        "crates/shop-core/src/lib.rs",
+    )
+    assert r.targets("crate.model", "crates/shop-core/src/lib.rs") == (
+        "crates/shop-core/src/model.rs",
+    )
+
+
+def test_rust_external_is_the_std_family_and_declared_dependencies() -> None:
+    r = rust(frozenset({"serde", "tokio_util"}))
+    for spec in (
+        "std.fmt",
+        "core.mem",
+        "alloc.vec",
+        "serde",
+        "serde.Serialize",
+        "tokio_util.io",
+    ):
+        assert r.is_external(spec), spec
+    for spec in ("shop_core.model", "shop.db", "crate.db", "self.x", "super.x", "nobody.x"):
+        assert not r.is_external(spec), spec
+
+
+def test_rust_a_member_is_never_external_even_if_a_manifest_lists_it() -> None:
+    r = rust(frozenset({"shop_core"}))
+    assert not r.is_external("shop_core.model")

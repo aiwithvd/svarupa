@@ -8,7 +8,7 @@ from svarupa.detect import detect
 from svarupa.extract import declared_dependencies, extract
 from svarupa.extract.base import CallShape, FileFacts
 from svarupa.extract.packs import extractor
-from svarupa.model import EdgeKind
+from svarupa.model import EdgeKind, Resolution
 
 
 def parse(src: str, path: str = "src/shop.rs") -> FileFacts:
@@ -283,8 +283,163 @@ def test_an_impl_for_an_imported_external_type_joins_no_repo_struct(tmp_path: Pa
     write(
         tmp_path, "src/imp.rs", "use anyhow::Error;\nimpl Wrap for Error { fn go(&self) {} }\n"
     )
-    # Cargo dependencies are not read yet (the module resolver is Task 2), so
-    # declare the crate by hand.
-    graph = extract(detect(tmp_path), frozenset({"anyhow"}))
+    write(tmp_path, "Cargo.toml", '[package]\nname = "app"\n[dependencies]\nanyhow = "1"\n')
+    scan = detect(tmp_path)
+    graph = extract(scan, declared_dependencies(scan))
     calls = {(e.src, e.dst) for e in graph.edges if e.kind is EdgeKind.CALLS}
     assert not [c for c in calls if c[1].endswith("Error.go")]
+
+
+def run(root: Path):
+    scan = detect(root)
+    return extract(scan, declared_dependencies(scan))
+
+
+def imports_of(root: Path) -> set[tuple[str, str]]:
+    return {(e.src, e.dst) for e in run(root).edges if e.kind is EdgeKind.IMPORTS}
+
+
+def test_extern_crate_keeps_its_alias() -> None:
+    plain = parse("extern crate foo;\n")
+    (imp,) = plain.imports
+    assert (imp.specifier, imp.names, dict(imp.alias_of)) == ("foo", (), {})
+    aliased = parse("extern crate foo as bar;\n")
+    (imp,) = aliased.imports
+    assert (imp.specifier, dict(imp.alias_of), imp.evidence.start_line) == (
+        "foo",
+        {"bar": "foo"},
+        1,
+    )
+    assert not parse("extern crate self as me;\n").imports
+
+
+def cargo_deps(text: str, tmp_path: Path) -> frozenset[str]:
+    write(tmp_path, "Cargo.toml", text)
+    return declared_dependencies(detect(tmp_path))
+
+
+def test_cargo_dependency_tables_are_declared(tmp_path: Path) -> None:
+    got = cargo_deps(
+        '[package]\nname = "a"\n[dependencies]\nserde-json = "1"\n'
+        '[dev-dependencies]\npretty_assertions = "1"\n'
+        '[build-dependencies]\ncc = "1"\n'
+        '[workspace.dependencies]\ntokio = { version = "1" }\n'
+        "[target.'cfg(unix)'.dependencies]\nlibc = \"0\"\n"
+        '[dependencies.rand]\nversion = "0.8"\n'
+        '[dependencies.old_name]\npackage = "new-name"\nversion = "1"\n',
+        tmp_path,
+    )
+    assert {"serde_json", "pretty_assertions", "cc", "tokio", "libc", "rand"} <= got
+    assert {"old_name", "new_name"} <= got
+    assert "a" not in got
+
+
+def test_use_paths_resolve_to_module_files(tmp_path: Path) -> None:
+    write(tmp_path, "Cargo.toml", '[package]\nname = "shop"\n[dependencies]\nserde = "1"\n')
+    write(tmp_path, "src/lib.rs", "mod db;\nmod handlers;\n")
+    write(tmp_path, "src/db.rs", "pub struct Repo;\nimpl Repo { pub fn find(&self) {} }\n")
+    write(tmp_path, "src/handlers/mod.rs", "mod orders;\nuse super::db::Repo;\n")
+    write(
+        tmp_path,
+        "src/handlers/orders.rs",
+        "use crate::db::Repo;\nuse serde::Serialize;\nuse ghost::Thing;\nuse self::x::Y;\n"
+        "use super::Item;\nuse std::fmt;\n",
+    )
+    found = imports_of(tmp_path)
+    assert ("src/lib.rs", "src/db.rs") in found
+    assert ("src/lib.rs", "src/handlers/mod.rs") in found
+    assert ("src/handlers/mod.rs", "src/handlers/orders.rs") in found
+    assert ("src/handlers/mod.rs", "src/db.rs") in found
+    assert ("src/handlers/orders.rs", "src/db.rs") in found
+    assert ("src/handlers/orders.rs", "src/handlers/mod.rs") in found
+    card = run(tmp_path).scorecard
+    assert card.get("rust", "imports", Resolution.EXTERNAL) == 2  # serde, std
+    assert card.get("rust", "imports", Resolution.UNRESOLVED) == 1  # ghost
+
+
+def test_a_workspace_member_import_goes_to_the_other_crate(tmp_path: Path) -> None:
+    write(tmp_path, "Cargo.toml", '[workspace]\nmembers = ["crates/*"]\n')
+    write(
+        tmp_path,
+        "crates/shop-core/Cargo.toml",
+        '[package]\nname = "shop-core"\n[dependencies]\nanyhow = "1"\n',
+    )
+    write(
+        tmp_path,
+        "crates/shop-api/Cargo.toml",
+        '[package]\nname = "shop-api"\n[dependencies]\nshop-core = { path = "../shop-core" }\n'
+        'serde = { version = "1", package = "serde" }\n',
+    )
+    write(tmp_path, "crates/shop-core/src/lib.rs", "pub mod model;\n")
+    write(
+        tmp_path,
+        "crates/shop-core/src/model.rs",
+        "pub struct Order;\nimpl Order { pub fn total(&self) {} }\n",
+    )
+    write(
+        tmp_path,
+        "crates/shop-api/src/main.rs",
+        "use shop_core::model::Order;\nuse serde::Serialize;\n"
+        "pub struct Api { order: Order }\n"
+        "impl Api { fn go(&self) { self.order.total(); Order::total(); } }\n",
+    )
+    assert (
+        "crates/shop-api/src/main.rs",
+        "crates/shop-core/src/model.rs",
+    ) in imports_of(tmp_path)
+    card = run(tmp_path).scorecard
+    assert card.get("rust", "imports", Resolution.EXTERNAL) == 1
+    assert card.get("rust", "imports", Resolution.UNRESOLVED) == 0
+    assert (
+        "crates/shop-api/src/main.rs#shop_api.Api.go",
+        "crates/shop-core/src/model.rs#shop_core.model.Order.total",
+    ) in calls_of(tmp_path)
+
+
+def test_a_path_dependency_under_another_name_is_not_external(tmp_path: Path) -> None:
+    write(tmp_path, "core/Cargo.toml", '[package]\nname = "core-lib"\n')
+    write(tmp_path, "core/src/lib.rs", "pub fn f() {}\n")
+    write(
+        tmp_path,
+        "app/Cargo.toml",
+        '[package]\nname = "app"\n[dependencies]\nshared = { path = "../core", package = "core-lib" }\n',
+    )
+    write(tmp_path, "app/src/main.rs", "use shared::f;\nfn main() { f(); }\n")
+    assert ("app/src/main.rs", "core/src/lib.rs") in imports_of(tmp_path)
+
+
+def test_module_and_type_calls_resolve(tmp_path: Path) -> None:
+    write(tmp_path, "src/lib.rs", "mod db;\nmod util;\nmod other;\n")
+    write(
+        tmp_path,
+        "src/db.rs",
+        "pub struct Repo;\nimpl Repo { pub fn new() -> Repo { Repo } pub fn find(&self) {} }\n"
+        "pub fn load() {}\n",
+    )
+    write(
+        tmp_path,
+        "src/other.rs",
+        "pub struct Cache;\nimpl Cache { pub fn new() -> Cache { Cache } }\npub fn load() {}\n",
+    )
+    write(tmp_path, "src/util.rs", "pub fn helper() {}\n")
+    write(
+        tmp_path,
+        "src/app.rs",
+        "use crate::db;\nuse crate::db::Repo;\nuse crate::util::helper;\nuse crate::other::*;\n"
+        "fn run() { db::load(); Repo::new(); helper(); load(); Cache::new(); }\n",
+    )
+    found = calls_of(tmp_path)
+    assert ("src/app.rs#app.run", "src/db.rs#db.load") in found
+    assert ("src/app.rs#app.run", "src/db.rs#db.Repo.new") in found
+    assert ("src/app.rs#app.run", "src/util.rs#util.helper") in found
+    assert ("src/app.rs#app.run", "src/other.rs#other.load") in found
+    assert ("src/app.rs#app.run", "src/other.rs#other.Cache.new") in found
+    assert not [
+        c for c in found if c[1] == "src/db.rs#db.load" and c[0] != "src/app.rs#app.run"
+    ]
+
+
+def test_a_bare_call_to_an_unimported_name_is_not_guessed(tmp_path: Path) -> None:
+    write(tmp_path, "src/util.rs", "pub fn helper() {}\n")
+    write(tmp_path, "src/app.rs", "fn run() { helper(); }\n")
+    assert not [c for c in calls_of(tmp_path) if c[1].endswith("helper")]

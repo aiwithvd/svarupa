@@ -931,7 +931,7 @@ class Resolver:
                         f.path,
                         imp.level,
                     )
-                    if f.lang == "python"
+                    if f.lang == "python" or self._names_modules(f.lang)
                     else None
                 )
                 if sibling is not None and sibling != target and sibling != f.path:
@@ -990,6 +990,17 @@ class Resolver:
                     import_names[n] = (imp.specifier or n, imp.level)
             if not imp.is_from and imp.specifier:
                 import_names[imp.specifier.split(".")[0]] = (imp.specifier, 0)
+            if (
+                imp.is_from
+                and not imp.names
+                and not imp.alias_of
+                and not imp.is_star
+                and "." in imp.specifier
+                and self._names_modules(f.lang)
+            ):
+                # `use a::b::C;` and `mod x;` name their last segment
+                head, _, last = imp.specifier.rpartition(".")
+                import_names.setdefault(last, (head, imp.level))
 
         for call in f.calls:
             src_id = node_id(f.path, call.enclosing) if call.enclosing else f.path
@@ -1045,6 +1056,48 @@ class Resolver:
                     )
                 )
         return out
+
+    def _qualified_in_modules(
+        self,
+        f: FileFacts,
+        recv: str,
+        imported: tuple[str, int],
+        name: str,
+        alias_targets: Mapping[str, str],
+    ) -> list[tuple[str, str]] | None:
+        """`recv::name()` where `recv` came in through `use spec::recv`: the
+        module `spec.recv` first (a type's methods are found in its file), then
+        a name defined in `spec` itself."""
+        spec, level = imported
+        real = alias_targets.get(recv, recv)
+        owner = self._resolve_class_name(real, f.path)
+        if owner is not None:
+            hits = self._nearest_methods(self._mro_ids(owner), name)
+            if hits:
+                return hits[:MAX_CANDIDATE_ARITY]
+        found = self._lookup_in_module(f, f"{spec}.{real}", level, name)
+        if found != []:
+            return found
+        return self._lookup_in_module(f, spec, level, name)
+
+    def _names_modules(self, lang: str) -> bool:
+        """Whether `use a::b;` can import a module `b` in this language (Rust),
+        so `b::f()` and a bare name need module-scope rules."""
+        return bool(getattr(self.modules.get(lang), "names_modules", False))
+
+    def _glob_lookup(self, f: FileFacts, name: str) -> list[tuple[str, str]]:
+        """`name` defined in a module the file glob-imports (`use a::*;`)."""
+        out: list[tuple[str, str]] = []
+        for imp in f.imports:
+            if not imp.is_star:
+                continue
+            for target in self._resolve_targets(imp.specifier, f.path, imp.level, f.lang):
+                if (
+                    target != f.path
+                    and (hit := self._follow_reexport(target, name)) is not None
+                ):
+                    out.append(hit)
+        return _dedupe(out)
 
     def _definition_evidence(self, file: str, qualname: str) -> Evidence | None:
         facts = self.idx.by_file.get(file)
@@ -1109,6 +1162,10 @@ class Resolver:
             if name in import_names:
                 spec, level = import_names[name]
                 return self._lookup_in_module(f, spec, level, name)
+            if self._names_modules(f.lang):
+                # Module scope: this file, its `use` names, its globs. A name
+                # defined elsewhere in the repository is not in scope.
+                return self._glob_lookup(f, name)[:MAX_CANDIDATE_ARITY]
             hits = _dedupe([h for h in self.idx.by_name.get(name, []) if h not in methods])
             module = self.modules.get(f.lang)
             if module is not None and module.package_scoped_bare:
@@ -1125,6 +1182,10 @@ class Resolver:
             recv = call.receiver or ""
             if recv in import_names:
                 spec, level = import_names[recv]
+                if self._names_modules(f.lang):
+                    return self._qualified_in_modules(
+                        f, recv, (spec, level), name, alias_targets
+                    )
                 found = self._lookup_in_module(f, spec, level, name)
                 if found == [] and f.lang == "python":
                     # `from app import crud` may name the submodule app/crud.py
