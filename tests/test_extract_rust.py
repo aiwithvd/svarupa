@@ -239,3 +239,52 @@ def test_a_syntax_error_is_reported_and_the_rest_is_extracted() -> None:
     facts = parse("fn ok() {}\nfn broken( {\nstruct S;\n")
     assert [d.code for d in facts.diagnostics] == ["SVA-X-001"]
     assert "ok" in {s.name for s in facts.symbols}
+
+
+def test_types_at_the_crate_root_resolve(tmp_path: Path) -> None:
+    for root in ("lib", "main"):
+        d = tmp_path / root
+        write(
+            d,
+            f"src/{root}.rs",
+            "pub struct Shop { repo: Repo }\n"
+            "impl Shop {\n    fn a(&self) {}\n    fn new() -> Shop { Shop { repo: Repo } }\n"
+            "    fn run(&self) { self.a(); self.repo.find(); }\n}\n"
+            "fn make() { Shop::new(); }\n",
+        )
+        write(d, "src/repo.rs", "pub struct Repo;\nimpl Repo { pub fn find(&self) {} }\n")
+        write(d, "src/imp.rs", "impl Shop { fn more(&self) { self.a(); self.repo.find(); } }\n")
+        found = calls_of(d)
+        top = f"src/{root}.rs"
+        assert (f"{top}#Shop.run", f"{top}#Shop.a") in found, root
+        assert (f"{top}#Shop.run", "src/repo.rs#repo.Repo.find") in found, root
+        assert (f"{top}#make", f"{top}#Shop.new") in found, root
+        assert ("src/imp.rs#imp.Shop.more", f"{top}#Shop.a") in found, root
+        assert ("src/imp.rs#imp.Shop.more", "src/repo.rs#repo.Repo.find") in found, root
+
+
+def test_an_impl_for_a_type_nobody_names_owns_no_methods() -> None:
+    facts = parse("impl Store for [Shop] { fn save(&self) {} }\nfn f() {}\n")
+    assert [s.qualified_name for s in facts.symbols] == ["shop.f"]
+
+
+def test_self_as_alias_names_the_module() -> None:
+    facts = parse("use a::b::{self as z};\n")
+    (imp,) = facts.imports
+    assert (imp.specifier, imp.names, dict(imp.alias_of)) == ("a", ("b",), {"z": "b"})
+
+
+def test_an_impl_for_an_imported_external_type_joins_no_repo_struct(tmp_path: Path) -> None:
+    write(
+        tmp_path,
+        "src/error.rs",
+        "pub struct Error;\nimpl Error { fn mine(&self) { self.go(); } }\n",
+    )
+    write(
+        tmp_path, "src/imp.rs", "use anyhow::Error;\nimpl Wrap for Error { fn go(&self) {} }\n"
+    )
+    # Cargo dependencies are not read yet (the module resolver is Task 2), so
+    # declare the crate by hand.
+    graph = extract(detect(tmp_path), frozenset({"anyhow"}))
+    calls = {(e.src, e.dst) for e in graph.edges if e.kind is EdgeKind.CALLS}
+    assert not [c for c in calls if c[1].endswith("Error.go")]

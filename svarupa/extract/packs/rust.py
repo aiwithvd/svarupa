@@ -210,8 +210,9 @@ def impl_item(ctx: Ctx, node: TSNode, frame: Frame, depth: int) -> None:
     if body is None:
         return
     owner = _type_name(node.child_by_field_name("type"), False)
-    stack = (*frame.stack, owner) if owner else frame.stack
-    visit_items(ctx, body.children, Frame(stack, owner, frame.fn), depth)
+    if owner is None:
+        return  # `impl Tr for [T]`: no type of ours owns these methods
+    visit_items(ctx, body.children, Frame((*frame.stack, owner), owner, frame.fn), depth)
 
 
 def mod_item(ctx: Ctx, node: TSNode, frame: Frame, depth: int) -> None:
@@ -262,7 +263,11 @@ def _aliased(node: TSNode, base: str, ev: Evidence) -> ImportRef | None:
     path, alias = node.child_by_field_name("path"), node.child_by_field_name("alias")
     if path is None or alias is None:
         return None
-    head, _, last = _dotted(_text(path)).rpartition(".")
+    full = _dotted(_text(path))
+    if full == "self":  # `b::{self as z}` renames `b` itself
+        full = base
+        base = ""
+    head, _, last = full.rpartition(".")
     renamed = {} if _text(alias) == "_" else {_text(alias): last}
     if not head and not base:
         return _ref(last, (), renamed, ev)

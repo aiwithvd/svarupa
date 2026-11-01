@@ -233,6 +233,12 @@ def _d_fields() -> dict[tuple[str, str, str], str]:
     return {}
 
 
+def _is_named(qualified: str, name: str) -> bool:
+    """Whether a qualified class name ends in `name`; a type at a crate root
+    (Rust `src/lib.rs`) has no module prefix at all."""
+    return qualified == name or qualified.endswith(f".{name}")
+
+
 def _d_extra() -> dict[tuple[str, str], tuple[str, ...]]:
     return {}
 
@@ -377,7 +383,19 @@ class Resolver:
             return None
         if own in self.idx.class_by_id:
             return own
+        if self._imported_externally(f, s.enclosing_class):
+            return None  # `impl X for io::Error` is not our `Error`
         return self._resolve_class_name(s.enclosing_class, f.path)
+
+    def _imported_externally(self, f: FileFacts, name: str) -> bool:
+        """Whether `name` is brought in from a dependency, by name or by the
+        last segment of a plain import path."""
+        for imp in f.imports:
+            if name in imp.names or name in imp.alias_of or imp.specifier.endswith(f".{name}"):
+                if imp.is_relative:
+                    return False
+                return self._is_external(self._package_root(imp.specifier, f.lang), f.lang)
+        return False
 
     # ------------------------------------------------------------------
 
@@ -470,7 +488,7 @@ class Resolver:
         self, name: str, from_file: str
     ) -> tuple[tuple[str, str] | None, bool]:
         """Resolve, and say whether a None means absent or ambiguous."""
-        repo_wide = [cid for cid in self.idx.class_by_id if cid[1].endswith(f".{name}")]
+        repo_wide = [cid for cid in self.idx.class_by_id if _is_named(cid[1], name)]
         hit = self._resolve_class_name(name, from_file)
         return hit, hit is None and len(repo_wide) > 1
 
@@ -478,7 +496,7 @@ class Resolver:
         same_file = [
             cid
             for cid in self.idx.class_by_id
-            if cid[0] == from_file and cid[1].endswith(f".{name}")
+            if cid[0] == from_file and _is_named(cid[1], name)
         ]
         if len(same_file) == 1:
             return same_file[0]
@@ -494,12 +512,12 @@ class Resolver:
                 hit = [
                     cid
                     for cid in self.idx.class_by_id
-                    if cid[0] == target and cid[1].endswith(f".{name}")
+                    if cid[0] == target and _is_named(cid[1], name)
                 ]
                 if len(hit) == 1:
                     return hit[0]
 
-        repo_wide = [cid for cid in self.idx.class_by_id if cid[1].endswith(f".{name}")]
+        repo_wide = [cid for cid in self.idx.class_by_id if _is_named(cid[1], name)]
         return repo_wide[0] if len(repo_wide) == 1 else None
 
     def resolve_module(self, spec: str, from_file: str, level: int, lang: str) -> str | None:
