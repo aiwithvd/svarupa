@@ -361,7 +361,7 @@ def _in_module(ref: ImportRef, inline: list[str]) -> ImportRef:
             spec = ".".join(["super"] * (supers - used) + rest)
         else:
             spec = ".".join(["self", *inline[: len(inline) - used], *rest])
-    return _ref(spec, ref.names, ref.alias_of, ref.evidence, ref.is_star)
+    return _ref(spec, ref.names, dict(ref.alias_of), ref.evidence, ref.is_star)
 
 
 def use_declaration(ctx: Ctx, node: TSNode, _frame: Frame, _depth: int) -> None:

@@ -94,6 +94,11 @@ class Frame:
         return Frame(self.stack, self.cls, self.fn)
 
 
+def _is_test(hook: Callable[[TSNode], bool] | None, node: TSNode) -> bool:
+    """Whether the pack calls this node test code that lives in a source file."""
+    return hook is not None and node.is_named and hook(node)
+
+
 class Ctx:
     """One file's walk: the source, the pack, and the facts so far."""
 
@@ -247,7 +252,7 @@ class Ctx:
         stack = [root]
         while stack:
             node = stack.pop()
-            if spec.is_test is not None and node.is_named and spec.is_test(node):
+            if _is_test(spec.is_test, node):
                 continue
             # Named nodes only: Python's `lambda` keyword token shares the
             # node's type name and would be measured as a second function.
@@ -268,7 +273,7 @@ class Ctx:
         while work:
             node, depth, parent = work.pop()
             kind = node.type
-            if spec.is_test is not None and node.is_named and spec.is_test(node):
+            if _is_test(spec.is_test, node):
                 continue
             if (
                 kind in spec.function_types
@@ -338,7 +343,7 @@ class Ctx:
             work = [(c, looped) for c in reversed(scope.children)]
             while work:
                 node, in_loop = work.pop()
-                if is_test is not None and node.is_named and is_test(node):
+                if _is_test(is_test, node):
                     continue
                 if node.is_named and node.type in fn_types and (is_fn is None or is_fn(node)):
                     per_item = in_loop or self._per_item(node, spec)
