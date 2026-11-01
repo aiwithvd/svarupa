@@ -347,6 +347,7 @@ def test_rust_a_mod_name_in_scope_resolves_without_a_prefix() -> None:
     r = rust()
     assert r.targets("db.Repo", "src/lib.rs") == ("src/db.rs",)
     assert r.targets("nope.Repo", "src/lib.rs") == ()
+    assert r.targets("nope.deeper.Repo", "src/handlers/mod.rs") == ()
 
 
 def test_rust_binaries_and_the_lib_of_the_same_crate() -> None:
@@ -399,3 +400,49 @@ def test_rust_external_is_the_std_family_and_declared_dependencies() -> None:
 def test_rust_a_member_is_never_external_even_if_a_manifest_lists_it() -> None:
     r = rust(frozenset({"shop_core"}))
     assert not r.is_external("shop_core.model")
+
+
+def test_rust_a_path_falls_back_at_most_one_segment_past_a_module() -> None:
+    r = rust()
+    for caller in ("src/lib.rs", "src/handlers/orders.rs", "src/handlers/deep/leaf.rs"):
+        assert r.targets("crate.nope.X", caller) == (), caller
+        assert r.targets("crate.nope", caller) == ("src/lib.rs",), caller  # `nope` is an item
+        assert r.targets("crate.db.nope.Y", caller) == (), caller
+        assert r.targets("crate.handlers.nope.Y.Z", caller) == (), caller
+        assert r.targets("crate.handlers.nope", caller) == ("src/handlers/mod.rs",), caller
+    assert r.targets("super.nope.X", "src/handlers/orders.rs") == ()
+    assert r.targets("super.db.nope.Y", "src/handlers/orders.rs") == ()
+    assert r.targets("self.nope.X", "src/handlers/mod.rs") == ()
+    assert r.targets("self.orders.nope.Y", "src/handlers/mod.rs") == ()
+    assert r.targets("shop_core.nope.X", "crates/shop-api/src/main.rs") == ()
+    assert r.targets("shop_core.model.nope.Y", "crates/shop-api/src/main.rs") == ()
+
+
+def test_rust_a_glob_needs_its_module_to_exist() -> None:
+    r = rust()
+    assert r.targets("crate.nope.*", "src/lib.rs") == ()
+    assert r.targets("crate.db.*", "src/lib.rs") == ("src/db.rs",)
+    assert r.targets("crate.*", "src/db.rs") == ("src/lib.rs",)
+    assert r.targets("super.nope.*", "src/handlers/orders.rs") == ()
+    assert r.targets("super.*", "src/handlers/orders.rs") == ("src/handlers/mod.rs",)
+    assert r.targets("shop_core.nope.*", "crates/shop-api/src/main.rs") == ()
+
+
+def test_rust_a_repo_crate_named_like_std_shadows_it_only_for_its_users() -> None:
+    crates = (("core", "libs/core"), ("app", "app"), ("other", "other"))
+    files = frozenset(
+        {"libs/core/src/lib.rs", "libs/core/src/fmt.rs", "app/src/main.rs", "other/src/lib.rs"}
+    )
+    r = RustCrates(
+        ModuleContext(
+            files=files,
+            facts=(),
+            deps=frozenset({"core"}),
+            rust_crates=crates,
+            rust_uses=(("app", "core"),),
+        )
+    )
+    assert r.targets("core.fmt.X", "app/src/main.rs") == ("libs/core/src/fmt.rs",)
+    assert r.targets("core.fmt.X", "libs/core/src/lib.rs") == ("libs/core/src/fmt.rs",)
+    assert r.targets("core.fmt.Debug", "other/src/lib.rs") == ()
+    assert r.is_external("core.fmt.Debug")

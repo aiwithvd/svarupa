@@ -816,7 +816,12 @@ class Resolver:
         out: list[Edge] = []
         for imp in f.imports:
             top = self._package_root(imp.specifier, f.lang)
-            targets = self._resolve_targets(imp.specifier, f.path, imp.level, f.lang)
+            spec = (
+                f"{imp.specifier}.*"
+                if imp.is_star and self._names_modules(f.lang)
+                else imp.specifier
+            )
+            targets = self._resolve_targets(spec, f.path, imp.level, f.lang)
             target = targets[0] if targets else None
 
             if target is None and f.lang == "python" and imp.is_from:

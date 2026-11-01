@@ -142,6 +142,7 @@ def extract(scan: Scan, declared_deps: frozenset[str] = frozenset()) -> ExtractR
         deps=declared_deps,
         go_modules=go_modules(scan),
         rust_crates=rust_crates(scan),
+        rust_uses=rust_uses(scan),
     )
     modules: dict[str, ModuleResolver] = {
         lang: pack.modules(context)
@@ -432,6 +433,22 @@ def rust_crates(scan: Scan) -> tuple[tuple[str, str], ...]:
         holder = str(Path(rec.path).parent)
         holder = "" if holder == "." else holder
         out |= _cargo_package_crates(data, holder) | _cargo_path_crates(data, holder)
+    return tuple(sorted(out))
+
+
+def rust_uses(scan: Scan) -> tuple[tuple[str, str], ...]:
+    """(manifest directory, dependency name) for every dependency a Cargo.toml lists."""
+    out: set[tuple[str, str]] = set()
+    for rec in scan.files:
+        if Path(rec.path).name != "Cargo.toml":
+            continue
+        try:
+            data = load_toml(read_text(scan.root, rec.path))
+        except OSError:
+            continue
+        holder = str(Path(rec.path).parent)
+        for table in _cargo_dep_tables(data or {}):
+            out.update(("" if holder == "." else holder, _crate_name(k)) for k in table)
     return tuple(sorted(out))
 
 

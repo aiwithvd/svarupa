@@ -127,13 +127,13 @@
    "producer": "rust.symbols"
   },
   {
-   "id": "crates/core/src/db.rs",
+   "id": "crates/shop_core/src/db.rs",
    "kind": "module",
    "label": "db.rs",
-   "qualified_name": "crates/core/src/db.rs",
+   "qualified_name": "crates/shop_core/src/db.rs",
    "evidence": [
     {
-     "file": "crates/core/src/db.rs",
+     "file": "crates/shop_core/src/db.rs",
      "start_line": 1,
      "end_line": 1,
      "rev": null
@@ -144,13 +144,13 @@
    "producer": "rust.module"
   },
   {
-   "id": "crates/core/src/db.rs#core.db.Repo",
+   "id": "crates/shop_core/src/db.rs#shop_core.db.Repo",
    "kind": "class",
    "label": "Repo",
-   "qualified_name": "core.db.Repo",
+   "qualified_name": "shop_core.db.Repo",
    "evidence": [
     {
-     "file": "crates/core/src/db.rs",
+     "file": "crates/shop_core/src/db.rs",
      "start_line": 1,
      "end_line": 1,
      "rev": null
@@ -166,13 +166,13 @@
    "producer": "rust.symbols"
   },
   {
-   "id": "crates/core/src/db.rs#core.db.Repo.save",
+   "id": "crates/shop_core/src/db.rs#shop_core.db.Repo.save",
    "kind": "method",
    "label": "save",
-   "qualified_name": "core.db.Repo.save",
+   "qualified_name": "shop_core.db.Repo.save",
    "evidence": [
     {
-     "file": "crates/core/src/db.rs",
+     "file": "crates/shop_core/src/db.rs",
      "start_line": 4,
      "end_line": 4,
      "rev": null
@@ -192,13 +192,13 @@
    "producer": "rust.symbols"
   },
   {
-   "id": "crates/core/src/db/extra.rs",
+   "id": "crates/shop_core/src/db/extra.rs",
    "kind": "module",
    "label": "extra.rs",
-   "qualified_name": "crates/core/src/db/extra.rs",
+   "qualified_name": "crates/shop_core/src/db/extra.rs",
    "evidence": [
     {
-     "file": "crates/core/src/db/extra.rs",
+     "file": "crates/shop_core/src/db/extra.rs",
      "start_line": 1,
      "end_line": 1,
      "rev": null
@@ -209,13 +209,13 @@
    "producer": "rust.module"
   },
   {
-   "id": "crates/core/src/db/extra.rs#core.db.extra.Repo.purge",
+   "id": "crates/shop_core/src/db/extra.rs#shop_core.db.extra.Repo.purge",
    "kind": "method",
    "label": "purge",
-   "qualified_name": "core.db.extra.Repo.purge",
+   "qualified_name": "shop_core.db.extra.Repo.purge",
    "evidence": [
     {
-     "file": "crates/core/src/db/extra.rs",
+     "file": "crates/shop_core/src/db/extra.rs",
      "start_line": 2,
      "end_line": 2,
      "rev": null
@@ -235,13 +235,13 @@
    "producer": "rust.symbols"
   },
   {
-   "id": "crates/core/src/lib.rs",
+   "id": "crates/shop_core/src/lib.rs",
    "kind": "module",
    "label": "lib.rs",
-   "qualified_name": "crates/core/src/lib.rs",
+   "qualified_name": "crates/shop_core/src/lib.rs",
    "evidence": [
     {
-     "file": "crates/core/src/lib.rs",
+     "file": "crates/shop_core/src/lib.rs",
      "start_line": 1,
      "end_line": 1,
      "rev": null
@@ -252,13 +252,13 @@
    "producer": "rust.module"
   },
   {
-   "id": "crates/core/src/orders.rs",
+   "id": "crates/shop_core/src/orders.rs",
    "kind": "module",
    "label": "orders.rs",
-   "qualified_name": "crates/core/src/orders.rs",
+   "qualified_name": "crates/shop_core/src/orders.rs",
    "evidence": [
     {
-     "file": "crates/core/src/orders.rs",
+     "file": "crates/shop_core/src/orders.rs",
      "start_line": 1,
      "end_line": 1,
      "rev": null
@@ -269,13 +269,13 @@
    "producer": "rust.module"
   },
   {
-   "id": "crates/core/src/orders.rs#core.orders.Service",
+   "id": "crates/shop_core/src/orders.rs#shop_core.orders.Service",
    "kind": "class",
    "label": "Service",
-   "qualified_name": "core.orders.Service",
+   "qualified_name": "shop_core.orders.Service",
    "evidence": [
     {
-     "file": "crates/core/src/orders.rs",
+     "file": "crates/shop_core/src/orders.rs",
      "start_line": 4,
      "end_line": 4,
      "rev": null
@@ -291,13 +291,13 @@
    "producer": "rust.symbols"
   },
   {
-   "id": "crates/core/src/orders.rs#core.orders.Service.audit",
+   "id": "crates/shop_core/src/orders.rs#shop_core.orders.Service.audit",
    "kind": "method",
    "label": "audit",
-   "qualified_name": "core.orders.Service.audit",
+   "qualified_name": "shop_core.orders.Service.audit",
    "evidence": [
     {
-     "file": "crates/core/src/orders.rs",
+     "file": "crates/shop_core/src/orders.rs",
      "start_line": 8,
      "end_line": 8,
      "rev": null
@@ -317,13 +317,13 @@
    "producer": "rust.symbols"
   },
   {
-   "id": "crates/core/src/orders.rs#core.orders.Service.place",
+   "id": "crates/shop_core/src/orders.rs#shop_core.orders.Service.place",
    "kind": "method",
    "label": "place",
-   "qualified_name": "core.orders.Service.place",
+   "qualified_name": "shop_core.orders.Service.place",
    "evidence": [
     {
-     "file": "crates/core/src/orders.rs",
+     "file": "crates/shop_core/src/orders.rs",
      "start_line": 7,
      "end_line": 7,
      "rev": null
@@ -364,7 +364,7 @@
   },
   {
    "src": "crates/api/src/main.rs",
-   "dst": "crates/core/src/orders.rs",
+   "dst": "crates/shop_core/src/orders.rs",
    "kind": "imports",
    "evidence": [
     {
@@ -423,7 +423,7 @@
   },
   {
    "src": "crates/api/src/routes.rs",
-   "dst": "crates/core/src/orders.rs",
+   "dst": "crates/shop_core/src/orders.rs",
    "kind": "imports",
    "evidence": [
     {
@@ -441,7 +441,7 @@
   },
   {
    "src": "crates/api/src/routes.rs#api.routes.Api.create",
-   "dst": "crates/core/src/orders.rs#core.orders.Service.place",
+   "dst": "crates/shop_core/src/orders.rs#shop_core.orders.Service.place",
    "kind": "calls",
    "evidence": [
     {
@@ -463,12 +463,12 @@
    "producer": "rust.calls"
   },
   {
-   "src": "crates/core/src/db/extra.rs#core.db.extra.Repo.purge",
-   "dst": "crates/core/src/db.rs#core.db.Repo.save",
+   "src": "crates/shop_core/src/db/extra.rs#shop_core.db.extra.Repo.purge",
+   "dst": "crates/shop_core/src/db.rs#shop_core.db.Repo.save",
    "kind": "calls",
    "evidence": [
     {
-     "file": "crates/core/src/db/extra.rs",
+     "file": "crates/shop_core/src/db/extra.rs",
      "start_line": 2,
      "end_line": 2,
      "rev": null
@@ -486,12 +486,12 @@
    "producer": "rust.calls"
   },
   {
-   "src": "crates/core/src/lib.rs",
-   "dst": "crates/core/src/db.rs",
+   "src": "crates/shop_core/src/lib.rs",
+   "dst": "crates/shop_core/src/db.rs",
    "kind": "imports",
    "evidence": [
     {
-     "file": "crates/core/src/lib.rs",
+     "file": "crates/shop_core/src/lib.rs",
      "start_line": 2,
      "end_line": 2,
      "rev": null
@@ -504,12 +504,12 @@
    "producer": "rust.imports"
   },
   {
-   "src": "crates/core/src/lib.rs",
-   "dst": "crates/core/src/orders.rs",
+   "src": "crates/shop_core/src/lib.rs",
+   "dst": "crates/shop_core/src/orders.rs",
    "kind": "imports",
    "evidence": [
     {
-     "file": "crates/core/src/lib.rs",
+     "file": "crates/shop_core/src/lib.rs",
      "start_line": 1,
      "end_line": 1,
      "rev": null
@@ -522,12 +522,12 @@
    "producer": "rust.imports"
   },
   {
-   "src": "crates/core/src/orders.rs",
-   "dst": "crates/core/src/db.rs",
+   "src": "crates/shop_core/src/orders.rs",
+   "dst": "crates/shop_core/src/db.rs",
    "kind": "imports",
    "evidence": [
     {
-     "file": "crates/core/src/orders.rs",
+     "file": "crates/shop_core/src/orders.rs",
      "start_line": 1,
      "end_line": 1,
      "rev": null
@@ -540,12 +540,12 @@
    "producer": "rust.imports"
   },
   {
-   "src": "crates/core/src/orders.rs#core.orders.Service.place",
-   "dst": "crates/core/src/db.rs#core.db.Repo.save",
+   "src": "crates/shop_core/src/orders.rs#shop_core.orders.Service.place",
+   "dst": "crates/shop_core/src/db.rs#shop_core.db.Repo.save",
    "kind": "calls",
    "evidence": [
     {
-     "file": "crates/core/src/orders.rs",
+     "file": "crates/shop_core/src/orders.rs",
      "start_line": 7,
      "end_line": 7,
      "rev": null
@@ -563,12 +563,12 @@
    "producer": "rust.calls"
   },
   {
-   "src": "crates/core/src/orders.rs#core.orders.Service.place",
-   "dst": "crates/core/src/orders.rs#core.orders.Service.audit",
+   "src": "crates/shop_core/src/orders.rs#shop_core.orders.Service.place",
+   "dst": "crates/shop_core/src/orders.rs#shop_core.orders.Service.audit",
    "kind": "calls",
    "evidence": [
     {
-     "file": "crates/core/src/orders.rs",
+     "file": "crates/shop_core/src/orders.rs",
      "start_line": 7,
      "end_line": 7,
      "rev": null

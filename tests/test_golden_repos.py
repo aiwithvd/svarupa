@@ -159,9 +159,9 @@ REPOS: dict[str, dict[str, str]] = {
     },
     "rust_shop": {
         "Cargo.toml": '[workspace]\nmembers = ["crates/*"]\n',
-        "crates/core/Cargo.toml": '[package]\nname = "core"\n[dependencies]\nanyhow = "1"\n',
-        "crates/core/src/lib.rs": "pub mod orders;\npub mod db;\n",
-        "crates/core/src/orders.rs": (
+        "crates/shop_core/Cargo.toml": '[package]\nname = "shop-core"\n[dependencies]\nanyhow = "1"\n',
+        "crates/shop_core/src/lib.rs": "pub mod orders;\npub mod db;\n",
+        "crates/shop_core/src/orders.rs": (
             "use crate::db::Repo;\nuse anyhow::Result;\n\n"
             "pub struct Service { repo: Repo }\n\n"
             "impl Service {\n"
@@ -169,21 +169,21 @@ REPOS: dict[str, dict[str, str]] = {
             "    fn audit(&self) {}\n"
             "}\n"
         ),
-        "crates/core/src/db.rs": (
+        "crates/shop_core/src/db.rs": (
             "pub struct Repo;\n\nimpl Repo {\n    pub fn save(&self) {}\n}\n"
         ),
-        "crates/core/src/db/extra.rs": "impl Repo {\n    pub fn purge(&self) { self.save(); }\n}\n",
+        "crates/shop_core/src/db/extra.rs": "impl Repo {\n    pub fn purge(&self) { self.save(); }\n}\n",
         "crates/api/Cargo.toml": (
             '[package]\nname = "api"\n[dependencies]\n'
-            'core = { path = "../core" }\naxum = "0.7"\n'
+            'shop-core = { path = "../shop_core" }\naxum = "0.7"\n'
         ),
         "crates/api/src/main.rs": (
-            "use core::orders::Service;\nuse axum::Router;\nuse ghost::Nothing;\n"
+            "use shop_core::orders::Service;\nuse axum::Router;\nuse ghost::Nothing;\n"
             "mod routes;\n\n"
             "fn main() { let _ = Router::new(); routes::mount(Service::place); }\n"
         ),
         "crates/api/src/routes.rs": (
-            "use super::*;\nuse core::orders::Service;\n\n"
+            "use super::*;\nuse shop_core::orders::Service;\n\n"
             "pub struct Api { service: Service }\n\n"
             "impl Api {\n    pub fn create(&self) { self.service.place(); }\n}\n"
             "pub fn mount() {}\n"

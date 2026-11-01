@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from svarupa.detect import detect
 from svarupa.extract import declared_dependencies, extract
 from svarupa.extract.base import CallShape, FileFacts
@@ -354,7 +356,7 @@ def test_use_paths_resolve_to_module_files(tmp_path: Path) -> None:
     assert ("src/handlers/orders.rs", "src/handlers/mod.rs") in found
     card = run(tmp_path).scorecard
     assert card.get("rust", "imports", Resolution.EXTERNAL) == 2  # serde, std
-    assert card.get("rust", "imports", Resolution.UNRESOLVED) == 1  # ghost
+    assert card.get("rust", "imports", Resolution.UNRESOLVED) == 2  # ghost, self::x::Y
 
 
 def test_a_workspace_member_import_goes_to_the_other_crate(tmp_path: Path) -> None:
@@ -443,3 +445,28 @@ def test_a_bare_call_to_an_unimported_name_is_not_guessed(tmp_path: Path) -> Non
     write(tmp_path, "src/util.rs", "pub fn helper() {}\n")
     write(tmp_path, "src/app.rs", "fn run() { helper(); }\n")
     assert not [c for c in calls_of(tmp_path) if c[1].endswith("helper")]
+
+
+@pytest.mark.parametrize(
+    ("use", "expected"),
+    [
+        ("use crate::nope::X;", set()),
+        ("use crate::nope::*;", set()),
+        ("use crate::a::nope::Y::Z;", set()),
+        ("use crate::db::nope::Y;", set()),
+        ("use super::nope::X;", set()),
+        ("use super::nope::*;", set()),
+        ("use crate::{db::Repo, nope::Q};", {"src/db.rs"}),
+        ("use crate::a::Gone;", {"src/a/mod.rs"}),
+        ("use crate::db::Repo;", {"src/db.rs"}),
+        ("use crate::db::*;", {"src/db.rs"}),
+        ("use super::Gone;", {"src/a/mod.rs"}),
+    ],
+)
+def test_a_bad_path_makes_no_edge(tmp_path: Path, use: str, expected: set[str]) -> None:
+    write(tmp_path, "src/lib.rs", "mod a;\nmod db;\n")
+    write(tmp_path, "src/a/mod.rs", "mod b;\n")
+    write(tmp_path, "src/db.rs", "pub struct Repo;\n")
+    write(tmp_path, "src/a/b.rs", use + "\n")
+    got = {dst for src, dst in imports_of(tmp_path) if src == "src/a/b.rs"}
+    assert got == expected
