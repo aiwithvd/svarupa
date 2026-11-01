@@ -497,3 +497,70 @@ def test_a_bad_path_makes_no_edge(tmp_path: Path, use: str, expected: set[str]) 
     write(tmp_path, "src/a/b.rs", use + "\n")
     got = {dst for src, dst in imports_of(tmp_path) if src == "src/a/b.rs"}
     assert got == expected
+
+
+# ----------------------------------------------------------------------
+# final fix pass
+
+
+def _imports_graph(root: Path):
+    scan = detect(root)
+    return extract(scan, declared_dependencies(scan))
+
+
+def _file_edges(root: Path) -> set[tuple[str, str]]:
+    graph = _imports_graph(root)
+    return {(e.src, e.dst) for e in graph.edges if e.kind is EdgeKind.IMPORTS}
+
+
+def test_use_super_in_inline_test_mod_is_the_file_itself(tmp_path: Path) -> None:
+    write(tmp_path, "Cargo.toml", '[package]\nname = "t"\n')
+    write(tmp_path, "src/lib.rs", "mod token;\n")
+    write(
+        tmp_path,
+        "src/token/mod.rs",
+        "pub struct Tok;\n\n#[cfg(test)]\nmod tests {\n    use super::*;\n    fn t() {}\n}\n",
+    )
+    edges = _file_edges(tmp_path)
+    assert ("src/token/mod.rs", "src/lib.rs") not in edges
+    assert ("src/lib.rs", "src/token/mod.rs") in edges
+    graph = _imports_graph(tmp_path)
+    assert not [n for n in graph.diagnostics if "cycle" in str(n).lower()]
+
+
+def test_super_super_from_nested_inline_mod_climbs_one_file(tmp_path: Path) -> None:
+    write(tmp_path, "Cargo.toml", '[package]\nname = "t"\n')
+    write(tmp_path, "src/lib.rs", "mod a;\npub struct Root;\n")
+    write(
+        tmp_path,
+        "src/a.rs",
+        "pub struct A;\nmod outer {\n    mod inner {\n        use super::super::A;\n"
+        "        use super::super::super::Root;\n    }\n}\n",
+    )
+    edges = _file_edges(tmp_path)
+    # super::super is a.rs itself (two inline levels); three supers reach lib.rs
+    assert ("src/a.rs", "src/lib.rs") in edges
+    facts = parse(
+        "mod outer { mod inner { use super::super::A; use super::B; use super::super::super::C;"
+        " use self::x::Y; } }\n",
+        "src/a.rs",
+    )
+    assert [i.specifier for i in facts.imports] == [
+        "self.A",
+        "self.outer.B",
+        "super.C",
+        "self.outer.inner.x.Y",
+    ]
+
+
+def test_self_in_inline_mod_names_the_inline_path() -> None:
+    facts = parse("mod m { use self::x::Y; use super::Z; }\n", "src/a.rs")
+    assert [i.specifier for i in facts.imports] == ["self.m.x.Y", "self.Z"]
+
+
+def test_unresolved_member_receiver_is_one_line() -> None:
+    src = 'fn f(p: P) {\n    sqlx::query!(r#"\n  SELECT a\n  FROM b\n"#).fetch_one(&p);\n}\n'
+    facts = parse(src)
+    for c in facts.calls:
+        assert c.receiver is None or "\n" not in c.receiver
+        assert c.receiver is None or "(" not in c.receiver

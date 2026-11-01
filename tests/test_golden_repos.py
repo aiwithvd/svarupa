@@ -189,6 +189,18 @@ REPOS: dict[str, dict[str, str]] = {
             "pub fn mount() {}\n"
         ),
     },
+    "rust_inline_mods": {
+        "Cargo.toml": '[package]\nname = "tok"\n',
+        "src/lib.rs": "mod token;\nmod util;\n\npub struct Root;\n",
+        "src/token/mod.rs": (
+            "pub struct Tok;\n\n"
+            "#[cfg(test)]\nmod tests {\n"
+            "    use super::*;\n"
+            "    mod nested {\n        use super::super::Tok;\n        use super::super::super::Root;\n    }\n"
+            "}\n"
+        ),
+        "src/util.rs": "pub fn helper() {}\n",
+    },
 }
 
 
@@ -226,3 +238,18 @@ def test_repo_matches_golden(name: str, tmp_path: Path) -> None:
         return
     assert golden.exists(), f"no golden file; run with SVARUPA_UPDATE_GOLDEN=1: {golden}"
     assert got == golden.read_text(encoding="utf8")
+
+
+def test_inline_test_mod_super_does_not_climb_to_the_parent_file(tmp_path: Path) -> None:
+    result = build(tmp_path, REPOS["rust_inline_mods"])
+    imports = {(e.src, e.dst) for e in result.edges if e.kind.value == "imports"}
+    assert ("src/token/mod.rs", "src/lib.rs") in imports  # only via super::super::super
+    only_use_super = dict(REPOS["rust_inline_mods"])
+    only_use_super["src/token/mod.rs"] = (
+        "pub struct Tok;\n\n#[cfg(test)]\nmod tests {\n    use super::*;\n"
+        "    mod nested {\n        use super::super::Tok;\n    }\n}\n"
+    )
+    got = build(tmp_path / "only", only_use_super)
+    edges = {(e.src, e.dst) for e in got.edges if e.kind.value == "imports"}
+    assert ("src/token/mod.rs", "src/lib.rs") not in edges
+    assert not [d for d in got.diagnostics if "cycle" in str(d).lower()]

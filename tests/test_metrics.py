@@ -394,3 +394,30 @@ def test_rust_closures_are_measured_on_their_own() -> None:
         ("(anonymous)", 2, 2),
         ("(anonymous)", 1, 1),
     ]
+
+
+def _rs_long(name: str) -> str:
+    body = "".join(f"    if a == {i} {{ let _ = {i}; }}\n" for i in range(12))
+    return f"fn {name}(a: u8) {{\n{body}}}\n"
+
+
+def test_rust_test_functions_and_cfg_test_modules_are_not_measured() -> None:
+    prod = _rs_long("work")
+    src = (
+        prod
+        + "#[test]\n"
+        + _rs_long("a_test")
+        + "#[tokio::test]\n"
+        + _rs_long("b_test")
+        + "#[rstest]\n"
+        + _rs_long("c_test")
+        + "#[cfg(test)]\nmod tests {\n    use super::*;\n"
+        + _rs_long("helper")
+        + "}\n"
+    )
+    assert list(metrics("rust", "src/a.rs", src)) == ["work"]
+
+
+def test_rust_cfg_test_module_without_attribute_is_measured() -> None:
+    src = "mod tests {\n" + _rs_long("helper") + "}\n"
+    assert list(metrics("rust", "src/a.rs", src)) == ["helper"]

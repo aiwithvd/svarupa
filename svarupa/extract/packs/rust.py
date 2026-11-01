@@ -336,10 +336,39 @@ def _refs(node: TSNode, base: str, ev: Evidence) -> list[ImportRef]:
     return [_ref(_join(base, _dotted(_text(node))), (), {}, ev)]
 
 
+def _inline_mods(ctx: Ctx) -> list[str]:
+    """The inline `mod` names that enclose the current item, outermost first.
+    `mod_item` extends `ctx.prefix` past the file's own module path."""
+    own = qualified_prefix(ctx.path)
+    return ctx.prefix[len(own) :].strip(".").split(".") if ctx.prefix != own else []
+
+
+def _in_module(ref: ImportRef, inline: list[str]) -> ImportRef:
+    """Read `self` and `super` from the inline module, not from the file.
+
+    Each leading `super` first leaves one inline module. Only the ones left
+    over climb file modules. `self::x` is `x` inside the inline module."""
+    parts = ref.specifier.split(".")
+    if not inline or parts[0] not in ("self", "super"):
+        return ref
+    if parts[0] == "self":
+        spec = ".".join(["self", *inline, *parts[1:]])
+    else:
+        supers = ref.level
+        used = min(supers, len(inline))
+        rest = parts[supers:]
+        if supers > used:
+            spec = ".".join(["super"] * (supers - used) + rest)
+        else:
+            spec = ".".join(["self", *inline[: len(inline) - used], *rest])
+    return _ref(spec, ref.names, ref.alias_of, ref.evidence, ref.is_star)
+
+
 def use_declaration(ctx: Ctx, node: TSNode, _frame: Frame, _depth: int) -> None:
     arg = node.child_by_field_name("argument")
     if arg is not None:
-        ctx.imports.extend(_refs(arg, "", ctx.node_evidence(node)))
+        inline = _inline_mods(ctx)
+        ctx.imports.extend(_in_module(r, inline) for r in _refs(arg, "", ctx.node_evidence(node)))
 
 
 def extern_crate(ctx: Ctx, node: TSNode, _frame: Frame, _depth: int) -> None:
@@ -391,7 +420,9 @@ def _method_site(
         return site(field, CallShape.SELF_FIELD, _text(owned) if owned is not None else None)
     if value.type == "identifier":
         return site(field, CallShape.QUALIFIED, _text(value))
-    return site(field, CallShape.MEMBER, _text(value))
+    # A macro chain's receiver can span lines (an SQL body): keep the head.
+    head = re.split(r"[(\n]", _text(value), maxsplit=1)[0]
+    return site(field, CallShape.MEMBER, head or None)
 
 
 def _callee(node: TSNode) -> TSNode | None:

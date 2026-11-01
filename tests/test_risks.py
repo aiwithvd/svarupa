@@ -1214,3 +1214,19 @@ def test_async_marker_is_not_matched_inside_a_longer_word() -> None:
     assert risks("csharp", "S.cs", src) == []
     src = "pub fn f() {\n  std::thread::sleep(d);\n}\n"
     assert risks("rust", "src/a.rs", src) == []
+
+
+_RS_LOOP = "  for id in ids {\n    sqlx::query(\"q\").fetch_one(&pool);\n  }\n"
+
+
+def test_rust_test_code_has_no_risks_but_production_code_does() -> None:
+    prod = f"fn work() {{\n{_RS_LOOP}}}\n"
+    assert risks("rust", "src/a.rs", prod) == [("in-loop", "query", 3, "work")]
+    in_test_fn = f"#[test]\nfn t() {{\n{_RS_LOOP}}}\n"
+    assert risks("rust", "src/a.rs", in_test_fn) == []
+    in_tokio = f"#[tokio::test]\nasync fn t() {{\n{_RS_LOOP}}}\n"
+    assert risks("rust", "src/a.rs", in_tokio) == []
+    in_mod = f"#[cfg(test)]\nmod tests {{\n  fn helper() {{\n{_RS_LOOP}}}\n}}\n"
+    assert risks("rust", "src/a.rs", in_mod) == []
+    in_plain_mod = f"mod tests {{\n  fn helper() {{\n{_RS_LOOP}}}\n}}\n"
+    assert len(risks("rust", "src/a.rs", in_plain_mod)) == 1
