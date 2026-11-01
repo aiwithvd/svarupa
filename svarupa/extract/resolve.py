@@ -394,6 +394,28 @@ class Resolver:
                 out.extend(self._mro_ids(resolved, seen | {cls_id}))
         return out
 
+    def _nearest_methods(
+        self, chain: list[tuple[str, str]], name: str
+    ) -> list[tuple[str, str]]:
+        """Methods called `name` in the first class of `chain` that defines one.
+
+        An override hides the method it overrides, and a class method hides
+        the interface declaration it implements, so only the nearest
+        definition can run. Collecting the whole chain made each such call a
+        two-way CANDIDATE.
+        """
+        for cls_id in chain:
+            hits = _dedupe(
+                [
+                    m
+                    for m in self.idx.methods_of.get(cls_id, [])
+                    if m[1].rsplit(".", 1)[-1] == name
+                ]
+            )
+            if hits:
+                return hits
+        return []
+
     def _type_is_external(self, f: FileFacts, name: str) -> bool:
         for imp in f.imports:
             if name not in imp.names and name not in imp.alias_of:
@@ -1006,14 +1028,7 @@ class Resolver:
             chain = self._mro_ids(own)
             if call.shape is CallShape.SUPER:
                 chain = chain[1:]
-            hits = _dedupe(
-                [
-                    m
-                    for cls_id in chain
-                    for m in self.idx.methods_of.get(cls_id, [])
-                    if m[1].rsplit(".", 1)[-1] == name
-                ]
-            )
+            hits = self._nearest_methods(chain, name)
             return hits[:MAX_CANDIDATE_ARITY] if len(hits) <= MAX_CANDIDATE_ARITY else []
 
         if call.shape is CallShape.BARE:
@@ -1069,14 +1084,7 @@ class Resolver:
                 return self._field_call(f, call.enclosing_class, recv, name)
             owner = self._resolve_class_name(recv, f.path)
             if owner is not None:
-                hits = _dedupe(
-                    [
-                        m
-                        for cls_id in self._mro_ids(owner)
-                        for m in self.idx.methods_of.get(cls_id, [])
-                        if m[1].rsplit(".", 1)[-1] == name
-                    ]
-                )
+                hits = self._nearest_methods(self._mro_ids(owner), name)
                 if hits:
                     return hits[:MAX_CANDIDATE_ARITY]
             # Receiver is a local variable of unknown type. This is the
@@ -1103,14 +1111,7 @@ class Resolver:
             if ambiguous:
                 return []
             return None if self._type_is_external(f, type_name) else []
-        return _dedupe(
-            [
-                m
-                for cls_id in self._mro_ids(owner)
-                for m in self.idx.methods_of.get(cls_id, [])
-                if m[1].rsplit(".", 1)[-1] == name
-            ]
-        )[:MAX_CANDIDATE_ARITY]
+        return self._nearest_methods(self._mro_ids(owner), name)[:MAX_CANDIDATE_ARITY]
 
     def _lookup_in_module(
         self, f: FileFacts, spec: str, level: int, name: str

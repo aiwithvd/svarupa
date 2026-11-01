@@ -261,3 +261,22 @@ def test_a_field_call_without_this_resolves_through_the_field_type(tmp_path: Pat
         "src/a/Api.java#src.a.Api.Api.list",
         "src/b/Service.java#src.b.Service.Service.all",
     ) in calls
+
+
+def test_a_class_method_wins_over_its_interface_declaration(tmp_path: Path) -> None:
+    write(tmp_path, "src/a/Repo.java", "package a;\npublic interface Repo { void save(); }\n")
+    write(
+        tmp_path,
+        "src/a/SqlRepo.java",
+        "package a;\npublic class SqlRepo implements Repo {\n"
+        "  public void save() {}\n  void run() { save(); }\n}\n",
+    )
+    write(
+        tmp_path,
+        "src/a/Svc.java",
+        "package a;\npublic class Svc {\n  private SqlRepo repo;\n"
+        "  void go() { this.repo.save(); }\n}\n",
+    )
+    calls = [e for e in run(tmp_path).edges if e.kind is EdgeKind.CALLS]
+    assert [c.resolution for c in calls] == [Resolution.RESOLVED, Resolution.RESOLVED]
+    assert all(c.dst.endswith("SqlRepo.save") for c in calls)
