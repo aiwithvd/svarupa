@@ -434,6 +434,37 @@
   "expected": "1e15112233fcd85c",
   "design_found": []
  },
+ "rust-web-app": {
+  "recall": 0.9125,
+  "found": 73,
+  "total": 80,
+  "missed": [
+   "call:crates/libs/lib-core/src/model/base/crud_fns.rs -> crates/libs/lib-core/src/model/base/utils.rs#prep_fields_for_create",
+   "call:crates/libs/lib-core/src/model/user.rs -> crates/libs/lib-core/src/ctx/mod.rs#user_id",
+   "call:crates/libs/lib-core/src/model/user.rs -> crates/libs/lib-core/src/model/base/crud_fns.rs#create",
+   "call:crates/libs/lib-core/src/model/user.rs -> crates/libs/lib-core/src/model/base/crud_fns.rs#list",
+   "call:crates/libs/lib-core/src/model/user.rs -> crates/libs/lib-core/src/model/base/utils.rs#prep_fields_for_update",
+   "call:crates/libs/lib-core/src/model/user.rs -> crates/libs/lib-core/src/model/mod.rs#new_with_txn",
+   "call:crates/services/web-server/src/main.rs -> crates/services/web-server/src/web/routes_rpc.rs#routes"
+  ],
+  "fired": [],
+  "by_kind": {
+   "call": [
+    30,
+    37
+   ],
+   "dep": [
+    26,
+    26
+   ],
+   "module": [
+    17,
+    17
+   ]
+  },
+  "expected": "52bf2e90e446caea",
+  "design_found": []
+ },
  "spring-realworld": {
   "recall": 1.0,
   "found": 44,
@@ -519,5 +550,51 @@
   "design_found": [
    "frontend-layers"
   ]
+ },
+ "zero-to-production": {
+  "recall": 0.6333,
+  "found": 38,
+  "total": 60,
+  "missed": [
+   "call:src/idempotency/persistence.rs -> src/idempotency/key.rs#as_ref",
+   "call:src/issue_delivery_worker.rs -> src/configuration.rs#client",
+   "call:src/issue_delivery_worker.rs -> src/email_client.rs#send_email",
+   "call:src/routes/admin/dashboard.rs -> src/session_state.rs#get_user_id",
+   "call:src/routes/admin/logout.rs -> src/session_state.rs#get_user_id",
+   "call:src/routes/admin/logout.rs -> src/session_state.rs#log_out",
+   "call:src/routes/admin/newsletter/post.rs -> src/idempotency/persistence.rs#save_response",
+   "call:src/routes/admin/newsletter/post.rs -> src/idempotency/persistence.rs#try_processing",
+   "call:src/routes/admin/password/post.rs -> src/authentication/password.rs#change_password",
+   "call:src/routes/admin/password/post.rs -> src/authentication/password.rs#validate_credentials",
+   "call:src/routes/login/post.rs -> src/authentication/password.rs#validate_credentials",
+   "call:src/routes/login/post.rs -> src/routes/subscriptions.rs#error_chain_fmt",
+   "call:src/routes/login/post.rs -> src/session_state.rs#insert_user_id",
+   "call:src/routes/login/post.rs -> src/session_state.rs#renew",
+   "call:src/routes/subscriptions.rs -> src/domain/subscriber_email.rs#as_ref",
+   "call:src/routes/subscriptions.rs -> src/domain/subscriber_name.rs#as_ref",
+   "call:src/routes/subscriptions.rs -> src/email_client.rs#send_email",
+   "call:src/routes/subscriptions_confirm.rs -> src/routes/subscriptions.rs#error_chain_fmt",
+   "call:src/startup.rs -> src/configuration.rs#client",
+   "call:src/startup.rs -> src/configuration.rs#connect_options",
+   "record:dep\tsrc/routes/admin/newsletter\tsrc/authentication",
+   "record:dep\tsrc/routes/login\tsrc/routes"
+  ],
+  "fired": [],
+  "by_kind": {
+   "call": [
+    16,
+    36
+   ],
+   "dep": [
+    12,
+    14
+   ],
+   "module": [
+    10,
+    10
+   ]
+  },
+  "expected": "626cdd6657feeb65",
+  "design_found": []
  }
 }

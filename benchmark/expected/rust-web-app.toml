@@ -1,0 +1,390 @@
+# rust-web-app @ fc681fc9e476
+# Read: README.md, every Cargo.toml and every .rs file under crates/ (the
+# lib-utils, lib-auth, lib-core, lib-rpc-core and lib-web libraries, the
+# web-server service and the gen-key tool).
+# Not expected on purpose:
+# - sql/ and web-folder/: SQL scripts and static files, not Rust.
+# - the generated CRUD methods (generate_common_bmc_fns!, generate_common_rpc_fns!):
+#   macro output has no declaration in the repo, so calls like ConvBmc::create
+#   and ConvBmc::list are not expected.
+# - calls through values returned by other calls (get_scheme(name)?.hash(...),
+#   mm.dbx().begin_txn()) and on closure parameters.
+# - consts, statics and type aliases (AUTH_TOKEN, DEFAULT_SCHEME, Db): they are
+#   not symbols yet.
+# - examples/quick_dev.rs: an httpc-test client, not part of the server.
+# - endpoints: routes are built with axum Router::route, not a framework
+#   route declaration this benchmark counts.
+# - datastores: the Postgres URL is read from the environment at run time.
+
+[[must]]
+record = ["module", "crates/libs/lib-auth/src"]
+why = "crates/libs/lib-auth/src/lib.rs:2 pub mod pwd;"
+
+[[must]]
+record = ["module", "crates/libs/lib-auth/src/pwd"]
+why = "crates/libs/lib-auth/src/pwd/mod.rs:50 pub async fn hash_pwd(to_hash: ContentToHash) -> Result<String> {"
+
+[[must]]
+record = ["module", "crates/libs/lib-auth/src/pwd/scheme"]
+why = "crates/libs/lib-auth/src/pwd/scheme/mod.rs:23 pub trait Scheme {"
+
+[[must]]
+record = ["module", "crates/libs/lib-auth/src/token"]
+why = "crates/libs/lib-auth/src/token/mod.rs:65 pub fn generate_web_token(user: &str, salt: Uuid) -> Result<Token> {"
+
+[[must]]
+record = ["module", "crates/libs/lib-core/src/ctx"]
+why = "crates/libs/lib-core/src/ctx/mod.rs:11 pub struct Ctx {"
+
+[[must]]
+record = ["module", "crates/libs/lib-core/src/model"]
+why = "crates/libs/lib-core/src/model/mod.rs:45 pub struct ModelManager {"
+
+[[must]]
+record = ["module", "crates/libs/lib-core/src/model/base"]
+why = "crates/libs/lib-core/src/model/base/mod.rs:48 pub trait DbBmc {"
+
+[[must]]
+record = ["module", "crates/libs/lib-core/src/model/store/dbx"]
+why = "crates/libs/lib-core/src/model/store/dbx/mod.rs:17 pub struct Dbx {"
+
+[[must]]
+record = ["module", "crates/libs/lib-core/src/_dev_utils"]
+why = "crates/libs/lib-core/src/_dev_utils/mod.rs:17 pub async fn init_dev() {"
+
+[[must]]
+record = ["module", "crates/libs/lib-utils/src"]
+why = "crates/libs/lib-utils/src/lib.rs:7 pub mod b64;"
+
+[[must]]
+record = ["module", "crates/libs/lib-web/src/middleware"]
+why = "crates/libs/lib-web/src/middleware/mw_auth.rs:17 pub async fn mw_ctx_require("
+
+[[must]]
+record = ["module", "crates/libs/lib-web/src/handlers"]
+why = "crates/libs/lib-web/src/handlers/handlers_login.rs:15 pub async fn api_login_handler("
+
+[[must]]
+record = ["module", "crates/libs/lib-web/src/utils"]
+why = "crates/libs/lib-web/src/utils/token.rs:12 pub(crate) fn set_token_cookie(cookies: &Cookies, user: &str, salt: Uuid) -> Result<()> {"
+
+[[must]]
+record = ["module", "crates/libs/lib-rpc-core/src"]
+why = "crates/libs/lib-rpc-core/src/lib.rs:11 pub mod prelude;"
+
+[[must]]
+record = ["module", "crates/services/web-server/src/web"]
+why = "crates/services/web-server/src/web/routes_login.rs:6 pub fn routes(mm: ModelManager) -> Router {"
+
+[[must]]
+record = ["module", "crates/services/web-server/src/web/rpcs"]
+why = "crates/services/web-server/src/web/rpcs/mod.rs:10 pub fn all_rpc_router_builder() -> RouterBuilder {"
+
+[[must]]
+record = ["module", "crates/tools/gen-key/src"]
+why = "crates/tools/gen-key/src/main.rs:7 fn main() -> Result<()> {"
+
+[[must]]
+record = ["dep", "crates/libs/lib-web/src/middleware", "crates/libs/lib-web/src/handlers"]
+why = "crates/libs/lib-web/src/middleware/mw_res_map.rs:2 use crate::handlers::handlers_rpc::RpcInfo;"
+
+[[must]]
+record = ["dep", "crates/libs/lib-web/src/handlers", "crates/libs/lib-web/src/middleware"]
+why = "crates/libs/lib-web/src/handlers/handlers_rpc.rs:1 use crate::middleware::mw_auth::CtxW;"
+
+[[must]]
+record = ["dep", "crates/libs/lib-web/src/middleware", "crates/libs/lib-web/src/utils"]
+why = "crates/libs/lib-web/src/middleware/mw_auth.rs:2 use crate::utils::token::{set_token_cookie, AUTH_TOKEN};"
+
+[[must]]
+record = ["dep", "crates/libs/lib-web/src/middleware", "crates/libs/lib-auth/src/token"]
+why = "crates/libs/lib-web/src/middleware/mw_auth.rs:9 use lib_auth::token::{validate_web_token, Token};"
+
+[[must]]
+record = ["dep", "crates/libs/lib-web/src/middleware", "crates/libs/lib-core/src/ctx"]
+why = "crates/libs/lib-web/src/middleware/mw_auth.rs:10 use lib_core::ctx::Ctx;"
+
+[[must]]
+record = ["dep", "crates/libs/lib-web/src/handlers", "crates/libs/lib-auth/src/pwd"]
+why = "crates/libs/lib-web/src/handlers/handlers_login.rs:5 use lib_auth::pwd::{self, ContentToHash, SchemeStatus};"
+
+[[must]]
+record = ["dep", "crates/libs/lib-web/src/handlers", "crates/libs/lib-core/src/model"]
+why = "crates/libs/lib-web/src/handlers/handlers_login.rs:8 use lib_core::model::ModelManager;"
+
+[[must]]
+record = ["dep", "crates/libs/lib-web/src/utils", "crates/libs/lib-web/src"]
+why = "crates/libs/lib-web/src/utils/token.rs:3 pub use crate::error::{Error, Result};"
+
+[[must]]
+record = ["dep", "crates/libs/lib-core/src/model", "crates/libs/lib-auth/src/pwd"]
+why = "crates/libs/lib-core/src/model/user.rs:6 use lib_auth::pwd::{self, ContentToHash};"
+
+[[must]]
+record = ["dep", "crates/libs/lib-core/src/model", "crates/libs/lib-core/src/ctx"]
+why = "crates/libs/lib-core/src/model/user.rs:1 use crate::ctx::Ctx;"
+
+[[must]]
+record = ["dep", "crates/libs/lib-core/src/model", "crates/libs/lib-core/src/model/base"]
+why = "crates/libs/lib-core/src/model/user.rs:2 use crate::model::base::{self, prep_fields_for_update, DbBmc};"
+
+[[must]]
+record = ["dep", "crates/libs/lib-core/src/model", "crates/libs/lib-core/src/model/store/dbx"]
+why = "crates/libs/lib-core/src/model/mod.rs:36 use crate::model::store::dbx::Dbx;"
+
+[[must]]
+record = ["dep", "crates/libs/lib-core/src/model/base", "crates/libs/lib-core/src/model"]
+why = "crates/libs/lib-core/src/model/base/crud_fns.rs:6 use crate::model::ModelManager;"
+
+[[must]]
+record = ["dep", "crates/libs/lib-core/src/model/base", "crates/libs/lib-utils/src"]
+why = "crates/libs/lib-core/src/model/base/utils.rs:2 use lib_utils::time::now_utc;"
+
+[[must]]
+record = ["dep", "crates/libs/lib-core/src", "crates/libs/lib-utils/src"]
+why = "crates/libs/lib-core/src/config.rs:1 use lib_utils::envs::get_env;"
+
+[[must]]
+record = ["dep", "crates/libs/lib-auth/src/token", "crates/libs/lib-utils/src"]
+why = "crates/libs/lib-auth/src/token/mod.rs:8 use lib_utils::b64::{b64u_decode_to_string, b64u_encode};"
+
+[[must]]
+record = ["dep", "crates/libs/lib-auth/src/pwd/scheme", "crates/libs/lib-auth/src/pwd"]
+why = "crates/libs/lib-auth/src/pwd/scheme/mod.rs:9 use crate::pwd::ContentToHash;"
+
+[[must]]
+record = ["dep", "crates/libs/lib-auth/src/pwd", "crates/libs/lib-auth/src/pwd/scheme"]
+why = "crates/libs/lib-auth/src/pwd/mod.rs:25 use crate::pwd::scheme::{get_scheme, Scheme, DEFAULT_SCHEME};"
+
+[[must]]
+record = ["dep", "crates/libs/lib-rpc-core/src", "crates/libs/lib-core/src/ctx"]
+why = "crates/libs/lib-rpc-core/src/prelude.rs:8 pub use lib_core::ctx::Ctx;"
+
+[[must]]
+record = ["dep", "crates/services/web-server/src/web/rpcs", "crates/libs/lib-core/src/model"]
+why = "crates/services/web-server/src/web/rpcs/conv_rpc.rs:1 use lib_core::model::conv::{"
+
+[[must]]
+record = ["dep", "crates/services/web-server/src/web/rpcs", "crates/libs/lib-rpc-core/src"]
+why = "crates/services/web-server/src/web/rpcs/conv_rpc.rs:5 use lib_rpc_core::prelude::*;"
+
+[[must]]
+record = ["dep", "crates/services/web-server/src", "crates/libs/lib-web/src/middleware"]
+why = "crates/services/web-server/src/main.rs:10 use lib_web::middleware::mw_auth::{mw_ctx_require, mw_ctx_resolver};"
+
+[[must]]
+record = ["dep", "crates/services/web-server/src", "crates/services/web-server/src/web"]
+why = "crates/services/web-server/src/main.rs:15 use crate::web::routes_login;"
+
+[[must]]
+record = ["dep", "crates/services/web-server/src/web", "crates/libs/lib-web/src/handlers"]
+why = "crates/services/web-server/src/web/routes_login.rs:4 use lib_web::handlers::handlers_login;"
+
+[[must]]
+record = ["dep", "crates/services/web-server/src/web", "crates/services/web-server/src/web/rpcs"]
+why = "crates/services/web-server/src/web/routes_rpc.rs:1 use crate::web::rpcs::all_rpc_router_builder;"
+
+[[must]]
+record = ["dep", "crates/tools/gen-key/src", "crates/libs/lib-utils/src"]
+why = "crates/tools/gen-key/src/main.rs:4 use lib_utils::b64::b64u_encode;"
+
+[[must]]
+call = "crates/libs/lib-web/src/middleware/mw_auth.rs -> crates/libs/lib-core/src/model/user.rs#first_by_username"
+why = "crates/libs/lib-web/src/middleware/mw_auth.rs:69 UserBmc::first_by_username(&Ctx::root_ctx(), &mm, &token.ident)"
+
+[[must]]
+call = "crates/libs/lib-web/src/middleware/mw_auth.rs -> crates/libs/lib-core/src/ctx/mod.rs#root_ctx"
+why = "crates/libs/lib-web/src/middleware/mw_auth.rs:69 Ctx::root_ctx() is the associated function at ctx/mod.rs:20"
+
+[[must]]
+call = "crates/libs/lib-web/src/middleware/mw_auth.rs -> crates/libs/lib-core/src/ctx/mod.rs#new"
+why = "crates/libs/lib-web/src/middleware/mw_auth.rs:83 Ctx::new(user.id)"
+
+[[must]]
+call = "crates/libs/lib-web/src/middleware/mw_auth.rs -> crates/libs/lib-auth/src/token/mod.rs#validate_web_token"
+why = "crates/libs/lib-web/src/middleware/mw_auth.rs:75 validate_web_token(&token, user.token_salt)"
+
+[[must]]
+call = "crates/libs/lib-web/src/middleware/mw_auth.rs -> crates/libs/lib-web/src/utils/token.rs#set_token_cookie"
+why = "crates/libs/lib-web/src/middleware/mw_auth.rs:79 set_token_cookie(cookies, &user.username, user.token_salt)"
+
+[[must]]
+call = "crates/libs/lib-web/src/handlers/handlers_login.rs -> crates/libs/lib-auth/src/pwd/mod.rs#validate_pwd"
+why = "crates/libs/lib-web/src/handlers/handlers_login.rs:39 pwd::validate_pwd(...) with pwd bound to lib_auth::pwd"
+
+[[must]]
+call = "crates/libs/lib-web/src/handlers/handlers_login.rs -> crates/libs/lib-core/src/model/user.rs#update_pwd"
+why = "crates/libs/lib-web/src/handlers/handlers_login.rs:52 UserBmc::update_pwd(&root_ctx, &mm, user.id, &pwd_clear)"
+
+[[must]]
+call = "crates/libs/lib-web/src/handlers/handlers_login.rs -> crates/libs/lib-web/src/utils/token.rs#set_token_cookie"
+why = "crates/libs/lib-web/src/handlers/handlers_login.rs:56 token::set_token_cookie(...) with token bound to crate::utils::token"
+
+[[must]]
+call = "crates/libs/lib-web/src/handlers/handlers_login.rs -> crates/libs/lib-web/src/utils/token.rs#remove_token_cookie"
+why = "crates/libs/lib-web/src/handlers/handlers_login.rs:84 token::remove_token_cookie(&cookies)"
+
+[[must]]
+call = "crates/libs/lib-core/src/model/user.rs -> crates/libs/lib-auth/src/pwd/mod.rs#hash_pwd"
+why = "crates/libs/lib-core/src/model/user.rs:203 pwd::hash_pwd(ContentToHash {...})"
+
+[[must]]
+call = "crates/libs/lib-core/src/model/user.rs -> crates/libs/lib-core/src/model/base/crud_fns.rs#create"
+why = "crates/libs/lib-core/src/model/user.rs:131 base::create::<Self, _>(ctx, &mm, user_fi)"
+
+[[must]]
+call = "crates/libs/lib-core/src/model/user.rs -> crates/libs/lib-core/src/model/base/crud_fns.rs#list"
+why = "crates/libs/lib-core/src/model/user.rs:192 base::list::<Self, _, _>(ctx, mm, filter, list_options)"
+
+[[must]]
+call = "crates/libs/lib-core/src/model/user.rs -> crates/libs/lib-core/src/model/base/utils.rs#prep_fields_for_update"
+why = "crates/libs/lib-core/src/model/user.rs:211 prep_fields_for_update::<Self>(&mut fields, ctx.user_id())"
+
+[[must]]
+call = "crates/libs/lib-core/src/model/user.rs -> crates/libs/lib-core/src/ctx/mod.rs#user_id"
+why = "crates/libs/lib-core/src/model/user.rs:211 ctx.user_id() with ctx: &Ctx"
+
+[[must]]
+call = "crates/libs/lib-core/src/model/user.rs -> crates/libs/lib-core/src/model/mod.rs#new_with_txn"
+why = "crates/libs/lib-core/src/model/user.rs:127 mm.new_with_txn() with mm: &ModelManager"
+
+[[must]]
+call = "crates/libs/lib-core/src/model/mod.rs -> crates/libs/lib-core/src/model/store/mod.rs#new_db_pool"
+why = "crates/libs/lib-core/src/model/mod.rs:52 new_db_pool()"
+
+[[must]]
+call = "crates/libs/lib-core/src/model/mod.rs -> crates/libs/lib-core/src/model/store/dbx/mod.rs#new"
+why = "crates/libs/lib-core/src/model/mod.rs:55 Dbx::new(db_pool, false)"
+
+[[must]]
+call = "crates/libs/lib-core/src/model/mod.rs -> crates/libs/lib-core/src/model/store/dbx/mod.rs#db"
+why = "crates/libs/lib-core/src/model/mod.rs:60 self.dbx.db() through the dbx: Dbx field"
+
+[[must]]
+call = "crates/services/web-server/src/main.rs -> crates/libs/lib-core/src/model/mod.rs#new"
+why = "crates/services/web-server/src/main.rs:38 ModelManager::new().await?"
+
+[[must]]
+call = "crates/services/web-server/src/main.rs -> crates/services/web-server/src/web/routes_rpc.rs#routes"
+why = "crates/services/web-server/src/main.rs:41 web::routes_rpc::routes(mm.clone())"
+
+[[must]]
+call = "crates/services/web-server/src/main.rs -> crates/services/web-server/src/web/routes_login.rs#routes"
+why = "crates/services/web-server/src/main.rs:45 routes_login::routes(mm.clone())"
+
+[[must]]
+call = "crates/services/web-server/src/main.rs -> crates/services/web-server/src/config.rs#web_config"
+why = "crates/services/web-server/src/main.rs:51 web_config().WEB_FOLDER"
+
+[[must]]
+call = "crates/services/web-server/src/main.rs -> crates/libs/lib-core/src/_dev_utils/mod.rs#init_dev"
+why = "crates/services/web-server/src/main.rs:36 _dev_utils::init_dev().await"
+
+[[must]]
+call = "crates/services/web-server/src/main.rs -> crates/libs/lib-web/src/routes/routes_static.rs#serve_dir"
+why = "crates/services/web-server/src/main.rs:51 routes_static::serve_dir(&web_config().WEB_FOLDER)"
+
+[[must]]
+call = "crates/services/web-server/src/web/routes_rpc.rs -> crates/services/web-server/src/web/rpcs/mod.rs#all_rpc_router_builder"
+why = "crates/services/web-server/src/web/routes_rpc.rs:12 all_rpc_router_builder()"
+
+[[must]]
+call = "crates/services/web-server/src/web/rpcs/mod.rs -> crates/services/web-server/src/web/rpcs/agent_rpc.rs#rpc_router_builder"
+why = "crates/services/web-server/src/web/rpcs/mod.rs:12 agent_rpc::rpc_router_builder()"
+
+[[must]]
+call = "crates/services/web-server/src/web/rpcs/mod.rs -> crates/services/web-server/src/web/rpcs/conv_rpc.rs#rpc_router_builder"
+why = "crates/services/web-server/src/web/rpcs/mod.rs:13 conv_rpc::rpc_router_builder()"
+
+[[must]]
+call = "crates/libs/lib-web/src/middleware/mw_res_map.rs -> crates/libs/lib-web/src/log/mod.rs#log_request"
+why = "crates/libs/lib-web/src/middleware/mw_res_map.rs:63 log_request(req_method, uri, ...)"
+
+[[must]]
+call = "crates/libs/lib-auth/src/token/mod.rs -> crates/libs/lib-auth/src/config.rs#auth_config"
+why = "crates/libs/lib-auth/src/token/mod.rs:66 auth_config()"
+
+[[must]]
+call = "crates/libs/lib-auth/src/token/mod.rs -> crates/libs/lib-utils/src/time.rs#now_utc_plus_sec_str"
+why = "crates/libs/lib-auth/src/token/mod.rs:89 now_utc_plus_sec_str(duration_sec)"
+
+[[must]]
+call = "crates/libs/lib-auth/src/pwd/scheme/scheme_01.rs -> crates/libs/lib-utils/src/b64.rs#b64u_encode"
+why = "crates/libs/lib-auth/src/pwd/scheme/scheme_01.rs:42 b64u_encode(result_bytes)"
+
+[[must]]
+call = "crates/libs/lib-core/src/config.rs -> crates/libs/lib-utils/src/envs.rs#get_env"
+why = "crates/libs/lib-core/src/config.rs:27 get_env(SERVICE_DB_URL)?"
+
+[[must]]
+call = "crates/libs/lib-core/src/_dev_utils/dev_db.rs -> crates/libs/lib-core/src/model/user.rs#first_by_username"
+why = "crates/libs/lib-core/src/_dev_utils/dev_db.rs:70 UserBmc::first_by_username(&ctx, &mm, \"demo1\")"
+
+[[must]]
+call = "crates/libs/lib-core/src/_dev_utils/mod.rs -> crates/libs/lib-core/src/model/user.rs#create"
+why = "crates/libs/lib-core/src/_dev_utils/mod.rs:67 model::user::UserBmc::create("
+
+[[must]]
+call = "crates/libs/lib-core/src/model/base/crud_fns.rs -> crates/libs/lib-core/src/model/base/utils.rs#prep_fields_for_create"
+why = "crates/libs/lib-core/src/model/base/crud_fns.rs:25 prep_fields_for_create::<MC>(&mut fields, user_id)"
+
+[[must]]
+call = "crates/libs/lib-utils/src/envs.rs -> crates/libs/lib-utils/src/b64.rs#b64u_decode"
+why = "crates/libs/lib-utils/src/envs.rs:15 b64u_decode(&get_env(name)?)"
+
+[[must]]
+call = "crates/tools/gen-key/src/main.rs -> crates/libs/lib-utils/src/b64.rs#b64u_encode"
+why = "crates/tools/gen-key/src/main.rs:12 b64u_encode(key)"
+
+# Probes
+[[must_not]]
+call = "crates/libs/lib-core/src/model/base/utils.rs -> crates/libs/lib-core/src/model/agent.rs#has_owner_id"
+why = "prep_fields_for_create calls MC::has_owner_id() on a generic MC: DbBmc; AgentBmc only overrides it (agent.rs:73), the call is on the DbBmc trait"
+
+[[must_not]]
+call = "crates/libs/lib-core/src/model/base/utils.rs -> crates/libs/lib-core/src/model/conv.rs#has_owner_id"
+why = "utils.rs:11 MC::has_owner_id() is generic over DbBmc, not tied to ConvBmc (conv.rs:150)"
+
+[[must_not]]
+call = "crates/libs/lib-auth/src/pwd/mod.rs -> crates/libs/lib-auth/src/pwd/scheme/scheme_01.rs#hash"
+why = "pwd/mod.rs:89 get_scheme(scheme_name)?.hash(&to_hash) goes through the Scheme trait, the concrete Scheme01 is only picked inside get_scheme"
+
+[[must_not]]
+call = "crates/libs/lib-auth/src/pwd/mod.rs -> crates/libs/lib-auth/src/pwd/scheme/scheme_02.rs#validate"
+why = "pwd/mod.rs:99 get_scheme(scheme_name)?.validate(...) goes through the Scheme trait, not Scheme02"
+
+[[must_not]]
+call = "crates/libs/lib-web/src/middleware/mw_auth.rs -> crates/libs/lib-core/src/model/mod.rs#new"
+why = "mw_auth.rs:83 calls Ctx::new, which is ctx/mod.rs:27; ModelManager::new is never called in mw_auth.rs"
+
+[[must_not]]
+call = "crates/services/web-server/src/main.rs -> crates/libs/lib-core/src/ctx/mod.rs#new"
+why = "main.rs:38 calls ModelManager::new; Ctx is never built in main.rs"
+
+[[must_not]]
+call = "crates/services/web-server/src/web/routes_login.rs -> crates/services/web-server/src/web/routes_rpc.rs#routes"
+why = "routes_login.rs defines its own routes() and never calls routes_rpc::routes"
+
+[[must_not]]
+call = "crates/services/web-server/src/web/routes_rpc.rs -> crates/services/web-server/src/web/routes_login.rs#routes"
+why = "routes_rpc.rs line 10 defines routes() and calls only all_rpc_router_builder, not routes_login::routes"
+
+[[must_not]]
+record = ["dep", "crates/libs/lib-utils/src", "crates/libs/lib-core/src/model"]
+why = "lib-utils depends only on base64 and time (lib-utils/Cargo.toml); no file in it imports lib_core"
+
+[[must_not]]
+record = ["dep", "crates/libs/lib-auth/src/token", "crates/libs/lib-core/src/model"]
+why = "lib-auth does not depend on lib-core (lib-auth/Cargo.toml lists only lib-utils); no file in it imports lib_core"
+
+[[must_not]]
+record = ["dep", "crates/libs/lib-core/src/model", "crates/libs/lib-web/src/middleware"]
+why = "lib-core does not depend on lib-web; no file under lib-core imports lib_web"
+
+[[must_not]]
+record = ["dep", "crates/libs/lib-auth/src/pwd", "crates/libs/lib-core/src/ctx"]
+why = "lib-auth does not import lib_core anywhere"
+
+[[must_not]]
+record = ["module", "crates/libs/lib-web/src/model"]
+why = "lib-web has no model directory; its modules are error, handlers, log, middleware, routes and utils"

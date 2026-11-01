@@ -92,3 +92,17 @@ url = "https://github.com/dotnet-architecture/eShopOnWeb"
 sha = "4da8212117e87d808d4bbc7da6286fd2147ce606"
 license = "MIT"
 languages = ["csharp"]
+
+[[repo]]
+name = "rust-web-app"
+url = "https://github.com/rust10x/rust-web-app"
+sha = "fc681fc9e47663528b5cd8fbe48bd8cad50974ee"
+license = "Apache-2.0"
+languages = ["rust"]
+
+[[repo]]
+name = "zero-to-production"
+url = "https://github.com/LukeMathWalker/zero-to-production"
+sha = "970987c5f793af6fc8e557731c9bbb23b620451e"
+license = "Apache-2.0"
+languages = ["rust"]

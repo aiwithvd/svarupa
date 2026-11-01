@@ -81,7 +81,7 @@ why = "no Mongo client anywhere"
 
 def test_corpus_is_pinned_and_licensed() -> None:
     corpus = bm.load_corpus(ROOT / "benchmark" / "corpus.toml")
-    assert len(corpus) == 13
+    assert len(corpus) == 15
     for repo in corpus:
         assert len(repo.sha) == 40 and repo.url.startswith("https://github.com/")
         assert repo.license and repo.languages
