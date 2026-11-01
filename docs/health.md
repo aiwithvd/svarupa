@@ -178,6 +178,8 @@ Rust is not stable yet. These gaps are known and are not guessed around.
   resolved. This is true for every language, not only Rust.
 - A call through a module path with several segments, such as
   `web::routes::f()`, is not resolved.
+- A `pub use` inside an inline `mod { }` block is not followed. A `pub use`
+  at the top of a module file is.
 - Each file under `tests/` is its own crate, so its `mod` and `crate::` paths
   do not resolve.
 - Macros are not calls, and `macro_rules!` names are not symbols.
