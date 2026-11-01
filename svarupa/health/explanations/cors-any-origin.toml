@@ -33,3 +33,11 @@ registry.addMapping("/**").allowedOrigins("*");
 after = '''
 registry.addMapping("/**").allowedOrigins("https://app.example.com");
 '''
+
+[example.csharp]
+before = '''
+services.AddCors(o => o.AddDefaultPolicy(p => p.AllowAnyOrigin()));
+'''
+after = '''
+services.AddCors(o => o.AddDefaultPolicy(p => p.WithOrigins("https://app.example.com")));
+'''

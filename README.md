@@ -65,9 +65,11 @@ somewhere other than `<repo>/.svarupa/`. The artifact holds:
   `<!-- svarupa:begin -->` and `<!-- svarupa:end -->`; refresh with `--update`, preview with `--dry-run`.
   Windsurf gets a shorter version, because Windsurf limits rule files to 6,000
   characters each (12,000 in total).
-- Code facts come from language packs: Python, TypeScript, JavaScript, Go
-  and Java today. Other detected languages are listed as detected but not
-  analyzed (SVA-X-012), never guessed.
+- Code facts come from language packs: Python, TypeScript, JavaScript, Go,
+  Java and C# today. JavaScript is experimental; the others are stable.
+  Other detected languages are listed as detected but not analyzed
+  (SVA-X-012), never guessed. Known gaps per
+  language are in `docs/health.md`.
 
 ![The architecture tab of the demo repository](docs/images/demo-architecture.png)
 
@@ -144,8 +146,8 @@ development: license swaps, viewer work, layout fixes) produced a median of
 moves, not when code churns. See `docs/reviews/` for the numbers and the
 reasoning.
 
-**Benchmarked.** Every pull request is scored on 11 pinned public
-repositories (Python, TypeScript, JavaScript, Go, Java) against facts checked
+**Benchmarked.** Every pull request is scored on 13 pinned public
+repositories (Python, TypeScript, JavaScript, Go, Java, C#) against facts checked
 by reading their source; a change that loses a found fact fails CI. A
 language pack is labelled stable only when two of its repositories reach 90%
 recall with no false fact. Recall covers what Svarupa claims to extract

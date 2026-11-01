@@ -137,6 +137,26 @@ REPOS: dict[str, dict[str, str]] = {
             "package com.acme.shop.service;\n\nclass Base {\n    void audit() {}\n}\n"
         ),
     },
+    "csharp_shop": {
+        "Api/OrdersController.cs": (
+            "using System;\nusing Shop.Domain;\n\nnamespace Shop.Api;\n\n"
+            "public class OrdersController\n{\n"
+            "    private readonly OrderService _orders;\n"
+            "    public void Create() { _orders.Place(); }\n"
+            "}\n"
+        ),
+        "Domain/OrderService.cs": (
+            "using Shop.Data;\n\nnamespace Shop.Domain;\n\n"
+            "public class OrderService\n{\n"
+            "    private readonly OrderRepo _repo;\n"
+            "    public void Place() { _repo.Save(); }\n"
+            "}\n"
+        ),
+        "Data/OrderRepo.cs": (
+            "namespace Shop.Data;\n\npublic class OrderRepo\n{\n    public void Save() {}\n}\n"
+        ),
+        "Data/Db.cs": "namespace Shop.Data;\n\npublic class Db {}\n",
+    },
 }
 
 

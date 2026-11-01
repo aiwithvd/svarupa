@@ -39,6 +39,7 @@ from svarupa.extract.base import (
     depth_capped,
 )
 from svarupa.extract.packs.model import (
+    LAST_NAMED,
     Call,
     Carry,
     Custom,
@@ -105,6 +106,7 @@ class Ctx:
         self.ctor_assigns: list[tuple[str, str]] = []
         self.reexports: list[str] = []
         self.namespace = ""
+        self.namespaces: list[str] = []
         self.too_deep = False
 
     def text(self, node: TSNode) -> str:
@@ -244,7 +246,11 @@ class Ctx:
             node = stack.pop()
             # Named nodes only: Python's `lambda` keyword token shares the
             # node's type name and would be measured as a second function.
-            if node.is_named and node.type in spec.function_types:
+            if (
+                node.is_named
+                and node.type in spec.function_types
+                and (spec.is_function is None or spec.is_function(node))
+            ):
                 out.append(self._measure(node, spec))
             stack.extend(reversed(node.children))
         return out
@@ -257,7 +263,11 @@ class Ctx:
         while work:
             node, depth, parent = work.pop()
             kind = node.type
-            if kind in spec.function_types and node.is_named:
+            if (
+                kind in spec.function_types
+                and node.is_named
+                and (spec.is_function is None or spec.is_function(node))
+            ):
                 continue  # measured on its own
             if kind in spec.branch_types:
                 if not any((kind, c.type) in excluded for c in node.children):
@@ -281,6 +291,10 @@ class Ctx:
         )
 
     def _function_name(self, fn: TSNode) -> str:
+        spec = self.pack.metrics
+        named = spec.name_of(fn) if spec is not None and spec.name_of is not None else None
+        if named:
+            return named
         name = fn.child_by_field_name("name")
         if name is None and fn.parent is not None and fn.parent.type == "variable_declarator":
             name = fn.parent.child_by_field_name("name")
@@ -296,7 +310,9 @@ class Ctx:
         spec = self.pack.risks
         if spec is None or self.too_deep:
             return []
-        fn_types = self.pack.metrics.function_types if self.pack.metrics else frozenset[str]()
+        metrics = self.pack.metrics
+        fn_types = metrics.function_types if metrics else frozenset[str]()
+        is_fn = metrics.is_function if metrics else None
         by_type: dict[str, list[Unsafe]] = {}
         for rule in spec.unsafe:
             for t in rule.node_types:
@@ -308,13 +324,11 @@ class Ctx:
         while scopes:
             scope, name, looped = scopes.pop()
             built: set[str] = set()
-            is_async = spec.async_marker is not None and any(
-                not c.is_named and c.type == spec.async_marker for c in scope.children
-            )
+            is_async = self._is_async(scope, spec)
             work = [(c, looped) for c in reversed(scope.children)]
             while work:
                 node, in_loop = work.pop()
-                if node.is_named and node.type in fn_types:
+                if node.is_named and node.type in fn_types and (is_fn is None or is_fn(node)):
                     per_item = in_loop or self._per_item(node, spec)
                     scopes.append((node, self._function_name(node), per_item))
                     continue
@@ -331,6 +345,24 @@ class Ctx:
         unique = {(r.evidence.start_line, r.kind, r.tag): r for r in reversed(out)}
         return sorted(unique.values(), key=lambda r: (r.evidence.start_line, r.kind, r.tag))
 
+    def _assigned(self, node: TSNode, field: str) -> TSNode | None:
+        """The assigned value. The field name LAST_NAMED means the grammar gives
+        it no field: the last named child, when it is not the name itself."""
+        if field != LAST_NAMED:
+            return node.child_by_field_name(field)
+        kids = node.named_children
+        return kids[-1] if len(kids) > 1 else None
+
+    def _is_async(self, fn: TSNode, spec: RiskSpec) -> bool:
+        marker = spec.async_marker
+        if marker is None:
+            return False
+        holder = spec.async_holder
+        if holder is None:
+            return any(not c.is_named and c.type == marker for c in fn.children)
+        word = marker.encode()
+        return any(c.type == holder and c.text == word for c in fn.children)
+
     def _risk_node(
         self,
         node: TSNode,
@@ -345,7 +377,7 @@ class Ctx:
             if t != kind:
                 continue
             left = node.child_by_field_name(left_field)
-            right = node.child_by_field_name(right_field)
+            right = self._assigned(node, right_field)
             if left is None or right is None or not _IDENT.fullmatch(self.text(left)):
                 break
             name = self.text(left)
@@ -388,9 +420,16 @@ class Ctx:
                         )
                     )
 
+    def _argument_list(self, fn: TSNode, spec: RiskSpec) -> TSNode | None:
+        """The argument list a function is passed in, past the pack's wrapper."""
+        args = fn.parent
+        if args is not None and args.type == spec.arg_wrapper:
+            args = args.parent
+        return args
+
     def _per_item(self, fn: TSNode, spec: RiskSpec) -> bool:
         """Whether this function is passed to a per-item call (`xs.map(f)`)."""
-        args = fn.parent
+        args = self._argument_list(fn, spec)
         call = args.parent if args is not None else None
         if spec.loop_callee is None or call is None or call.type not in spec.call_types:
             return False
@@ -531,6 +570,7 @@ class Ctx:
             diagnostics=tuple(diags),
             ctor_assigns=tuple(self.ctor_assigns),
             namespace=self.namespace,
+            namespaces=tuple(self.namespaces),
             functions=tuple(functions),
             risks=tuple(risks),
         )

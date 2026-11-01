@@ -91,3 +91,27 @@ for (Order o : orders) {
     o.items().stream().filter(Item::inStock).forEach(this::ship);
 }
 '''
+
+[example.csharp]
+before = '''
+foreach (var o in orders)
+{
+    if (o.Paid)
+    {
+        if (o.Items.Count > 0)
+        {
+            foreach (var it in o.Items)
+            {
+                if (it.InStock) Ship(it);
+            }
+        }
+    }
+}
+'''
+after = '''
+foreach (var o in orders)
+{
+    if (!o.Paid || o.Items.Count == 0) continue;
+    foreach (var it in o.Items.Where(i => i.InStock)) Ship(it);
+}
+'''

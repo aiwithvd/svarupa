@@ -36,6 +36,7 @@
  ],
  "ctor_assigns": [],
  "namespace": "",
+ "namespaces": [],
  "functions": [
   {
    "name": "fine",

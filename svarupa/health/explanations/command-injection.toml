@@ -33,3 +33,14 @@ Runtime.getRuntime().exec("convert " + filename + " out.png");
 after = '''
 new ProcessBuilder("convert", filename, "out.png").start();
 '''
+
+[example.csharp]
+before = '''
+Process.Start("convert", filename + " out.png");
+'''
+after = '''
+var psi = new ProcessStartInfo("convert");
+psi.ArgumentList.Add(filename);
+psi.ArgumentList.Add("out.png");
+Process.Start(psi);
+'''

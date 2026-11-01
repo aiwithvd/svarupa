@@ -35,3 +35,13 @@ SSLConnectionSocketFactory f = new SSLConnectionSocketFactory(ctx, new NoopHostn
 after = '''
 SSLConnectionSocketFactory f = new SSLConnectionSocketFactory(ctx);
 '''
+
+[example.csharp]
+before = '''
+var handler = new HttpClientHandler();
+handler.ServerCertificateCustomValidationCallback = (msg, cert, chain, errors) => true;
+var client = new HttpClient(handler);
+'''
+after = '''
+var client = new HttpClient();
+'''

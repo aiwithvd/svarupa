@@ -175,6 +175,7 @@
  ],
  "ctor_assigns": [],
  "namespace": "com.acme.shop.model",
+ "namespaces": [],
  "functions": [
   {
    "name": "call",

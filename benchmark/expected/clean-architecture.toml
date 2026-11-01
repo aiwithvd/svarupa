@@ -1,0 +1,227 @@
+# CleanArchitecture @ 345e7fe7612f
+# Read: README.md, CleanArchitecture.slnx, every .cs file under src/ (Application,
+# Domain, Infrastructure, Web, Shared, AppHost, ServiceDefaults).
+# Not expected on purpose:
+# - tests/ and templates/: test projects are classified as test code and left
+#   out of the module graph.
+# - calls on a `var` local whose type comes from a generic or LINQ call
+#   (for example `initialiser.InitialiseAsync()`), on extension methods, and
+#   through MediatR (`sender.Send`) or EF Core (`_context.Database`): their
+#   targets are external or need type inference.
+# - `global using` lines (Domain/GlobalUsings.cs and the others): they apply to
+#   the whole project, so the plain `using` lines are cited instead.
+# - endpoints: routes are declared with MapPost/MapPut calls on route groups,
+#   not as framework route attributes.
+# - datastores and compose services: the database comes from .NET Aspire
+#   (AppHost/Program.cs) behind #if directives, with no compose file.
+# One call fact (TodoItem -> BaseEntity#AddDomainEvent) needs the base class
+# BaseAuditableEntity, which TodoItem.cs only sees through Domain/GlobalUsings.cs.
+# It is listed because the call is real in the source.
+
+# Modules
+[[must]]
+record = ["module", "src/Application"]
+why = "src/Application/DependencyInjection.cs:7 public static class DependencyInjection"
+
+[[must]]
+record = ["module", "src/Application/Common/Interfaces"]
+why = "src/Application/Common/Interfaces/IApplicationDbContext.cs:5 public interface IApplicationDbContext"
+
+[[must]]
+record = ["module", "src/Application/Common/Behaviours"]
+why = "src/Application/Common/Behaviours/LoggingBehaviour.cs:7 public class LoggingBehaviour<TRequest> : IRequestPreProcessor<TRequest>"
+
+[[must]]
+record = ["module", "src/Application/Common/Models"]
+why = "src/Application/Common/Models/Result.cs:3 public class Result"
+
+[[must]]
+record = ["module", "src/Domain/Entities"]
+why = "src/Domain/Entities/TodoItem.cs:3 public class TodoItem : BaseAuditableEntity"
+
+[[must]]
+record = ["module", "src/Domain/Common"]
+why = "src/Domain/Common/BaseEntity.cs:5 public abstract class BaseEntity"
+
+[[must]]
+record = ["module", "src/Infrastructure/Data"]
+why = "src/Infrastructure/Data/ApplicationDbContext.cs:10 public class ApplicationDbContext : IdentityDbContext<ApplicationUser>, IApplicationDbContext"
+
+[[must]]
+record = ["module", "src/Infrastructure/Identity"]
+why = "src/Infrastructure/Identity/IdentityService.cs:9 public class IdentityService : IIdentityService"
+
+[[must]]
+record = ["module", "src/Web/Endpoints"]
+why = "src/Web/Endpoints/TodoItems.cs:9 public class TodoItems : IEndpointGroup"
+
+[[must]]
+record = ["module", "src/Web/Services"]
+why = "src/Web/Services/CurrentUser.cs:7 public class CurrentUser : IUser"
+
+[[must]]
+record = ["module", "src/Shared"]
+why = "src/Shared/Services.cs:3 public static class Services"
+
+# Deps
+[[must]]
+record = ["dep", "src/Application/Common/Behaviours", "src/Application/Common/Exceptions"]
+why = "src/Application/Common/Behaviours/AuthorizationBehaviour.cs:2 using CleanArchitecture.Application.Common.Exceptions;"
+
+[[must]]
+record = ["dep", "src/Application/Common/Behaviours", "src/Application/Common/Interfaces"]
+why = "src/Application/Common/Behaviours/LoggingBehaviour.cs:1 using CleanArchitecture.Application.Common.Interfaces;"
+
+[[must]]
+record = ["dep", "src/Application", "src/Application/Common/Behaviours"]
+why = "src/Application/DependencyInjection.cs:2 using CleanArchitecture.Application.Common.Behaviours;"
+
+[[must]]
+record = ["dep", "src/Application/TodoItems/Commands/CreateTodoItem", "src/Domain/Entities"]
+why = "src/Application/TodoItems/Commands/CreateTodoItem/CreateTodoItem.cs:2 using CleanArchitecture.Domain.Entities;"
+
+[[must]]
+record = ["dep", "src/Application/TodoItems/Commands/CreateTodoItem", "src/Application/Common/Interfaces"]
+why = "src/Application/TodoItems/Commands/CreateTodoItem/CreateTodoItem.cs:1 using CleanArchitecture.Application.Common.Interfaces;"
+
+[[must]]
+record = ["dep", "src/Application/Common/Interfaces", "src/Domain/Entities"]
+why = "src/Application/Common/Interfaces/IApplicationDbContext.cs:1 using CleanArchitecture.Domain.Entities;"
+
+[[must]]
+record = ["dep", "src/Infrastructure/Data", "src/Infrastructure/Identity"]
+why = "src/Infrastructure/Data/ApplicationDbContext.cs:4 using CleanArchitecture.Infrastructure.Identity;"
+
+[[must]]
+record = ["dep", "src/Infrastructure/Data", "src/Application/Common/Interfaces"]
+why = "src/Infrastructure/Data/ApplicationDbContext.cs:2 using CleanArchitecture.Application.Common.Interfaces;"
+
+[[must]]
+record = ["dep", "src/Infrastructure/Data/Interceptors", "src/Domain/Common"]
+why = "src/Infrastructure/Data/Interceptors/DispatchDomainEventsInterceptor.cs:1 using CleanArchitecture.Domain.Common;"
+
+[[must]]
+record = ["dep", "src/Infrastructure/Identity", "src/Application/Common/Models"]
+why = "src/Infrastructure/Identity/IdentityService.cs:2 using CleanArchitecture.Application.Common.Models;"
+
+[[must]]
+record = ["dep", "src/Infrastructure", "src/Infrastructure/Data/Interceptors"]
+why = "src/Infrastructure/DependencyInjection.cs:3 using CleanArchitecture.Infrastructure.Data.Interceptors;"
+
+[[must]]
+record = ["dep", "src/Web/Services", "src/Application/Common/Interfaces"]
+why = "src/Web/Services/CurrentUser.cs:3 using CleanArchitecture.Application.Common.Interfaces;"
+
+[[must]]
+record = ["dep", "src/Web/Endpoints", "src/Application/TodoItems/Commands/CreateTodoItem"]
+why = "src/Web/Endpoints/TodoItems.cs:1 using CleanArchitecture.Application.TodoItems.Commands.CreateTodoItem;"
+
+[[must]]
+record = ["dep", "src/Web/Endpoints", "src/Infrastructure/Identity"]
+why = "src/Web/Endpoints/Users.cs:1 using CleanArchitecture.Infrastructure.Identity;"
+
+[[must]]
+record = ["dep", "src/Web/Infrastructure", "src/Application/Common/Exceptions"]
+why = "src/Web/Infrastructure/ProblemDetailsExceptionHandler.cs:1 using CleanArchitecture.Application.Common.Exceptions;"
+
+[[must]]
+record = ["dep", "src/AppHost", "src/Shared"]
+why = "src/AppHost/Program.cs:1 using CleanArchitecture.Shared;"
+
+# Calls
+[[must]]
+call = "src/Application/TodoItems/Commands/CreateTodoItem/CreateTodoItem.cs -> src/Application/Common/Interfaces/IApplicationDbContext.cs#SaveChangesAsync"
+why = "src/Application/TodoItems/Commands/CreateTodoItem/CreateTodoItem.cs:33 await _context.SaveChangesAsync(cancellationToken);"
+
+[[must]]
+call = "src/Application/TodoItems/Commands/DeleteTodoItem/DeleteTodoItem.cs -> src/Application/Common/Interfaces/IApplicationDbContext.cs#SaveChangesAsync"
+why = "src/Application/TodoItems/Commands/DeleteTodoItem/DeleteTodoItem.cs:25 await _context.SaveChangesAsync(cancellationToken);"
+
+[[must]]
+call = "src/Application/TodoLists/Commands/UpdateTodoList/UpdateTodoList.cs -> src/Application/Common/Interfaces/IApplicationDbContext.cs#SaveChangesAsync"
+why = "src/Application/TodoLists/Commands/UpdateTodoList/UpdateTodoList.cs:38 await _context.SaveChangesAsync(cancellationToken);"
+
+[[must]]
+call = "src/Application/Common/Behaviours/LoggingBehaviour.cs -> src/Application/Common/Interfaces/IIdentityService.cs#GetUserNameAsync"
+why = "src/Application/Common/Behaviours/LoggingBehaviour.cs:29 userName = await _identityService.GetUserNameAsync(userId);"
+
+[[must]]
+call = "src/Application/Common/Behaviours/PerformanceBehaviour.cs -> src/Application/Common/Interfaces/IIdentityService.cs#GetUserNameAsync"
+why = "src/Application/Common/Behaviours/PerformanceBehaviour.cs:45 userName = await _identityService.GetUserNameAsync(userId);"
+
+[[must]]
+call = "src/Application/Common/Behaviours/AuthorizationBehaviour.cs -> src/Application/Common/Interfaces/IIdentityService.cs#AuthorizeAsync"
+why = "src/Application/Common/Behaviours/AuthorizationBehaviour.cs:67 var authorized = await _identityService.AuthorizeAsync(_user.Id, policy);"
+
+[[must]]
+call = "src/Infrastructure/Identity/IdentityResultExtensions.cs -> src/Application/Common/Models/Result.cs#Success"
+why = "src/Infrastructure/Identity/IdentityResultExtensions.cs:11 ? Result.Success()"
+
+[[must]]
+call = "src/Infrastructure/Identity/IdentityResultExtensions.cs -> src/Application/Common/Models/Result.cs#Failure"
+why = "src/Infrastructure/Identity/IdentityResultExtensions.cs:12 : Result.Failure(result.Errors.Select(e => e.Description));"
+
+[[must]]
+call = "src/Application/TodoLists/Commands/UpdateTodoList/UpdateTodoList.cs -> src/Domain/ValueObjects/Colour.cs#From"
+why = "src/Application/TodoLists/Commands/UpdateTodoList/UpdateTodoList.cs:35 entity.Colour = Colour.From(request.Colour);"
+
+[[must]]
+call = "src/Application/TodoLists/Commands/CreateTodoList/CreateTodoList.cs -> src/Domain/ValueObjects/Colour.cs#From"
+why = "src/Application/TodoLists/Commands/CreateTodoList/CreateTodoList.cs:28 Colour = Colour.From(request.Colour ?? Colour.Grey)"
+
+[[must]]
+call = "src/Infrastructure/Data/Interceptors/AuditableEntityInterceptor.cs -> src/Infrastructure/Data/Interceptors/AuditableEntityInterceptor.cs#UpdateEntities"
+why = "src/Infrastructure/Data/Interceptors/AuditableEntityInterceptor.cs:24 UpdateEntities(eventData.Context);"
+
+[[must]]
+call = "src/Infrastructure/Data/Interceptors/DispatchDomainEventsInterceptor.cs -> src/Infrastructure/Data/Interceptors/DispatchDomainEventsInterceptor.cs#DispatchDomainEvents"
+why = "src/Infrastructure/Data/Interceptors/DispatchDomainEventsInterceptor.cs:27 await DispatchDomainEvents(eventData.Context);"
+
+[[must]]
+call = "src/Infrastructure/Data/ApplicationDbContextInitialiser.cs -> src/Infrastructure/Data/ApplicationDbContextInitialiser.cs#TrySeedAsync"
+why = "src/Infrastructure/Data/ApplicationDbContextInitialiser.cs:59 await TrySeedAsync();"
+
+[[must]]
+call = "src/Domain/ValueObjects/Colour.cs -> src/Domain/ValueObjects/Colour.cs#From"
+why = "src/Domain/ValueObjects/Colour.cs:40 return From(code);"
+
+[[must]]
+call = "src/Domain/Common/ValueObject.cs -> src/Domain/Common/ValueObject.cs#GetEqualityComponents"
+why = "src/Domain/Common/ValueObject.cs:31 return GetEqualityComponents().SequenceEqual(other.GetEqualityComponents());"
+
+[[must]]
+call = "src/Infrastructure/Identity/IdentityService.cs -> src/Infrastructure/Identity/IdentityService.cs#DeleteUserAsync"
+why = "src/Infrastructure/Identity/IdentityService.cs:72 return user != null ? await DeleteUserAsync(user) : Result.Success();"
+
+[[must]]
+call = "src/Domain/Entities/TodoItem.cs -> src/Domain/Common/BaseEntity.cs#AddDomainEvent"
+why = "src/Domain/Entities/TodoItem.cs:21 AddDomainEvent(new TodoItemCompletedEvent(this));"
+
+# Probes
+[[must_not]]
+record = ["dep", "src/Domain/Entities", "src/Infrastructure/Data"]
+why = "Domain imports nothing from the other layers; TodoItem.cs and TodoList.cs have no using lines for Infrastructure"
+
+[[must_not]]
+record = ["dep", "src/Application/Common/Interfaces", "src/Infrastructure/Identity"]
+why = "the Application layer depends on abstractions only; no file under src/Application imports CleanArchitecture.Infrastructure"
+
+[[must_not]]
+record = ["dep", "src/Web/Endpoints", "src/Domain/Entities"]
+why = "endpoint groups send commands through MediatR and never import Domain.Entities"
+
+[[must_not]]
+record = ["dep", "src/Infrastructure", "src/Web/Services"]
+why = "Infrastructure does not reference the Web project; no file under src/Infrastructure imports CleanArchitecture.Web"
+
+[[must_not]]
+call = "src/Application/Common/Behaviours/LoggingBehaviour.cs -> src/Infrastructure/Identity/IdentityService.cs#GetUserNameAsync"
+why = "LoggingBehaviour holds an IIdentityService from Application.Common.Interfaces and never touches the Infrastructure implementation"
+
+[[must_not]]
+call = "src/Application/TodoItems/Commands/CreateTodoItem/CreateTodoItem.cs -> src/Infrastructure/Data/ApplicationDbContext.cs#SaveChangesAsync"
+why = "the handler calls SaveChangesAsync on the IApplicationDbContext interface; ApplicationDbContext declares no such method"
+
+[[must_not]]
+record = ["module", "tests/Application.UnitTests/Common/Behaviours"]
+why = "unit test sources are not application modules"

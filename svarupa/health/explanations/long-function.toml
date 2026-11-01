@@ -76,3 +76,24 @@ Order placeOrder(OrderRequest req) {
     return order;
 }
 '''
+
+[example.csharp]
+before = '''
+Order PlaceOrder(OrderRequest req)
+{
+    // 15 lines that read and check the request
+    // 20 lines that price the cart
+    // 15 lines that save and send the email
+    return order;
+}
+'''
+after = '''
+Order PlaceOrder(OrderRequest req)
+{
+    var form = ReadOrderForm(req);
+    var total = PriceCart(form.Items);
+    var order = SaveOrder(form, total);
+    SendConfirmation(order);
+    return order;
+}
+'''

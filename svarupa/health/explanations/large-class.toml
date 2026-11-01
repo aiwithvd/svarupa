@@ -83,3 +83,24 @@ class OrderService {
     private final Payments payments;
 }
 '''
+
+[example.csharp]
+before = '''
+class OrderService
+{
+    decimal Price(Order o) { return o.Total; }
+    void ChargeCard(Order o) { }
+    void Refund(Order o) { }
+    void SendEmail(Order o) { }
+}
+'''
+after = '''
+class Pricing { decimal Price(Order o) { return o.Total; } }
+class Payments { void ChargeCard(Order o) { } void Refund(Order o) { } }
+
+class OrderService
+{
+    private readonly Pricing _pricing;
+    private readonly Payments _payments;
+}
+'''

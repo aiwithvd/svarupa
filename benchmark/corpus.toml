@@ -78,3 +78,17 @@ url = "https://github.com/gothinkster/spring-boot-realworld-example-app"
 sha = "ee17e31aafe733d98c4853c8b9a74d7f2f6c924a"
 license = "MIT"
 languages = ["java"]
+
+[[repo]]
+name = "clean-architecture"
+url = "https://github.com/jasontaylordev/CleanArchitecture"
+sha = "345e7fe7612fdaf0cb5da58826a7c57d42e1fdd8"
+license = "MIT"
+languages = ["csharp"]
+
+[[repo]]
+name = "eshoponweb"
+url = "https://github.com/dotnet-architecture/eShopOnWeb"
+sha = "4da8212117e87d808d4bbc7da6286fd2147ce606"
+license = "MIT"
+languages = ["csharp"]

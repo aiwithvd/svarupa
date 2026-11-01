@@ -54,6 +54,57 @@
   "expected": "f75a1b6266f6b8be",
   "design_found": []
  },
+ "clean-architecture": {
+  "recall": 0.9773,
+  "found": 43,
+  "total": 44,
+  "missed": [
+   "call:src/Infrastructure/Identity/IdentityService.cs -> src/Infrastructure/Identity/IdentityService.cs#DeleteUserAsync"
+  ],
+  "fired": [],
+  "by_kind": {
+   "call": [
+    16,
+    17
+   ],
+   "dep": [
+    16,
+    16
+   ],
+   "module": [
+    11,
+    11
+   ]
+  },
+  "expected": "1027a9ab96dac1d0",
+  "design_found": []
+ },
+ "eshoponweb": {
+  "recall": 0.9574,
+  "found": 45,
+  "total": 47,
+  "missed": [
+   "call:src/Web/Services/CachedCatalogViewModelService.cs -> src/Web/Services/CatalogViewModelService.cs#GetBrands",
+   "call:src/Web/Services/CatalogViewModelService.cs -> src/Web/Services/CatalogViewModelService.cs#GetBrands"
+  ],
+  "fired": [],
+  "by_kind": {
+   "call": [
+    14,
+    16
+   ],
+   "dep": [
+    18,
+    18
+   ],
+   "module": [
+    13,
+    13
+   ]
+  },
+  "expected": "97528e18b74a8539",
+  "design_found": []
+ },
  "express-boilerplate": {
   "recall": 0.973,
   "found": 36,

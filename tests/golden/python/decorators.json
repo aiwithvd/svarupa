@@ -427,6 +427,7 @@
  "diagnostics": [],
  "ctor_assigns": [],
  "namespace": "",
+ "namespaces": [],
  "functions": [
   {
    "name": "list_items",

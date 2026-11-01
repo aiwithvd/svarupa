@@ -1,0 +1,40 @@
+path: Api/OrdersController.cs
+---
+using System;
+using Shop.Data;
+using static Shop.Util.Math;
+using Db = Shop.Data.Db;
+
+namespace Shop.Api;
+
+[ApiController]
+[Route("api/orders")]
+public class OrdersController : ControllerBase, IOrders<Order>
+{
+    private readonly IRepo _repo;
+
+    public OrdersController(IRepo repo)
+    {
+        _repo = repo;
+    }
+
+    [HttpPost]
+    [Authorize("admin")]
+    public async Task<IActionResult> Create(int id)
+    {
+        await _repo.FindAsync(id);
+        var helper = new Helper();
+        Audit();
+        this.Log();
+        base.Dispose();
+        Order.Build().Items();
+        return Ok();
+    }
+
+    private void Audit() {}
+}
+
+public interface IOrders<T> : IDisposable {}
+public record Line(int Qty);
+public struct Point {}
+public enum Status { Open, Closed }

@@ -33,3 +33,13 @@ MessageDigest md = MessageDigest.getInstance("MD5");
 after = '''
 MessageDigest md = MessageDigest.getInstance("SHA-256");
 '''
+
+[example.csharp]
+before = '''
+using var md5 = MD5.Create();
+var hash = md5.ComputeHash(data);
+'''
+after = '''
+using var sha = SHA256.Create();
+var hash = sha.ComputeHash(data);
+'''

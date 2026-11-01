@@ -94,3 +94,32 @@ int shipping(Order o) {
     return RATES.getOrDefault(o.country(), 30);
 }
 '''
+
+[example.csharp]
+before = '''
+decimal Shipping(Order o)
+{
+    if (o.Country == "US")
+    {
+        if (o.Weight > 10) return 20;
+        return 10;
+    }
+    else if (o.Country == "CA")
+    {
+        return 15;
+    }
+    else
+    {
+        return 30;
+    }
+}
+'''
+after = '''
+static readonly Dictionary<string, decimal> Rates = new() { ["US"] = 10, ["CA"] = 15 };
+
+decimal Shipping(Order o)
+{
+    if (o.Country == "US" && o.Weight > 10) return 20;
+    return Rates.GetValueOrDefault(o.Country, 30);
+}
+'''

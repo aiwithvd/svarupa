@@ -30,7 +30,12 @@ Each entry breaks one promise of the walker; a test must go red:
 * a JavaScript finding shows the TypeScript example;
 * a box counts only its own findings;
 * moved code is never a new finding;
-* a grade drop fails the check.
+* a grade drop fails the check;
+* a C# namespace qualifies its symbols;
+* `System.*` is external in C#;
+* the C# `async` marker is found under `modifier`;
+* `FromSqlInterpolated` is not a raw sink;
+* a nested C# block namespace keeps its parent.
 """
 
 from __future__ import annotations
@@ -52,6 +57,7 @@ SUITE = [
     "tests/test_module_resolvers.py",
     "tests/test_extract_go.py",
     "tests/test_extract_java.py",
+    "tests/test_extract_csharp.py",
     "tests/test_golden_repos.py",
     "tests/test_detect.py",
     "tests/test_metrics.py",
@@ -171,8 +177,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     (
         "nested functions add to the outer complexity",
         "svarupa/extract/packs/walker.py",
-        "            if kind in spec.function_types and node.is_named:\n                continue  # measured on its own\n",
-        "",
+        "                and (spec.is_function is None or spec.is_function(node))\n            ):\n                continue  # measured on its own\n",
+        "            ):\n                pass  # measured on its own\n",
     ),
     (
         "else if nests deeper again",
@@ -279,8 +285,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     (
         "async functions are never async",
         "svarupa/extract/packs/walker.py",
-        "            is_async = spec.async_marker is not None and any(\n",
-        "            is_async = False and any(\n",
+        "        marker = spec.async_marker\n        if marker is None:\n            return False\n",
+        "        marker = spec.async_marker\n        if True:\n            return False\n",
     ),
     (
         "a catch that does something counts as empty",
@@ -335,6 +341,36 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
         "svarupa/check.py",
         "        return bool(self.worse()) or any(\n",
         "        return False or any(\n",
+    ),
+    (
+        "a csharp namespace no longer qualifies symbols",
+        "svarupa/extract/packs/csharp.py",
+        "    ctx.prefix = full\n    if not block:",
+        "    if not block:",
+    ),
+    (
+        "System.* stops being external in csharp",
+        "svarupa/extract/packs/modules.py",
+        '[0] in ("System", "Microsoft")',
+        '[0] in ("Microsoft",)',
+    ),
+    (
+        "the csharp async marker is not found under modifier",
+        "svarupa/extract/packs/csharp.py",
+        '    async_holder="modifier",\n',
+        '    async_holder="modifiers",\n',
+    ),
+    (
+        "FromSqlInterpolated is treated as a raw sink",
+        "svarupa/extract/packs/csharp.py",
+        "(?:ExecuteSqlRaw|ExecuteSqlRawAsync|FromSqlRaw|SqlQueryRaw)",
+        "(?:ExecuteSqlRaw|ExecuteSqlRawAsync|FromSqlRaw|FromSqlInterpolated|SqlQueryRaw)",
+    ),
+    (
+        "a nested csharp block namespace loses its parent",
+        "svarupa/extract/packs/csharp.py",
+        "            parts.append(ctx.text(outer))\n",
+        "            pass\n",
     ),
 ]
 

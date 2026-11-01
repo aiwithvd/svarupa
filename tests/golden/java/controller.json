@@ -312,6 +312,7 @@
  "diagnostics": [],
  "ctor_assigns": [],
  "namespace": "com.acme.shop",
+ "namespaces": [],
  "functions": [
   {
    "name": "OrderController",

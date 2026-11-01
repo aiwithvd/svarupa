@@ -35,3 +35,11 @@ PreparedStatement ps = conn.prepareStatement("SELECT * FROM users WHERE email = 
 ps.setString(1, email);
 ps.executeQuery();
 '''
+
+[example.csharp]
+before = '''
+db.Users.FromSqlRaw("SELECT * FROM Users WHERE Email = '" + email + "'");
+'''
+after = '''
+db.Users.FromSqlInterpolated($"SELECT * FROM Users WHERE Email = {email}");
+'''

@@ -170,6 +170,8 @@ comment in the installed file shows the one-line change to make it report-only.
   CommonJS); declared entrypoints cover pyproject scripts and package.json
   `bin`. A service on another framework showing no api/worker role means
   not-yet-extracted, not "no API"; REPORT.md states this boundary per run.
+  ASP.NET routes (C#) are not extracted yet, so a C# service shows no api
+  role and `endpoint-without-auth` does not fire for C#.
 - Endpoint paths compose only within one file: NestJS controller prefixes,
   and Express `app.use('/api', router)` mounts (router-on-router, and
   `app.route('/x').get()` chains). A composed route cites its handler line

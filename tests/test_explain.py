@@ -20,7 +20,17 @@ def test_an_explanation_has_text_and_examples() -> None:
     assert e.what.startswith("The same database query runs once for every item")
     assert e.why and e.fix
     langs = [lang for lang, _ in e.examples]
-    assert langs == sorted(langs) == ["go", "java", "python", "typescript"]
+    assert (
+        langs
+        == sorted(langs)
+        == [
+            "csharp",
+            "go",
+            "java",
+            "python",
+            "typescript",
+        ]
+    )
     py = dict(e.examples)["python"]
     assert "for order in orders" in py.before and "in_bulk" in py.after
 
@@ -61,9 +71,15 @@ def test_bad_files_are_refused() -> None:
 
 
 def test_required_languages_follow_the_packs() -> None:
-    assert required_languages("complex-function") == {"python", "typescript", "go", "java"}
-    assert required_languages("blocking-in-async") == {"python", "typescript"}
-    assert required_languages("code-injection") == {"python", "typescript", "java"}
+    assert required_languages("complex-function") == {
+        "python",
+        "typescript",
+        "go",
+        "java",
+        "csharp",
+    }
+    assert required_languages("blocking-in-async") == {"python", "typescript", "csharp"}
+    assert required_languages("code-injection") == {"python", "typescript", "java", "csharp"}
     assert required_languages("debug-enabled") == {"python", "go"}
     assert required_languages("module-cycle") == frozenset()
 
@@ -79,7 +95,7 @@ def test_example_text_is_dedented_and_trimmed() -> None:
         },
     )
     assert dict(e.examples)["go"] == Example("a\n  b", "c")
-    assert explain.LANGS == ("python", "typescript", "go", "java")
+    assert explain.LANGS == ("python", "typescript", "go", "java", "csharp")
 
 
 from svarupa.health import CATALOG  # noqa: E402
@@ -170,3 +186,41 @@ def test_examples_teach_working_fixes() -> None:
     assert py is not None and py.after.index("def ship_in_stock") < py.after.index("for order")
     go = example_for("deep-nesting", "go")
     assert go is not None and "func shipInStock" in go.after
+
+
+# What each risk check records when its C# example runs through the extractor.
+_CS_FACTS = {
+    "sql-injection": ("sink-built", "sql"),
+    "command-injection": ("sink-built", "shell"),
+    "code-injection": ("sink-built", "code"),
+    "tls-verify-off": ("unsafe", "tls-verify-off"),
+    "unsafe-deserialize": ("unsafe", "unsafe-deserialize"),
+    "weak-hash": ("unsafe", "weak-hash"),
+    "cors-any-origin": ("unsafe", "cors-any-origin"),
+    "query-in-loop": ("in-loop", "query"),
+    "blocking-in-async": ("blocking-async", "io"),
+    "swallowed-error": ("empty-catch", "catch"),
+}
+
+
+def _csharp_facts(code: str) -> set[tuple[str, str]]:
+    from svarupa.extract.packs import extractor
+
+    # A snippet that declares its own method goes in a class; the rest in an async method.
+    if "async Task" in code:
+        src = "class A {\n" + code + "\n}\n"
+    else:
+        src = "class A {\nasync Task F() {\n" + code + "\n}\n}\n"
+    return {(r.kind, r.tag) for r in extractor("csharp").parse("A.cs", src.encode()).risks}
+
+
+def test_csharp_examples_fire_before_and_stay_quiet_after() -> None:
+    for check, fact in _CS_FACTS.items():
+        ex = example_for(check, "csharp")
+        assert ex is not None, check
+        assert fact in _csharp_facts(ex.before), check
+        assert _csharp_facts(ex.after) == set(), check
+
+
+def test_csharp_has_no_example_for_endpoint_without_auth() -> None:
+    assert example_for("endpoint-without-auth", "csharp") is None

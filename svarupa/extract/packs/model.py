@@ -23,7 +23,10 @@ if TYPE_CHECKING:
     from svarupa.extract.packs.modules import ModuleContext, ModuleResolver
     from svarupa.extract.packs.walker import Ctx, Frame
 
+LAST_NAMED = "<last named child>"
+
 __all__ = [
+    "LAST_NAMED",
     "AfterHook",
     "BasesHook",
     "Call",
@@ -165,6 +168,10 @@ class MetricsSpec:
     not_branch: tuple[tuple[str, str], ...] = ()
     # An `if` directly under one of these is an `else if`: no extra nesting.
     else_if_parents: frozenset[str] = frozenset()
+    # Optional filter on function_types: False skips a node with no body.
+    is_function: Callable[[TSNode], bool] | None = None
+    # Optional name for a function node the `name` field cannot name.
+    name_of: Callable[[TSNode], str | None] | None = None
 
 
 CalleeHook = Callable[["Ctx", TSNode], str | None]
@@ -202,6 +209,7 @@ class RiskSpec:
     concat: tuple[tuple[str, frozenset[str]], ...]
     format_callee: re.Pattern[str]  # "x".format(...), fmt.Sprintf, String.format
     # (node type, left field, right field) for plain and augmented assignment.
+    # A right field of LAST_NAMED: the grammar names no field for the value.
     assigns: tuple[tuple[str, str, str], ...]
     # Wrappers whose last named child is the value: (x), await x, kw=x.
     unwrap: frozenset[str] = frozenset()
@@ -213,8 +221,13 @@ class RiskSpec:
     loops: tuple[tuple[str, str], ...] = ()
     # A function passed to one of these runs once per item (`xs.forEach(f)`).
     loop_callee: re.Pattern[str] | None = None
+    # Node type that wraps each argument in the argument list (C#: `argument`).
+    arg_wrapper: str | None = None
     datastore_calls: re.Pattern[str] | None = None  # a query on a database client
     async_marker: str | None = None  # keyword token that makes a function async
+    # Where the marker sits. None: a direct child token of the function. A node
+    # type: the marker is that wrapper's text (C#: `modifier` holds `async`).
+    async_holder: str | None = None
     blocking: re.Pattern[str] | None = None  # sync I/O that stalls an event loop
     catch_types: frozenset[str] = frozenset()  # except/catch clauses
     catch_body: str = "body"  # the clause's body field (Go: `consequence`)

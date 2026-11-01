@@ -29,6 +29,7 @@ _CODE_SUFFIXES = frozenset(
         ".cjs",
         ".go",
         ".java",
+        ".cs",
     }
 )
 _DATA_DIRS = frozenset(
@@ -72,7 +73,7 @@ def find_units(scan: Scan, graph: Graph) -> list[Unit]:
     manifests: dict[str, str] = {}
     for rec in scan.files:
         name = Path(rec.path).name
-        if name in _MANIFESTS and rec.role.value == "config":
+        if (name in _MANIFESTS or name.endswith(".csproj")) and rec.role.value == "config":
             parent = str(Path(rec.path).parent)
             manifests.setdefault("" if parent == "." else parent, rec.path)
     dirs = sorted(manifests, key=lambda d: (-d.count("/"), -len(d), d))

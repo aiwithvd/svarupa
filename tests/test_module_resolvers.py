@@ -83,7 +83,11 @@ def test_languages_without_a_resolver_are_untouched() -> None:
     assert r.resolve_module("pkg", "app/main.toy", 0, "toy") is None
 
 
-from svarupa.extract.packs.modules import GoModules, ModuleContext  # noqa: E402
+from svarupa.extract.packs.modules import (  # noqa: E402
+    CSharpNamespaces,
+    GoModules,
+    ModuleContext,
+)
 
 GO_FILES = frozenset(
     {
@@ -177,3 +181,103 @@ def test_jvm_external_needs_the_jdk_or_a_declared_group() -> None:
     assert not r.is_external("org.springframeworkx.Thing")
     assert not r.is_external("com.acme.missing.Thing")
     assert not r.is_external("com.acme.shop.model")
+
+
+def _cs(path: str, namespaces: tuple[str, ...], *types: str) -> FileFacts:
+    ev = Evidence(file=path, start_line=1, end_line=1)
+    syms = tuple(SymbolRef(t.rsplit(".", 1)[-1], t, "class", ev) for t in types)
+    return FileFacts(
+        path=path,
+        lang="csharp",
+        namespace=namespaces[0] if namespaces else "",
+        namespaces=namespaces,
+        symbols=syms,
+    )
+
+
+CSHARP = (
+    _cs("Data/OrderRepo.cs", ("Shop.Data",), "Shop.Data.OrderRepo"),
+    _cs("Data/Db.cs", ("Shop.Data",), "Shop.Data.Db"),
+    _cs("Data/Sql/Raw.cs", ("Shop.Data.Sql",), "Shop.Data.Sql.Raw"),
+    _cs("Misc/Two.cs", ("Shop.Misc", "Shop.Data"), "Shop.Misc.A", "Shop.Data.Extra"),
+)
+
+
+def csharp() -> CSharpNamespaces:
+    return CSharpNamespaces(
+        ModuleContext(files=frozenset(f.path for f in CSHARP), facts=CSHARP, deps=frozenset())
+    )
+
+
+def test_a_namespace_names_every_file_declaring_it() -> None:
+    assert csharp().targets("Shop.Data", "x") == (
+        "Data/Db.cs",
+        "Data/OrderRepo.cs",
+        "Misc/Two.cs",
+    )
+
+
+def test_a_file_belongs_to_every_namespace_it_declares() -> None:
+    assert csharp().targets("Shop.Misc", "x") == ("Misc/Two.cs",)
+
+
+def test_a_nested_namespace_is_not_part_of_its_parent() -> None:
+    r = csharp()
+    assert "Data/Sql/Raw.cs" not in r.targets("Shop.Data", "x")
+    assert r.targets("Shop.Data.Sql", "x") == ("Data/Sql/Raw.cs",)
+
+
+def test_a_type_name_narrows_to_the_files_declaring_it() -> None:
+    r = csharp()
+    assert r.targets("Shop.Data.Db", "x") == ("Data/Db.cs",)
+    assert r.targets("Shop.Data.Extra", "x") == ("Misc/Two.cs",)
+
+
+def test_an_unknown_member_of_a_known_namespace_is_unresolved() -> None:
+    assert csharp().targets("Shop.Data.Gone", "x") == ()
+
+
+def test_an_undeclared_namespace_resolves_to_nothing() -> None:
+    assert csharp().targets("Shop.Nowhere", "x") == ()
+
+
+def test_csharp_external_is_the_framework_only() -> None:
+    r = csharp()
+    assert r.is_external("System")
+    assert r.is_external("System.Text")
+    assert r.is_external("Microsoft.Extensions.Logging")
+    assert not r.is_external("Systemic")
+    assert not r.is_external("Shop.Nowhere")
+    assert not r.is_external("Shop.Data")
+
+
+def csharp_with(*deps: str) -> CSharpNamespaces:
+    return CSharpNamespaces(
+        ModuleContext(
+            files=frozenset(f.path for f in CSHARP), facts=CSHARP, deps=frozenset(deps)
+        )
+    )
+
+
+def test_csharp_nuget_package_namespaces_are_external() -> None:
+    r = csharp_with("Newtonsoft.Json", "Dapper", "Ardalis.Specification.EntityFrameworkCore")
+    assert r.is_external("Newtonsoft.Json")
+    assert r.is_external("Newtonsoft.Json.Linq")
+    assert r.is_external("Dapper")
+    # Namespace shorter than the package id: shares the first two segments.
+    assert r.is_external("Ardalis.Specification")
+    assert r.is_external("Ardalis.Specification.Filters")
+    assert not r.is_external("Newtonsoft")
+    assert not r.is_external("Dappery")
+    assert not r.is_external("Ardalis.Result")
+
+
+def test_csharp_declared_namespace_wins_over_a_package() -> None:
+    r = csharp_with("Shop.Data.Tools", "Shop.Misc")
+    assert not r.is_external("Shop.Data")
+    assert not r.is_external("Shop.Misc")
+    assert r.is_external("Shop.Other.Thing") is False
+
+
+def test_csharp_package_ids_match_case_insensitively() -> None:
+    assert csharp_with("xunit").is_external("Xunit.Abstractions")

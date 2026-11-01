@@ -7,6 +7,8 @@ on its own and adds nothing to the function around it.
 
 from __future__ import annotations
 
+import pytest
+
 from svarupa.extract.packs import extractor
 
 
@@ -124,6 +126,149 @@ JAVA = """class A {
 
 def test_java_metrics() -> None:
     assert metrics("java", "A.java", JAVA)["m"] == (8, 2, 2, 16)
+
+
+CSHARP = """class A {
+  int M(int a, string b) {
+    if (a > 0 || b == null) {
+      while (a > 0) {
+        a--;
+      }
+    } else if (a < 0) {
+    }
+    switch (a) {
+      case 1: break;
+      default: break;
+    }
+    try {
+    } catch (Exception e) {
+    }
+    var c = b ?? "x";
+    return a > 1 ? 1 : 0;
+  }
+}
+"""
+
+
+def test_csharp_metrics() -> None:
+    assert metrics("csharp", "A.cs", CSHARP)["M"] == (9, 2, 2, 17)
+
+
+def test_csharp_else_if_adds_no_nesting() -> None:
+    src = "class A { void M(int a) {\n if (a > 0) {\n } else if (a > 1) {\n } else if (a > 2) {\n }\n} }"
+    assert metrics("csharp", "A.cs", src)["M"] == (4, 1, 1, 6)
+
+
+def test_csharp_switch_expression_arms_count_but_the_discard_arm_does_not() -> None:
+    src = "class A { int M(int a) => a switch { 1 => 2, 2 => 3, _ => 4 }; }"
+    assert metrics("csharp", "A.cs", src)["M"] == (3, 1, 1, 1)
+
+
+def test_csharp_stacked_case_labels_each_count() -> None:
+    src = "class A { void M(int a) { switch (a) { case 1: case 2: break; default: break; } } }"
+    assert metrics("csharp", "A.cs", src)["M"][0] == 3
+
+
+def test_csharp_constructor_lambda_and_local_function_are_measured_on_their_own() -> None:
+    src = """class A {
+  A(int x, int y) { if (x > 0) { } }
+  void M(int a) {
+    Func<int, int> f = v => v > 0 ? 1 : 2;
+    int L(int q) { if (q > 0) { return 1; } return 0; }
+    if (a > 0) { }
+  }
+}
+"""
+    got = metrics("csharp", "A.cs", src)
+    assert got["A"][:2] == (2, 2)
+    assert got["M"][0] == 2
+    assert got["L"][:2] == (2, 1)
+    assert got["f"][:2] == (2, 1)
+
+
+def test_csharp_lambda_parameters() -> None:
+    src = "class A { void M() { F(x => x); F((a, b) => a); F(() => 1); } }"
+    f = extractor("csharp").parse("A.cs", src.encode())
+    assert [m.params for m in f.functions if m.name != "M"] == [1, 2, 0]
+
+
+def test_csharp_accessors_with_bodies_are_functions_and_auto_accessors_are_not() -> None:
+    src = """class A {
+  int P { get; set; }
+  int Q {
+    get { return 1; }
+    set { if (value > 0) { x = value; } }
+  }
+}
+"""
+    f = extractor("csharp").parse("A.cs", src.encode())
+    assert [m.complexity for m in f.functions] == [1, 2]
+
+
+@pytest.mark.parametrize(
+    ("body", "want"),
+    [
+        ("for (int i = 0; i < a; i++) { }", (2, 1)),
+        ("foreach (var x in a) { }", (2, 1)),
+        ("while (a > 0) { }", (2, 1)),
+        ("do { } while (a > 0);", (2, 1)),
+        ("if (a > 0) { }", (2, 1)),
+        ("switch (a) { case 1: break; }", (2, 1)),
+        ("try { } catch (Exception e) { }", (2, 1)),
+        ("try { } finally { }", (1, 1)),
+        ("var t = a > 0 && a < 5;", (2, 0)),
+        ("var t = a > 0 || a < 5;", (2, 0)),
+        ("var t = b ?? 1;", (2, 0)),
+        ("b ??= 1;", (2, 0)),
+        ("var t = a > 0 ? 1 : 2;", (2, 0)),
+        ("var t = a + 1;", (1, 0)),
+    ],
+)
+def test_csharp_each_construct_on_its_own(body: str, want: tuple[int, int]) -> None:
+    src = f"class A {{ void M(int a, int? b) {{ {body} }} }}"
+    got = metrics("csharp", "A.cs", src)["M"]
+    assert (got[0], got[2]) == want
+
+
+def test_csharp_accessors_are_named_after_their_property() -> None:
+    src = """class A {
+  int P { get { return 1; } set { x = value; } }
+  int Q => 1;
+  int this[int i] { get { return i; } }
+  ~A() { }
+}
+"""
+    f = extractor("csharp").parse("A.cs", src.encode())
+    assert [m.name for m in f.functions] == ["P.get", "P.set", "Q.get", "this.get", "A"]
+
+
+def test_csharp_remaining_members_are_measured() -> None:
+    src = """class A {
+  int Q => 1 > 0 ? 1 : 2;
+  public static A operator +(A l, A r) { if (l == null) { } return l; }
+  public static implicit operator int(A a) { return a == null ? 0 : 1; }
+  ~A() { if (x) { } }
+  void M() { Action f = delegate (int q) { if (q > 0) { } }; }
+}
+"""
+    f = extractor("csharp").parse("A.cs", src.encode())
+    got = {m.name: m.complexity for m in f.functions}
+    assert got["Q.get"] == 2
+    assert got["+"] == 2
+    assert got["A"] == 2
+    assert got["M"] == 1
+    assert sorted(m.complexity for m in f.functions) == [1, 2, 2, 2, 2, 2]
+
+
+def test_csharp_a_method_arrow_body_is_not_a_second_function() -> None:
+    f = extractor("csharp").parse("A.cs", b"class A { int M(int a) => a > 0 ? 1 : 2; }")
+    assert [(m.name, m.complexity) for m in f.functions] == [("M", 2)]
+
+
+def test_csharp_bodyless_accessors_leave_risk_scanning_alone() -> None:
+    src = b'class A { int P { get; set; } void M(string i) { Db.ExecuteSqlRaw("x" + i); } }'
+    f = extractor("csharp").parse("A.cs", src)
+    assert f.functions[0].name == "M"
 
 
 def test_metrics_reach_the_graph(tmp_path) -> None:

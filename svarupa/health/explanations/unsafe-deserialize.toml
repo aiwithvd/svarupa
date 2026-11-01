@@ -25,3 +25,11 @@ Profile p = (Profile) new ObjectInputStream(in).readObject();
 after = '''
 Profile p = new ObjectMapper().readValue(in, Profile.class);
 '''
+
+[example.csharp]
+before = '''
+var profile = (Profile)new BinaryFormatter().Deserialize(stream);
+'''
+after = '''
+var profile = JsonSerializer.Deserialize<Profile>(stream);
+'''

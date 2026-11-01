@@ -16,8 +16,8 @@ SonarQube's ratings and aligned with ISO/IEC 25010.
 ## Explanations
 
 Every check has a plain explanation: what it means, why it matters and how
-to fix it, with a short before/after in Python, TypeScript/JavaScript, Go
-or Java where the fix is code. They live in `svarupa/health/explanations/` and
+to fix it, with a short before/after in Python, TypeScript/JavaScript, Go,
+Java or C# where the fix is code. They live in `svarupa/health/explanations/` and
 show in REPORT.md ("What these mean"), the Health tab ("why?"), graph.json
 (`health.checks[].explanation`) and MCP `get_health`. From the command line:
 
@@ -132,7 +132,7 @@ How each one decides:
 | Id | Fires on | Source | Severity | Minutes |
 |---|---|---|---|---|
 | shared-datastore | services built from two or more codebases use the same compose datastore (`depends_on`, `links`, or a connection setting that names it) | Newman, Building Microservices: database per service | major | 240 |
-| query-in-loop | a database query inside a loop body, or inside a `forEach`/`map` callback (in Java, `map` only on a stream: `Optional.map` runs once) | N+1 query anti-pattern; Fowler, PoEAA | major | 20 |
+| query-in-loop | a database query inside a loop body, or inside a `forEach`/`map` callback (in Java, `map` only on a stream: `Optional.map` runs once; in C#, `ForEach`, `Select` and `SelectMany`) | N+1 query anti-pattern; Fowler, PoEAA | major | 20 |
 | blocking-in-async | a blocking call (`requests`, `time.sleep`, `fs.readFileSync`, `bcrypt.hashSync`...) inside an async function | Python asyncio docs; Node.js "Don't block the event loop" | major | 15 |
 | hub-on-request-path | a hub module (the `hub-module` limits) that every route module reaches, with at least 3 route modules | Arcan hub-like dependency | major | 60 |
 
@@ -143,7 +143,7 @@ How each one decides:
   per item. A query is a call on a database client, ORM model or
   repository (`cursor.execute`, `User.objects.get`, `prisma.user.findMany`,
   `userRepository.findById`, `db.QueryRow`).
-- **Async.** A function marked `async` (Python, JavaScript, TypeScript). A
+- **Async.** A function marked `async` (Python, JavaScript, TypeScript, C#). A
   function defined inside it is judged on its own.
 - **Shared datastore.** Only services built from this repository count, so
   an admin image like adminer is never an owner. Two services built from
@@ -160,6 +160,29 @@ How each one decides:
 `fetch` is not flagged: Node's fetch has 300-second timeouts by default and
 a browser user can cancel a request. Clients that retry by default (most
 Redis, MongoDB and Kafka clients) are not flagged either.
+
+## Language gaps
+
+The Python, TypeScript, Go, Java and C# packs are stable: each passed the
+benchmark. The JavaScript pack is experimental. These gaps are known and are
+not guessed around.
+
+**C#**
+
+- Calls to framework types such as `Console.WriteLine` stay unresolved, even
+  with `using System;`.
+- `global using` applies only to the file that writes it, not to the whole
+  project.
+- A partial class split across files is ambiguous: its calls and members
+  are not merged.
+- A bare call after `using static` is unresolved.
+- ASP.NET routes are not extracted, so `endpoint-without-auth` does not fire
+  for C#.
+- `.Result` on a task is not flagged as a blocking call in async code.
+- Building `ProcessStartInfo.Arguments` or `SqlCommand.CommandText` by
+  assignment is not flagged.
+- `query-in-loop` only knows common receiver names, such as `_db`,
+  `_context`, `...DbContext`, `conn` and `...Repository`.
 
 ## Exceptions
 

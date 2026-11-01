@@ -25,7 +25,7 @@ __all__ = [
     "required_languages",
 ]
 
-LANGS = ("python", "typescript", "go", "java")
+LANGS = ("python", "typescript", "go", "java", "csharp")
 _KEYS = frozenset({"what", "why", "fix", "example"})
 # A language whose pack shares another pack's rules shares its examples.
 _SAME_AS = {"javascript": "typescript"}

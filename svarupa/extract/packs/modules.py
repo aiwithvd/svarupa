@@ -15,7 +15,7 @@ from typing import Protocol
 
 from svarupa.extract.base import FileFacts
 
-__all__ = ["GoModules", "JvmPackages", "ModuleContext", "ModuleResolver"]
+__all__ = ["CSharpNamespaces", "GoModules", "JvmPackages", "ModuleContext", "ModuleResolver"]
 
 
 class ModuleResolver(Protocol):
@@ -159,3 +159,64 @@ class JvmPackages:
         if any(spec == ns or spec.startswith(ns + ".") for ns in self.by_ns if ns):
             return False  # our own package: a miss here is a resolution failure
         return any(spec == d or spec.startswith(d + ".") for d in self.deps)
+
+
+class CSharpNamespaces:
+    """C#: a `using` names a namespace, not a file.
+
+    `using A.B;` imports every file that declares namespace `A.B`; a file
+    that declares several belongs to each of them. A nested namespace
+    (`A.B.C`) is not part of `A.B`. `using static A.B.C` and `using X = A.B.C`
+    name a type, so they narrow to the files of `A.B` that declare `C`. A name
+    that is neither a declared namespace nor a declared type is unresolved.
+    """
+
+    top_level_only = False
+    package_scoped_bare = False
+    fields_without_this = True
+
+    def __init__(self, context: ModuleContext) -> None:
+        by_ns: dict[str, set[str]] = {}
+        types: dict[str, set[str]] = {}
+        for f in context.facts:
+            if f.lang != "csharp":
+                continue
+            for ns in f.namespaces:
+                by_ns.setdefault(ns, set()).add(f.path)
+            for s in f.symbols:
+                if s.kind in ("class", "interface"):
+                    types.setdefault(s.qualified_name, set()).add(f.path)
+        # NuGet package ids are case-insensitive (`xunit` provides `Xunit`).
+        self.deps = frozenset(d.lower() for d in context.deps)
+        self.by_ns = {ns: tuple(sorted(p)) for ns, p in by_ns.items()}
+        self.types = {t: tuple(sorted(p)) for t, p in types.items()}
+
+    def targets(self, spec: str, _from_file: str, /) -> tuple[str, ...]:
+        if spec in self.by_ns:
+            return self.by_ns[spec]
+        parts = spec.split(".")
+        for n in range(len(parts) - 1, 0, -1):
+            hits = self.types.get(".".join(parts[: n + 1]))
+            if hits and ".".join(parts[:n]) in self.by_ns:
+                return tuple(p for p in hits if p in self.by_ns[".".join(parts[:n])])
+        return ()
+
+    def is_external(self, spec: str, /) -> bool:
+        # A namespace the repo declares is never external, whatever it is named.
+        if spec in self.by_ns:
+            return False
+        if spec.split(".")[0] in ("System", "Microsoft"):
+            return True
+        spec = spec.lower()
+        head = spec.split(".")[:2]
+        for dep in self.deps:
+            if spec == dep or spec.startswith(dep + "."):
+                return True
+            # A package id rarely equals its namespace: the package
+            # `Ardalis.Specification.EntityFrameworkCore` declares namespace
+            # `Ardalis.Specification`. So a using that shares the first two
+            # dot segments of a package id counts as that package too.
+            parts = dep.split(".")
+            if len(parts) >= 2 and len(head) == 2 and parts[:2] == head:
+                return True
+        return False

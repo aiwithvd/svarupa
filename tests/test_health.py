@@ -246,3 +246,22 @@ def test_an_area_without_checks_has_no_grade() -> None:
     from svarupa.health.score import _area_rating
 
     assert _area_rating("usability", []) is None
+
+
+def test_every_pack_language_counts_as_code() -> None:
+    from svarupa.extract.packs import BY_DETECTED, PACKS
+    from svarupa.health import _CODE
+
+    assert {p.lang for p in PACKS} <= _CODE
+    assert set(BY_DETECTED) <= _CODE
+    assert {"python", "typescript", "javascript", "go", "java", "csharp"} <= _CODE
+
+
+def test_a_csharp_repo_has_lines_and_a_sane_debt_ratio(tmp_path: Path) -> None:
+    body = "".join(f"    public int M{i}() {{ return {i}; }}\n" for i in range(40))
+    write(
+        tmp_path, "Shop/Orders.cs", "namespace Shop;\n\npublic class Orders\n{\n" + body + "}\n"
+    )
+    h = health(tmp_path)
+    assert h.ncloc > 40
+    assert h.debt_ratio < 0.5
