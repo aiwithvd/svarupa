@@ -319,3 +319,78 @@ def test_every_metrics_node_type_exists_in_its_grammar() -> None:
             lang = language_for(pack.grammar, path)
             missing = sorted(n for n in names if lang.id_for_node_kind(n, True) is None)
             assert not missing, (pack.lang, path, missing)
+
+
+@pytest.mark.parametrize(
+    ("body", "want"),
+    [
+        ("if a > 0 { }", (2, 1)),
+        ("if a > 0 { } else if a < 0 { }", (3, 1)),
+        ("if a > 0 { } else if a < 0 { } else { }", (3, 1)),
+        ("if let Some(x) = o { }", (2, 1)),
+        ("while a > 0 { }", (2, 1)),
+        ("while let Some(x) = o { }", (2, 1)),
+        ("loop { break; }", (2, 1)),
+        ("for x in o { }", (2, 1)),
+        ("match a { 1 => {} 2 => {} _ => {} }", (3, 1)),
+        ("match a { 1 | 2 => {} _ => {} }", (2, 1)),
+        ("match a { x if x > 5 => {} _ => {} }", (2, 1)),
+        ("match a { _ if a > 5 => {} _ => {} }", (2, 1)),
+        ("match a { Some(_) => {} None => {} }", (3, 1)),
+        ("let t = a > 0 && a < 5;", (2, 0)),
+        ("let t = a > 0 || a < 5;", (2, 0)),
+        ("let t = a + 1;", (1, 0)),
+        ("let t = f(a)?;", (1, 0)),
+        ("let t = o.ok_or(1)?.max(2);", (1, 0)),
+        ("if a > 0 { if a > 1 { } }", (3, 2)),
+        ("for x in o { while a > 0 { loop { } } }", (4, 3)),
+    ],
+)
+def test_rust_each_construct_on_its_own(body: str, want: tuple[int, int]) -> None:
+    src = f"fn m(a: i32, o: Option<i32>) {{ {body} }}"
+    got = metrics("rust", "a.rs", src)["m"]
+    assert (got[0], got[2]) == want
+
+
+def test_rust_self_is_not_a_parameter() -> None:
+    src = """impl A {
+    fn a(&self, x: i32) {}
+    fn b(&mut self) {}
+    fn c(self: Box<Self>, x: i32, (y, z): (i32, i32)) {}
+    fn d(mut self) {}
+    fn e() {}
+}
+"""
+    got = metrics("rust", "a.rs", src)
+    assert [got[f"A.{n}"][1] for n in "abcde"] == [1, 0, 2, 0, 0]
+
+
+def test_rust_methods_are_named_after_their_type() -> None:
+    src = """struct S;
+trait T { fn sig(&self); fn dflt(&self) {} }
+impl S { fn new() -> S { S } }
+impl<X> T for Wrap<X> { fn sig(&self) {} }
+mod inner { pub fn free() {} }
+fn top() {}
+"""
+    names = [m.name for m in extractor("rust").parse("a.rs", src.encode()).functions]
+    assert names == ["T.dflt", "S.new", "Wrap.sig", "free", "top"]
+
+
+def test_rust_trait_signatures_without_a_body_are_not_functions() -> None:
+    src = 'trait T { fn sig(&self, a: i32); }\nextern "C" { fn c(a: i32); }\n'
+    assert extractor("rust").parse("a.rs", src.encode()).functions == ()
+
+
+def test_rust_closures_are_measured_on_their_own() -> None:
+    src = """fn outer(a: i32) {
+    let c = |p, q| { if p > q { 1 } else { 2 } };
+    let d = |x| x;
+}
+"""
+    f = extractor("rust").parse("a.rs", src.encode())
+    assert [(m.name, m.complexity, m.params) for m in f.functions] == [
+        ("outer", 1, 1),
+        ("(anonymous)", 2, 2),
+        ("(anonymous)", 1, 1),
+    ]

@@ -168,6 +168,11 @@ class MetricsSpec:
     not_branch: tuple[tuple[str, str], ...] = ()
     # An `if` directly under one of these is an `else if`: no extra nesting.
     else_if_parents: frozenset[str] = frozenset()
+    # The node types that are an `if` for the else-if rule above.
+    if_types: frozenset[str] = frozenset({"if_statement"})
+    # Optional veto on a branch_types node: True means it is not a decision
+    # (a wildcard `_` arm, which is the default and not a choice).
+    skips_branch: Callable[[TSNode], bool] | None = None
     # Optional filter on function_types: False skips a node with no body.
     is_function: Callable[[TSNode], bool] | None = None
     # Optional name for a function node the `name` field cannot name.

@@ -32,6 +32,7 @@ from svarupa.extract.packs.model import (
     Field,
     Grammar,
     Maturity,
+    MetricsSpec,
     Pack,
 )
 from svarupa.extract.packs.modules import RustCrates
@@ -413,6 +414,77 @@ def call(ctx: Ctx, node: TSNode, frame: Frame) -> CallSite | None:
 
 
 _CLASS = Define(kind="class", sets_class=True, exported_by=exported, member_decorators=None)
+
+
+def _fn_owner(fn: TSNode) -> str | None:
+    """The type or trait a function is declared in, or None for a free one."""
+    body = fn.parent
+    block = body.parent if body is not None and body.type == "declaration_list" else None
+    if block is None:
+        return None
+    if block.type == "impl_item":
+        return _type_name(block.child_by_field_name("type"), False)
+    if block.type == "trait_item":
+        name = block.child_by_field_name("name")
+        return _text(name) if name is not None else None
+    return None
+
+
+def _function_name(fn: TSNode) -> str | None:
+    name = fn.child_by_field_name("name")
+    if fn.type != "function_item" or name is None:
+        return None
+    owner = _fn_owner(fn)
+    return f"{owner}.{_text(name)}" if owner else None
+
+
+def _count_params(fn: TSNode) -> int:
+    params = fn.child_by_field_name("parameters")
+    if params is None:
+        return 0
+    if params.type == "closure_parameters":
+        return sum(1 for c in params.named_children if c.type not in _COMMENTS)
+    # `self`, `&mut self` and `self: Box<Self>` (a `parameter` whose pattern
+    # is the `self` keyword) are the receiver, not a parameter.
+    return sum(
+        1
+        for c in params.named_children
+        if c.type == "parameter" and (c.children[0].type != "self" if c.children else True)
+    )
+
+
+def _wildcard_arm(node: TSNode) -> bool:
+    """`_ => ...`: the default arm. `_ if guard => ...` is still a choice."""
+    pattern = next((c for c in node.children if c.type == "match_pattern"), None)
+    return pattern is not None and [c.type for c in pattern.children] == ["_"]
+
+
+# `?` is error propagation with no branch the reader writes, so it is not
+# counted. `if let` and `while let` count once, as the `if` or `while`. An
+# else-if is an `if_expression` under an `else_clause`: no extra nesting.
+# Trait and extern signatures have no body and are not function_types.
+METRICS = MetricsSpec(
+    function_types=frozenset({"function_item", "closure_expression"}),
+    branch_types=frozenset(
+        {"if_expression", "while_expression", "loop_expression", "for_expression", "match_arm"}
+    ),
+    nesting_types=frozenset(
+        {
+            "if_expression",
+            "match_expression",
+            "while_expression",
+            "loop_expression",
+            "for_expression",
+        }
+    ),
+    count_params=_count_params,
+    boolean_ops=(("binary_expression", frozenset({"&&", "||"})),),
+    else_if_parents=frozenset({"else_clause"}),
+    if_types=frozenset({"if_expression"}),
+    skips_branch=_wildcard_arm,
+    name_of=_function_name,
+)
+
 _METHOD = Define(
     kind="function",
     kind_in_class="method",
@@ -429,6 +501,7 @@ PACK = Pack(
         default="language",
     ),
     maturity=Maturity.EXPERIMENTAL,
+    metrics=METRICS,
     qualified_prefix=qualified_prefix,
     modules=RustCrates,
     decorator=decorator,

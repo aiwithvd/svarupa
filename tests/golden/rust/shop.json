@@ -415,6 +415,72 @@
  "ctor_assigns": [],
  "namespace": "",
  "namespaces": [],
- "functions": [],
+ "functions": [
+  {
+   "name": "Store.describe",
+   "evidence": {
+    "file": "crates/shop-core/src/orders.rs",
+    "start_line": 17,
+    "end_line": 19,
+    "rev": null
+   },
+   "complexity": 1,
+   "params": 0,
+   "nesting": 0,
+   "lines": 3
+  },
+  {
+   "name": "Shop.save",
+   "evidence": {
+    "file": "crates/shop-core/src/orders.rs",
+    "start_line": 23,
+    "end_line": 30,
+    "rev": null
+   },
+   "complexity": 1,
+   "params": 0,
+   "nesting": 0,
+   "lines": 8
+  },
+  {
+   "name": "Shop.new",
+   "evidence": {
+    "file": "crates/shop-core/src/orders.rs",
+    "start_line": 35,
+    "end_line": 37,
+    "rev": null
+   },
+   "complexity": 1,
+   "params": 0,
+   "nesting": 0,
+   "lines": 3
+  },
+  {
+   "name": "Shop.secret",
+   "evidence": {
+    "file": "crates/shop-core/src/orders.rs",
+    "start_line": 39,
+    "end_line": 39,
+    "rev": null
+   },
+   "complexity": 1,
+   "params": 0,
+   "nesting": 0,
+   "lines": 1
+  },
+  {
+   "name": "serve",
+   "evidence": {
+    "file": "crates/shop-core/src/orders.rs",
+    "start_line": 44,
+    "end_line": 46,
+    "rev": null
+   },
+   "complexity": 1,
+   "params": 0,
+   "nesting": 0,
+   "lines": 3
+  }
+ ],
  "risks": []
 }

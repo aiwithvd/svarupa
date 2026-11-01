@@ -270,12 +270,14 @@ class Ctx:
             ):
                 continue  # measured on its own
             if kind in spec.branch_types:
-                if not any((kind, c.type) in excluded for c in node.children):
+                if not any((kind, c.type) in excluded for c in node.children) and not (
+                    spec.skips_branch is not None and spec.skips_branch(node)
+                ):
                     complexity += 1
             elif kind in ops and any(c.type in ops[kind] for c in node.children):
                 complexity += 1
             nests = kind in spec.nesting_types and not (
-                kind == "if_statement" and parent in spec.else_if_parents
+                kind in spec.if_types and parent in spec.else_if_parents
             )
             here = depth + 1 if nests else depth
             deepest = max(deepest, here)
