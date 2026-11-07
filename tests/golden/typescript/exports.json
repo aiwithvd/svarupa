@@ -192,7 +192,29 @@
   }
  ],
  "fields": [],
- "locals": [],
+ "locals": [
+  {
+   "function": "",
+   "name": "handler",
+   "type_name": "",
+   "start_line": 1,
+   "end_line": 15
+  },
+  {
+   "function": "",
+   "name": "value",
+   "type_name": "",
+   "start_line": 1,
+   "end_line": 15
+  },
+  {
+   "function": "",
+   "name": "local",
+   "type_name": "",
+   "start_line": 1,
+   "end_line": 15
+  }
+ ],
  "reexports": [
   "Svc",
   "UsersService"

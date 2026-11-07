@@ -127,6 +127,13 @@
    "end_line": 7
   },
   {
+   "function": "",
+   "name": "Panel",
+   "type_name": "",
+   "start_line": 1,
+   "end_line": 10
+  },
+  {
    "function": "src.App.Panel",
    "name": "title",
    "type_name": "",

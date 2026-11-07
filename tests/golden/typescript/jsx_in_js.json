@@ -70,6 +70,13 @@
    "type_name": "",
    "start_line": 3,
    "end_line": 5
+  },
+  {
+   "function": "",
+   "name": "Icon",
+   "type_name": "",
+   "start_line": 1,
+   "end_line": 8
   }
  ],
  "reexports": [],

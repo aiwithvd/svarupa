@@ -631,7 +631,8 @@ def test_a_typed_arrow_parameter_resolves(tmp_path: Path) -> None:
     got = typed_calls(tmp_path, "export const f = (r: Repo) => { r.save(); };\n")
     assert saves(got)
     assert locals_of("export const f = (r: Repo) => { r.save(); };") == {
-        ("src.a.f", "r", "Repo")
+        ("src.a.f", "r", "Repo"),
+        ("", "f", ""),  # a top-level binding, under the function ""
     }
 
 
@@ -856,3 +857,60 @@ def test_a_parameter_property_still_resolves_through_this(tmp_path: Path) -> Non
         "  m(repo: Other) {\n    this.repo.save();\n    repo.x();\n  }\n}\n"
     )
     assert methods(typed_calls(tmp_path, body)) == {"Repo.save", "Other.x"}
+
+
+# Finding 2: a module loaded inside a function stays an import.
+
+
+@pytest.mark.parametrize(
+    "load",
+    [
+        "const Repo = require('./repo').Repo;",
+        "const { Repo } = await import('./repo');",
+        "const Repo = (await import('./repo')).Repo;",
+    ],
+)
+def test_a_module_loaded_in_a_function_is_not_a_local(tmp_path: Path, load: str) -> None:
+    write(
+        tmp_path,
+        "src/repo.js",
+        "class Repo {\n  static save() {}\n}\nmodule.exports = { Repo };\n",
+    )
+    write(tmp_path, "src/a.js", f"async function f() {{\n  {load}\n  Repo.save();\n}}\n")
+    got = {(e.src, e.dst) for e in run(tmp_path).edges if e.kind is EdgeKind.CALLS}
+    assert "Repo.save" in methods(got)
+    assert extractor("javascript").parse("src/a.js", load.encode()).locals == ()
+
+
+# Finding 3: top-level bindings and nested declarations hide an import.
+
+
+@pytest.mark.parametrize(
+    "use",
+    [
+        "xs.forEach((Repo) => Repo.save());",
+        "for (const Repo of xs) Repo.save();",
+        "try {} catch (Repo) { Repo.save(); }",
+        "const Repo = make(); Repo.save();",
+    ],
+)
+def test_a_top_level_binding_hides_an_import(tmp_path: Path, use: str) -> None:
+    assert "Repo.save" not in methods(typed_calls(tmp_path, use + "\n"))
+
+
+@pytest.mark.parametrize("decl", ["class Repo {}", "function Repo() {}"])
+def test_a_nested_declaration_hides_an_import(tmp_path: Path, decl: str) -> None:
+    body = f"export function f() {{\n  {decl}\n  Repo.save();\n}}\n"
+    assert "Repo.save" not in methods(typed_calls(tmp_path, body))
+
+
+def test_a_nested_declaration_hides_an_import_in_an_inner_function(tmp_path: Path) -> None:
+    body = (
+        "export function f() {\n  class Repo {}\n  function g() {\n    Repo.save();\n  }\n}\n"
+    )
+    assert "Repo.save" not in methods(typed_calls(tmp_path, body))
+
+
+def test_an_import_still_resolves_beside_a_top_level_callback(tmp_path: Path) -> None:
+    body = "xs.forEach((r) => r.go());\nRepo.save();\n"
+    assert "Repo.save" in methods(typed_calls(tmp_path, body))

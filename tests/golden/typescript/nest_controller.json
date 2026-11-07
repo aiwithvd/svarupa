@@ -380,6 +380,13 @@
  ],
  "locals": [
   {
+   "function": "",
+   "name": "PATH",
+   "type_name": "",
+   "start_line": 1,
+   "end_line": 46
+  },
+  {
    "function": "src.users.users.controller.UsersController.constructor",
    "name": "usersService",
    "type_name": "UsersService",

@@ -249,8 +249,7 @@ def variable_declarator(ctx: Ctx, node: TSNode, frame: Frame, depth: int) -> Non
                 )
         if callee is not None and name_node.type == "identifier":
             ctx.ctor_assigns.append((ctx.text(name_node), ctx.text(callee)))
-    if frame.fn:
-        ctx.locals.extend(declarator_locals(ctx, node, frame.fn))
+    ctx.locals.extend(declarator_locals(ctx, node, frame.fn or ""))
     if (
         name_node is not None
         and value is not None
@@ -627,6 +626,24 @@ def _parameters(ctx: Ctx, node: TSNode, fn: str) -> list[LocalType]:
     return out
 
 
+def _loads_a_module(ctx: Ctx, value: TSNode | None) -> bool:
+    """`require('./x')`, `require('./x').Repo`, `await import('./x')`: the
+    name is an import, not a binding, so it must stay resolvable."""
+    while value is not None and value.type in (
+        "await_expression",
+        "parenthesized_expression",
+        "member_expression",
+    ):
+        inner = (
+            value.child_by_field_name("object") if value.type == "member_expression" else None
+        )
+        value = inner or _first(value)
+    if value is None or value.type != "call_expression":
+        return False
+    callee = value.child_by_field_name("function")
+    return callee is not None and (callee.type == "import" or ctx.text(callee) == "require")
+
+
 def _function_of(node: TSNode) -> TSNode | None:
     """The function (or the file) a `var` belongs to."""
     cur = node.parent
@@ -649,11 +666,8 @@ def _block_of(node: TSNode) -> TSNode | None:
 def declarator_locals(ctx: Ctx, node: TSNode, fn: str) -> list[LocalType]:
     """`let r: Repo = ..` is typed; `const r = ..` and `const { a } = ..` are
     not. `let` and `const` are bound in their block, `var` in its function."""
-    value = node.child_by_field_name("value")
-    callee = value.child_by_field_name("function") if value is not None else None
-    is_call = value is not None and value.type == "call_expression"
-    if is_call and callee is not None and ctx.text(callee) == "require":
-        return []  # a CommonJS import, not a binding
+    if _loads_a_module(ctx, node.child_by_field_name("value")):
+        return []
     decl = node.parent
     is_var = decl is not None and decl.type == "variable_declaration"
     scope = _function_of(node) if is_var else _block_of(decl) if decl is not None else None
@@ -685,6 +699,21 @@ def anonymous_locals(ctx: Ctx, node: TSNode, fn: str) -> list[LocalType]:
     return ctx.over(_parameters(ctx, node, fn), node)
 
 
+def declared_name_locals(ctx: Ctx, node: TSNode, fn: str) -> list[LocalType]:
+    """A class or function declared inside a function hides an import of the
+    same name in its block."""
+    name = node.child_by_field_name("name")
+    block = _block_of(node)
+    if name is None or block is None:
+        return []
+    return ctx.over([LocalType(fn, ctx.text(name), "")], block)
+
+
+def declared_name(ctx: Ctx, node: TSNode, frame: Frame, _name: str) -> None:
+    if frame.fn:
+        ctx.locals.extend(declared_name_locals(ctx, node, frame.fn))
+
+
 _SCOPE_HOOKS = {
     "variable_declarator": declarator_locals,
     "for_in_statement": for_in_locals,
@@ -692,7 +721,10 @@ _SCOPE_HOOKS = {
     "arrow_function": anonymous_locals,
     "function_expression": anonymous_locals,
     "generator_function": anonymous_locals,
+    "class_declaration": declared_name_locals,
+    "abstract_class_declaration": declared_name_locals,
 }
+_DECLARATIONS = ("function_declaration", "generator_function_declaration")
 
 
 def _is_named(node: TSNode) -> bool:
@@ -703,14 +735,17 @@ def _is_named(node: TSNode) -> bool:
     return node.type in _FUNCTIONS - set(_ANONYMOUS)
 
 
-def _scan(ctx: Ctx, outer: TSNode, fn: str) -> list[LocalType]:
+def _scan(ctx: Ctx, outer: TSNode, node: TSNode, fn: str) -> list[LocalType]:
     """The bindings in `outer`'s body, recorded under `fn`. Another named
-    function's bindings are not in scope, so the scan stops at one."""
+    function's bindings are not in scope, so the scan stops at one; its name
+    is a binding, though."""
     out: list[LocalType] = []
     stack = list(outer.children)
     while stack:
         n = stack.pop()
         if n.type in _FUNCTIONS and _is_named(n):
+            if n.type in _DECLARATIONS and n.id != node.id:
+                out += declared_name_locals(ctx, n, fn)
             continue
         hook = _SCOPE_HOOKS.get(n.type)
         if hook is not None:
@@ -727,7 +762,7 @@ def _outer_scope(ctx: Ctx, node: TSNode, fn: str) -> list[LocalType]:
     cur = node.parent
     while cur is not None:
         if cur.type in _FUNCTIONS:
-            out += ctx.whole(_parameters(ctx, cur, fn), cur) + _scan(ctx, cur, fn)
+            out += ctx.whole(_parameters(ctx, cur, fn), cur) + _scan(ctx, cur, node, fn)
         cur = cur.parent
     return out
 
@@ -745,6 +780,7 @@ _CLASS = Define(
     own_decorators="decorator",
     member_decorators="decorator",
     bases=bases,
+    after=declared_name,
 )
 
 RULES = {
@@ -770,13 +806,15 @@ RULES = {
         records_class=False,
         keeps_decorators=False,
         recurse_without_name=True,
+        after=declared_name,
         locals=parameter_locals,
     ),
-    "for_in_statement": Local(hook=for_in_locals),
-    "catch_clause": Local(hook=catch_locals),
-    "arrow_function": Local(hook=anonymous_locals),
-    "function_expression": Local(hook=anonymous_locals),
-    "generator_function": Local(hook=anonymous_locals),
+    # Top-level bindings too: they hide an import of the same name there.
+    "for_in_statement": Local(hook=for_in_locals, top_level=True),
+    "catch_clause": Local(hook=catch_locals, top_level=True),
+    "arrow_function": Local(hook=anonymous_locals, top_level=True),
+    "function_expression": Local(hook=anonymous_locals, top_level=True),
+    "generator_function": Local(hook=anonymous_locals, top_level=True),
     "lexical_declaration": Carry(),
     "variable_declaration": Carry(),
     "variable_declarator": Custom(hook=variable_declarator),

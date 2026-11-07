@@ -302,7 +302,36 @@
   }
  ],
  "fields": [],
- "locals": [],
+ "locals": [
+  {
+   "function": "",
+   "name": "app",
+   "type_name": "",
+   "start_line": 1,
+   "end_line": 20
+  },
+  {
+   "function": "",
+   "name": "router",
+   "type_name": "",
+   "start_line": 1,
+   "end_line": 20
+  },
+  {
+   "function": "",
+   "name": "req",
+   "type_name": "",
+   "start_line": 8,
+   "end_line": 8
+  },
+  {
+   "function": "",
+   "name": "res",
+   "type_name": "",
+   "start_line": 8,
+   "end_line": 8
+  }
+ ],
  "reexports": [],
  "diagnostics": [],
  "ctor_assigns": [
