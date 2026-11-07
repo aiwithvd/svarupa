@@ -378,7 +378,23 @@
    "type_name": "Logger"
   }
  ],
- "locals": [],
+ "locals": [
+  {
+   "function": "src.users.users.controller.UsersController.constructor",
+   "name": "usersService",
+   "type_name": "UsersService"
+  },
+  {
+   "function": "src.users.users.controller.UsersController.constructor",
+   "name": "logger",
+   "type_name": "Logger"
+  },
+  {
+   "function": "src.users.users.controller.UsersController.constructor",
+   "name": "config",
+   "type_name": "ConfigService"
+  }
+ ],
  "reexports": [],
  "diagnostics": [],
  "ctor_assigns": [],

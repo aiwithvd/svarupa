@@ -111,7 +111,23 @@
   }
  ],
  "fields": [],
- "locals": [],
+ "locals": [
+  {
+   "function": "src.App.App",
+   "name": "count",
+   "type_name": ""
+  },
+  {
+   "function": "src.App.App",
+   "name": "setCount",
+   "type_name": ""
+  },
+  {
+   "function": "src.App.Panel",
+   "name": "title",
+   "type_name": ""
+  }
+ ],
  "reexports": [],
  "diagnostics": [],
  "ctor_assigns": [],

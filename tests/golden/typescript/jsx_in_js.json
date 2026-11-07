@@ -56,7 +56,18 @@
  ],
  "calls": [],
  "fields": [],
- "locals": [],
+ "locals": [
+  {
+   "function": "src.Button.Button",
+   "name": "onClick",
+   "type_name": ""
+  },
+  {
+   "function": "src.Button.Button",
+   "name": "children",
+   "type_name": ""
+  }
+ ],
  "reexports": [],
  "diagnostics": [],
  "ctor_assigns": [],
