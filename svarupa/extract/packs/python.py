@@ -541,6 +541,25 @@ def _parameters(
     return out
 
 
+def _imported_names(ctx: Ctx, node: TSNode) -> list[str]:
+    """The names an import statement binds: `import a.b as c` binds `c`,
+    `import a.b` binds `a`, `from m import X as c` binds `c`."""
+    out: list[str] = []
+    for item in node.children_by_field_name("name"):
+        if item.type == "aliased_import":
+            item = item.child_by_field_name("alias") or item
+        first = item.named_children[0] if item.type == "dotted_name" else item
+        if first.type == "identifier":
+            out.append(ctx.text(first))
+    return out
+
+
+def _caught_type(ctx: Ctx, value: TSNode, skip: frozenset[str]) -> str:
+    """The type `except E as e` gives `e`: `E` when it is one plain name."""
+    caught = value.named_children[0]
+    return annotation_type(ctx.text(caught), skip) if caught.type == "identifier" else ""
+
+
 class _Walk:
     """One scope's walk. A step takes a node, whether its bindings are the
     scope's own (a class body's are not), and the lambda around it; it says
@@ -605,12 +624,7 @@ class _Walk:
         """`except E as e` types `e` when `E` is one plain name."""
         value = node.child_by_field_name("value")
         if value is not None and value.type == "as_pattern" and value.named_child_count:
-            caught = value.named_children[0]
-            ty = (
-                annotation_type(self.ctx.text(caught), self.skip)
-                if caught.type == "identifier"
-                else ""
-            )
+            ty = _caught_type(self.ctx, value, self.skip)
             self.bind(_targets(self.ctx, value.child_by_field_name("alias")), ty, binds, around)
         return list(node.children), binds, around
 
@@ -625,17 +639,9 @@ class _Walk:
         return list(node.children), binds, around
 
     def import_(self, node: TSNode, binds: bool, around: TSNode | None) -> _Next:
-        """`import a.b as c` binds `c`, `import a.b` binds `a`, and
-        `from m import X as c` binds `c`; a wildcard binds nothing known. The
-        name is only noted: it hides a typed name of the same spelling (see
-        `function_locals`), and otherwise the import still resolves."""
-        names = node.children_by_field_name("name")
-        for item in names:
-            if item.type == "aliased_import":
-                item = item.child_by_field_name("alias") or item
-            first = item.named_children[0] if item.type == "dotted_name" else item
-            if first.type == "identifier":
-                self.sc.imported.add(self.ctx.text(first))
+        """Only noted: an import name hides a typed name of the same spelling
+        (see `function_locals`), and otherwise the import still resolves."""
+        self.sc.imported.update(_imported_names(self.ctx, node))
         return [], binds, around
 
     def type_alias(self, node: TSNode, binds: bool, around: TSNode | None) -> _Next:

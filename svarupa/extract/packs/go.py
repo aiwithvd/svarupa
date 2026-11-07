@@ -379,32 +379,39 @@ def spec_locals(ctx: Ctx, node: TSNode, fn: str) -> list[LocalType]:
     return out
 
 
+def _scope_of(node: TSNode) -> TSNode | None:
+    scope = node.parent
+    while scope is not None and scope.type not in _SCOPES:
+        scope = scope.parent
+    return scope
+
+
+_FUNCTIONS = ("function_declaration", "method_declaration", "func_literal")
+
+
+def _function_of(scope: TSNode) -> TSNode | None:
+    """The function whose top block `scope` is."""
+    owner = scope.parent if scope.type == "block" else None
+    return owner if owner is not None and owner.type in _FUNCTIONS else None
+
+
 def _declared_here(ctx: Ctx, node: TSNode, fn: str, name: str) -> bool:
     """Whether `name` is already declared in the scope that holds this `:=`. Then
     the `:=` only assigns it and its declared type stays. A parameter counts for
     the function's own top block."""
-    scope = node.parent
-    while scope is not None and scope.type not in _SCOPES:
-        scope = scope.parent
+    scope = _scope_of(node)
     if scope is None:
         return False
-    end = _end(scope)[0] + 1
-    line = node.start_point[0] + 1
-    owner = scope.parent if scope.type == "block" else None
-    top = owner is not None and owner.type in (
-        "function_declaration",
-        "method_declaration",
-        "func_literal",
+    end, line = _end(scope)[0] + 1, node.start_point[0] + 1
+    owner = _function_of(scope)
+    # A parameter spans its whole function; a declaration, the rest of its block.
+    return any(
+        loc.function == fn
+        and loc.name == name
+        and loc.start_line <= line
+        and (loc.end_line == end or (owner is not None and loc.end_line > owner.end_point[0]))
+        for loc in ctx.locals
     )
-    for loc in ctx.locals:
-        if loc.function != fn or loc.name != name or loc.start_line > line:
-            continue
-        # A parameter spans its whole function; a declaration, the rest of its block.
-        if loc.end_line == end or (
-            top and owner is not None and loc.end_line > owner.end_point[0]
-        ):
-            return True
-    return False
 
 
 def short_var_locals(ctx: Ctx, node: TSNode, fn: str) -> list[LocalType]:
