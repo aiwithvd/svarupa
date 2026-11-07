@@ -39,6 +39,16 @@ zero-to-production. It is the same in every language.
 
   Generic parameters (`S: Store`, `<T>`) and unions of two real types are not
   types. They stay unresolved.
+- **Scope.** Each local carries the line range of the block that binds it:
+  - a function parameter: the whole function;
+  - a `let` or declaration: the enclosing block, from the binding line to the end of that block;
+  - a loop variable, catch variable, pattern binding or callback parameter: the loop, clause, arm or callback body.
+
+  A local applies only to calls whose line is inside its scope. An untyped
+  binding (`""`) hides a name only inside its scope. When two scopes cover the
+  same call, the innermost one wins. When the innermost scope holds two types,
+  the call stays unresolved. This replaces "one type per name per function",
+  which let a block-scoped type leak outside its block.
 - **Resolution.** For a QUALIFIED call `x.m()` inside function `f`:
   1. If `(file, f, x)` is in locals, resolve `m` through that type, the same
      way `_field_call` does (`_nearest_methods` over the MRO).
