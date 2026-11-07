@@ -10,6 +10,7 @@ nothing moved.
 from __future__ import annotations
 
 import re
+import weakref
 
 from tree_sitter import Node as TSNode
 
@@ -18,10 +19,12 @@ from svarupa.extract.base import (
     CallSite,
     DecoratorRef,
     ImportRef,
+    LocalType,
     qualified_prefix,
 )
 from svarupa.extract.packs.model import (
     Call,
+    Custom,
     Decorated,
     Define,
     Grammar,
@@ -245,6 +248,481 @@ def bases(ctx: Ctx, node: TSNode) -> tuple[str, ...]:
     )
 
 
+# --------------------------------------------------------------------------
+# parameter and local types
+#
+# Python scope is the function, not the block. A name bound anywhere in a
+# function is local to all of it, so its bindings cover the whole function.
+# The exceptions get their own lines: a comprehension, a lambda, and a nested
+# `def`. A nested function reads its enclosing functions' locals, so those
+# are recorded under it too, over the enclosing function's lines; its own
+# bindings span fewer lines and win. `global` and `nonlocal` names are not
+# locals of the function that declares them.
+#
+# Only an annotation types a name. Every other binding records "", so a local
+# hides an import or a field of the same name inside its scope and nowhere
+# else.
+
+# Annotations that name no single class.
+_NOT_TYPES = frozenset(
+    {
+        "Any", "Optional", "Union", "Callable", "Type", "type", "Self", "Literal",
+        "NoReturn", "Never", "None", "object", "LiteralString", "Final", "ClassVar",
+        "list", "dict", "set", "frozenset", "tuple", "List", "Dict", "Set", "FrozenSet",
+        "Tuple", "Sequence", "Iterable", "Iterator", "Mapping", "Awaitable",
+    }
+)  # fmt: skip
+_TYPEVAR = re.compile(
+    rb"^[ \t]*(\w+)[ \t]*(?::[^=\n]*)?=[ \t]*(?:\w+\.)?(?:TypeVar|ParamSpec|TypeVarTuple)[ \t]*\(",
+    re.MULTILINE,
+)
+_SUBSCRIPT = re.compile(r"([\w.]+)\s*\[(.*)\]")
+_NAME = re.compile(r"[^\W\d]\w*")
+
+
+def _split(text: str, sep: str) -> list[str]:
+    """Split on `sep` outside brackets and quotes."""
+    out: list[str] = []
+    depth, quote, start = 0, "", 0
+    for i, ch in enumerate(text):
+        if quote:
+            quote = "" if ch == quote else quote
+        elif ch in "\"'":
+            quote = ch
+        elif ch in "([{":
+            depth += 1
+        elif ch in ")]}":
+            depth -= 1
+        elif ch == sep and depth == 0:
+            out.append(text[start:i])
+            start = i + 1
+    out.append(text[start:])
+    return [p.strip() for p in out]
+
+
+def _unquote(text: str) -> str | None:
+    quoted = len(text) > 1 and text[0] in "\"'" and text[-1] == text[0]
+    return text[1:-1] if quoted and text[0] not in text[1:-1] else None
+
+
+def _one_of(args: list[str], skip: frozenset[str]) -> str:
+    """The type of the only argument that is not None, else no type."""
+    real = [a for a in args if a != "None"]
+    return annotation_type(real[0], skip) if len(real) == 1 else ""
+
+
+def annotation_type(text: str, skip: frozenset[str] = frozenset()) -> str:
+    """The one class an annotation names, or "". `Optional[T]`, `T | None`,
+    `Union[T, None]`, `Annotated[T, ...]` and a quoted `"T"` are T. Two real
+    types, a TypeVar, a container, a dotted name and anything else are no type:
+    a union could be either, and a dotted name could be a module's class that
+    shares a bare name with one of ours."""
+    text = " ".join(text.split())
+    inner = _unquote(text)
+    if inner is not None:
+        return annotation_type(inner, skip)
+    parts = _split(text, "|")
+    if len(parts) > 1:
+        return _one_of(parts, skip)
+    sub = _SUBSCRIPT.fullmatch(text)
+    if sub is not None:
+        head, args = sub[1].rsplit(".", 1)[-1], _split(sub[2], ",")
+        if head == "Annotated":
+            return annotation_type(args[0], skip)
+        return _one_of(args, skip) if head in ("Optional", "Union") else ""
+    ok = _NAME.fullmatch(text) and text not in _NOT_TYPES and text not in skip
+    return text if ok else ""
+
+
+class _Scope:
+    """What one function (or the module) binds."""
+
+    def __init__(self) -> None:
+        self.wide: dict[tuple[str, str], None] = {}  # (name, type), function-wide
+        self.inner: list[tuple[str, TSNode]] = []  # name, the lambda or comprehension
+        self.declared_global: set[str] = set()
+        self.declared_nonlocal: set[str] = set()
+
+    def visible(self) -> list[tuple[str, str]]:
+        """The function-wide bindings that are this scope's own."""
+        hidden = self.declared_global | self.declared_nonlocal
+        return [(n, t) for n, t in self.wide if n not in hidden]
+
+
+class _State:
+    def __init__(self, data: bytes) -> None:
+        self.typevars = frozenset(
+            m[1].decode("utf8", "replace") for m in _TYPEVAR.finditer(data)
+        )
+        self.scopes: dict[int, _Scope] = {}
+
+
+_STATES: weakref.WeakKeyDictionary[Ctx, _State] = weakref.WeakKeyDictionary()
+
+
+def _state(ctx: Ctx) -> _State:
+    state = _STATES.get(ctx)
+    if state is None:
+        state = _STATES[ctx] = _State(ctx.data)
+    return state
+
+
+def _first_identifier(node: TSNode) -> TSNode | None:
+    if node.type == "identifier":
+        return node
+    return next((i for c in node.children if (i := _first_identifier(c)) is not None), None)
+
+
+def _generic_names(ctx: Ctx, node: TSNode) -> frozenset[str]:
+    """PEP 695 type parameters of this definition and the ones around it."""
+    names: set[str] = set()
+    cur: TSNode | None = node
+    while cur is not None:
+        tp = cur.child_by_field_name("type_parameters") if cur.type in _DEFS else None
+        if tp is not None:
+            names.update(
+                ctx.text(i)
+                for c in tp.named_children
+                if (i := _first_identifier(c)) is not None
+            )
+        cur = cur.parent
+    return frozenset(names)
+
+
+_DEFS = frozenset({"function_definition", "class_definition"})
+_ASSIGN_TARGETS = frozenset(
+    {
+        "pattern_list",
+        "tuple_pattern",
+        "list_pattern",
+        "list_splat_pattern",
+        "parenthesized_pattern",
+        "as_pattern_target",
+        "tuple",
+        "list",
+        "parenthesized_expression",
+    }
+)
+_COMPREHENSIONS = frozenset(
+    {
+        "list_comprehension",
+        "set_comprehension",
+        "dictionary_comprehension",
+        "generator_expression",
+    }
+)
+_PATTERN_PARTS = frozenset(
+    {"case_pattern", "list_pattern", "tuple_pattern", "union_pattern", "dict_pattern"}
+)
+
+
+def _targets(ctx: Ctx, node: TSNode | None) -> list[str]:
+    """The names an assignment target binds: `a`, `a, (b, *c)`. An attribute or
+    a subscript binds nothing."""
+    if node is None:
+        return []
+    if node.type == "identifier":
+        return [ctx.text(node)]
+    if node.type in _ASSIGN_TARGETS:
+        return [n for c in node.named_children for n in _targets(ctx, c)]
+    return []
+
+
+def _all_captures(ctx: Ctx, nodes: list[TSNode]) -> list[str]:
+    return [n for c in nodes for n in _captures(ctx, c)]
+
+
+def _capture_name(ctx: Ctx, node: TSNode) -> list[str]:
+    return [ctx.text(node)] if node.named_child_count == 1 and node.text != b"_" else []
+
+
+def _capture_splat(ctx: Ctx, node: TSNode) -> list[str]:
+    return [ctx.text(c) for c in node.named_children if c.type == "identifier"]
+
+
+def _capture_keyword(ctx: Ctx, node: TSNode) -> list[str]:
+    return _captures(ctx, node.named_children[-1]) if node.named_child_count > 1 else []
+
+
+def _capture_class(ctx: Ctx, node: TSNode) -> list[str]:
+    # The first child is the class, not a capture.
+    return _all_captures(ctx, node.named_children[1:])
+
+
+def _capture_as(ctx: Ctx, node: TSNode) -> list[str]:
+    kids = node.named_children
+    inner = _all_captures(ctx, [c for c in kids if c.type == "case_pattern"])
+    return inner + [ctx.text(c) for c in kids[-1:] if c.type == "identifier"]
+
+
+def _capture_dict(ctx: Ctx, node: TSNode) -> list[str]:
+    values = [
+        c
+        for i, c in enumerate(node.children)
+        if c.is_named and node.field_name_for_child(i) != "key"
+    ]
+    return _all_captures(ctx, values)
+
+
+def _capture_parts(ctx: Ctx, node: TSNode) -> list[str]:
+    return _all_captures(ctx, node.named_children)
+
+
+_CAPTURES = {
+    "dotted_name": _capture_name,  # a dotted name is a value; a lone name captures
+    "splat_pattern": _capture_splat,
+    "keyword_pattern": _capture_keyword,
+    "class_pattern": _capture_class,
+    "as_pattern": _capture_as,
+    "dict_pattern": _capture_dict,
+    "case_pattern": _capture_parts,
+    "list_pattern": _capture_parts,
+    "tuple_pattern": _capture_parts,
+    "union_pattern": _capture_parts,
+}
+
+
+def _captures(ctx: Ctx, node: TSNode) -> list[str]:
+    """The names a `case` pattern captures."""
+    hook = _CAPTURES.get(node.type)
+    return hook(ctx, node) if hook is not None else []
+
+
+def _annotated(ctx: Ctx, node: TSNode, skip: frozenset[str]) -> str:
+    ann = node.child_by_field_name("type")
+    return annotation_type(ctx.text(ann), skip) if ann is not None else ""
+
+
+def _param_default(ctx: Ctx, node: TSNode, skip: frozenset[str]) -> tuple[str, str]:
+    name = node.child_by_field_name("name")
+    return (ctx.text(name) if name is not None else "", _annotated(ctx, node, skip))
+
+
+def _param_typed(ctx: Ctx, node: TSNode, skip: frozenset[str]) -> tuple[str, str]:
+    kids = node.named_children
+    if not kids:
+        return "", ""
+    if kids[0].type == "identifier":
+        return ctx.text(kids[0]), _annotated(ctx, node, skip)
+    return _param_splat(ctx, kids[0], skip)  # `*args: T` is a tuple of T
+
+
+def _param_splat(ctx: Ctx, node: TSNode, _skip: frozenset[str]) -> tuple[str, str]:
+    names = _targets(ctx, node.named_children[0]) if node.named_children else []
+    return (names[0] if names else ""), ""
+
+
+def _param_plain(ctx: Ctx, node: TSNode, _skip: frozenset[str]) -> tuple[str, str]:
+    return ctx.text(node), ""
+
+
+_PARAMS = {
+    "identifier": _param_plain,
+    "default_parameter": _param_default,
+    "typed_default_parameter": _param_default,
+    "typed_parameter": _param_typed,
+    "list_splat_pattern": _param_splat,
+    "dictionary_splat_pattern": _param_splat,
+}
+
+
+def _parameters(
+    ctx: Ctx, node: TSNode | None, skip: frozenset[str], receiver: bool
+) -> list[tuple[str, str]]:
+    """Every parameter. Only `name: T` and `name: T = default` are typed.
+    `self` and `cls` first are the receiver, not a local."""
+    out: list[tuple[str, str]] = []
+    for i, child in enumerate(node.named_children if node is not None else []):
+        hook = _PARAMS.get(child.type)
+        name, ty = hook(ctx, child, skip) if hook is not None else ("", "")
+        if name and not (receiver and i == 0 and name in ("self", "cls")):
+            out.append((name, ty))
+    return out
+
+
+class _Walk:
+    """One scope's walk. A step takes a node, whether its bindings are the
+    scope's own (a class body's are not), and the lambda around it; it says
+    what to visit next."""
+
+    def __init__(self, ctx: Ctx, root: TSNode, sc: _Scope, skip: frozenset[str]) -> None:
+        self.ctx, self.sc, self.skip = ctx, sc, skip
+        self.in_function = root.type == "function_definition"
+
+    def bind(self, names: list[str], ty: str, binds: bool, around: TSNode | None) -> None:
+        for name in names:
+            if around is not None:
+                self.sc.inner.append((name, around))
+            elif binds:
+                self.sc.wide[(name, ty)] = None
+
+    def definition(self, node: TSNode, binds: bool, around: TSNode | None) -> _Next:
+        name = node.child_by_field_name("name")
+        body = node.child_by_field_name("body")
+        if self.in_function and name is not None:
+            self.bind([self.ctx.text(name)], "", binds, around)
+        if node.type == "function_definition" or body is None:
+            return [], binds, around
+        # A class body binds its own names, not the scope's; a lambda or
+        # comprehension in it still shadows.
+        return [body], False, around
+
+    def lambda_(self, node: TSNode, binds: bool, _around: TSNode | None) -> _Next:
+        params = node.child_by_field_name("parameters")
+        for name, _ in _parameters(self.ctx, params, self.skip, False):
+            self.sc.inner.append((name, node))
+        return list(node.children), binds, node
+
+    def comprehension(self, node: TSNode, binds: bool, around: TSNode | None) -> _Next:
+        for clause in node.children:
+            if clause.type == "for_in_clause":
+                for name in _targets(self.ctx, clause.child_by_field_name("left")):
+                    self.sc.inner.append((name, node))
+        return list(node.children), binds, around
+
+    def assignment(self, node: TSNode, binds: bool, around: TSNode | None) -> _Next:
+        left = node.child_by_field_name("left")
+        if node.child_by_field_name("type") is None:
+            self.bind(_targets(self.ctx, left), "", binds, around)
+        elif left is not None and left.type == "identifier":
+            ty = _annotated(self.ctx, node, self.skip)
+            self.bind([self.ctx.text(left)], ty, binds, around)
+        return list(node.children), binds, around
+
+    def for_(self, node: TSNode, binds: bool, around: TSNode | None) -> _Next:
+        self.bind(_targets(self.ctx, node.child_by_field_name("left")), "", binds, around)
+        return list(node.children), binds, around
+
+    def with_item(self, node: TSNode, binds: bool, around: TSNode | None) -> _Next:
+        value = node.child_by_field_name("value")
+        if value is not None and value.type == "as_pattern":
+            alias = value.child_by_field_name("alias")
+            self.bind(_targets(self.ctx, alias), "", binds, around)
+        return list(node.children), binds, around
+
+    def except_(self, node: TSNode, binds: bool, around: TSNode | None) -> _Next:
+        """`except E as e` types `e` when `E` is one plain name."""
+        value = node.child_by_field_name("value")
+        if value is not None and value.type == "as_pattern" and value.named_child_count:
+            caught = value.named_children[0]
+            ty = (
+                annotation_type(self.ctx.text(caught), self.skip)
+                if caught.type == "identifier"
+                else ""
+            )
+            self.bind(_targets(self.ctx, value.child_by_field_name("alias")), ty, binds, around)
+        return list(node.children), binds, around
+
+    def walrus(self, node: TSNode, binds: bool, around: TSNode | None) -> _Next:
+        self.bind(_targets(self.ctx, node.child_by_field_name("name")), "", binds, around)
+        return list(node.children), binds, around
+
+    def case(self, node: TSNode, binds: bool, around: TSNode | None) -> _Next:
+        for pattern in node.children:
+            if pattern.type == "case_pattern":
+                self.bind(_captures(self.ctx, pattern), "", binds, around)
+        return list(node.children), binds, around
+
+    def global_(self, node: TSNode, binds: bool, around: TSNode | None) -> _Next:
+        self.sc.declared_global.update(self.ctx.text(c) for c in node.named_children)
+        return [], binds, around
+
+    def nonlocal_(self, node: TSNode, binds: bool, around: TSNode | None) -> _Next:
+        self.sc.declared_nonlocal.update(self.ctx.text(c) for c in node.named_children)
+        return [], binds, around
+
+    def run(self, start: TSNode) -> None:
+        steps = {
+            "function_definition": self.definition,
+            "class_definition": self.definition,
+            "lambda": self.lambda_,
+            "list_comprehension": self.comprehension,
+            "set_comprehension": self.comprehension,
+            "dictionary_comprehension": self.comprehension,
+            "generator_expression": self.comprehension,
+            "assignment": self.assignment,
+            "for_statement": self.for_,
+            "with_item": self.with_item,
+            "except_clause": self.except_,
+            "named_expression": self.walrus,
+            "case_clause": self.case,
+            "global_statement": self.global_,
+            "nonlocal_statement": self.nonlocal_,
+        }
+        todo: list[tuple[TSNode, bool, TSNode | None]] = [(start, True, None)]
+        while todo:
+            node, binds, around = todo.pop()
+            step = steps.get(node.type)
+            kids, binds, around = (
+                step(node, binds, around) if step else (list(node.children), binds, around)
+            )
+            todo.extend((c, binds, around) for c in reversed(kids))
+
+
+_Next = tuple[list[TSNode], bool, "TSNode | None"]
+
+
+def _scope(ctx: Ctx, root: TSNode) -> _Scope:
+    """What `root` (a function or the module) binds, not looking into a nested
+    function. Cached: a nested function asks for every function around it."""
+    state = _state(ctx)
+    cached = state.scopes.get(root.id)
+    if cached is not None:
+        return cached
+    sc = state.scopes[root.id] = _Scope()
+    skip = state.typevars | _generic_names(ctx, root)
+    walk = _Walk(ctx, root, sc, skip)
+    if root.type != "function_definition":
+        walk.run(root)
+        return sc
+    for name, ty in _parameters(ctx, root.child_by_field_name("parameters"), skip, True):
+        sc.wide[(name, ty)] = None
+    body = root.child_by_field_name("body")
+    walk.run(body if body is not None else root)
+    return sc
+
+
+def _own(fn: str, sc: _Scope) -> list[LocalType]:
+    """A scope's own bindings: function-wide, then each lambda and comprehension
+    over its lines."""
+    out = [LocalType(fn, n, t) for n, t in sc.visible()]
+    seen: set[tuple[str, int]] = set()
+    for name, node in sc.inner:
+        if (name, node.id) not in seen:
+            seen.add((name, node.id))
+            out.append(LocalType(fn, name, "", node.start_point[0] + 1, node.end_point[0] + 1))
+    return out
+
+
+def function_locals(ctx: Ctx, node: TSNode, qualified: str) -> list[LocalType]:
+    """A function's own bindings, then those of the functions around it."""
+    own = _scope(ctx, node)
+    out = _own(qualified, own)
+    blocked = set(own.declared_global)
+    outer = node.parent
+    while outer is not None:
+        if outer.type == "function_definition":
+            sc = _scope(ctx, outer)
+            start, end = outer.start_point[0] + 1, outer.end_point[0] + 1
+            out += [
+                LocalType(qualified, n, t, start, end)
+                for n, t in sc.visible()
+                if n not in blocked
+            ]
+            blocked |= sc.declared_global
+        outer = outer.parent
+    return out
+
+
+def module(ctx: Ctx, node: TSNode, frame: Frame, depth: int) -> None:
+    """Module-level bindings are the locals of the function "", as for a call
+    outside any function."""
+    ctx.locals.extend(_own("", _scope(ctx, node)))
+    plain = frame.plain()
+    for child in node.children:
+        ctx.visit(child, plain, depth + 1)
+
+
 _PARAM_KINDS = frozenset(
     {
         "identifier",
@@ -402,8 +880,11 @@ PACK = Pack(
         "decorated_definition": Decorated(),
         "import_statement": Import(hook=import_),
         "import_from_statement": Import(hook=import_),
+        "module": Custom(hook=module),
         "class_definition": Define(kind="class", sets_class=True, bases=bases),
-        "function_definition": Define(kind="function", kind_in_class="method"),
+        "function_definition": Define(
+            kind="function", kind_in_class="method", locals=function_locals
+        ),
         "call": Call(hook=call),
     },
 )

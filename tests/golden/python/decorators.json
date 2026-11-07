@@ -423,7 +423,36 @@
   }
  ],
  "fields": [],
- "locals": [],
+ "locals": [
+  {
+   "function": "",
+   "name": "router",
+   "type_name": "",
+   "start_line": 0,
+   "end_line": 0
+  },
+  {
+   "function": "",
+   "name": "bp",
+   "type_name": "",
+   "start_line": 0,
+   "end_line": 0
+  },
+  {
+   "function": "",
+   "name": "PATH",
+   "type_name": "",
+   "start_line": 0,
+   "end_line": 0
+  },
+  {
+   "function": "",
+   "name": "METHODS",
+   "type_name": "",
+   "start_line": 0,
+   "end_line": 0
+  }
+ ],
  "reexports": [],
  "diagnostics": [],
  "ctor_assigns": [],

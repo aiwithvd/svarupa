@@ -227,7 +227,29 @@
   }
  ],
  "fields": [],
- "locals": [],
+ "locals": [
+  {
+   "function": "src.shop.orders.Order.total",
+   "name": "helper",
+   "type_name": "",
+   "start_line": 13,
+   "end_line": 16
+  },
+  {
+   "function": "src.shop.orders.Order.total.helper",
+   "name": "x",
+   "type_name": "",
+   "start_line": 14,
+   "end_line": 15
+  },
+  {
+   "function": "src.shop.orders.Order.total.helper",
+   "name": "helper",
+   "type_name": "",
+   "start_line": 13,
+   "end_line": 16
+  }
+ ],
  "reexports": [],
  "diagnostics": [],
  "ctor_assigns": [],
