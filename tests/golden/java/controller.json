@@ -308,7 +308,13 @@
    "type_name": "List"
   }
  ],
- "locals": [],
+ "locals": [
+  {
+   "function": "src.main.java.com.acme.shop.OrderController.OrderController.OrderController",
+   "name": "service",
+   "type_name": "OrderService"
+  }
+ ],
  "reexports": [],
  "diagnostics": [],
  "ctor_assigns": [],

@@ -13,7 +13,14 @@ import re
 
 from tree_sitter import Node as TSNode
 
-from svarupa.extract.base import CallShape, CallSite, DecoratorRef, FieldType, ImportRef
+from svarupa.extract.base import (
+    CallShape,
+    CallSite,
+    DecoratorRef,
+    FieldType,
+    ImportRef,
+    LocalType,
+)
 from svarupa.extract.packs.model import (
     Call,
     Custom,
@@ -21,6 +28,7 @@ from svarupa.extract.packs.model import (
     Field,
     Grammar,
     Import,
+    Local,
     Maturity,
     MetricsSpec,
     Pack,
@@ -200,6 +208,136 @@ def call(ctx: Ctx, node: TSNode, frame: Frame) -> CallSite | None:
     return CallSite(name, CallShape.MEMBER, ctx.text(obj), ev, fn, cls, first)
 
 
+# ----------------------------------------------------------------------
+# parameter and local types
+
+_CLASS_TYPES = ("type_identifier", "generic_type", "scoped_type_identifier")
+_GENERIC_OWNERS = (
+    "method_declaration",
+    "constructor_declaration",
+    "class_declaration",
+    "interface_declaration",
+    "record_declaration",
+    "enum_declaration",
+)
+
+
+def _generic_names(ctx: Ctx, node: TSNode) -> set[str]:
+    """The type parameters in scope: `T` in `<T extends Repo>` on the method or
+    on any class around it."""
+    names: set[str] = set()
+    cur: TSNode | None = node
+    while cur is not None:
+        if cur.type in _GENERIC_OWNERS:
+            params = cur.child_by_field_name("type_parameters")
+            for p in params.named_children if params is not None else ():
+                ident = next((c for c in p.children if c.type == "type_identifier"), None)
+                if ident is not None:
+                    names.add(ctx.text(ident))
+        cur = cur.parent
+    return names
+
+
+def _declared(ctx: Ctx, ty: TSNode | None, generics: set[str]) -> str:
+    """The class a declared type names; "" for `var`, a generic parameter, an
+    array or a primitive. `Optional<T>` stays `Optional`."""
+    if ty is None or ty.type not in _CLASS_TYPES:
+        return ""
+    name = _type_name(ctx.text(ty))
+    return "" if name == "var" or name in generics else name
+
+
+def _binding(
+    ctx: Ctx, fn: str, ty: TSNode | None, name: TSNode | None, generics: set[str]
+) -> list[LocalType]:
+    """A name always shadows a field, so an untyped one is recorded too, with
+    no type."""
+    if name is None or name.type != "identifier":
+        return []
+    return [LocalType(fn, ctx.text(name), _declared(ctx, ty, generics))]
+
+
+def _has_dims(node: TSNode) -> bool:
+    return any(c.type == "dimensions" for c in node.children)
+
+
+def _sized(node: TSNode, ty: TSNode | None) -> TSNode | None:
+    """The declared type, or None when the name adds array dimensions."""
+    return None if _has_dims(node) else ty
+
+
+def _formal(ctx: Ctx, fn: str, p: TSNode, generics: set[str]) -> list[LocalType]:
+    """A `formal_parameter` or `spread_parameter`. `Repo... r` is an array of
+    Repo, so a call on r is not a call on Repo."""
+    if p.type == "formal_parameter":
+        ty = _sized(p, p.child_by_field_name("type"))
+        return _binding(ctx, fn, ty, p.child_by_field_name("name"), generics)
+    if p.type == "spread_parameter":
+        d = next((c for c in p.children if c.type == "variable_declarator"), None)
+        return _binding(ctx, fn, None, d.child_by_field_name("name") if d else None, generics)
+    return []
+
+
+def parameter_locals(ctx: Ctx, node: TSNode, qualified: str) -> list[LocalType]:
+    params = node.child_by_field_name("parameters")
+    if params is None:
+        return []
+    generics = _generic_names(ctx, node)
+    out: list[LocalType] = []
+    for p in params.named_children:
+        out += _formal(ctx, qualified, p, generics)
+    return out
+
+
+def local_variable_locals(ctx: Ctx, node: TSNode, fn: str) -> list[LocalType]:
+    generics = _generic_names(ctx, node)
+    ty = node.child_by_field_name("type")
+    out: list[LocalType] = []
+    for d in node.children:
+        if d.type == "variable_declarator":
+            out += _binding(ctx, fn, _sized(d, ty), d.child_by_field_name("name"), generics)
+    return out
+
+
+def typed_name_locals(ctx: Ctx, node: TSNode, fn: str) -> list[LocalType]:
+    """`for (T x : xs)`, `instanceof T x` and a resource `T x = open()`."""
+    ty = node.child_by_field_name("type") or node.child_by_field_name("right")
+    if ty is None:
+        ty = next((c for c in node.children if c.type in _CLASS_TYPES), None)
+    name = node.child_by_field_name("name")
+    if name is None:
+        name = next((c for c in node.children if c.type == "identifier"), None)
+    return _binding(ctx, fn, _sized(node, ty), name, _generic_names(ctx, node))
+
+
+def catch_locals(ctx: Ctx, node: TSNode, fn: str) -> list[LocalType]:
+    """`catch (A | B e)` is a union, so e has no single type."""
+    catch_type = next((c for c in node.children if c.type == "catch_type"), None)
+    name = node.child_by_field_name("name") or next(
+        (c for c in node.children if c.type == "identifier"), None
+    )
+    types = [c for c in catch_type.children if c.type in _CLASS_TYPES] if catch_type else []
+    ty = types[0] if len(types) == 1 else None
+    return _binding(ctx, fn, ty, name, _generic_names(ctx, node))
+
+
+def lambda_locals(ctx: Ctx, node: TSNode, fn: str) -> list[LocalType]:
+    """`(Order o) -> ..` is typed, `o -> ..` and `(a, b) -> ..` rebind untyped."""
+    params = node.child_by_field_name("parameters")
+    if params is None:
+        return []
+    if params.type == "identifier":
+        return [LocalType(fn, ctx.text(params), "")]
+    generics = _generic_names(ctx, node)
+    out: list[LocalType] = []
+    for p in params.named_children:
+        if p.type == "identifier":
+            out.append(LocalType(fn, ctx.text(p), ""))
+        else:
+            out += _formal(ctx, fn, p, generics)
+    return out
+
+
 def _type_rule(kind: str) -> Define:
     return Define(
         kind=kind,
@@ -347,11 +485,25 @@ PACK = Pack(
         "record_declaration": _type_rule("class"),
         "interface_declaration": _type_rule("interface"),
         "method_declaration": Define(
-            kind="method", exported_by=_public, decorators_from=annotations_of
+            kind="method",
+            exported_by=_public,
+            decorators_from=annotations_of,
+            locals=parameter_locals,
         ),
         "constructor_declaration": Define(
-            kind="method", exported_by=_public, decorators_from=annotations_of
+            kind="method",
+            exported_by=_public,
+            decorators_from=annotations_of,
+            locals=parameter_locals,
         ),
+        "local_variable_declaration": Local(hook=local_variable_locals),
+        "enhanced_for_statement": Local(hook=typed_name_locals),
+        "resource": Local(hook=typed_name_locals),
+        "type_pattern": Local(hook=typed_name_locals),
+        "record_pattern_component": Local(hook=typed_name_locals),
+        "instanceof_expression": Local(hook=typed_name_locals),
+        "catch_formal_parameter": Local(hook=catch_locals),
+        "lambda_expression": Local(hook=lambda_locals),
         "field_declaration": Field(hook=declared_field),
         "method_invocation": Call(hook=call),
     },
