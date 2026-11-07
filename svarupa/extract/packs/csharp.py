@@ -171,6 +171,7 @@ def import_(ctx: Ctx, node: TSNode) -> ImportRef | None:
         alias_of={ctx.text(alias): last} if alias is not None else {},
         evidence=ctx.node_evidence(node),
         is_from=True,
+        is_global=any(c.type == "global" for c in node.children),
     )
 
 

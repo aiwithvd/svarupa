@@ -914,3 +914,30 @@ def test_a_nested_declaration_hides_an_import_in_an_inner_function(tmp_path: Pat
 def test_an_import_still_resolves_beside_a_top_level_callback(tmp_path: Path) -> None:
     body = "xs.forEach((r) => r.go());\nRepo.save();\n"
     assert "Repo.save" in methods(typed_calls(tmp_path, body))
+
+
+# ----------------------------------------------------------------------
+# a local's type is found only in the file and its imports, never globally
+
+
+def test_an_unimported_type_is_a_global_not_a_repo_class(tmp_path: Path) -> None:
+    write(tmp_path, "src/request.ts", "export class Request {\n  json(): void {}\n}\n")
+    write(
+        tmp_path,
+        "src/app/route.ts",
+        "export async function GET(req: Request) {\n  return req.json();\n}\n",
+    )
+    calls = {(e.src, e.dst) for e in run(tmp_path).edges if e.kind is EdgeKind.CALLS}
+    assert not [c for c in calls if c[1].endswith("Request.json")]
+
+
+def test_an_imported_type_still_resolves(tmp_path: Path) -> None:
+    write(tmp_path, "src/request.ts", "export class Request {\n  json(): void {}\n}\n")
+    write(
+        tmp_path,
+        "src/app/route.ts",
+        "import { Request } from '../request';\n"
+        "export async function GET(req: Request) {\n  return req.json();\n}\n",
+    )
+    calls = {(e.src, e.dst) for e in run(tmp_path).edges if e.kind is EdgeKind.CALLS}
+    assert [c for c in calls if c[1].endswith("Request.json")]

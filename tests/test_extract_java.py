@@ -575,3 +575,49 @@ def test_an_externally_imported_field_type_stays_external(tmp_path: Path) -> Non
     )
     calls = {e.dst for e in run(tmp_path).edges if e.kind is EdgeKind.CALLS}
     assert not any(d.endswith("Request.send") for d in calls)
+
+
+# ----------------------------------------------------------------------
+# a local's type is found only where Java looks: the file, its imports and
+# its own package
+
+THREAD_J = (
+    'package app.model;\npublic class Thread {\n  public String getName() { return ""; }\n}\n'
+)
+ENTITY_J = "package app.model;\npublic class HttpEntity {\n  public Object getBody() { return null; }\n}\n"
+
+
+def java_calls(tmp_path: Path, body: str) -> set[tuple[str, str]]:
+    write(tmp_path, "src/app/model/Thread.java", THREAD_J)
+    write(tmp_path, "src/app/model/HttpEntity.java", ENTITY_J)
+    write(tmp_path, "src/app/web/A.java", body)
+    return {(e.src, e.dst) for e in run(tmp_path).edges if e.kind is EdgeKind.CALLS}
+
+
+def test_a_java_lang_type_is_not_a_repo_class_of_another_package(tmp_path: Path) -> None:
+    got = java_calls(
+        tmp_path, "package app.web;\nclass A { void f(Thread t) { t.getName(); } }\n"
+    )
+    assert not [c for c in got if c[1].endswith("getName")]
+
+
+def test_a_wildcard_import_of_a_dependency_is_not_a_repo_class(tmp_path: Path) -> None:
+    got = java_calls(
+        tmp_path,
+        "package app.web;\nimport org.springframework.http.*;\n"
+        "class A { void f(HttpEntity e) { e.getBody(); } }\n",
+    )
+    assert not [c for c in got if c[1].endswith("getBody")]
+
+
+def test_an_imported_or_same_package_type_resolves(tmp_path: Path) -> None:
+    got = java_calls(
+        tmp_path,
+        "package app.web;\nimport app.model.Thread;\n"
+        "class A { void f(Thread t) { t.getName(); } }\n",
+    )
+    assert [c for c in got if c[1].endswith("Thread.getName")]
+    got = java_calls(
+        tmp_path, "package app.model;\nclass A { void f(HttpEntity e) { e.getBody(); } }\n"
+    )
+    assert [c for c in got if c[1].endswith("HttpEntity.getBody")]

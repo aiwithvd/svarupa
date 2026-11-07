@@ -1141,3 +1141,33 @@ def test_a_class_body_assignment_does_not_hide_the_name_outside_the_class(
 def test_a_type_alias_statement_binds_its_name_untyped(tmp_path: Path) -> None:
     body = "def f(r: Repo):\n    type r = int\n    r.save()\n"
     assert not saves_repo(typed_calls(tmp_path, body))
+
+
+# ----------------------------------------------------------------------
+# a local's type is found only in the file and its imports
+
+
+def test_an_import_from_an_undeclared_package_is_not_a_repo_class(tmp_path: Path) -> None:
+    write(tmp_path, "session.py", "class Session:\n    def commit(self):\n        pass\n")
+    write(
+        tmp_path,
+        "a.py",
+        "from sqlalchemy.orm import Session\n\ndef f(s: Session):\n    s.commit()\n",
+    )
+    calls = {e.dst for e in run(tmp_path).edges if e.kind is EdgeKind.CALLS}
+    assert not [d for d in calls if d.endswith("Session.commit")]
+
+
+def test_an_unimported_exception_type_is_not_a_repo_class(tmp_path: Path) -> None:
+    write(
+        tmp_path,
+        "session.py",
+        "class Session(Exception):\n    def commit(self):\n        pass\n",
+    )
+    write(
+        tmp_path,
+        "a.py",
+        "def f():\n    try:\n        g()\n    except Session as e:\n        e.commit()\n",
+    )
+    calls = {e.dst for e in run(tmp_path).edges if e.kind is EdgeKind.CALLS}
+    assert not [d for d in calls if d.endswith("Session.commit")]

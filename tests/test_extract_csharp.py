@@ -631,3 +631,74 @@ def test_a_primary_parameter_gives_way_to_a_member_parameter(tmp_path: Path) -> 
     }
     assert {("G", "Other.Q"), ("H", "Repo.W")} <= got
     assert ("G", "Repo.Q") not in got
+
+
+# ----------------------------------------------------------------------
+# a local's type is found only where C# looks: the namespace and its usings
+
+
+def cs_calls(tmp_path: Path, use: str) -> set[tuple[str, str]]:
+    from svarupa.detect import detect
+    from svarupa.extract import declared_dependencies, extract
+    from svarupa.model import EdgeKind
+
+    (tmp_path / "Repo.cs").write_text("namespace Data;\n" + REPO_CS.split("\n", 1)[1])
+    (tmp_path / "Use.cs").write_text(use)
+    scan = detect(tmp_path)
+    graph = extract(scan, declared_dependencies(scan))
+    return {(e.src, e.dst) for e in graph.edges if e.kind is EdgeKind.CALLS}
+
+
+def test_a_type_of_a_namespace_not_in_scope_stays_unresolved(tmp_path: Path) -> None:
+    got = cs_calls(tmp_path, "namespace Web;\nclass U { void F(Repo r) { r.Save(); } }\n")
+    assert not saves(got)
+
+
+def test_a_type_of_a_used_or_enclosing_namespace_resolves(tmp_path: Path) -> None:
+    got = cs_calls(
+        tmp_path, "using Data;\nnamespace Web;\nclass U { void F(Repo r) { r.Save(); } }\n"
+    )
+    assert saves(got)
+    got = cs_calls(tmp_path, "namespace Data.Web;\nclass U { void F(Repo r) { r.Save(); } }\n")
+    assert saves(got)
+
+
+def test_a_global_using_reaches_every_file_of_its_project_only(tmp_path: Path) -> None:
+    from svarupa.detect import detect
+    from svarupa.extract import declared_dependencies, extract
+    from svarupa.model import EdgeKind
+
+    csproj = '<Project Sdk="Microsoft.NET.Sdk"></Project>\n'
+    for project in ("Web", "Jobs"):
+        (tmp_path / project).mkdir()
+        (tmp_path / project / f"{project}.csproj").write_text(csproj)
+    (tmp_path / "Repo.cs").write_text("namespace Data;\n" + REPO_CS.split("\n", 1)[1])
+    (tmp_path / "Web" / "GlobalUsings.cs").write_text("global using Data;\n")
+    for project in ("Web", "Jobs"):
+        (tmp_path / project / "U.cs").write_text(
+            f"namespace {project};\nclass U {{ void F(Repo r) {{ r.Save(); }} }}\n"
+        )
+    scan = detect(tmp_path)
+    graph = extract(scan, declared_dependencies(scan))
+    srcs = {
+        e.src.split("#")[0]
+        for e in graph.edges
+        if e.kind is EdgeKind.CALLS and e.dst.endswith("Save")
+    }
+    assert srcs == {"Web/U.cs"}
+
+
+def test_a_global_using_is_marked() -> None:
+    (imp,) = parse("global using Shop.Data;\n").imports
+    assert imp.is_global
+    (imp,) = parse("using Shop.Data;\n").imports
+    assert not imp.is_global
+
+
+def test_a_field_typed_by_an_external_namespace_is_not_a_repo_type(tmp_path: Path) -> None:
+    got = cs_calls(
+        tmp_path,
+        "using Microsoft.AspNetCore.Identity.UI.Services;\nnamespace Web;\n"
+        "class U {\n    private readonly Repo _r;\n    void F() { _r.Save(); }\n}\n",
+    )
+    assert not saves(got)

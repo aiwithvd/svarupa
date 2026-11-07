@@ -399,3 +399,20 @@ def test_a_type_assertion_that_declares_a_new_name_in_an_inner_block_types_it(
 ) -> None:
     src = "func F(x any) {\n var y Other\n if true {\n  y, ok := x.(*Repo)\n  y.Save()\n  _ = ok\n }\n _ = y\n}\n"
     assert saves_repo(typed_calls(tmp_path, src))
+
+
+# ----------------------------------------------------------------------
+# a local's bare type is in the caller's own package, never another one
+
+
+def test_a_bare_type_never_names_another_packages_struct(tmp_path: Path) -> None:
+    write(tmp_path, "go.mod", GO_MOD)
+    write(
+        tmp_path,
+        "svc/status/status.go",
+        'package status\n\ntype Status struct{}\n\nfunc (s Status) String() string { return "" }\n',
+    )
+    write(tmp_path, "handler/t.go", "package handler\n\ntype Status int\n")
+    write(tmp_path, "handler/h.go", "package handler\n\nfunc F(s Status) { s.String() }\n")
+    calls = {e.dst for e in run(tmp_path).edges if e.kind is EdgeKind.CALLS}
+    assert not [d for d in calls if d.startswith("svc/status/")]

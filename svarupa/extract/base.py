@@ -159,6 +159,9 @@ class ImportRef:
     # `export * from './x'` names nothing explicitly; the resolver has to
     # search the target's own symbol table to chase it.
     is_star: bool = False
+    # C# `global using`: the import holds in every file of the project, not
+    # only in the file that writes it.
+    is_global: bool = False
 
 
 @dataclass(frozen=True, slots=True)

@@ -56,6 +56,13 @@ class ModuleResolver(Protocol):
         the standard library or a declared dependency."""
         ...
 
+    def implicit_scope(self, from_file: str, /) -> tuple[tuple[str, str], ...]:
+        """Where a bare type name in `from_file` is found without an import of
+        that name: (file, namespace) pairs. With a namespace, the type there
+        is `namespace.Name`; without one, it is a top-level type of the file.
+        () when the language only looks in the file and its imports."""
+        ...
+
 
 @dataclass(frozen=True, slots=True)
 class ModuleContext:
@@ -67,6 +74,7 @@ class ModuleContext:
     go_modules: tuple[tuple[str, str], ...] = ()  # (module path, directory)
     rust_crates: tuple[tuple[str, str], ...] = ()  # (crate name, crate directory)
     rust_uses: tuple[tuple[str, str], ...] = ()  # (manifest directory, dependency name)
+    csharp_projects: tuple[str, ...] = ()  # directory of each .csproj
 
 
 class GoModules:
@@ -94,6 +102,12 @@ class GoModules:
                 directory = path.rsplit("/", 1)[0] if "/" in path else ""
                 by_dir.setdefault(directory, []).append(path)
         self.by_dir = {d: tuple(sorted(v)) for d, v in by_dir.items()}
+
+    def implicit_scope(self, from_file: str, /) -> tuple[tuple[str, str], ...]:
+        # A bare type is declared in the caller's own package, its directory.
+        directory = from_file.rsplit("/", 1)[0] if "/" in from_file else ""
+        files = {from_file, *self.by_dir.get(directory, ())}
+        return tuple((path, "") for path in sorted(files))
 
     def _module_of(self, spec: str) -> tuple[str, str] | None:
         for path, directory in self.modules:
@@ -162,11 +176,20 @@ class JvmPackages:
 
     def __init__(self, context: ModuleContext) -> None:
         by_ns: dict[str, list[str]] = {}
+        self.package_of: dict[str, str] = {}
         for f in context.facts:
             if f.lang == "java":
                 by_ns.setdefault(f.namespace, []).append(f.path)
+                self.package_of[f.path] = f.namespace
         self.by_ns = {ns: tuple(sorted(paths)) for ns, paths in by_ns.items()}
         self.deps = context.deps
+
+    def implicit_scope(self, from_file: str, /) -> tuple[tuple[str, str], ...]:
+        # A bare type is a top-level type of the caller's own package.
+        package = self.package_of.get(from_file)
+        if package is None:
+            return ((from_file, ""),)
+        return tuple((path, "") for path in self.by_ns.get(package, ()))
 
     def targets(self, spec: str, _from_file: str, /) -> tuple[str, ...]:
         parts = spec.split(".")
@@ -219,6 +242,16 @@ class CSharpNamespaces:
         self.deps = frozenset(d.lower() for d in context.deps)
         self.by_ns = {ns: tuple(sorted(p)) for ns, p in by_ns.items()}
         self.types = {t: tuple(sorted(p)) for t, p in types.items()}
+        self.visible = _csharp_visible(context.facts, context.csharp_projects)
+
+    def implicit_scope(self, from_file: str, /) -> tuple[tuple[str, str], ...]:
+        # A bare type is in a namespace the file is in (or one enclosing it),
+        # or in a namespace it `using`s.
+        return tuple(
+            (path, ns)
+            for ns in self.visible.get(from_file, ())
+            for path in self.by_ns.get(ns, ())
+        )
 
     def targets(self, spec: str, _from_file: str, /) -> tuple[str, ...]:
         if spec in self.by_ns:
@@ -249,6 +282,49 @@ class CSharpNamespaces:
             if len(parts) >= 2 and len(head) == 2 and parts[:2] == head:
                 return True
         return False
+
+
+def _csharp_visible(
+    facts: tuple[FileFacts, ...], projects: tuple[str, ...]
+) -> dict[str, tuple[str, ...]]:
+    """Each C# file's visible namespaces, with the `global using`s of its
+    project (the nearest .csproj above it)."""
+    files = [f for f in facts if f.lang == "csharp"]
+    longest = sorted(projects, key=len, reverse=True)
+
+    def project_of(path: str) -> str:
+        return next((d for d in longest if d == "" or path.startswith(d + "/")), "")
+
+    global_ns: dict[str, list[str]] = {}
+    for f in files:
+        for imp in f.imports:
+            if imp.is_global and _names_namespace(imp):
+                global_ns.setdefault(project_of(f.path), []).append(imp.specifier)
+    return {
+        f.path: tuple(
+            dict.fromkeys((*_visible_namespaces(f), *global_ns.get(project_of(f.path), ())))
+        )
+        for f in files
+    }
+
+
+def _visible_namespaces(f: FileFacts) -> tuple[str, ...]:
+    """The namespaces whose types a C# file names bare: the ones it declares
+    with every enclosing one, and the plain `using`s (an alias or a static
+    using names one type, not a namespace)."""
+    seen: dict[str, None] = {}
+    for ns in f.namespaces:
+        parts = ns.split(".")
+        for n in range(len(parts), 0, -1):
+            seen.setdefault(".".join(parts[:n]))
+    for imp in f.imports:
+        if _names_namespace(imp):
+            seen.setdefault(imp.specifier)
+    return tuple(seen)
+
+
+def _names_namespace(imp: ImportRef) -> bool:
+    return not imp.names and not imp.alias_of and not imp.is_star
 
 
 def reexport_pairs(imp: ImportRef) -> tuple[str, list[tuple[str, str]]] | None:
@@ -501,6 +577,10 @@ class RustCrates:
         """`use db::Repo` where `db` is a module in scope: it must exist."""
         hit = self.layout.longest(here[0], here[1], parts, module_only=module_only)
         return None if hit == self.layout.trees[here[0]].get(here[1]) else hit
+
+    def implicit_scope(self, _from_file: str, /) -> tuple[tuple[str, str], ...]:
+        # A type is in the caller's module (its file) or comes in by `use`.
+        return ()
 
     def is_external(self, spec: str, /) -> bool:
         head = spec.split(".")[0]

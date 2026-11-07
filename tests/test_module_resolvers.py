@@ -23,6 +23,9 @@ class TwoFiles:
     def is_external(self, spec: str, /) -> bool:
         return spec == "std"
 
+    def implicit_scope(self, _from_file: str, /) -> tuple[tuple[str, str], ...]:
+        return ()
+
 
 def ev(path: str, line: int = 1) -> Evidence:
     return Evidence(path, line, line)
