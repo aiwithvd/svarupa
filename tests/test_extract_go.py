@@ -416,3 +416,11 @@ def test_a_bare_type_never_names_another_packages_struct(tmp_path: Path) -> None
     write(tmp_path, "handler/h.go", "package handler\n\nfunc F(s Status) { s.String() }\n")
     calls = {e.dst for e in run(tmp_path).edges if e.kind is EdgeKind.CALLS}
     assert not [d for d in calls if d.startswith("svc/status/")]
+
+
+def test_the_else_branch_sees_the_if_statement_binding(tmp_path: Path) -> None:
+    body = (
+        "func F(v any) {\n\tif r, ok := v.(*Other); ok {\n\t\t_ = r\n"
+        "\t} else {\n\t\tr.X()\n\t}\n}\n"
+    )
+    assert any(d.endswith("Other.X") for d in typed_calls(tmp_path, body))
