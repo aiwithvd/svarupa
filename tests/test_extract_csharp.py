@@ -238,3 +238,205 @@ def test_a_csproj_with_a_dtd_is_refused(tmp_path: Path) -> None:
         '<!DOCTYPE p [<!ENTITY x "y">]><Project><PackageReference Include="Evil" /></Project>'
     )
     assert "Evil" not in declared_dependencies(detect(tmp_path))
+
+
+# ----------------------------------------------------------------------
+# parameter and local types
+
+REPO_CS = "namespace A;\npublic class Repo\n{\n    public void Save() {}\n}\n"
+OTHER_CS = "namespace A;\npublic class Other\n{\n    public void X() {}\n}\n"
+IREPO_CS = "namespace A;\npublic interface IRepo\n{\n    void Save();\n}\n"
+
+
+def locals_of(src: str) -> set[tuple[str, str, str]]:
+    facts = parse("namespace a;\n" + src, "a/A.cs")
+    return {(x.function, x.name, x.type_name) for x in facts.locals}
+
+
+def typed_calls(tmp_path: Path, body: str) -> set[tuple[str, str]]:
+    from svarupa.detect import detect
+    from svarupa.extract import declared_dependencies, extract
+    from svarupa.model import EdgeKind
+
+    for name, text in (("Repo", REPO_CS), ("Other", OTHER_CS), ("IRepo", IREPO_CS)):
+        (tmp_path / f"{name}.cs").write_text(text)
+    (tmp_path / "Use.cs").write_text("namespace A;\n" + body)
+    scan = detect(tmp_path)
+    graph = extract(scan, declared_dependencies(scan))
+    return {(e.src, e.dst) for e in graph.edges if e.kind is EdgeKind.CALLS}
+
+
+def saves(calls: set[tuple[str, str]]) -> bool:
+    return any(d.endswith("Save") for _, d in calls)
+
+
+def pairs(src: str) -> set[tuple[str, str]]:
+    return {(n, t) for _, n, t in locals_of(src)}
+
+
+def test_a_typed_parameter_resolves(tmp_path: Path) -> None:
+    got = typed_calls(tmp_path, "class U { void F(Repo r) { r.Save(); } }\n")
+    assert saves(got)
+
+
+def test_an_interface_parameter_resolves_to_the_interface_method(tmp_path: Path) -> None:
+    got = typed_calls(tmp_path, "class U { void F(IRepo repo) { repo.Save(); } }\n")
+    assert [d for _, d in got if d.endswith("Save")] == ["IRepo.cs#A.IRepo.Save"]
+
+
+def test_a_typed_local_resolves(tmp_path: Path) -> None:
+    assert saves(typed_calls(tmp_path, "class U { void F() { Repo r = Make(); r.Save(); } }\n"))
+
+
+def test_var_is_not_an_explicit_type(tmp_path: Path) -> None:
+    src = "class U { void F() { var r = new Repo(); r.Save(); } }\n"
+    assert locals_of(src) == {("a.U.F", "r", "")}
+    assert not saves(typed_calls(tmp_path, src))
+
+
+def test_a_parameter_shadows_a_field_of_the_same_name(tmp_path: Path) -> None:
+    got = typed_calls(tmp_path, "class U { Repo _repo; void F(Other _repo) { _repo.X(); } }\n")
+    assert [d for _, d in got if d.endswith(".X")] == ["Other.cs#A.Other.X"]
+    assert not saves(got)
+
+
+def test_a_var_local_hides_a_field_of_the_same_name(tmp_path: Path) -> None:
+    src = "class U { Repo _repo; void F() { var _repo = Make(); _repo.Save(); } }\n"
+    assert not saves(typed_calls(tmp_path, src))
+
+
+def test_generic_parameters_are_skipped(tmp_path: Path) -> None:
+    src = "class U<T> { void F<V>(T a, V b) { a.Save(); } }\n"
+    assert pairs(src) == {("a", ""), ("b", "")}
+    assert not saves(typed_calls(tmp_path, src))
+
+
+def test_parameter_modifiers_and_extension_this() -> None:
+    got = pairs(
+        "static class U { static void F(this Repo a, ref Other b, out Repo c, in Repo d,"
+        " params Repo[] e, Repo f = null) {} }\n"
+    )
+    assert got == {
+        ("a", "Repo"),
+        ("b", "Other"),
+        ("c", "Repo"),
+        ("d", "Repo"),
+        ("e", ""),
+        ("f", "Repo"),
+    }
+
+
+def test_nullable_unwraps_and_arrays_tuples_primitives_are_untyped() -> None:
+    got = pairs(
+        "class U { void F(Repo? a, Repo[] b, int c, (int, Repo) d, List<Repo> e) {} }\n"
+    )
+    assert got == {("a", "Repo"), ("b", ""), ("c", ""), ("d", ""), ("e", "List")}
+
+
+def test_qualified_types_keep_the_class_name() -> None:
+    assert pairs("class U { void F(Shop.Data.Repo a, global::Shop.Repo b) {} }\n") == {
+        ("a", "Repo"),
+        ("b", "Repo"),
+    }
+
+
+def test_local_declarations_with_several_declarators() -> None:
+    got = pairs("class U { void F() { Repo a = Make(), b; Repo[] c; Repo? d; } }\n")
+    assert got == {("a", "Repo"), ("b", "Repo"), ("c", ""), ("d", "Repo")}
+
+
+def test_a_foreach_variable_is_typed(tmp_path: Path) -> None:
+    src = "class U { void F(IList<Repo> l) { foreach (Repo o in l) { o.Save(); } } }\n"
+    assert saves(typed_calls(tmp_path, src))
+    assert pairs("class U { void F() { foreach (var o in l) {} } }\n") == {("o", "")}
+
+
+def test_catch_using_and_for_bindings() -> None:
+    got = pairs(
+        "class U { void F() { try {} catch (Boom e) {} catch (Other) {} catch {}"
+        " using (Repo r = Open()) {} using Repo s = Open(); using var t = Open();"
+        " for (Repo i = null; ;) {} } }\n"
+    )
+    assert got == {("e", "Boom"), ("r", "Repo"), ("s", "Repo"), ("t", ""), ("i", "Repo")}
+
+
+def test_pattern_and_out_variables(tmp_path: Path) -> None:
+    src = "class U { void F(object x) { if (x is Repo r) { r.Save(); } } }\n"
+    assert ("a.U.F", "r", "Repo") in locals_of(src)
+    assert saves(typed_calls(tmp_path, src))
+    got = pairs(
+        "class U { void F(object x) { switch (x) { case Repo c: break; }"
+        " var y = x switch { Other o => 1, _ => 2 }; G(out Repo p); G(out var q);"
+        " if (x is { } any) {} if (x is var v) {} } }\n"
+    )
+    assert got >= {
+        ("c", "Repo"),
+        ("o", "Other"),
+        ("p", "Repo"),
+        ("q", ""),
+        ("any", ""),
+        ("v", ""),
+    }
+
+
+def test_lambda_parameters_typed_and_untyped() -> None:
+    got = pairs(
+        "class U { void F() { G((Repo a) => 1, b => 2, (c, d) => 3,"
+        " delegate (Other e) { }); } }\n"
+    )
+    assert got == {("a", "Repo"), ("b", ""), ("c", ""), ("d", ""), ("e", "Other")}
+
+
+def test_deconstruction_binds_untyped_names() -> None:
+    got = pairs(
+        "class U { void F() { var (a, b) = P(); (var c, var d) = P(); Repo (e, _) = P();"
+        " foreach (var (k, v) in m) {} } }\n"
+    )
+    assert got == {(n, "") for n in "abcdekv"}
+
+
+def test_query_range_variables() -> None:
+    got = pairs(
+        "class U { void F() { var q = from Repo o in rs let l = o.X join j in js on 1 equals 2"
+        " into g select o; } }\n"
+    )
+    assert got >= {("o", "Repo"), ("l", ""), ("j", ""), ("g", ""), ("q", "")}
+
+
+def test_a_local_function_has_its_own_parameters() -> None:
+    got = locals_of("class U { void F() { void G(Repo a) {} } }\n")
+    assert ("a.U.F.G", "a", "Repo") in got
+
+
+def test_primary_constructor_parameters_are_in_scope_in_every_member(tmp_path: Path) -> None:
+    src = "class U(Repo repo) { void F() { repo.Save(); } void G() {} }\n"
+    got = locals_of(src)
+    assert {("a.U.F", "repo", "Repo"), ("a.U.G", "repo", "Repo")} <= got
+    assert saves(typed_calls(tmp_path, src))
+
+
+def test_a_member_parameter_retyping_a_primary_parameter_resolves_nothing(
+    tmp_path: Path,
+) -> None:
+    src = "class U(Repo repo) { void F(Other repo) { repo.Save(); } }\n"
+    assert not saves(typed_calls(tmp_path, src))
+
+
+def test_a_plain_type_test_binds_nothing(tmp_path: Path) -> None:
+    src = (
+        "class U { Repo _repo; void F(Other o, object x) {"
+        " if (_repo is Other) {} if (o is Repo) {} if (x is Repo) {}"
+        " _repo.Save(); o.X(); } }\n"
+    )
+    assert pairs(src) == {("o", "Other"), ("x", "")}
+    got = typed_calls(tmp_path, src)
+    assert saves(got)  # _repo stays the field Repo
+    assert [d for _, d in got if d.endswith(".X")] == ["Other.cs#A.Other.X"]
+
+
+def test_a_typed_join_variable_is_not_mistaken_for_its_type() -> None:
+    got = pairs(
+        "class U { void F() { var q = from a in b join Repo j in js on 1 equals 2 select a; } }\n"
+    )
+    assert ("j", "Repo") in got
+    assert ("Repo", "") not in got

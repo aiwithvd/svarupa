@@ -400,7 +400,23 @@
    "type_name": "IRepo"
   }
  ],
- "locals": [],
+ "locals": [
+  {
+   "function": "Shop.Api.OrdersController.OrdersController",
+   "name": "repo",
+   "type_name": "IRepo"
+  },
+  {
+   "function": "Shop.Api.OrdersController.Create",
+   "name": "id",
+   "type_name": ""
+  },
+  {
+   "function": "Shop.Api.OrdersController.Create",
+   "name": "helper",
+   "type_name": ""
+  }
+ ],
  "reexports": [],
  "diagnostics": [],
  "ctor_assigns": [],

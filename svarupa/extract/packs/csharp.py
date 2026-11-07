@@ -12,7 +12,14 @@ import re
 
 from tree_sitter import Node as TSNode
 
-from svarupa.extract.base import CallShape, CallSite, DecoratorRef, FieldType, ImportRef
+from svarupa.extract.base import (
+    CallShape,
+    CallSite,
+    DecoratorRef,
+    FieldType,
+    ImportRef,
+    LocalType,
+)
 from svarupa.extract.packs.model import (
     LAST_NAMED,
     Call,
@@ -21,6 +28,7 @@ from svarupa.extract.packs.model import (
     Field,
     Grammar,
     Import,
+    Local,
     Maturity,
     MetricsSpec,
     Pack,
@@ -362,6 +370,160 @@ METRICS = MetricsSpec(
 )
 
 
+# ----------------------------------------------------------------------
+# parameter and local types
+
+_CLASS_TYPES = ("identifier", "qualified_name", "generic_name", "alias_qualified_name")
+_TYPE_OWNERS = (
+    "class_declaration",
+    "struct_declaration",
+    "record_declaration",
+    "interface_declaration",
+)
+_GENERIC_OWNERS = (*_TYPE_OWNERS, "method_declaration", "local_function_statement")
+
+
+def _generic_names(ctx: Ctx, node: TSNode) -> set[str]:
+    """The type parameters in scope: `T` on the method, a local function or any
+    type around it."""
+    names: set[str] = set()
+    cur: TSNode | None = node
+    while cur is not None:
+        if cur.type in _GENERIC_OWNERS:
+            lst = next((c for c in cur.children if c.type == "type_parameter_list"), None)
+            for p in lst.named_children if lst is not None else ():
+                ident = p.child_by_field_name("name")
+                if ident is not None:
+                    names.add(ctx.text(ident))
+        cur = cur.parent
+    return names
+
+
+def _declared(ctx: Ctx, ty: TSNode | None, generics: set[str]) -> str:
+    """The class a declared type names; "" for `var`, a generic parameter, an
+    array, a tuple or a primitive. `Repo?` is `Repo`."""
+    while ty is not None and ty.type == "nullable_type":
+        ty = ty.child_by_field_name("type")
+    if ty is None or ty.type not in _CLASS_TYPES:
+        return ""
+    name = _type_name(ctx.text(ty))
+    return "" if name in ("var", "dynamic") or name in generics else name
+
+
+def _binding(
+    ctx: Ctx, fn: str, ty: TSNode | None, name: TSNode | None, generics: set[str]
+) -> list[LocalType]:
+    """A name always shadows a field, so an untyped one is recorded too, with
+    no type."""
+    if name is None or name.type != "identifier":
+        return []
+    return [LocalType(fn, ctx.text(name), _declared(ctx, ty, generics))]
+
+
+def _untyped(ctx: Ctx, fn: str, node: TSNode | None) -> list[LocalType]:
+    """Every name a deconstruction or tuple pattern binds: `(a, (b, _))`."""
+    if node is None:
+        return []
+    if node.type == "identifier":
+        return [LocalType(fn, ctx.text(node), "")]
+    out: list[LocalType] = []
+    for c in node.named_children:
+        if c.type in ("identifier", "tuple_pattern", "parenthesized_variable_designation"):
+            out += _untyped(ctx, fn, c)
+    return out
+
+
+def _bind_target(
+    ctx: Ctx, fn: str, ty: TSNode | None, target: TSNode | None, generics: set[str]
+) -> list[LocalType]:
+    if target is not None and target.type == "tuple_pattern":
+        return _untyped(ctx, fn, target)
+    return _binding(ctx, fn, ty, target, generics)
+
+
+def _parameters(
+    ctx: Ctx, fn: str, params: TSNode | None, generics: set[str]
+) -> list[LocalType]:
+    """The `parameter`s of a list. The grammar flattens a `params T[] xs`
+    parameter into the list itself, after a `params` token; it is an array, so
+    it binds untyped."""
+    if params is None:
+        return []
+    out: list[LocalType] = []
+    for i, c in enumerate(params.children):
+        if c.type == "parameter":
+            out += _binding(
+                ctx, fn, c.child_by_field_name("type"), c.child_by_field_name("name"), generics
+            )
+        elif c.type == "identifier" and params.field_name_for_child(i) == "name":
+            out.append(LocalType(fn, ctx.text(c), ""))
+    return out
+
+
+def _primary_parameters(ctx: Ctx, node: TSNode, fn: str) -> list[LocalType]:
+    """A primary constructor's parameters are in scope in every member of the
+    type, so each member's function carries them. A member's own parameter of
+    the same name with another type merges to untyped."""
+    cur = node.parent
+    while cur is not None and cur.type not in _TYPE_OWNERS:
+        cur = cur.parent
+    if cur is None:
+        return []
+    lst = next((c for c in cur.children if c.type == "parameter_list"), None)
+    return _parameters(ctx, fn, lst, _generic_names(ctx, cur))
+
+
+def parameter_locals(ctx: Ctx, node: TSNode, qualified: str) -> list[LocalType]:
+    params = node.child_by_field_name("parameters")
+    return _primary_parameters(ctx, node, qualified) + _parameters(
+        ctx, qualified, params, _generic_names(ctx, node)
+    )
+
+
+def variable_locals(ctx: Ctx, node: TSNode, fn: str) -> list[LocalType]:
+    """A `variable_declaration`: locals, `using`, and a `for` initializer."""
+    generics = _generic_names(ctx, node)
+    ty = node.child_by_field_name("type")
+    out: list[LocalType] = []
+    for d in node.children:
+        if d.type != "variable_declarator":
+            continue
+        tuple_ = next((c for c in d.children if c.type == "tuple_pattern"), None)
+        target = tuple_ or d.child_by_field_name("name")
+        out += _bind_target(ctx, fn, ty, target, generics)
+    return out
+
+
+def typed_name_locals(ctx: Ctx, node: TSNode, fn: str) -> list[LocalType]:
+    """`foreach (T x in xs)`, `catch (T e)`, `is T x`, `case T x:`, `out T x`
+    and a LINQ `from T x in xs`."""
+    target = node.child_by_field_name("left") or node.child_by_field_name("name")
+    return _bind_target(
+        ctx, fn, node.child_by_field_name("type"), target, _generic_names(ctx, node)
+    )
+
+
+def query_locals(ctx: Ctx, node: TSNode, fn: str) -> list[LocalType]:
+    """`let x = ..`, `join T x in ..` and `into g` bind a range variable. These
+    nodes have no `name` field, so the variable is the first identifier that is
+    not the optional type, by position."""
+    ty = node.child_by_field_name("type")
+    names = [c for c in node.named_children if c.type == "identifier" and c != ty]
+    if not names:
+        return []
+    return _binding(ctx, fn, ty, names[0], _generic_names(ctx, node))
+
+
+def lambda_locals(ctx: Ctx, node: TSNode, fn: str) -> list[LocalType]:
+    """`(Order o) => ..` is typed, `o => ..` and `(a, b) => ..` rebind untyped."""
+    params = node.child_by_field_name("parameters")
+    if params is None:
+        return []
+    if params.type == "implicit_parameter":
+        return [LocalType(fn, ctx.text(params), "")]
+    return _parameters(ctx, fn, params, _generic_names(ctx, node))
+
+
 def _type_rule(kind: str) -> Define:
     return Define(
         kind=kind,
@@ -414,6 +576,7 @@ def _member_rule() -> Define:
         exported_by=_public,
         decorators_from=attributes_of,
         after=_initializer,
+        locals=parameter_locals,
     )
 
 
@@ -537,6 +700,18 @@ PACK = Pack(
         "method_declaration": _member_rule(),
         "constructor_declaration": _member_rule(),
         "local_function_statement": _member_rule(),
+        "variable_declaration": Local(hook=variable_locals),
+        "foreach_statement": Local(hook=typed_name_locals),
+        "catch_declaration": Local(hook=typed_name_locals),
+        "declaration_pattern": Local(hook=typed_name_locals),
+        "recursive_pattern": Local(hook=typed_name_locals),
+        "declaration_expression": Local(hook=typed_name_locals),
+        "from_clause": Local(hook=typed_name_locals),
+        "join_clause": Local(hook=query_locals),
+        "let_clause": Local(hook=query_locals),
+        "join_into_clause": Local(hook=query_locals),
+        "lambda_expression": Local(hook=lambda_locals),
+        "anonymous_method_expression": Local(hook=lambda_locals),
         "field_declaration": Field(hook=declared_field),
         "property_declaration": Field(hook=declared_field),
         "invocation_expression": Call(hook=invocation),
