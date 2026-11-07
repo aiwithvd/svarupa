@@ -214,6 +214,20 @@ def _bound_name(pattern: TSNode | None) -> str | None:
     return _text(pattern) if pattern is not None and pattern.type == "identifier" else None
 
 
+_BINDERS = frozenset({"identifier", "shorthand_field_identifier"})
+
+
+def _bound_names(pattern: TSNode | None) -> list[str]:
+    """Every name a pattern may bind. An enum or struct name inside it is
+    included too: that only hides a name, never invents an edge."""
+    if pattern is None:
+        return []
+    names = [_text(pattern)] if pattern.type in _BINDERS else []
+    for child in pattern.children:
+        names += _bound_names(child)
+    return names
+
+
 def _is_known(ctx: Ctx, fn: str, name: str) -> bool:
     return any(x.function == fn and x.name == name and x.type_name for x in ctx.locals)
 
@@ -244,9 +258,8 @@ def parameter_locals(_ctx: Ctx, node: TSNode, qualified: str) -> list[LocalType]
 
 
 def _rebinds(ctx: Ctx, fn: str, pattern: TSNode | None) -> list[LocalType]:
-    """A name rebound without a type hides the earlier typed one."""
-    name = _bound_name(pattern)
-    return [LocalType(fn, name, "")] if name and _is_known(ctx, fn, name) else []
+    """Names a pattern binds that were typed before: the type no longer holds."""
+    return [LocalType(fn, n, "") for n in _bound_names(pattern) if _is_known(ctx, fn, n)]
 
 
 def let_locals(ctx: Ctx, node: TSNode, fn: str) -> list[LocalType]:
@@ -254,6 +267,13 @@ def let_locals(ctx: Ctx, node: TSNode, fn: str) -> list[LocalType]:
     generics: set[str] = set() if enclosing is None else _in_generics(enclosing)
     pattern, ty = node.child_by_field_name("pattern"), node.child_by_field_name("type")
     return _typed(fn, pattern, ty, generics) or _rebinds(ctx, fn, pattern)
+
+
+def pattern_locals(ctx: Ctx, node: TSNode, fn: str) -> list[LocalType]:
+    """`if let`, `while let`, `for` and `match` arms bind through a pattern."""
+    if node.type == "match_pattern":
+        return _rebinds(ctx, fn, node)
+    return _rebinds(ctx, fn, node.child_by_field_name("pattern"))
 
 
 def closure_locals(ctx: Ctx, node: TSNode, fn: str) -> list[LocalType]:
@@ -900,6 +920,9 @@ PACK = Pack(
         "field_declaration": Field(hook=field_types),
         "let_declaration": Local(hook=let_locals),
         "closure_expression": Local(hook=closure_locals),
+        "let_condition": Local(hook=pattern_locals),
+        "match_pattern": Local(hook=pattern_locals),
+        "for_expression": Local(hook=pattern_locals),
         "call_expression": Call(hook=call),
     },
 )

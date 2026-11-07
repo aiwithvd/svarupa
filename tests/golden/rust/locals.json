@@ -1,0 +1,286 @@
+{
+ "path": "src/app.rs",
+ "lang": "rust",
+ "symbols": [
+  {
+   "name": "AppState",
+   "qualified_name": "app.AppState",
+   "kind": "class",
+   "evidence": {
+    "file": "src/app.rs",
+    "start_line": 3,
+    "end_line": 3,
+    "rev": null
+   },
+   "enclosing_class": null,
+   "bases": [],
+   "exported": true,
+   "decorators": []
+  },
+  {
+   "name": "run",
+   "qualified_name": "app.AppState.run",
+   "kind": "method",
+   "evidence": {
+    "file": "src/app.rs",
+    "start_line": 6,
+    "end_line": 13,
+    "rev": null
+   },
+   "enclosing_class": "AppState",
+   "bases": [],
+   "exported": true,
+   "decorators": []
+  },
+  {
+   "name": "handler",
+   "qualified_name": "app.handler",
+   "kind": "function",
+   "evidence": {
+    "file": "src/app.rs",
+    "start_line": 16,
+    "end_line": 19,
+    "rev": null
+   },
+   "enclosing_class": null,
+   "bases": [],
+   "exported": true,
+   "decorators": []
+  }
+ ],
+ "imports": [
+  {
+   "specifier": "crate.db.Repo",
+   "names": [],
+   "alias_of": [],
+   "evidence": {
+    "file": "src/app.rs",
+    "start_line": 1,
+    "end_line": 1,
+    "rev": null
+   },
+   "is_relative": false,
+   "level": 0,
+   "type_only": false,
+   "is_from": true,
+   "is_reexport": false,
+   "is_star": false
+  }
+ ],
+ "calls": [
+  {
+   "name": "save",
+   "shape": "qualified",
+   "receiver": "repo",
+   "evidence": {
+    "file": "src/app.rs",
+    "start_line": 7,
+    "end_line": 7,
+    "rev": null
+   },
+   "enclosing": "app.AppState.run",
+   "enclosing_class": "AppState",
+   "first_str_arg": null,
+   "ident_args": [],
+   "first_arg_ident": null,
+   "recv_call": null
+  },
+  {
+   "name": "fetch",
+   "shape": "member",
+   "receiver": "state.db",
+   "evidence": {
+    "file": "src/app.rs",
+    "start_line": 8,
+    "end_line": 8,
+    "rev": null
+   },
+   "enclosing": "app.AppState.run",
+   "enclosing_class": "AppState",
+   "first_str_arg": null,
+   "ident_args": [],
+   "first_arg_ident": null,
+   "recv_call": null
+  },
+  {
+   "name": "make",
+   "shape": "bare",
+   "receiver": null,
+   "evidence": {
+    "file": "src/app.rs",
+    "start_line": 9,
+    "end_line": 9,
+    "rev": null
+   },
+   "enclosing": "app.AppState.run",
+   "enclosing_class": "AppState",
+   "first_str_arg": null,
+   "ident_args": [],
+   "first_arg_ident": null,
+   "recv_call": null
+  },
+  {
+   "name": "go",
+   "shape": "qualified",
+   "receiver": "x",
+   "evidence": {
+    "file": "src/app.rs",
+    "start_line": 10,
+    "end_line": 10,
+    "rev": null
+   },
+   "enclosing": "app.AppState.run",
+   "enclosing_class": "AppState",
+   "first_str_arg": null,
+   "ident_args": [],
+   "first_arg_ident": null,
+   "recv_call": null
+  },
+  {
+   "name": "find",
+   "shape": "bare",
+   "receiver": null,
+   "evidence": {
+    "file": "src/app.rs",
+    "start_line": 12,
+    "end_line": 12,
+    "rev": null
+   },
+   "enclosing": "app.AppState.run",
+   "enclosing_class": "AppState",
+   "first_str_arg": null,
+   "ident_args": [],
+   "first_arg_ident": null,
+   "recv_call": null
+  },
+  {
+   "name": "q",
+   "shape": "qualified",
+   "receiver": "repo",
+   "evidence": {
+    "file": "src/app.rs",
+    "start_line": 12,
+    "end_line": 12,
+    "rev": null
+   },
+   "enclosing": "app.AppState.run",
+   "enclosing_class": "AppState",
+   "first_str_arg": null,
+   "ident_args": [],
+   "first_arg_ident": null,
+   "recv_call": null
+  },
+  {
+   "name": "save",
+   "shape": "qualified",
+   "receiver": "s",
+   "evidence": {
+    "file": "src/app.rs",
+    "start_line": 17,
+    "end_line": 17,
+    "rev": null
+   },
+   "enclosing": "app.handler",
+   "enclosing_class": null,
+   "first_str_arg": null,
+   "ident_args": [],
+   "first_arg_ident": null,
+   "recv_call": null
+  },
+  {
+   "name": "save",
+   "shape": "qualified",
+   "receiver": "r",
+   "evidence": {
+    "file": "src/app.rs",
+    "start_line": 18,
+    "end_line": 18,
+    "rev": null
+   },
+   "enclosing": "app.handler",
+   "enclosing_class": null,
+   "first_str_arg": null,
+   "ident_args": [],
+   "first_arg_ident": null,
+   "recv_call": null
+  }
+ ],
+ "fields": [
+  {
+   "owner": "AppState",
+   "field": "db",
+   "type_name": "Repo"
+  }
+ ],
+ "locals": [
+  {
+   "function": "app.AppState.run",
+   "name": "repo",
+   "type_name": "Repo"
+  },
+  {
+   "function": "app.AppState.run",
+   "name": "state",
+   "type_name": "AppState"
+  },
+  {
+   "function": "app.AppState.run",
+   "name": "n",
+   "type_name": "Count"
+  },
+  {
+   "function": "app.AppState.run",
+   "name": "x",
+   "type_name": "Other"
+  },
+  {
+   "function": "app.AppState.run",
+   "name": "n",
+   "type_name": ""
+  },
+  {
+   "function": "app.AppState.run",
+   "name": "repo",
+   "type_name": ""
+  },
+  {
+   "function": "app.handler",
+   "name": "r",
+   "type_name": "Repo"
+  }
+ ],
+ "reexports": [],
+ "diagnostics": [],
+ "ctor_assigns": [],
+ "namespace": "",
+ "namespaces": [],
+ "functions": [
+  {
+   "name": "AppState.run",
+   "evidence": {
+    "file": "src/app.rs",
+    "start_line": 6,
+    "end_line": 13,
+    "rev": null
+   },
+   "complexity": 2,
+   "params": 3,
+   "nesting": 1,
+   "lines": 8
+  },
+  {
+   "name": "handler",
+   "evidence": {
+    "file": "src/app.rs",
+    "start_line": 16,
+    "end_line": 19,
+    "rev": null
+   },
+   "complexity": 1,
+   "params": 2,
+   "nesting": 0,
+   "lines": 4
+  }
+ ],
+ "risks": []
+}

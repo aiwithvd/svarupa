@@ -831,3 +831,78 @@ def test_an_imported_external_type_is_external_and_an_unknown_one_is_not(
     card = run(tmp_path).scorecard
     assert card.get("rust", "calls", Resolution.EXTERNAL) == 1
     assert card.get("rust", "calls", Resolution.UNRESOLVED) == 1
+
+
+# ----------------------------------------------------------------------
+# pattern bindings rebind a typed name
+
+
+OTHER_RS = "pub struct Other;\nimpl Other { pub fn q(&self) {} }\n"
+Q_REPO = "pub struct Repo;\nimpl Repo { pub fn q(&self) {} }\n"
+
+
+def rebound_calls(tmp_path: Path, body: str) -> set[tuple[str, str]]:
+    write(tmp_path, "src/repo.rs", Q_REPO)
+    write(tmp_path, "src/other.rs", OTHER_RS)
+    write(tmp_path, "src/app.rs", body)
+    return calls_of(tmp_path)
+
+
+@pytest.mark.parametrize(
+    "binding",
+    [
+        "if let Some(r) = o { r.q(); }",
+        "while let Some(r) = o { r.q(); }",
+        "match o { Some(r) => r.q(), None => {} }",
+        "for r in v { r.q(); }",
+        "let (r, z) = pair(); r.q();",
+        "let Some(r) = o else { return }; r.q();",
+        "let P { r, .. } = p; r.q();",
+        "let go = |(r, z)| r.q(); go(1);",
+    ],
+)
+def test_a_pattern_binding_hides_the_typed_parameter(tmp_path: Path, binding: str) -> None:
+    got = rebound_calls(tmp_path, f"fn f(r: Repo, o: Option<Other>) {{ {binding} }}\n")
+    assert not [c for c in got if c[1].endswith("Repo.q")]
+
+
+def test_a_name_no_pattern_binds_still_resolves(tmp_path: Path) -> None:
+    src = "fn f(r: Repo, o: Option<Other>) { if let Some(x) = o { x.q(); } r.q(); }\n"
+    assert ("src/app.rs#app.f", "src/repo.rs#repo.Repo.q") in rebound_calls(tmp_path, src)
+
+
+def test_wrappers_beyond_the_core_set_unwrap() -> None:
+    got = locals_of("fn f(a: Path<Id>, b: Query<Page>, c: Form<Login>) {}\n")
+    assert {(n, t) for _, n, t in got} == {("a", "Id"), ("b", "Page"), ("c", "Login")}
+
+
+def test_a_call_result_receiver_is_not_a_field_path() -> None:
+    (call,) = [c for c in parse("fn f(a: A) { a.b().c(); }\n").calls if c.name == "c"]
+    assert call.receiver == "a.b()"
+
+
+def test_a_call_result_does_not_resolve_through_a_field(tmp_path: Path) -> None:
+    write(tmp_path, "src/db.rs", "pub struct Db;\nimpl Db { pub fn c(&self) {} }\n")
+    write(tmp_path, "src/a.rs", "pub struct A { pub b: Db }\n")
+    write(tmp_path, "src/app.rs", "fn f(a: A) { a.b().c(); }\n")
+    assert not [c for c in calls_of(tmp_path) if c[1].endswith("Db.c")]
+
+
+def test_a_name_typed_two_ways_resolves_to_nothing(tmp_path: Path) -> None:
+    src = "fn f() { let r: Repo = a(); let r: Other = b(); r.q(); }\n"
+    assert not [c for c in rebound_calls(tmp_path, src) if c[1].endswith(".q")]
+
+
+def test_two_structs_with_one_name_are_ambiguous(tmp_path: Path) -> None:
+    write(tmp_path, "src/a.rs", Q_REPO)
+    write(tmp_path, "src/b.rs", Q_REPO)
+    write(tmp_path, "src/app.rs", "fn f(r: Repo) { r.q(); }\n")
+    assert not [c for c in calls_of(tmp_path) if c[1].endswith("Repo.q")]
+
+
+def test_a_path_typed_parameter_without_a_use_is_unresolved(tmp_path: Path) -> None:
+    write(tmp_path, "Cargo.toml", '[package]\nname = "app"\n[dependencies]\nreqwest = "0"\n')
+    write(tmp_path, "src/app.rs", "fn f(c: &reqwest::Client) { c.get(); }\n")
+    card = run(tmp_path).scorecard
+    assert card.get("rust", "calls", Resolution.UNRESOLVED) == 1
+    assert card.get("rust", "calls", Resolution.EXTERNAL) == 0

@@ -31,7 +31,7 @@ zero-to-production. It is the same in every language.
   hooks it needs. `self`, `this` and receiver parameters are not locals, and
   neither are destructured patterns.
 - **Wrappers.** Each pack names the wrappers to see through, as data:
-  - Rust: `&`, `&mut`, `Arc<T>`, `Rc<T>`, `Box<T>`, `web::Data<T>`, `State<T>`, `Extension<T>`
+  - Rust: `&`, `&mut`, `Arc<T>`, `Rc<T>`, `Box<T>`, `web::Data<T>`, `State<T>`, `Extension<T>`, `Json<T>`, `Path<T>`, `Query<T>`, `Form<T>`
   - Go: `*T`
   - TypeScript: `T | undefined`, `T | null`, `Readonly<T>`
   - Python: `Optional[T]`, `T | None`, `Annotated[T, ...]`

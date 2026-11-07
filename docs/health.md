@@ -176,9 +176,9 @@ are known and are not guessed around.
 
 - A call on a typed parameter or on a `let x: T` local resolves through its
   type, and `param.field.m()` takes one step through the field. A name rebound
-  by an `if let`, `match` or `for` pattern is not tracked as a shadow, so a
-  call on it can resolve to the earlier parameter type. A local with no
-  written type (`let x = Repo::new()`) is not resolved. Parameter and local
+  by any pattern (`if let`, `match`, `for`, a tuple `let`, a closure
+  parameter) or by an untyped `let` hides the earlier type for the whole
+  function, so a call on it may be left unresolved. A local with no written type (`let x = Repo::new()`) is not resolved. Parameter and local
   types are not read yet in the other languages.
 - A call through a module path with several segments, such as
   `web::routes::f()`, is not resolved.

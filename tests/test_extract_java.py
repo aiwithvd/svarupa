@@ -280,3 +280,20 @@ def test_a_class_method_wins_over_its_interface_declaration(tmp_path: Path) -> N
     calls = [e for e in run(tmp_path).edges if e.kind is EdgeKind.CALLS]
     assert [c.resolution for c in calls] == [Resolution.RESOLVED, Resolution.RESOLVED]
     assert all(c.dst.endswith("SqlRepo.save") for c in calls)
+
+
+def test_a_field_typed_by_a_plain_import_of_a_dependency_is_external(tmp_path: Path) -> None:
+    write(
+        tmp_path,
+        "pom.xml",
+        "<project><dependencies><dependency><groupId>org.acme</groupId>"
+        "<artifactId>http</artifactId></dependency></dependencies></project>",
+    )
+    write(
+        tmp_path,
+        "src/main/java/app/A.java",
+        "package app;\nimport org.acme.Client;\n"
+        "class A { Client c; void f() { this.c.get(); } }\n",
+    )
+    card = run(tmp_path).scorecard
+    assert card.get("java", "calls", Resolution.EXTERNAL) == 1
