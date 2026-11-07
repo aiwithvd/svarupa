@@ -237,6 +237,10 @@ def _d_locals() -> dict[tuple[str, str, str], str]:
     return {}
 
 
+# Sentinel: `_qualified_type_call` has no say about this type name.
+_NOT_QUALIFIED: list[tuple[str, str]] = []
+
+
 def _is_named(qualified: str, name: str) -> bool:
     """Whether a qualified class name ends in `name`; a type at a crate root
     (Rust `src/lib.rs`) has no module prefix at all."""
@@ -1297,6 +1301,10 @@ class Resolver:
         self, f: FileFacts, home: str, type_name: str, name: str
     ) -> list[tuple[str, str]] | None:
         """`name` called on a value declared as `type_name`, named in `home`."""
+        if "." in type_name:
+            qualified = self._qualified_type_call(f, home, type_name, name)
+            if qualified is not _NOT_QUALIFIED:
+                return qualified
         owner, ambiguous = self._resolve_class_name_x(type_name, home)
         if owner is None:
             # `_resolve_class_name` returns None both for "not in the repo"
@@ -1307,6 +1315,44 @@ class Resolver:
                 return []
             return None if self._type_is_external(f, type_name) else []
         return self._nearest_methods(self._mro_ids(owner), name)[:MAX_CANDIDATE_ARITY]
+
+    def _qualified_type_call(
+        self, f: FileFacts, home: str, type_name: str, name: str
+    ) -> list[tuple[str, str]] | None:
+        """`name` called on a value of type `pkg.Name` (Go), where `pkg` is a
+        package the file imports: the type is looked up in that package only,
+        so a repo type with the same bare name is never mistaken for it. A
+        package outside the repository is EXTERNAL. Anything else is left to
+        the caller (`_NOT_QUALIFIED`)."""
+        module = self.modules.get(f.lang)
+        facts = self.idx.by_file.get(home)
+        if module is None or not module.package_scoped_bare or facts is None:
+            return _NOT_QUALIFIED
+        qualifier, _, bare = type_name.rpartition(".")
+        spec = self._imported_spec(facts, qualifier)
+        if spec is None:
+            return []  # an unimported or doubly imported qualifier names nothing
+        targets = frozenset(self._resolve_targets(spec, home, 0, f.lang))
+        if not targets:
+            return None if self._is_external(self._package_root(spec, f.lang), f.lang) else []
+        return self._method_in_package(targets, bare, name)
+
+    def _method_in_package(
+        self, targets: frozenset[str], cls: str, name: str
+    ) -> list[tuple[str, str]]:
+        """`name` on the one class `cls` defined in these package files."""
+        owners = [
+            cid for cid in self.idx.class_by_id if cid[0] in targets and _is_named(cid[1], cls)
+        ]
+        if len(owners) != 1:
+            return []
+        return self._nearest_methods(self._mro_ids(owners[0]), name)[:MAX_CANDIDATE_ARITY]
+
+    @staticmethod
+    def _imported_spec(facts: FileFacts, qualifier: str) -> str | None:
+        """The one import path a package name stands for in this file."""
+        specs = {imp.alias_of[qualifier] for imp in facts.imports if qualifier in imp.alias_of}
+        return next(iter(specs)) if len(specs) == 1 else None
 
     def _lookup_in_module(
         self, f: FileFacts, spec: str, level: int, name: str

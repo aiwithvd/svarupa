@@ -116,7 +116,13 @@
   }
  ],
  "fields": [],
- "locals": [],
+ "locals": [
+  {
+   "function": "internal.orders.service.Service.Place",
+   "name": "id",
+   "type_name": "ID"
+  }
+ ],
  "reexports": [],
  "diagnostics": [
   {

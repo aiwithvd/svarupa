@@ -131,3 +131,201 @@ def test_a_bare_call_resolves_only_inside_its_own_package(tmp_path: Path) -> Non
     write(tmp_path, "users/models.go", "package users\n\nfunc SaveOne() {}\n")
     calls = [(e.dst, e.resolution) for e in run(tmp_path).edges if e.kind is EdgeKind.CALLS]
     assert calls == [("articles/models.go#articles.models.SaveOne", Resolution.RESOLVED)]
+
+
+# --------------------------------------------------------------------------
+# Parameter and local types
+# --------------------------------------------------------------------------
+
+REPO_GO = "package orders\n\ntype Repo struct{}\n\nfunc (r *Repo) Save() error { return nil }\n"
+OTHER_GO = "package orders\n\ntype Other struct{}\n\nfunc (o *Other) Save() error { return nil }\nfunc (o *Other) X() {}\n"
+
+
+def locals_of(src: str) -> set[tuple[str, str, str]]:
+    f = extractor("go").parse("svc/a.go", ("package svc\n\n" + src).encode())
+    return {(x.function, x.name, x.type_name) for x in f.locals}
+
+
+def typed_calls(tmp_path: Path, body: str) -> set[str]:
+    write(tmp_path, "go.mod", GO_MOD)
+    write(tmp_path, "internal/orders/repo.go", REPO_GO)
+    write(tmp_path, "internal/orders/other.go", OTHER_GO)
+    write(tmp_path, "internal/orders/a.go", "package orders\n\n" + body)
+    res = run(tmp_path)
+    return {e.dst for e in res.edges if e.kind is EdgeKind.CALLS}
+
+
+def saves_repo(calls: set[str]) -> bool:
+    return any(d.endswith("Repo.Save") for d in calls)
+
+
+def test_a_typed_parameter_resolves(tmp_path: Path) -> None:
+    assert saves_repo(typed_calls(tmp_path, "func F(r *Repo) { r.Save() }\n"))
+
+
+def test_a_var_declaration_resolves(tmp_path: Path) -> None:
+    assert saves_repo(typed_calls(tmp_path, "func F() { var r Repo\n r.Save() }\n"))
+
+
+def test_a_short_declaration_is_not_inferred(tmp_path: Path) -> None:
+    body = "func F() { r := NewRepo()\n r.Save() }\nfunc NewRepo() *Repo { return nil }\n"
+    assert locals_of("func F() { r := NewRepo() }") == {("svc.a.F", "r", "")}
+    assert not saves_repo(typed_calls(tmp_path, body))
+
+
+def test_shared_types_pointers_variadics_and_results() -> None:
+    got = locals_of(
+        "func F(a, b *Repo, c ...Repo, d **Repo, e []Repo) (res Repo, err error) {}"
+    )
+    assert got == {
+        ("svc.a.F", "a", "Repo"),
+        ("svc.a.F", "b", "Repo"),
+        ("svc.a.F", "c", ""),
+        ("svc.a.F", "d", ""),
+        ("svc.a.F", "e", ""),
+        ("svc.a.F", "res", "Repo"),
+        ("svc.a.F", "err", ""),
+    }
+
+
+def test_generic_parameters_are_skipped() -> None:
+    got = locals_of(
+        "func F[T any, U Repo](a T, b U, c Repo) {}\nfunc (s *Stack[V]) M(v V, c *Repo) {}\n"
+    )
+    assert got == {
+        ("svc.a.F", "a", ""),
+        ("svc.a.F", "b", ""),
+        ("svc.a.F", "c", "Repo"),
+        ("svc.a.Stack.M", "v", ""),
+        ("svc.a.Stack.M", "c", "Repo"),
+    }
+
+
+def test_the_receiver_is_not_a_local() -> None:
+    assert locals_of("func (s *Svc) M(r Repo) {}") == {("svc.a.Svc.M", "r", "Repo")}
+
+
+def test_every_binding_form_is_recorded() -> None:
+    got = locals_of(
+        "func F(ch chan int) {\n"
+        "  var a, b Repo\n  var c = 1\n  const k Color = 1\n"
+        "  d, e := f()\n"
+        "  for i, v := range xs {}\n"
+        "  for j = range xs {}\n"
+        "  if x, ok := g(); ok {}\n"
+        "  select { case m, ok2 := <-ch: }\n"
+        "  h := func(p Repo) { q := 1 }\n"
+        "}\n"
+    )
+    assert got == {
+        ("svc.a.F", "ch", ""),
+        ("svc.a.F", "a", "Repo"),
+        ("svc.a.F", "b", "Repo"),
+        ("svc.a.F", "c", ""),
+        ("svc.a.F", "k", "Color"),
+        ("svc.a.F", "d", ""),
+        ("svc.a.F", "e", ""),
+        ("svc.a.F", "i", ""),
+        ("svc.a.F", "v", ""),
+        ("svc.a.F", "x", ""),
+        ("svc.a.F", "ok", ""),
+        ("svc.a.F", "m", ""),
+        ("svc.a.F", "ok2", ""),
+        ("svc.a.F", "h", ""),
+        ("svc.a.F", "p", "Repo"),
+        ("svc.a.F", "q", ""),
+    }
+
+
+def test_a_type_assertion_binds_the_asserted_type() -> None:
+    got = locals_of(
+        "func F(x any) { y := x.(*Repo)\n z, ok := x.(Other)\n w := x.(interface{ M() }) }"
+    )
+    assert got == {
+        ("svc.a.F", "x", ""),
+        ("svc.a.F", "y", "Repo"),
+        ("svc.a.F", "z", "Other"),
+        ("svc.a.F", "ok", ""),
+        ("svc.a.F", "w", ""),
+    }
+
+
+def test_a_type_assertion_resolves(tmp_path: Path) -> None:
+    assert saves_repo(typed_calls(tmp_path, "func F(x any) { y := x.(*Repo)\n y.Save() }\n"))
+
+
+def test_a_type_switch_with_two_types_stays_untyped(tmp_path: Path) -> None:
+    src = "func F(x any) { switch v := x.(type) { case *Repo, *Other: v.Save()\n default: } }\n"
+    assert ("svc.a.F", "v", "") in locals_of(src)
+    assert not typed_calls(tmp_path, src) & {"internal.orders.Repo.Save"}
+
+
+def test_a_type_switch_clause_with_one_type_is_typed() -> None:
+    got = locals_of("func F(x any) { switch v := x.(type) { case *Repo: v.Save() } }")
+    assert ("svc.a.F", "v", "Repo") in got
+
+
+def test_clauses_with_different_types_merge_to_untyped(tmp_path: Path) -> None:
+    src = (
+        "func F(x any) {\n switch v := x.(type) {\n case *Repo: v.Save()\n"
+        " case *Other: v.Save()\n }\n}\n"
+    )
+    assert not any(d.endswith(".Save") for d in typed_calls(tmp_path, src))
+
+
+def test_a_shadowing_local_hides_a_typed_parameter(tmp_path: Path) -> None:
+    src = "func F(r *Repo) { r := other()\n r.Save() }\nfunc other() int { return 0 }\n"
+    assert not saves_repo(typed_calls(tmp_path, src))
+
+
+def test_a_closure_sees_the_outer_parameter(tmp_path: Path) -> None:
+    src = "func F(r *Repo) { go func() { r.Save() }() }\n"
+    assert saves_repo(typed_calls(tmp_path, src))
+
+
+def test_a_closure_parameter_resolves(tmp_path: Path) -> None:
+    assert saves_repo(
+        typed_calls(tmp_path, "func F() { f := func(r *Repo) { r.Save() }\n f(nil) }\n")
+    )
+
+
+def test_a_closure_local_hides_the_outer_one(tmp_path: Path) -> None:
+    src = "func F(r *Repo) { go func() { r := other()\n r.Save() }() }\nfunc other() int { return 0 }\n"
+    assert not saves_repo(typed_calls(tmp_path, src))
+
+
+def test_an_interface_parameter_never_picks_an_implementation(tmp_path: Path) -> None:
+    # The pack does not record interface methods as symbols, so there is no
+    # method to land on; the call must stay unresolved, not guess `Repo.Save`.
+    got = typed_calls(
+        tmp_path,
+        "type Saver interface { Save() error }\nfunc F(s Saver) { s.Save() }\n",
+    )
+    assert not any(d.endswith(".Save") for d in got)
+
+
+def test_a_parameter_from_another_package_resolves(tmp_path: Path) -> None:
+    write(tmp_path, "go.mod", GO_MOD)
+    write(tmp_path, "internal/orders/repo.go", REPO_GO)
+    write(
+        tmp_path,
+        "cmd/api/main.go",
+        'package main\n\nimport "github.com/acme/shop/internal/orders"\n\n'
+        "func F(r *orders.Repo) { r.Save() }\n",
+    )
+    res = run(tmp_path)
+    assert any(e.kind is EdgeKind.CALLS and e.dst.endswith("Repo.Save") for e in res.edges)
+
+
+def test_a_qualified_type_never_matches_a_repo_type_of_the_same_name(tmp_path: Path) -> None:
+    write(tmp_path, "go.mod", GO_MOD)
+    write(tmp_path, "internal/orders/repo.go", REPO_GO)
+    write(
+        tmp_path,
+        "cmd/api/main.go",
+        'package main\n\nimport "github.com/gin-gonic/gin"\n\n'
+        "type Repo struct{}\nfunc (r *Repo) Save() {}\n"
+        "func F(r *gin.Repo) { r.Save() }\n",
+    )
+    res = run(tmp_path)
+    assert not any(e.kind is EdgeKind.CALLS and e.dst.endswith("Save") for e in res.edges)

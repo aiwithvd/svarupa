@@ -13,13 +13,14 @@ import re
 
 from tree_sitter import Node as TSNode
 
-from svarupa.extract.base import CallShape, CallSite, ImportRef, SymbolRef
+from svarupa.extract.base import CallShape, CallSite, ImportRef, LocalType, SymbolRef
 from svarupa.extract.packs.model import (
     Call,
     Custom,
     Define,
     Grammar,
     Import,
+    Local,
     Maturity,
     MetricsSpec,
     Pack,
@@ -149,6 +150,7 @@ def method_declaration(ctx: Ctx, node: TSNode, frame: Frame, depth: int) -> None
             exported=_exported(name),
         )
     )
+    ctx.locals.extend(signature_locals(ctx, node, qualified))
     body = node.child_by_field_name("body")
     if body is None:
         return
@@ -197,6 +199,196 @@ def call(ctx: Ctx, node: TSNode, frame: Frame) -> CallSite | None:
             ctx.text(field), CallShape.MEMBER, ctx.text(operand), ev, fn, cls, first
         )
     return None
+
+
+# ----------------------------------------------------------------------
+# parameter and local types
+#
+# A closure has no name of its own: its calls carry the enclosing function's
+# `enclosing`, so its parameters and locals are recorded under that function.
+# That makes an outer local visible in a closure, and a closure's local visible
+# in the outer function. The resolver merges a name bound two ways to untyped,
+# so the overlap can only lose an edge, never invent one.
+
+_TYPE_NAMES = BUILTINS | {"nil"}
+
+
+def _generic_names(ctx: Ctx, node: TSNode) -> set[str]:
+    """The type parameters in scope: `[T any]` on a function, or the `T` of a
+    receiver such as `*Stack[T]`, on this node or any function around it."""
+    names: set[str] = set()
+    cur: TSNode | None = node
+    while cur is not None:
+        for decl in _named(cur.child_by_field_name("type_parameters")):
+            names.update(ctx.text(n) for n in decl.children_by_field_name("name"))
+        recv = cur.child_by_field_name("receiver")
+        if cur.type == "method_declaration" and recv is not None:
+            stack = list(recv.children)
+            while stack:
+                n = stack.pop()
+                if n.type == "type_arguments":
+                    names.update(ctx.text(i) for i in _descendants(n, "type_identifier"))
+                else:
+                    stack.extend(n.children)
+        cur = cur.parent
+    return names
+
+
+def _named(node: TSNode | None) -> list[TSNode]:
+    return list(node.named_children) if node is not None else []
+
+
+def _descendants(node: TSNode, kind: str) -> list[TSNode]:
+    out: list[TSNode] = []
+    stack = [node]
+    while stack:
+        n = stack.pop()
+        if n.type == kind:
+            out.append(n)
+        stack.extend(n.children)
+    return out
+
+
+def _unwrapped(ty: TSNode | None) -> TSNode | None:
+    """Strip parentheses, one pointer and a generic instantiation. A pointer to
+    a pointer has no methods, so it gives None."""
+    pointer = False
+    while ty is not None and ty.type in ("parenthesized_type", "pointer_type", "generic_type"):
+        if ty.type == "generic_type":
+            ty = ty.child_by_field_name("type")
+            continue
+        if ty.type == "pointer_type":
+            if pointer:
+                return None
+            pointer = True
+        ty = next(iter(ty.named_children), None)
+    return ty
+
+
+def _type_of(ctx: Ctx, ty: TSNode | None, generics: set[str]) -> str:
+    """The named type a declared type denotes; "" for a builtin, a generic
+    parameter, a slice, array, map, channel, func, struct or interface literal,
+    or a pointer to a pointer. `*Repo` and `Repo[int]` are `Repo`, `pkg.Repo` is
+    kept qualified so the resolver can look it up in that package."""
+    ty = _unwrapped(ty)
+    if ty is None:
+        return ""
+    if ty.type == "qualified_type":
+        return _qualified(ctx, ty)
+    name = ctx.text(ty)
+    if ty.type != "type_identifier" or name in generics or name in _TYPE_NAMES:
+        return ""
+    return name
+
+
+def _qualified(ctx: Ctx, ty: TSNode) -> str:
+    pkg = ty.child_by_field_name("package")
+    name = ty.child_by_field_name("name")
+    return f"{ctx.text(pkg)}.{ctx.text(name)}" if pkg is not None and name is not None else ""
+
+
+def _untyped(ctx: Ctx, fn: str, names: list[TSNode]) -> list[LocalType]:
+    return [LocalType(fn, t, "") for n in names if (t := ctx.text(n)) != "_"]
+
+
+def _identifiers(node: TSNode | None) -> list[TSNode]:
+    """The plain names on the left of `a, b := ...`."""
+    if node is None:
+        return []
+    return [n for n in node.named_children if n.type == "identifier"]
+
+
+def _parameter_list(
+    ctx: Ctx, fn: str, params: TSNode | None, generics: set[str]
+) -> list[LocalType]:
+    """`a, b *Repo` binds both names to `Repo`; `xs ...Repo` is a slice, so untyped."""
+    out: list[LocalType] = []
+    for p in _named(params):
+        names = [ctx.text(n) for n in p.children_by_field_name("name")]
+        if p.type == "parameter_declaration":
+            ty = _type_of(ctx, p.child_by_field_name("type"), generics)
+        elif p.type == "variadic_parameter_declaration":
+            ty = ""
+        else:
+            continue
+        out += [LocalType(fn, n, ty) for n in names if n != "_"]
+    return out
+
+
+def signature_locals(ctx: Ctx, node: TSNode, fn: str) -> list[LocalType]:
+    """Parameters and named results of a function, method or literal. The
+    receiver is not one: it is the method's own receiver, handled as SELF."""
+    generics = _generic_names(ctx, node)
+    return _parameter_list(
+        ctx, fn, node.child_by_field_name("parameters"), generics
+    ) + _parameter_list(ctx, fn, node.child_by_field_name("result"), generics)
+
+
+def spec_locals(ctx: Ctx, node: TSNode, fn: str) -> list[LocalType]:
+    """`var x T` and `const c T` are typed; `var x = ..` and `const c = ..` are not."""
+    ty = _type_of(ctx, node.child_by_field_name("type"), _generic_names(ctx, node))
+    return [
+        LocalType(fn, t, ty)
+        for n in node.children_by_field_name("name")
+        if (t := ctx.text(n)) != "_"
+    ]
+
+
+def short_var_locals(ctx: Ctx, node: TSNode, fn: str) -> list[LocalType]:
+    """`x := ..` binds untyped, except `y := x.(Repo)` and `y, ok := x.(Repo)`:
+    the assertion names the type outright, and it is the static type of `y`
+    whether or not the assertion held, so `y` is a `Repo`."""
+    names = _identifiers(node.child_by_field_name("left"))
+    out = _untyped(ctx, fn, names)
+    right = _named(node.child_by_field_name("right"))
+    if len(right) == 1 and right[0].type == "type_assertion_expression" and names:
+        first = ctx.text(names[0])
+        ty = _type_of(ctx, right[0].child_by_field_name("type"), _generic_names(ctx, node))
+        if first != "_" and ty:
+            out[0] = LocalType(fn, first, ty)
+    return out
+
+
+def _is_define(node: TSNode) -> bool:
+    return any(c.type == ":=" for c in node.children)
+
+
+def range_locals(ctx: Ctx, node: TSNode, fn: str) -> list[LocalType]:
+    """`for k, v := range xs` binds; `for k = range xs` only assigns."""
+    if not _is_define(node):
+        return []
+    return _untyped(ctx, fn, _identifiers(node.child_by_field_name("left")))
+
+
+def type_switch_locals(ctx: Ctx, node: TSNode, fn: str) -> list[LocalType]:
+    """`switch v := x.(type)` gives `v` the clause's type inside each clause.
+    The bindings share one function-wide key, so clauses with different types
+    merge to untyped; that is the safe reading of a name with no single type.
+    A clause with one plain type records it, a clause with several types, `nil`
+    or a default clause records untyped (there `v` is the switched value)."""
+    alias = _identifiers(node.child_by_field_name("alias"))
+    if not alias:
+        return []
+    name = ctx.text(alias[0])
+    if name == "_":
+        return []
+    generics = _generic_names(ctx, node)
+    out: list[LocalType] = []
+    for clause in node.named_children:
+        if clause.type == "type_case":
+            types = [t for t in clause.children_by_field_name("type") if t.is_named]
+            ty = _type_of(ctx, types[0], generics) if len(types) == 1 else ""
+            out.append(LocalType(fn, name, ty))
+        elif clause.type == "default_case":
+            out.append(LocalType(fn, name, ""))
+    return out
+
+
+def receive_locals(ctx: Ctx, node: TSNode, fn: str) -> list[LocalType]:
+    """`case v, ok := <-ch` in a select."""
+    if not _is_define(node):
+        return []
+    return _untyped(ctx, fn, _identifiers(node.child_by_field_name("left")))
 
 
 def _count_params(fn: TSNode) -> int:
@@ -307,7 +499,15 @@ PACK = Pack(
             records_class=False,
             keeps_decorators=False,
             exported_by=lambda _ctx, _node, name: _exported(name),
+            locals=signature_locals,
         ),
+        "func_literal": Local(hook=signature_locals),
+        "var_spec": Local(hook=spec_locals),
+        "const_spec": Local(hook=spec_locals),
+        "short_var_declaration": Local(hook=short_var_locals),
+        "range_clause": Local(hook=range_locals),
+        "type_switch_statement": Local(hook=type_switch_locals),
+        "receive_statement": Local(hook=receive_locals),
         "method_declaration": Custom(hook=method_declaration),
         "call_expression": Call(hook=call),
     },
