@@ -305,9 +305,21 @@ def typed_name_locals(ctx: Ctx, node: TSNode, fn: str) -> list[LocalType]:
     if ty is None:
         ty = next((c for c in node.children if c.type in _CLASS_TYPES), None)
     name = node.child_by_field_name("name")
-    if name is None:
-        name = next((c for c in node.children if c.type == "identifier"), None)
     return _binding(ctx, fn, _sized(node, ty), name, _generic_names(ctx, node))
+
+
+def pattern_locals(ctx: Ctx, node: TSNode, fn: str) -> list[LocalType]:
+    """`case T x` and a record component `T x`: a type child, then the name."""
+    ty = next((c for c in node.children if c.type in _CLASS_TYPES), None)
+    name = next((c for c in node.children if c.type == "identifier"), None)
+    return _binding(ctx, fn, ty, name, _generic_names(ctx, node))
+
+
+def instanceof_locals(ctx: Ctx, node: TSNode, fn: str) -> list[LocalType]:
+    """Only `x instanceof T r` binds; a plain `x instanceof T` binds nothing."""
+    if node.child_by_field_name("name") is None:
+        return []
+    return typed_name_locals(ctx, node, fn)
 
 
 def catch_locals(ctx: Ctx, node: TSNode, fn: str) -> list[LocalType]:
@@ -499,9 +511,9 @@ PACK = Pack(
         "local_variable_declaration": Local(hook=local_variable_locals),
         "enhanced_for_statement": Local(hook=typed_name_locals),
         "resource": Local(hook=typed_name_locals),
-        "type_pattern": Local(hook=typed_name_locals),
-        "record_pattern_component": Local(hook=typed_name_locals),
-        "instanceof_expression": Local(hook=typed_name_locals),
+        "type_pattern": Local(hook=pattern_locals),
+        "instanceof_expression": Local(hook=instanceof_locals),
+        "record_pattern_component": Local(hook=pattern_locals),
         "catch_formal_parameter": Local(hook=catch_locals),
         "lambda_expression": Local(hook=lambda_locals),
         "field_declaration": Field(hook=declared_field),

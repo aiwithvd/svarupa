@@ -429,3 +429,15 @@ def test_a_local_field_chain_takes_one_step(tmp_path: Path) -> None:
     )
     got = {(e.src, e.dst) for e in run(tmp_path).edges if e.kind is EdgeKind.CALLS}
     assert saves(got)
+
+
+def test_a_plain_instanceof_does_not_type_its_operand_field(tmp_path: Path) -> None:
+    src = "class A { Repo repo; void f() { if (repo instanceof Other) {} repo.save(); } }\n"
+    assert locals_of(src) == set()
+    assert saves(typed_calls(tmp_path, src))
+
+
+def test_a_plain_instanceof_does_not_retype_its_operand_param(tmp_path: Path) -> None:
+    src = "class A { void f(Repo r) { if (r instanceof Other) {} r.save(); } }\n"
+    assert {(n, t) for _, n, t in locals_of(src)} == {("r", "Repo")}
+    assert saves(typed_calls(tmp_path, src))
