@@ -18,6 +18,7 @@ from collections.abc import Callable
 from dataclasses import replace
 
 from tree_sitter import Node as TSNode
+from tree_sitter import Point
 
 from svarupa.extract.base import (
     CallShape,
@@ -257,31 +258,67 @@ def parameter_locals(_ctx: Ctx, node: TSNode, qualified: str) -> list[LocalType]
     return out
 
 
-def _rebinds(ctx: Ctx, fn: str, pattern: TSNode | None) -> list[LocalType]:
+def _rebinds(ctx: Ctx, fn: str, pattern: TSNode | None) -> list[str]:
     """Names a pattern binds that were typed before: the type no longer holds."""
-    return [LocalType(fn, n, "") for n in _bound_names(pattern) if _is_known(ctx, fn, n)]
+    return [n for n in _bound_names(pattern) if _is_known(ctx, fn, n)]
+
+
+def _untyped(
+    ctx: Ctx, fn: str, pattern: TSNode | None, start: Point, end: Point
+) -> list[LocalType]:
+    found = [LocalType(fn, n, "") for n in _rebinds(ctx, fn, pattern)]
+    return ctx.rescoped(found, start, end)
 
 
 def let_locals(ctx: Ctx, node: TSNode, fn: str) -> list[LocalType]:
+    """A `let` is in scope from its end (`let r: Repo = r.into();` reads the
+    outer `r`) to the end of its block."""
     enclosing = _enclosing_fn(node)
     generics: set[str] = set() if enclosing is None else _in_generics(enclosing)
     pattern, ty = node.child_by_field_name("pattern"), node.child_by_field_name("type")
-    return _typed(fn, pattern, ty, generics) or _rebinds(ctx, fn, pattern)
+    start, end = node.end_point, (node.parent or node).end_point
+    typed = _typed(fn, pattern, ty, generics)
+    if typed:
+        return ctx.rescoped(typed, start, end, pattern)
+    return _untyped(ctx, fn, pattern, start, end)
+
+
+def _guarded(node: TSNode) -> TSNode:
+    """The block an `if let` or `while let` binds in."""
+    cur: TSNode | None = node
+    while cur is not None and cur.type not in ("if_expression", "while_expression"):
+        cur = cur.parent
+    if cur is None:
+        return node
+    return cur.child_by_field_name("consequence") or cur.child_by_field_name("body") or cur
 
 
 def pattern_locals(ctx: Ctx, node: TSNode, fn: str) -> list[LocalType]:
-    """`if let`, `while let`, `for` and `match` arms bind through a pattern."""
+    """`if let` and `while let` bind in their block, a `for` in its body and a
+    `match` pattern in its arm."""
     if node.type == "match_pattern":
-        return _rebinds(ctx, fn, node)
-    return _rebinds(ctx, fn, node.child_by_field_name("pattern"))
+        arm = node.parent or node
+        return _untyped(ctx, fn, node, arm.start_point, arm.end_point)
+    pattern = node.child_by_field_name("pattern")
+    if node.type == "for_expression":
+        body = node.child_by_field_name("body") or node
+        return _untyped(ctx, fn, pattern, body.start_point, body.end_point)
+    return _untyped(ctx, fn, pattern, node.end_point, _guarded(node).end_point)
 
 
 def closure_locals(ctx: Ctx, node: TSNode, fn: str) -> list[LocalType]:
+    """A closure's parameters bind in the closure: `|r: &Repo|` is typed."""
     params = node.child_by_field_name("parameters")
+    enclosing = _enclosing_fn(node)
+    generics: set[str] = set() if enclosing is None else _in_generics(enclosing)
     out: list[LocalType] = []
     for p in params.named_children if params is not None else ():
         pattern = p.child_by_field_name("pattern") if p.type == "parameter" else p
-        out += _rebinds(ctx, fn, pattern)
+        typed = _typed(fn, pattern, p.child_by_field_name("type"), generics)
+        if typed:
+            out += ctx.over(typed, node)
+        else:
+            out += _untyped(ctx, fn, pattern, node.start_point, node.end_point)
     return out
 
 

@@ -60,12 +60,16 @@
   {
    "function": "src.Button.Button",
    "name": "onClick",
-   "type_name": ""
+   "type_name": "",
+   "start_line": 3,
+   "end_line": 5
   },
   {
    "function": "src.Button.Button",
    "name": "children",
-   "type_name": ""
+   "type_name": "",
+   "start_line": 3,
+   "end_line": 5
   }
  ],
  "reexports": [],

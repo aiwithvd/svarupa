@@ -104,7 +104,9 @@ class Define:
     after: AfterHook | None = None  # runs after the symbol, before the body
     exported_by: ExportedHook | None = None  # Java `public`, Go capital letter
     decorators_from: DecoratorsHook | None = None  # Java annotations in `modifiers`
-    locals: LocalsHook | None = None  # typed parameters, read as the function's locals
+    # Typed parameters, read as the function's locals. A binding with no scope
+    # lines gets the definition's own lines.
+    locals: LocalsHook | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -137,10 +139,13 @@ class Field:
 
 @dataclass(frozen=True, slots=True)
 class Local:
-    """A typed local (`let x: T`). Only inside a function; children are walked
-    too. The hook gets the function's qualified name, as a call's `enclosing`."""
+    """A typed local (`let x: T`). Only inside a function, unless `top_level`,
+    when the function is "" as for a call outside any function; children are
+    walked too. The hook gets the function's qualified name, as a call's
+    `enclosing`, and sets each binding's scope (`Ctx.scoped`)."""
 
     hook: LocalsHook
+    top_level: bool = False
 
 
 @dataclass(frozen=True, slots=True)

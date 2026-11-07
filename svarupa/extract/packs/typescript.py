@@ -602,8 +602,9 @@ def _binding(
 
 
 def _parameters(ctx: Ctx, node: TSNode, fn: str) -> list[LocalType]:
-    """The parameters of a function-like node. A parameter property
-    (`private repo: Repo`) is a field and also a parameter of the constructor."""
+    """The parameters of a function-like node, with no scope yet. A parameter
+    property (`private repo: Repo`) is a field and also a parameter of the
+    constructor."""
     generics = _generic_names(ctx, node)
     single = node.child_by_field_name("parameter")  # `x => x`
     if single is not None:
@@ -626,41 +627,62 @@ def _parameters(ctx: Ctx, node: TSNode, fn: str) -> list[LocalType]:
     return out
 
 
+def _function_of(node: TSNode) -> TSNode | None:
+    """The function (or the file) a `var` belongs to."""
+    cur = node.parent
+    while cur is not None and cur.type not in _FUNCTIONS and cur.type != "program":
+        cur = cur.parent
+    return cur
+
+
+def _block_of(node: TSNode) -> TSNode | None:
+    """The block a `let`, `const`, class or function declaration is bound in:
+    the whole block, as a use before the declaration is an error."""
+    block = node.parent
+    if block is not None and block.type == "export_statement":
+        block = block.parent
+    if block is not None and block.type in ("switch_case", "switch_default"):
+        block = block.parent
+    return block
+
+
 def declarator_locals(ctx: Ctx, node: TSNode, fn: str) -> list[LocalType]:
-    """`let r: Repo = ..` is typed; `const r = ..` and `const { a } = ..` are not.
-    A CommonJS `require` is an import, not a binding: it must stay resolvable."""
+    """`let r: Repo = ..` is typed; `const r = ..` and `const { a } = ..` are
+    not. `let` and `const` are bound in their block, `var` in its function."""
     value = node.child_by_field_name("value")
     callee = value.child_by_field_name("function") if value is not None else None
-    if (
-        callee is not None
-        and value is not None
-        and value.type == "call_expression"
-        and ctx.text(callee) == "require"
-    ):
-        return []
-    return _binding(
-        ctx,
-        fn,
-        node.child_by_field_name("name"),
-        node.child_by_field_name("type"),
-        _generic_names(ctx, node),
-    )
+    is_call = value is not None and value.type == "call_expression"
+    if is_call and callee is not None and ctx.text(callee) == "require":
+        return []  # a CommonJS import, not a binding
+    decl = node.parent
+    is_var = decl is not None and decl.type == "variable_declaration"
+    scope = _function_of(node) if is_var else _block_of(decl) if decl is not None else None
+    name = node.child_by_field_name("name")
+    found = _binding(ctx, fn, name, node.child_by_field_name("type"), _generic_names(ctx, node))
+    scope = scope or node
+    return ctx.rescoped(found, scope.start_point, scope.end_point, name)
 
 
 def for_in_locals(ctx: Ctx, node: TSNode, fn: str) -> list[LocalType]:
-    """`for (const x of xs)` and `for (const k in o)`."""
-    return _names(ctx, fn, node.child_by_field_name("left"))
+    """`for (const x of xs)` and `for (const k in o)` bind in the loop body; a
+    `var` binds in its function."""
+    left = node.child_by_field_name("left")
+    kind = node.child_by_field_name("kind")
+    found = _names(ctx, fn, left)
+    if kind is not None and ctx.text(kind) == "var":
+        return ctx.over(found, _function_of(node) or node)
+    body = node.child_by_field_name("body") or node
+    return ctx.rescoped(found, body.start_point, body.end_point, left)
 
 
 def catch_locals(ctx: Ctx, node: TSNode, fn: str) -> list[LocalType]:
-    return _names(ctx, fn, node.child_by_field_name("parameter"))
+    return ctx.over(_names(ctx, fn, node.child_by_field_name("parameter")), node)
 
 
 def anonymous_locals(ctx: Ctx, node: TSNode, fn: str) -> list[LocalType]:
-    """A callback's parameters bind in the function around it. The resolver
-    merges a name bound two ways to untyped, so an inner untyped `i` hides an
-    outer typed one, at the cost of also hiding it outside the callback."""
-    return _parameters(ctx, node, fn)
+    """A callback's parameters are recorded under the function around it, in
+    scope in the callback only."""
+    return ctx.over(_parameters(ctx, node, fn), node)
 
 
 _SCOPE_HOOKS = {
@@ -681,31 +703,39 @@ def _is_named(node: TSNode) -> bool:
     return node.type in _FUNCTIONS - set(_ANONYMOUS)
 
 
+def _scan(ctx: Ctx, outer: TSNode, fn: str) -> list[LocalType]:
+    """The bindings in `outer`'s body, recorded under `fn`. Another named
+    function's bindings are not in scope, so the scan stops at one."""
+    out: list[LocalType] = []
+    stack = list(outer.children)
+    while stack:
+        n = stack.pop()
+        if n.type in _FUNCTIONS and _is_named(n):
+            continue
+        hook = _SCOPE_HOOKS.get(n.type)
+        if hook is not None:
+            out += hook(ctx, n, fn)
+        stack.extend(n.children)
+    return out
+
+
 def _outer_scope(ctx: Ctx, node: TSNode, fn: str) -> list[LocalType]:
     """A nested function sees the parameters and locals of every function around
-    it. Each is recorded again under the nested function's own name; the
-    resolver merges a name bound two ways to untyped. Another named function's
-    bindings are not in scope, so a scan stops at one."""
+    it. Each is recorded again under the nested function's own name, with its
+    own scope, so the nested function's own bindings are the inner ones."""
     out: list[LocalType] = []
     cur = node.parent
     while cur is not None:
         if cur.type in _FUNCTIONS:
-            out += _parameters(ctx, cur, fn)
-            stack = list(cur.children)
-            while stack:
-                n = stack.pop()
-                if n.type in _FUNCTIONS and _is_named(n):
-                    continue
-                hook = _SCOPE_HOOKS.get(n.type)
-                if hook is not None:
-                    out += hook(ctx, n, fn)
-                stack.extend(n.children)
+            out += ctx.whole(_parameters(ctx, cur, fn), cur) + _scan(ctx, cur, fn)
         cur = cur.parent
     return out
 
 
 def parameter_locals(ctx: Ctx, node: TSNode, qualified: str) -> list[LocalType]:
-    return _parameters(ctx, node, qualified) + _outer_scope(ctx, node, qualified)
+    return ctx.whole(_parameters(ctx, node, qualified), node) + _outer_scope(
+        ctx, node, qualified
+    )
 
 
 _CLASS = Define(

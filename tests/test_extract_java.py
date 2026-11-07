@@ -441,3 +441,93 @@ def test_a_plain_instanceof_does_not_retype_its_operand_param(tmp_path: Path) ->
     src = "class A { void f(Repo r) { if (r instanceof Other) {} r.save(); } }\n"
     assert {(n, t) for _, n, t in locals_of(src)} == {("r", "Repo")}
     assert saves(typed_calls(tmp_path, src))
+
+
+# ----------------------------------------------------------------------
+# a binding is in scope only in its block, loop, clause, arm or lambda
+
+REPO_QW = "package a;\npublic class Repo {\n  public void q() {}\n  public void w() {}\n}\n"
+OTHER_QW = "package a;\npublic class Other {\n  public void q() {}\n  public void w() {}\n}\n"
+
+
+def scope_calls(tmp_path: Path, body: str) -> set[str]:
+    """What `f` calls, as `Type.method`, in a class with a field `Repo repo`."""
+    write(tmp_path, "src/a/Repo.java", REPO_QW)
+    write(tmp_path, "src/a/Other.java", OTHER_QW)
+    write(
+        tmp_path,
+        "src/a/A.java",
+        "package a;\nclass A {\n  Repo repo;\n  void f(Object o, java.util.List<Other> xs) {\n"
+        + body
+        + "\n  }\n}\n",
+    )
+    got = {(e.src, e.dst) for e in run(tmp_path).edges if e.kind is EdgeKind.CALLS}
+    return {".".join(d.rsplit(".", 2)[-2:]) for s, d in got if s.endswith(".f")}
+
+
+def test_a_local_in_a_block_does_not_leak_out_of_it(tmp_path: Path) -> None:
+    body = "    {\n      Other repo = make();\n      repo.q();\n    }\n    repo.w();"
+    assert scope_calls(tmp_path, body) == {"Other.q", "Repo.w"}
+
+
+def test_a_lambda_parameter_does_not_leak_out_of_the_lambda(tmp_path: Path) -> None:
+    body = "    xs.forEach((Other repo) -> {\n      repo.q();\n    });\n    repo.w();"
+    assert scope_calls(tmp_path, body) == {"Other.q", "Repo.w"}
+
+
+def test_a_one_line_lambda_with_the_name_outside_resolves_to_nothing(tmp_path: Path) -> None:
+    body = "    xs.forEach((Other repo) -> repo.q()); repo.w();"
+    assert scope_calls(tmp_path, body) == set()
+
+
+def test_a_one_line_typed_lambda_resolves(tmp_path: Path) -> None:
+    body = "    xs.forEach((Other repo) -> repo.q());"
+    assert scope_calls(tmp_path, body) == {"Other.q"}
+
+
+def test_a_for_variable_does_not_leak_out_of_the_loop(tmp_path: Path) -> None:
+    body = "    for (Other repo : xs) {\n      repo.q();\n    }\n    repo.w();"
+    assert scope_calls(tmp_path, body) == {"Other.q", "Repo.w"}
+
+
+def test_a_catch_parameter_does_not_leak_out_of_the_clause(tmp_path: Path) -> None:
+    body = "    try {\n    } catch (Other repo) {\n      repo.q();\n    }\n    repo.w();"
+    assert scope_calls(tmp_path, body) == {"Other.q", "Repo.w"}
+
+
+def test_a_case_pattern_does_not_leak_out_of_the_arm(tmp_path: Path) -> None:
+    body = (
+        "    switch (o) {\n      case Other repo -> repo.q();\n      default -> {}\n    }\n"
+        "    repo.w();"
+    )
+    assert scope_calls(tmp_path, body) == {"Other.q", "Repo.w"}
+
+
+def test_an_instanceof_binding_only_hides_the_field_after_its_statement(
+    tmp_path: Path,
+) -> None:
+    body = "    if (o instanceof Other repo) {\n      repo.q();\n    }\n    repo.w();"
+    assert scope_calls(tmp_path, body) == {"Other.q"}
+
+
+def test_a_negated_instanceof_gives_no_edge_after_the_statement(tmp_path: Path) -> None:
+    body = "    if (!(o instanceof Other repo)) {\n      return;\n    }\n    repo.w();"
+    assert scope_calls(tmp_path, body) == set()
+
+
+def test_an_instanceof_binding_not_used_later_leaves_the_field(tmp_path: Path) -> None:
+    body = "    if (o instanceof Other other) {\n      other.q();\n    }\n    repo.w();"
+    assert scope_calls(tmp_path, body) == {"Other.q", "Repo.w"}
+
+
+def test_sibling_blocks_each_resolve_their_own_type(tmp_path: Path) -> None:
+    body = (
+        "    {\n      Repo r = make();\n      r.q();\n    }\n"
+        "    {\n      Other r = make();\n      r.w();\n    }"
+    )
+    assert scope_calls(tmp_path, body) == {"Repo.q", "Other.w"}
+
+
+def test_a_local_resolves_only_from_its_declaration_on(tmp_path: Path) -> None:
+    body = "    repo.q();\n    Other repo = make();\n    repo.w();"
+    assert scope_calls(tmp_path, body) == {"Repo.q", "Other.w"}

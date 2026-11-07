@@ -462,15 +462,15 @@ def _parameters(
 
 def _primary_parameters(ctx: Ctx, node: TSNode, fn: str) -> list[LocalType]:
     """A primary constructor's parameters are in scope in every member of the
-    type, so each member's function carries them. A member's own parameter of
-    the same name with another type merges to untyped."""
+    type, so each member's function carries them, over the whole type. A
+    member's own parameter, in the member only, is the inner one and wins."""
     cur = node.parent
     while cur is not None and cur.type not in _TYPE_OWNERS:
         cur = cur.parent
     if cur is None:
         return []
     lst = next((c for c in cur.children if c.type == "parameter_list"), None)
-    return _parameters(ctx, fn, lst, _generic_names(ctx, cur))
+    return ctx.whole(_parameters(ctx, fn, lst, _generic_names(ctx, cur)), cur)
 
 
 _FUNCTIONS = ("method_declaration", "constructor_declaration", "local_function_statement")
@@ -478,16 +478,16 @@ _FUNCTIONS = ("method_declaration", "constructor_declaration", "local_function_s
 
 def _outer_scope(ctx: Ctx, node: TSNode, fn: str) -> list[LocalType]:
     """A local function sees the parameters and locals of the functions around
-    it. Each binding is recorded again under the local function's own name; the
-    resolver merges a name bound two ways to untyped."""
+    it. Each binding is recorded again under the local function's own name,
+    with its own scope, so the local function's own bindings are the inner
+    ones."""
     outer = node.parent
     while outer is not None and outer.type not in _FUNCTIONS:
         outer = outer.parent
     if outer is None:
         return []
-    out = _parameters(
-        ctx, fn, outer.child_by_field_name("parameters"), _generic_names(ctx, outer)
-    )
+    params = outer.child_by_field_name("parameters")
+    out = ctx.whole(_parameters(ctx, fn, params, _generic_names(ctx, outer)), outer)
     stack = list(outer.children)
     while stack:
         n = stack.pop()
@@ -512,6 +512,17 @@ def parameter_locals(ctx: Ctx, node: TSNode, qualified: str) -> list[LocalType]:
     return out
 
 
+def _declaration_scope(node: TSNode) -> TSNode:
+    """A local is in scope in its whole block (C# allows no use before the
+    declaration), a `using`, `for` or `fixed` statement, or a `switch` body."""
+    holder = node.parent
+    if holder is not None and holder.type == "local_declaration_statement":
+        holder = holder.parent
+    if holder is not None and holder.type == "switch_section":
+        holder = holder.parent
+    return holder or node
+
+
 def variable_locals(ctx: Ctx, node: TSNode, fn: str) -> list[LocalType]:
     """A `variable_declaration`: locals, `using`, and a `for` initializer."""
     generics = _generic_names(ctx, node)
@@ -523,37 +534,95 @@ def variable_locals(ctx: Ctx, node: TSNode, fn: str) -> list[LocalType]:
         tuple_ = next((c for c in d.children if c.type == "tuple_pattern"), None)
         target = tuple_ or d.child_by_field_name("name")
         out += _bind_target(ctx, fn, ty, target, generics)
+    return ctx.over(out, _declaration_scope(node))
+
+
+_ARMS = (
+    "switch_expression_arm",
+    "lambda_expression",
+    "anonymous_method_expression",
+    "query_expression",
+    "catch_clause",
+)
+
+
+def _expression_scope(node: TSNode) -> tuple[TSNode, TSNode | None]:
+    """(scope, block) of a pattern or `out` variable: a `case` section or arm,
+    a lambda, a query, or else the statement holding it, whose block comes too
+    (after `if (!(o is T x)) return;` the name is still bound)."""
+    cur = node
+    while cur.parent is not None:
+        parent = cur.parent
+        if cur.type in _ARMS:
+            return cur, None
+        if parent.type == "switch_section" and not cur.type.endswith("statement"):
+            return parent, None
+        if parent.type in ("block", "switch_section"):
+            return cur, parent
+        cur = parent
+    return cur, None
+
+
+def _expression_scoped(ctx: Ctx, node: TSNode, found: list[LocalType]) -> list[LocalType]:
+    """Typed in the arm or statement. Past the statement, where the rest of the
+    block uses the name, it only hides a field: flow is not followed."""
+    scope, block = _expression_scope(node)
+    out = ctx.over(found, scope)
+    if block is None:
+        return out
+    for loc in found:
+        if ctx.mentions(loc.name, scope.end_byte, block.end_byte):
+            hidden = LocalType(loc.function, loc.name, "")
+            out += ctx.scoped(hidden, scope.end_point, block.end_point)
     return out
 
 
+def _ancestor(node: TSNode, kind: str) -> TSNode:
+    cur: TSNode | None = node
+    while cur is not None and cur.type != kind:
+        cur = cur.parent
+    return cur or node
+
+
 def typed_name_locals(ctx: Ctx, node: TSNode, fn: str) -> list[LocalType]:
-    """`foreach (T x in xs)`, `catch (T e)`, `is T x`, `case T x:`, `out T x`
-    and a LINQ `from T x in xs`."""
+    """`foreach (T x in xs)` (in the body), `catch (T e)` (in the clause), a
+    LINQ `from T x in xs` (in the query), and `is T x`, `case T x:`, `out T x`
+    (see `_expression_scope`)."""
     target = node.child_by_field_name("left") or node.child_by_field_name("name")
     group = next(
         (c for c in node.children if c.type == "parenthesized_variable_designation"), None
     )
     if group is not None:  # `case var (a, b):` binds every name in the group
-        return _untyped(ctx, fn, group)
-    return _bind_target(
-        ctx, fn, node.child_by_field_name("type"), target, _generic_names(ctx, node)
-    )
+        found = _untyped(ctx, fn, group)
+    else:
+        ty = node.child_by_field_name("type")
+        found = _bind_target(ctx, fn, ty, target, _generic_names(ctx, node))
+    if node.type == "foreach_statement":
+        body = node.child_by_field_name("body") or node
+        return ctx.rescoped(found, body.start_point, body.end_point, target)
+    if node.type == "catch_declaration":
+        return ctx.over(found, node.parent or node)
+    if node.type == "from_clause":
+        return ctx.over(found, _ancestor(node, "query_expression"))
+    return _expression_scoped(ctx, node, found)
 
 
 def query_locals(ctx: Ctx, node: TSNode, fn: str) -> list[LocalType]:
-    """`let x = ..`, `join T x in ..` and `into g` bind a range variable. These
-    nodes have no `name` field, so the variable is the first identifier that is
-    not the optional type, by position."""
+    """`let x = ..`, `join T x in ..` and `into g` bind a range variable in the
+    query. These nodes have no `name` field, so the variable is the first
+    identifier that is not the optional type, by position."""
     ty = node.child_by_field_name("type")
     names = [c for c in node.named_children if c.type == "identifier" and c != ty]
     if not names:
         return []
-    return _binding(ctx, fn, ty, names[0], _generic_names(ctx, node))
+    found = _binding(ctx, fn, ty, names[0], _generic_names(ctx, node))
+    return ctx.over(found, _ancestor(node, "query_expression"))
 
 
 def query_into_locals(ctx: Ctx, node: TSNode, fn: str) -> list[LocalType]:
     """`.. into g`: a bare identifier child of the query binds a range variable."""
-    return [LocalType(fn, ctx.text(c), "") for c in node.children if c.type == "identifier"]
+    found = [LocalType(fn, ctx.text(c), "") for c in node.children if c.type == "identifier"]
+    return ctx.over(found, node)
 
 
 def _is_var_group(call: TSNode | None) -> bool:
@@ -581,17 +650,18 @@ def var_group_locals(ctx: Ctx, node: TSNode, fn: str) -> list[LocalType]:
     """Every name in `var (a, (b, c))`, however deep."""
     if node.parent is None or not _is_var_group(node.parent):
         return []
-    return _argument_names(ctx, fn, node)
+    return _expression_scoped(ctx, node, _argument_names(ctx, fn, node))
 
 
 def lambda_locals(ctx: Ctx, node: TSNode, fn: str) -> list[LocalType]:
-    """`(Order o) => ..` is typed, `o => ..` and `(a, b) => ..` rebind untyped."""
+    """`(Order o) => ..` is typed, `o => ..` and `(a, b) => ..` rebind untyped,
+    in the lambda only."""
     params = node.child_by_field_name("parameters")
     if params is None:
         return []
     if params.type == "implicit_parameter":
-        return [LocalType(fn, ctx.text(params), "")]
-    return _parameters(ctx, fn, params, _generic_names(ctx, node))
+        return ctx.over([LocalType(fn, ctx.text(params), "")], node)
+    return ctx.over(_parameters(ctx, fn, params, _generic_names(ctx, node)), node)
 
 
 _SCOPE_HOOKS = {
@@ -615,8 +685,9 @@ _SCOPE_HOOKS = {
 def type_locals(ctx: Ctx, node: TSNode, _qualified: str) -> list[LocalType]:
     """Field and property initializers run outside any member, where a call has
     no enclosing function. A primary constructor parameter is in scope there and
-    shadows a field, so bind it under the empty function. Types in one file
-    that bind the same name two ways merge to untyped."""
+    shadows a field, so bind it under the empty function, in scope over the
+    type's own lines only (the walker gives a binding with no scope the
+    definition's lines)."""
     lst = next((c for c in node.children if c.type == "parameter_list"), None)
     return _parameters(ctx, "", lst, _generic_names(ctx, node))
 

@@ -216,37 +216,51 @@
   {
    "function": "app.AppState.run",
    "name": "repo",
-   "type_name": "Repo"
+   "type_name": "Repo",
+   "start_line": 6,
+   "end_line": 13
   },
   {
    "function": "app.AppState.run",
    "name": "state",
-   "type_name": "AppState"
+   "type_name": "AppState",
+   "start_line": 6,
+   "end_line": 13
   },
   {
    "function": "app.AppState.run",
    "name": "n",
-   "type_name": "Count"
+   "type_name": "Count",
+   "start_line": 6,
+   "end_line": 13
   },
   {
    "function": "app.AppState.run",
    "name": "x",
-   "type_name": "Other"
+   "type_name": "Other",
+   "start_line": 9,
+   "end_line": 13
   },
   {
    "function": "app.AppState.run",
    "name": "n",
-   "type_name": ""
+   "type_name": "",
+   "start_line": 11,
+   "end_line": 13
   },
   {
    "function": "app.AppState.run",
    "name": "repo",
-   "type_name": ""
+   "type_name": "",
+   "start_line": 12,
+   "end_line": 12
   },
   {
    "function": "app.handler",
    "name": "r",
-   "type_name": "Repo"
+   "type_name": "Repo",
+   "start_line": 16,
+   "end_line": 19
   }
  ],
  "reexports": [],

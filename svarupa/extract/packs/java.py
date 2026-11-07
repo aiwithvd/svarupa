@@ -12,6 +12,7 @@ from __future__ import annotations
 import re
 
 from tree_sitter import Node as TSNode
+from tree_sitter import Point
 
 from svarupa.extract.base import (
     CallShape,
@@ -251,7 +252,7 @@ def _binding(
     ctx: Ctx, fn: str, ty: TSNode | None, name: TSNode | None, generics: set[str]
 ) -> list[LocalType]:
     """A name always shadows a field, so an untyped one is recorded too, with
-    no type."""
+    no type. It has no scope yet: a parameter is in scope in its function."""
     if name is None or name.type != "identifier":
         return []
     return [LocalType(fn, ctx.text(name), _declared(ctx, ty, generics))]
@@ -289,58 +290,122 @@ def parameter_locals(ctx: Ctx, node: TSNode, qualified: str) -> list[LocalType]:
     return out
 
 
+def _rest_of_block(node: TSNode) -> tuple[Point, Point]:
+    """A local is in scope from its declaration to the end of its block; a
+    `switch` case group shares one block with the groups after it."""
+    block = node.parent or node
+    if block.type == "switch_block_statement_group" and block.parent is not None:
+        block = block.parent
+    return node.start_point, block.end_point
+
+
 def local_variable_locals(ctx: Ctx, node: TSNode, fn: str) -> list[LocalType]:
     generics = _generic_names(ctx, node)
     ty = node.child_by_field_name("type")
+    start, end = _rest_of_block(node)
     out: list[LocalType] = []
     for d in node.children:
         if d.type == "variable_declarator":
-            out += _binding(ctx, fn, _sized(d, ty), d.child_by_field_name("name"), generics)
+            name = d.child_by_field_name("name")
+            found = _binding(ctx, fn, _sized(d, ty), name, generics)
+            out += ctx.rescoped(found, start, end, name)
     return out
 
 
-def typed_name_locals(ctx: Ctx, node: TSNode, fn: str) -> list[LocalType]:
-    """`for (T x : xs)`, `instanceof T x` and a resource `T x = open()`."""
-    ty = node.child_by_field_name("type") or node.child_by_field_name("right")
-    if ty is None:
-        ty = next((c for c in node.children if c.type in _CLASS_TYPES), None)
+def _typed_name(ctx: Ctx, node: TSNode, fn: str) -> list[LocalType]:
+    ty = _sized(node, node.child_by_field_name("type"))
+    return _binding(ctx, fn, ty, node.child_by_field_name("name"), _generic_names(ctx, node))
+
+
+def for_locals(ctx: Ctx, node: TSNode, fn: str) -> list[LocalType]:
+    """`for (T x : xs)` binds in the loop body, not in `xs`."""
+    body = node.child_by_field_name("body") or node
     name = node.child_by_field_name("name")
-    return _binding(ctx, fn, _sized(node, ty), name, _generic_names(ctx, node))
+    return ctx.rescoped(_typed_name(ctx, node, fn), body.start_point, body.end_point, name)
+
+
+def resource_locals(ctx: Ctx, node: TSNode, fn: str) -> list[LocalType]:
+    """A resource `T x = open()` is in scope to the end of the `try` block."""
+    statement = node.parent.parent if node.parent is not None else None
+    body = statement.child_by_field_name("body") if statement is not None else None
+    end = (body or node).end_point
+    return ctx.rescoped(_typed_name(ctx, node, fn), node.start_point, end)
+
+
+_BLOCKS = ("block", "constructor_body", "switch_block_statement_group")
+_ARMS = ("switch_rule", "lambda_expression")
+
+
+def _pattern_scope(node: TSNode) -> tuple[TSNode, TSNode | None]:
+    """(scope, block) of a pattern binding: a `case` arm, a lambda, or else the
+    statement holding it. After `if (!(o instanceof T x)) return;` the name is
+    still bound in the rest of the block, so the statement's block comes too."""
+    cur = node
+    while cur.parent is not None:
+        if cur.type in _ARMS:
+            return cur, None
+        if cur.type == "switch_label":
+            return cur.parent, None
+        if cur.parent.type in _BLOCKS:
+            return cur, cur.parent
+        cur = cur.parent
+    return cur, None
+
+
+def _pattern_binding(
+    ctx: Ctx, fn: str, node: TSNode, ty: TSNode | None, name: TSNode | None
+) -> list[LocalType]:
+    """Typed in its arm or statement. Past the statement, where the rest of
+    the block uses the name, it only hides a field (flow scoping is not
+    followed)."""
+    scope, block = _pattern_scope(node)
+    found = _binding(ctx, fn, ty, name, _generic_names(ctx, node))
+    out = ctx.over(found, scope)
+    if block is None or name is None:
+        return out
+    if ctx.mentions(ctx.text(name), scope.end_byte, block.end_byte):
+        hidden = [LocalType(fn, ctx.text(name), "")]
+        out += ctx.rescoped(hidden, scope.end_point, block.end_point)
+    return out
 
 
 def pattern_locals(ctx: Ctx, node: TSNode, fn: str) -> list[LocalType]:
     """`case T x` and a record component `T x`: a type child, then the name."""
     ty = next((c for c in node.children if c.type in _CLASS_TYPES), None)
     name = next((c for c in node.children if c.type == "identifier"), None)
-    return _binding(ctx, fn, ty, name, _generic_names(ctx, node))
+    return _pattern_binding(ctx, fn, node, ty, name)
 
 
 def instanceof_locals(ctx: Ctx, node: TSNode, fn: str) -> list[LocalType]:
     """Only `x instanceof T r` binds; a plain `x instanceof T` binds nothing."""
-    if node.child_by_field_name("name") is None:
+    name = node.child_by_field_name("name")
+    if name is None:
         return []
-    return typed_name_locals(ctx, node, fn)
+    ty = node.child_by_field_name("right")
+    return _pattern_binding(ctx, fn, node, _sized(node, ty), name)
+
+
+def _catch_type(node: TSNode) -> TSNode | None:
+    """The one type a catch names; None for a union `A | B`."""
+    catch_type = next((c for c in node.children if c.type == "catch_type"), None)
+    types = [c for c in catch_type.children if c.type in _CLASS_TYPES] if catch_type else []
+    return types[0] if len(types) == 1 else None
 
 
 def catch_locals(ctx: Ctx, node: TSNode, fn: str) -> list[LocalType]:
-    """`catch (A | B e)` is a union, so e has no single type."""
-    catch_type = next((c for c in node.children if c.type == "catch_type"), None)
+    """`catch (A | B e)` is a union, so e has no single type. It is bound in
+    its catch clause."""
     name = node.child_by_field_name("name") or next(
         (c for c in node.children if c.type == "identifier"), None
     )
-    types = [c for c in catch_type.children if c.type in _CLASS_TYPES] if catch_type else []
-    ty = types[0] if len(types) == 1 else None
-    return _binding(ctx, fn, ty, name, _generic_names(ctx, node))
+    found = _binding(ctx, fn, _catch_type(node), name, _generic_names(ctx, node))
+    return ctx.over(found, node.parent or node)
 
 
-def lambda_locals(ctx: Ctx, node: TSNode, fn: str) -> list[LocalType]:
-    """`(Order o) -> ..` is typed, `o -> ..` and `(a, b) -> ..` rebind untyped."""
-    params = node.child_by_field_name("parameters")
-    if params is None:
-        return []
+def _lambda_bindings(ctx: Ctx, params: TSNode, fn: str) -> list[LocalType]:
     if params.type == "identifier":
         return [LocalType(fn, ctx.text(params), "")]
-    generics = _generic_names(ctx, node)
+    generics = _generic_names(ctx, params)
     out: list[LocalType] = []
     for p in params.named_children:
         if p.type == "identifier":
@@ -348,6 +413,15 @@ def lambda_locals(ctx: Ctx, node: TSNode, fn: str) -> list[LocalType]:
         else:
             out += _formal(ctx, fn, p, generics)
     return out
+
+
+def lambda_locals(ctx: Ctx, node: TSNode, fn: str) -> list[LocalType]:
+    """`(Order o) -> ..` is typed, `o -> ..` and `(a, b) -> ..` rebind untyped,
+    in the lambda only."""
+    params = node.child_by_field_name("parameters")
+    if params is None:
+        return []
+    return ctx.over(_lambda_bindings(ctx, params, fn), node)
 
 
 def _type_rule(kind: str) -> Define:
@@ -509,8 +583,8 @@ PACK = Pack(
             locals=parameter_locals,
         ),
         "local_variable_declaration": Local(hook=local_variable_locals),
-        "enhanced_for_statement": Local(hook=typed_name_locals),
-        "resource": Local(hook=typed_name_locals),
+        "enhanced_for_statement": Local(hook=for_locals),
+        "resource": Local(hook=resource_locals),
         "type_pattern": Local(hook=pattern_locals),
         "instanceof_expression": Local(hook=instanceof_locals),
         "record_pattern_component": Local(hook=pattern_locals),

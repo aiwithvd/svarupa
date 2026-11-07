@@ -472,7 +472,7 @@ def test_var_deconstruction_patterns_hide_fields(tmp_path: Path) -> None:
 
 
 def test_a_local_function_sees_the_locals_of_its_enclosing_function(tmp_path: Path) -> None:
-    src = "class U { Other r; void F() { Repo r = Make(); void G() { r.Save(); } } }\n"
+    src = "class U { Other r;\n void F() {\n Repo r = Make();\n void G() { r.Save(); } } }\n"
     assert ("a.U.F.G", "r", "Repo") in locals_of(src)
     got = typed_calls(tmp_path, src)
     assert saves(got)
@@ -484,10 +484,10 @@ def test_a_local_function_sees_enclosing_parameters_and_nesting(tmp_path: Path) 
     assert saves(typed_calls(tmp_path, src))
 
 
-def test_a_local_function_own_binding_conflicting_merges_to_untyped(tmp_path: Path) -> None:
-    src = "class U { void F() { Repo r = Make(); void G(Other r) { r.X(); } } }\n"
+def test_a_local_function_own_binding_is_the_inner_one(tmp_path: Path) -> None:
+    src = "class U {\n void F() {\n Repo r = Make();\n void G(Other r) { r.X(); } } }\n"
     got = typed_calls(tmp_path, src)
-    assert not got or not any(d.endswith((".X", "Save")) for _, d in got)
+    assert [d for _, d in got if d.endswith((".X", "Save"))] == ["Other.cs#A.Other.X"]
 
 
 def test_initializers_of_a_primary_constructor_type_do_not_get_wrong_edges(
@@ -502,3 +502,132 @@ def test_a_primary_parameter_shadows_a_field_in_an_initializer(tmp_path: Path) -
     assert not saves(got)
     got = typed_calls(tmp_path, "class V(Repo repo) { int x = repo.Save(); }\n")
     assert saves(got)
+
+
+# ----------------------------------------------------------------------
+# a binding is in scope only in its block, loop, clause, arm or lambda
+
+REPO_QW = (
+    "namespace A;\npublic class Repo\n{\n    public void Q() {}\n    public void W() {}\n}\n"
+)
+OTHER_QW = (
+    "namespace A;\npublic class Other\n{\n    public void Q() {}\n    public void W() {}\n}\n"
+)
+
+
+def scope_calls(tmp_path: Path, body: str, members: str = "") -> set[str]:
+    """What `F` calls, as `Type.Method`, in a class with a field `Repo repo`."""
+    from svarupa.detect import detect
+    from svarupa.extract import declared_dependencies, extract
+    from svarupa.model import EdgeKind
+
+    (tmp_path / "Repo.cs").write_text(REPO_QW)
+    (tmp_path / "Other.cs").write_text(OTHER_QW)
+    (tmp_path / "Use.cs").write_text(
+        "namespace A;\nclass U\n{\n    Repo repo;\n    void F(object o, Other[] xs)\n    {\n"
+        + body
+        + "\n    }\n"
+        + members
+        + "}\n"
+    )
+    scan = detect(tmp_path)
+    graph = extract(scan, declared_dependencies(scan))
+    got = {(e.src, e.dst) for e in graph.edges if e.kind is EdgeKind.CALLS}
+    return {".".join(d.rsplit(".", 2)[-2:]) for s, d in got if ".F" in s}
+
+
+def test_a_local_in_a_block_does_not_leak_out_of_it(tmp_path: Path) -> None:
+    body = "        {\n            Other repo = Make();\n            repo.Q();\n        }\n        repo.W();"
+    assert scope_calls(tmp_path, body) == {"Other.Q", "Repo.W"}
+
+
+def test_a_lambda_parameter_does_not_leak_out_of_the_lambda(tmp_path: Path) -> None:
+    body = "        Run((Other repo) =>\n        {\n            repo.Q();\n        });\n        repo.W();"
+    assert scope_calls(tmp_path, body) == {"Other.Q", "Repo.W"}
+
+
+def test_a_one_line_lambda_with_the_name_outside_resolves_to_nothing(tmp_path: Path) -> None:
+    body = "        Run((Other repo) => repo.Q()); repo.W();"
+    assert scope_calls(tmp_path, body) == set()
+
+
+def test_a_one_line_typed_lambda_resolves(tmp_path: Path) -> None:
+    body = "        Run((Other repo) => repo.Q());"
+    assert scope_calls(tmp_path, body) == {"Other.Q"}
+
+
+def test_a_foreach_variable_does_not_leak_out_of_the_loop(tmp_path: Path) -> None:
+    body = "        foreach (Other repo in xs)\n        {\n            repo.Q();\n        }\n        repo.W();"
+    assert scope_calls(tmp_path, body) == {"Other.Q", "Repo.W"}
+
+
+def test_a_catch_variable_does_not_leak_out_of_the_clause(tmp_path: Path) -> None:
+    body = (
+        "        try\n        {\n        }\n        catch (Other repo)\n        {\n"
+        "            repo.Q();\n        }\n        repo.W();"
+    )
+    assert scope_calls(tmp_path, body) == {"Other.Q", "Repo.W"}
+
+
+def test_a_case_pattern_does_not_leak_out_of_its_section(tmp_path: Path) -> None:
+    body = (
+        "        switch (o)\n        {\n            case Other repo:\n                repo.Q();\n"
+        "                break;\n        }\n        repo.W();"
+    )
+    assert scope_calls(tmp_path, body) == {"Other.Q", "Repo.W"}
+
+
+def test_a_switch_arm_pattern_does_not_leak_out_of_the_arm(tmp_path: Path) -> None:
+    body = (
+        "        var n = o switch\n        {\n            Other repo => repo.Q(),\n"
+        "            _ => 0,\n        };\n        repo.W();"
+    )
+    assert scope_calls(tmp_path, body) == {"Other.Q", "Repo.W"}
+
+
+def test_an_is_pattern_only_hides_the_field_after_its_statement(tmp_path: Path) -> None:
+    body = "        if (o is Other repo)\n        {\n            repo.Q();\n        }\n        repo.W();"
+    assert scope_calls(tmp_path, body) == {"Other.Q"}
+
+
+def test_an_out_variable_only_hides_the_field_after_its_statement(tmp_path: Path) -> None:
+    body = "        if (!TryGet(out Other repo))\n        {\n            return;\n        }\n        repo.W();"
+    assert scope_calls(tmp_path, body) == set()
+
+
+def test_a_query_variable_does_not_leak_out_of_the_query(tmp_path: Path) -> None:
+    body = "        var q = from Other repo in xs\n                select repo.Q();\n        repo.W();"
+    assert scope_calls(tmp_path, body) == {"Other.Q", "Repo.W"}
+
+
+def test_sibling_blocks_each_resolve_their_own_type(tmp_path: Path) -> None:
+    body = (
+        "        {\n            Repo r = Make();\n            r.Q();\n        }\n"
+        "        {\n            Other r = Make();\n            r.W();\n        }"
+    )
+    assert scope_calls(tmp_path, body) == {"Repo.Q", "Other.W"}
+
+
+def test_a_local_functions_own_local_does_not_leak_to_the_outer_function(
+    tmp_path: Path,
+) -> None:
+    body = "        void G()\n        {\n            Other repo = Make();\n            repo.Q();\n        }\n        repo.W();"
+    assert scope_calls(tmp_path, body) == {"Other.Q", "Repo.W"}
+
+
+def test_a_primary_parameter_gives_way_to_a_member_parameter(tmp_path: Path) -> None:
+    members = "    void G(Other repo) { repo.Q(); }\n    void H() { repo.W(); }\n"
+    (tmp_path / "Use2.cs").write_text("namespace A;\nclass V(Repo repo)\n{\n" + members + "}\n")
+    scope_calls(tmp_path, "")
+    from svarupa.detect import detect
+    from svarupa.extract import declared_dependencies, extract
+    from svarupa.model import EdgeKind
+
+    scan = detect(tmp_path)
+    graph = extract(scan, declared_dependencies(scan))
+    got = {
+        (s.rsplit(".", 1)[-1], ".".join(d.rsplit(".", 2)[-2:]))
+        for s, d in ((e.src, e.dst) for e in graph.edges if e.kind is EdgeKind.CALLS)
+    }
+    assert {("G", "Other.Q"), ("H", "Repo.W")} <= got
+    assert ("G", "Repo.Q") not in got

@@ -785,3 +785,74 @@ def test_javascript_untyped_bindings_only_hide() -> None:
     got = locals_of(src, "javascript")
     assert {t for _, _, t in got} == {""}
     assert {n for _, n, _ in got} == {"a", "b", "c"}
+
+
+# --------------------------------------------------------------------------
+# A binding is in scope only in its block, loop, clause or callback
+# --------------------------------------------------------------------------
+
+
+def methods(calls: set[tuple[str, str]]) -> set[str]:
+    """Callees as `Type.method`."""
+    return {".".join(d.rsplit(".", 2)[-2:]) for _, d in calls}
+
+
+def test_the_review_probe_gives_no_wrong_edge(tmp_path: Path) -> None:
+    body = (
+        "const r = new Repo();\n"
+        "export function f(xs) { xs.map((r: Other) => r.save()); r.save(); }\n"
+    )
+    assert "Other.save" not in methods(typed_calls(tmp_path, body))
+
+
+def test_a_typed_callback_parameter_does_not_leak_out_of_the_callback(tmp_path: Path) -> None:
+    body = (
+        "const r = new Repo();\nexport function f(xs) {\n"
+        "  xs.map((r: Other) => {\n    r.x();\n  });\n  r.save();\n}\n"
+    )
+    assert methods(typed_calls(tmp_path, body)) == {"Other.x"}
+
+
+def test_a_typed_local_in_a_block_does_not_leak_out_of_it(tmp_path: Path) -> None:
+    body = (
+        "const r = new Repo();\nexport function f(c: boolean) {\n"
+        "  if (c) {\n    const r: Other = make();\n    r.x();\n  }\n  r.save();\n}\n"
+    )
+    assert methods(typed_calls(tmp_path, body)) == {"Other.x"}
+
+
+def test_a_var_is_bound_in_its_whole_function(tmp_path: Path) -> None:
+    body = "export function f(c: boolean) {\n  if (c) {\n    var r: Other = make();\n  }\n  r.x();\n}\n"
+    assert methods(typed_calls(tmp_path, body)) == {"Other.x"}
+
+
+def test_a_loop_or_catch_variable_hides_the_parameter_only_inside(tmp_path: Path) -> None:
+    for inner in (
+        "  for (const r of xs) {\n    r.x();\n  }\n",
+        "  try {\n  } catch (r) {\n    r.x();\n  }\n",
+        "  xs.map((r) => {\n    r.x();\n  });\n",
+    ):
+        body = f"export function f(r: Repo, xs: X[]) {{\n{inner}  r.save();\n}}\n"
+        assert methods(typed_calls(tmp_path, body)) == {"Repo.save"}, inner
+
+
+def test_a_callback_parameter_does_not_hide_an_import_outside_it(tmp_path: Path) -> None:
+    write(tmp_path, "src/repo.ts", REPO_TS)
+    write(tmp_path, "src/other.ts", OTHER_TS)
+    write(
+        tmp_path,
+        "src/a.ts",
+        "import { Repo } from './repo';\nimport { Other as r } from './other';\n"
+        "export function f(xs: X[]) {\n  xs.map((r: Repo) => {\n    r.save();\n  });\n"
+        "  r.x();\n}\n",
+    )
+    got = {(e.src, e.dst) for e in run(tmp_path).edges if e.kind is EdgeKind.CALLS}
+    assert methods(got) == {"Repo.save", "Other.x"}
+
+
+def test_a_parameter_property_still_resolves_through_this(tmp_path: Path) -> None:
+    body = (
+        "export class A {\n  constructor(private readonly repo: Repo) {}\n"
+        "  m(repo: Other) {\n    this.repo.save();\n    repo.x();\n  }\n}\n"
+    )
+    assert methods(typed_calls(tmp_path, body)) == {"Repo.save", "Other.x"}

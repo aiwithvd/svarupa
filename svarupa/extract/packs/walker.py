@@ -21,7 +21,7 @@ from dataclasses import dataclass, replace
 from functools import cache
 from typing import cast
 
-from tree_sitter import Language, Parser, Tree
+from tree_sitter import Language, Parser, Point, Tree
 from tree_sitter import Node as TSNode
 
 from svarupa.diagnostics import Diagnostic, Severity
@@ -80,6 +80,12 @@ def _plain(callee: str) -> str:
     return callee[:80]
 
 
+@cache
+def _word(name: str) -> re.Pattern[bytes]:
+    """`name` as a whole identifier, not part of a longer one."""
+    return re.compile(rb"(?<![\w$])" + re.escape(name.encode()) + rb"(?![\w$])")
+
+
 @dataclass(frozen=True, slots=True)
 class Frame:
     """Where the walk is: scope names, enclosing class and function, and the
@@ -119,6 +125,7 @@ class Ctx:
         self.namespace = ""
         self.namespaces: list[str] = []
         self.too_deep = False
+        self._lines: list[bytes] | None = None
 
     def text(self, node: TSNode) -> str:
         return self.data[node.start_byte : node.end_byte].decode("utf8", "replace")
@@ -128,6 +135,66 @@ class Ctx:
 
     def node_evidence(self, node: TSNode) -> Evidence:
         return self.evidence(node.start_point[0], node.end_point[0])
+
+    def scoped(
+        self, loc: LocalType, start: Point, end: Point, binder: TSNode | None = None
+    ) -> list[LocalType]:
+        """A binding made without a scope, put in scope from `start` to `end`
+        (tree-sitter points).
+
+        A call carries only its line. When the first or last line of a typed
+        binding's scope also holds the same name outside the scope (`binder`,
+        the name being bound, does not count), a call there may be on either
+        side: `xs.map((r: A) => r.f()); r.g();`. That line alone then gets an
+        untyped binding too, so the innermost scope holds two types and the
+        call resolves to nothing."""
+        (srow, scol), (erow, ecol) = start, end
+        out = [replace(loc, start_line=srow + 1, end_line=erow + 1)]
+        if not loc.type_name:
+            return out
+        rows = {
+            r
+            for r, a, b in ((srow, 0, scol), (erow, ecol, None))
+            if self._names(loc.name, r, a, b, binder)
+        }
+        return out + [
+            replace(loc, type_name="", start_line=r + 1, end_line=r + 1) for r in sorted(rows)
+        ]
+
+    def rescoped(
+        self, found: list[LocalType], start: Point, end: Point, binder: TSNode | None = None
+    ) -> list[LocalType]:
+        """Each binding, in scope from `start` to `end` (see `scoped`)."""
+        return [b for loc in found for b in self.scoped(loc, start, end, binder)]
+
+    def over(self, found: list[LocalType], node: TSNode) -> list[LocalType]:
+        """Bindings made without a scope, in scope over the whole of `node`."""
+        return self.rescoped(found, node.start_point, node.end_point)
+
+    @staticmethod
+    def whole(found: list[LocalType], owner: TSNode) -> list[LocalType]:
+        """Bindings of an enclosing function or type, recorded under a function
+        inside it, in scope over all of the owner. Every call that looks them
+        up sits inside the owner, so no line is in doubt."""
+        start, end = owner.start_point[0] + 1, owner.end_point[0] + 1
+        return [replace(loc, start_line=start, end_line=end) for loc in found]
+
+    def mentions(self, name: str, start_byte: int, end_byte: int) -> bool:
+        """Whether `name` is a word anywhere in the source between two bytes."""
+        return _word(name).search(self.data[start_byte:end_byte]) is not None
+
+    def _names(
+        self, name: str, row: int, start: int, end: int | None, binder: TSNode | None
+    ) -> bool:
+        """Whether `name` is a word on line `row` between byte columns, outside
+        the binder."""
+        if self._lines is None:
+            self._lines = self.data.split(b"\n")
+        line = self._lines[row] if row < len(self._lines) else b""
+        if binder is not None and binder.start_point[0] == row == binder.end_point[0]:
+            a, b = binder.start_point[1], binder.end_point[1]
+            line = line[:a] + b" " * (b - a) + line[b:]
+        return _word(name).search(line[start:end]) is not None
 
     def qual(self, names: tuple[str, ...]) -> str:
         return ".".join(p for p in (self.prefix, *names) if p)
@@ -176,8 +243,8 @@ class Ctx:
                 self.calls.append(site)
         elif isinstance(rule, Field) and frame.cls:
             self.fields.extend(rule.hook(self, node, frame.cls))
-        elif isinstance(rule, Local) and frame.fn:
-            self.locals.extend(rule.hook(self, node, frame.fn))
+        elif isinstance(rule, Local) and (frame.fn or rule.top_level):
+            self.locals.extend(rule.hook(self, node, frame.fn or ""))
         plain = frame.plain()
         for child in node.children:
             self.visit(child, plain, depth + 1)
@@ -223,7 +290,11 @@ class Ctx:
         if rule.after is not None:
             rule.after(self, node, frame, name)
         if rule.locals is not None:
-            self.locals.extend(rule.locals(self, node, qualified))
+            start, end = node.start_point[0] + 1, node.end_point[0] + 1
+            self.locals.extend(
+                loc if loc.start_line else replace(loc, start_line=start, end_line=end)
+                for loc in rule.locals(self, node, qualified)
+            )
         if rule.body_field is None:
             return
         body = node.child_by_field_name(rule.body_field)

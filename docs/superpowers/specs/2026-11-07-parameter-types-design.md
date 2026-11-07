@@ -49,6 +49,11 @@ zero-to-production. It is the same in every language.
   same call, the innermost one wins. When the innermost scope holds two types,
   the call stays unresolved. This replaces "one type per name per function",
   which let a block-scoped type leak outside its block.
+
+  A call carries only its line. When the first or last line of a typed
+  scope also holds the same name outside the scope
+  (`xs.map((r: A) => r.f()); r.g();`), that line alone gets an untyped
+  binding too, so a call on it resolves to nothing.
 - **Resolution.** For a QUALIFIED call `x.m()` inside function `f`:
   1. If `(file, f, x)` is in locals, resolve `m` through that type, the same
      way `_field_call` does (`_nearest_methods` over the MRO).

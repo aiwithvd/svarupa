@@ -20,6 +20,7 @@ Three rules govern what gets emitted:
 
 from __future__ import annotations
 
+import math
 import sys
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
@@ -27,9 +28,11 @@ from dataclasses import dataclass, field
 from svarupa.diagnostics import Diagnostic, Severity
 from svarupa.extract.base import (
     CallShape,
+    CallSite,
     ExtractResult,
     FileFacts,
     ImportRef,
+    LocalType,
     Scorecard,
     SymbolRef,
     node_id,
@@ -233,8 +236,17 @@ def _d_fields() -> dict[tuple[str, str, str], str]:
     return {}
 
 
-def _d_locals() -> dict[tuple[str, str, str], str]:
+def _d_locals() -> dict[tuple[str, str, str], list[LocalType]]:
     return {}
+
+
+def _span(loc: LocalType) -> float:
+    """How many lines a binding's scope covers; the whole function is widest."""
+    return loc.end_line - loc.start_line if loc.start_line else math.inf
+
+
+def _covers(loc: LocalType, line: int) -> bool:
+    return not loc.start_line or loc.start_line <= line <= loc.end_line
 
 
 # Sentinel: `_qualified_type_call` has no say about this type name.
@@ -262,9 +274,8 @@ class _Index:
     methods_of: dict[tuple[str, str], list[tuple[str, str]]] = field(default_factory=_d_meth)
     bases_of: dict[str, tuple[str, ...]] = field(default_factory=_d_bases)
     field_types: dict[tuple[str, str, str], str] = field(default_factory=_d_fields)
-    # (file, function, name) -> declared type. "" when the name is typed two
-    # ways, or rebound untyped: it then resolves to nothing.
-    locals: dict[tuple[str, str, str], str] = field(default_factory=_d_locals)
+    # (file, function, name) -> every binding of the name, each with its scope.
+    locals: dict[tuple[str, str, str], list[LocalType]] = field(default_factory=_d_locals)
     files: set[str] = field(default_factory=_s_str)
     # Bases a class gets from the methods declared for it elsewhere (a Rust
     # `impl Trait for Type`), keyed by the class's identity.
@@ -337,9 +348,7 @@ class Resolver:
             for fld in f.fields:
                 idx.field_types[(f.path, fld.owner, fld.field)] = fld.type_name
             for loc in f.locals:
-                lkey = (f.path, loc.function, loc.name)
-                seen = idx.locals.get(lkey, loc.type_name)
-                idx.locals[lkey] = loc.type_name if seen == loc.type_name else ""
+                idx.locals.setdefault((f.path, loc.function, loc.name), []).append(loc)
             for s in f.symbols:
                 key = (f.path, s.qualified_name)
                 idx.by_qualname.setdefault(s.qualified_name, key)
@@ -1235,11 +1244,9 @@ class Resolver:
 
         if call.shape is CallShape.QUALIFIED:
             recv = call.receiver or ""
-            lkey = (f.path, call.enclosing or "", recv)
-            if lkey in self.idx.locals:
-                # A parameter or typed local shadows a field or an import. A
-                # call outside any function (an initializer) has the key "".
-                type_name = self.idx.locals[lkey]
+            type_name = self._local_type(f, call, recv)
+            if type_name is not None:
+                # A parameter or typed local shadows a field or an import.
                 return self._typed_call(f, f.path, type_name, name) if type_name else []
             if recv in import_names:
                 spec, level = import_names[recv]
@@ -1276,10 +1283,28 @@ class Resolver:
         # MEMBER: a chained receiver has no type without inference, except
         # `local.field`, which takes one step through the local's class.
         local, _, member = (call.receiver or "").partition(".")
-        type_name = self.idx.locals.get((f.path, call.enclosing or "", local))
+        type_name = self._local_type(f, call, local)
         if type_name and member.isidentifier():
             return self._field_call(f, type_name, member, name)
         return []
+
+    def _local_type(self, f: FileFacts, call: CallSite, name: str) -> str | None:
+        """The declared type of local `name` where `call` sits: the innermost
+        binding whose scope holds the call's line wins. "" when that scope binds
+        the name untyped or two ways, which hides any field or import of the
+        name; None when no binding is in scope there. A call outside any
+        function (an initializer) looks under the function ""."""
+        line = call.evidence.start_line
+        found = [
+            loc
+            for loc in self.idx.locals.get((f.path, call.enclosing or "", name), ())
+            if _covers(loc, line)
+        ]
+        if not found:
+            return None
+        inner = min(_span(loc) for loc in found)
+        types = {loc.type_name for loc in found if _span(loc) == inner}
+        return types.pop() if len(types) == 1 else ""
 
     def _field_call(
         self, f: FileFacts, cls: str, field_name: str, name: str

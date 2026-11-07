@@ -180,13 +180,21 @@ class LocalType:
 
     `function` is the qualified name `CallSite.enclosing` carries, so a call
     finds its locals by the function it sits in. An empty `type_name` marks a
-    name rebound to something untyped (`let r = other();`): the earlier type
-    no longer holds, so the name resolves to nothing.
+    name bound to something untyped (`let r = other();`): inside its scope the
+    name resolves to nothing, not to a field or an import of the same name.
+
+    `start_line` and `end_line` (1-indexed, inclusive) are the lines where the
+    binding is in scope: the function for a parameter, the rest of the block
+    for a declaration, the body for a loop, a clause, an arm or a callback.
+    `0, 0` is the whole function. A call sees the innermost binding whose
+    lines hold it.
     """
 
     function: str
     name: str
     type_name: str
+    start_line: int = 0
+    end_line: int = 0
 
 
 @dataclass(frozen=True, slots=True)

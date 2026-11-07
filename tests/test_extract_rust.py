@@ -906,3 +906,85 @@ def test_a_path_typed_parameter_without_a_use_is_unresolved(tmp_path: Path) -> N
     card = run(tmp_path).scorecard
     assert card.get("rust", "calls", Resolution.UNRESOLVED) == 1
     assert card.get("rust", "calls", Resolution.EXTERNAL) == 0
+
+
+# ----------------------------------------------------------------------
+# a binding is in scope only in its block, arm, loop or closure
+
+REPO_QW = "pub struct Repo;\nimpl Repo { pub fn q(&self) {} pub fn w(&self) {} }\n"
+OTHER_QW = "pub struct Other;\nimpl Other { pub fn q(&self) {} pub fn w(&self) {} }\n"
+
+
+def scope_calls(tmp_path: Path, body: str) -> set[str]:
+    """The methods `f` calls, as `Type.method`."""
+    write(tmp_path, "src/repo.rs", REPO_QW)
+    write(tmp_path, "src/other.rs", OTHER_QW)
+    write(tmp_path, "src/app.rs", body)
+    got = calls_of(tmp_path)
+    return {
+        d.rsplit(".", 2)[-2] + "." + d.rsplit(".", 1)[-1] for s, d in got if s.endswith(".f")
+    }
+
+
+def test_a_let_in_a_block_does_not_leak_out_of_it(tmp_path: Path) -> None:
+    src = "fn f() {\n    let r = make();\n    {\n        let r: Other = b();\n        r.q();\n    }\n    r.w();\n}\n"
+    assert scope_calls(tmp_path, src) == {"Other.q"}
+
+
+def test_a_let_in_a_match_arm_does_not_leak_out_of_it(tmp_path: Path) -> None:
+    src = (
+        "fn f(x: u8) {\n    let r = make();\n    match x {\n"
+        "        1 => { let r: Other = b(); r.q(); }\n        _ => {}\n    }\n    r.w();\n}\n"
+    )
+    assert scope_calls(tmp_path, src) == {"Other.q"}
+
+
+def test_a_typed_closure_parameter_does_not_leak_out_of_the_closure(tmp_path: Path) -> None:
+    src = "fn f() {\n    let r = make();\n    let go = |r: &Other| {\n        r.q();\n    };\n    r.w();\n}\n"
+    assert scope_calls(tmp_path, src) == {"Other.q"}
+
+
+def test_a_closure_on_one_line_with_the_name_outside_resolves_to_nothing(
+    tmp_path: Path,
+) -> None:
+    src = "fn f() {\n    let r = make();\n    let go = |r: &Other| r.q(); r.w();\n}\n"
+    assert scope_calls(tmp_path, src) == set()
+
+
+def test_a_one_line_typed_closure_resolves(tmp_path: Path) -> None:
+    src = "fn f(xs: Vec<u8>) {\n    xs.iter().for_each(|r: &Repo| r.q());\n}\n"
+    assert scope_calls(tmp_path, src) == {"Repo.q"}
+
+
+def test_a_later_let_shadows_an_earlier_one_from_its_line_on(tmp_path: Path) -> None:
+    src = (
+        "fn f() {\n    let r: Repo = a();\n    r.q();\n    let r: Other = b();\n    r.w();\n}\n"
+    )
+    assert scope_calls(tmp_path, src) == {"Repo.q", "Other.w"}
+
+
+def test_a_shadowing_let_reads_the_outer_name_on_its_own_line(tmp_path: Path) -> None:
+    src = "fn f(r: Repo) {\n    let r: Other = r.q();\n    r.w();\n}\n"
+    assert scope_calls(tmp_path, src) == {"Other.w"}
+
+
+def test_the_parameter_resolves_again_after_a_block(tmp_path: Path) -> None:
+    src = "fn f(r: Repo) {\n    {\n        let r: Other = b();\n        r.q();\n    }\n    r.w();\n}\n"
+    assert scope_calls(tmp_path, src) == {"Other.q", "Repo.w"}
+
+
+@pytest.mark.parametrize(
+    "binding",
+    [
+        "if let Some(r) = o {\n        r.q();\n    }",
+        "while let Some(r) = o {\n        r.q();\n    }",
+        "match o {\n        Some(r) => r.q(),\n        None => {}\n    }",
+        "for r in v {\n        r.q();\n    }",
+        "let go = |r| {\n        r.q();\n    };",
+    ],
+)
+def test_a_pattern_binding_hides_the_parameter_only_in_its_scope(
+    tmp_path: Path, binding: str
+) -> None:
+    src = f"fn f(r: Repo, o: Option<Other>) {{\n    {binding}\n    r.w();\n}}\n"
+    assert scope_calls(tmp_path, src) == {"Repo.w"}

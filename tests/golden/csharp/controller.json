@@ -404,22 +404,30 @@
   {
    "function": "Shop.Api.OrdersController.OrdersController",
    "name": "repo",
-   "type_name": "IRepo"
+   "type_name": "IRepo",
+   "start_line": 14,
+   "end_line": 17
   },
   {
    "function": "Shop.Api.OrdersController.Create",
    "name": "id",
-   "type_name": ""
+   "type_name": "",
+   "start_line": 19,
+   "end_line": 30
   },
   {
    "function": "Shop.Api.OrdersController.Create",
    "name": "helper",
-   "type_name": ""
+   "type_name": "",
+   "start_line": 22,
+   "end_line": 30
   },
   {
    "function": "",
    "name": "Qty",
-   "type_name": ""
+   "type_name": "",
+   "start_line": 36,
+   "end_line": 36
   }
  ],
  "reexports": [],

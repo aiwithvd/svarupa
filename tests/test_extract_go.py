@@ -265,12 +265,16 @@ def test_a_type_switch_clause_with_one_type_is_typed() -> None:
     assert ("svc.a.F", "v", "Repo") in got
 
 
-def test_clauses_with_different_types_merge_to_untyped(tmp_path: Path) -> None:
+def test_each_type_switch_clause_has_its_own_type(tmp_path: Path) -> None:
     src = (
         "func F(x any) {\n switch v := x.(type) {\n case *Repo: v.Save()\n"
-        " case *Other: v.Save()\n }\n}\n"
+        " case *Other: v.X()\n }\n}\n"
     )
-    assert not any(d.endswith(".Save") for d in typed_calls(tmp_path, src))
+    got = typed_calls(tmp_path, src)
+    assert {d.rsplit(".", 2)[-2] + "." + d.rsplit(".", 1)[-1] for d in got} == {
+        "Repo.Save",
+        "Other.X",
+    }
 
 
 def test_a_shadowing_local_hides_a_typed_parameter(tmp_path: Path) -> None:
@@ -329,3 +333,53 @@ def test_a_qualified_type_never_matches_a_repo_type_of_the_same_name(tmp_path: P
     )
     res = run(tmp_path)
     assert not any(e.kind is EdgeKind.CALLS and e.dst.endswith("Save") for e in res.edges)
+
+
+# ----------------------------------------------------------------------
+# a binding is in scope only in its block, clause, statement or closure
+
+
+def scope_calls(tmp_path: Path, body: str) -> set[str]:
+    """Callees as `Type.Method`, with a package-level `var r = &Repo{}`."""
+    got = typed_calls(tmp_path, "var r = &Repo{}\n\n" + body)
+    return {d.rsplit(".", 2)[-2] + "." + d.rsplit(".", 1)[-1] for d in got}
+
+
+def test_a_closure_parameter_does_not_leak_out_of_the_closure(tmp_path: Path) -> None:
+    src = "func F() {\n\tfunc(r *Other) {\n\t\tr.X()\n\t}(nil)\n\tr.Save()\n}\n"
+    assert scope_calls(tmp_path, src) == {"Other.X"}
+
+
+def test_a_var_in_a_block_does_not_leak_out_of_it(tmp_path: Path) -> None:
+    src = "func F() {\n\t{\n\t\tvar r *Other\n\t\tr.X()\n\t}\n\tr.Save()\n}\n"
+    assert scope_calls(tmp_path, src) == {"Other.X"}
+
+
+def test_an_if_initializer_does_not_leak_out_of_the_if(tmp_path: Path) -> None:
+    src = "func F(x any) {\n\tif r, ok := x.(*Other); ok {\n\t\tr.X()\n\t}\n\tr.Save()\n}\n"
+    assert scope_calls(tmp_path, src) == {"Other.X"}
+
+
+def test_a_type_switch_binding_does_not_leak_out_of_its_clause(tmp_path: Path) -> None:
+    src = (
+        "func F(x any) {\n\tswitch r := x.(type) {\n\tcase *Other:\n\t\tr.X()\n\t}\n"
+        "\tr.Save()\n}\n"
+    )
+    assert scope_calls(tmp_path, src) == {"Other.X"}
+
+
+def test_a_short_var_resolves_from_the_next_line_on(tmp_path: Path) -> None:
+    src = "func F(r *Repo, x any) {\n\tr.Save()\n\tr := x.(*Other)\n\tr.X()\n}\n"
+    assert scope_calls(tmp_path, src) == {"Repo.Save", "Other.X"}
+
+
+def test_a_short_var_reading_the_outer_name_on_its_line_resolves_to_nothing(
+    tmp_path: Path,
+) -> None:
+    src = "func F(r *Repo) {\n\tr := r.Save()\n\t_ = r\n}\n"
+    assert scope_calls(tmp_path, src) == set()
+
+
+def test_a_package_level_literal_parameter_resolves(tmp_path: Path) -> None:
+    src = "var h = func(o *Other) {\n\to.X()\n}\n"
+    assert scope_calls(tmp_path, src) == {"Other.X"}

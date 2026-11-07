@@ -382,17 +382,23 @@
   {
    "function": "src.users.users.controller.UsersController.constructor",
    "name": "usersService",
-   "type_name": "UsersService"
+   "type_name": "UsersService",
+   "start_line": 11,
+   "end_line": 15
   },
   {
    "function": "src.users.users.controller.UsersController.constructor",
    "name": "logger",
-   "type_name": "Logger"
+   "type_name": "Logger",
+   "start_line": 11,
+   "end_line": 15
   },
   {
    "function": "src.users.users.controller.UsersController.constructor",
    "name": "config",
-   "type_name": "ConfigService"
+   "type_name": "ConfigService",
+   "start_line": 11,
+   "end_line": 15
   }
  ],
  "reexports": [],

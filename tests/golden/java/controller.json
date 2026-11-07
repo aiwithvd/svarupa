@@ -312,7 +312,9 @@
   {
    "function": "src.main.java.com.acme.shop.OrderController.OrderController.OrderController",
    "name": "service",
-   "type_name": "OrderService"
+   "type_name": "OrderService",
+   "start_line": 13,
+   "end_line": 16
   }
  ],
  "reexports": [],
