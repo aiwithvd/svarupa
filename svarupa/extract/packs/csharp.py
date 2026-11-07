@@ -9,6 +9,7 @@ are `attribute_list` children of a declaration, and `public` is a
 from __future__ import annotations
 
 import re
+from dataclasses import replace
 
 from tree_sitter import Node as TSNode
 
@@ -464,14 +465,86 @@ def _parameters(
 def _primary_parameters(ctx: Ctx, node: TSNode, fn: str) -> list[LocalType]:
     """A primary constructor's parameters are in scope in every member of the
     type, so each member's function carries them, over the whole type. A
-    member's own parameter, in the member only, is the inner one and wins."""
-    cur = node.parent
-    while cur is not None and cur.type not in _TYPE_OWNERS:
-        cur = cur.parent
+    member's own parameter, in the member only, is the inner one and wins.
+
+    In a member body a member of the type, inherited ones included, beats the
+    parameter (C# spec 15.11.6), so a name the type declares is left to the
+    member. When a base is not in this file, its members are unknown, so the
+    parameter binds untyped. A record's own positional property has the
+    parameter's type, so a record keeps it."""
+    cur = _enclosing_type(node)
     if cur is None:
         return []
     lst = next((c for c in cur.children if c.type == "parameter_list"), None)
-    return ctx.whole(_parameters(ctx, fn, lst, _generic_names(ctx, cur)), cur)
+    found = _parameters(ctx, fn, lst, _generic_names(ctx, cur))
+    members, known = _members(ctx, cur, set())
+    if cur.type != "record_declaration" and not known:
+        found = [replace(loc, type_name="") for loc in found]
+    return ctx.whole([loc for loc in found if loc.name not in members], cur)
+
+
+def _enclosing_type(node: TSNode) -> TSNode | None:
+    cur = node.parent
+    while cur is not None and cur.type not in _TYPE_OWNERS:
+        cur = cur.parent
+    return cur
+
+
+_MEMBER_DECLARATIONS = ("field_declaration", "event_field_declaration")
+
+
+def _members(ctx: Ctx, owner: TSNode, seen: set[str]) -> tuple[set[str], bool]:
+    """The member names a type declares and inherits from bases in this file,
+    and whether every base was found here."""
+    names = _declared_members(ctx, owner)
+    known = True
+    for base in bases(ctx, owner):
+        decl = None if base in seen else _type_in_file(ctx, owner, base)
+        if decl is None:
+            known = known and base in seen
+            continue
+        inherited, base_known = _members(ctx, decl, seen | {base})
+        names |= inherited
+        known = known and base_known
+    return names, known
+
+
+def _declared_members(ctx: Ctx, owner: TSNode) -> set[str]:
+    """The names of the members a type's body declares."""
+    names: set[str] = set()
+    body = owner.child_by_field_name("body")
+    for c in body.named_children if body is not None else ():
+        if c.type in _MEMBER_DECLARATIONS:
+            names |= _declarator_names(ctx, c)
+        elif (n := c.child_by_field_name("name")) is not None:
+            names.add(ctx.text(n))
+    return names
+
+
+def _declarator_names(ctx: Ctx, member: TSNode) -> set[str]:
+    decl = next((d for d in member.named_children if d.type == "variable_declaration"), None)
+    declarators = [
+        v
+        for v in (decl.named_children if decl is not None else ())
+        if v.type == "variable_declarator"
+    ]
+    return {ctx.text(n) for v in declarators if (n := _declarator_name(v)) is not None}
+
+
+def _type_in_file(ctx: Ctx, node: TSNode, name: str) -> TSNode | None:
+    """The type declaration called `name` anywhere in this file."""
+    root = node
+    while root.parent is not None:
+        root = root.parent
+    stack = [root]
+    while stack:
+        n = stack.pop()
+        if n.type in _TYPE_OWNERS:
+            ident = n.child_by_field_name("name")
+            if ident is not None and ctx.text(ident) == name:
+                return n
+        stack.extend(n.named_children)
+    return None
 
 
 _FUNCTIONS = ("method_declaration", "constructor_declaration", "local_function_statement")
@@ -690,7 +763,29 @@ def type_locals(ctx: Ctx, node: TSNode, _qualified: str) -> list[LocalType]:
     type's own lines only (the walker gives a binding with no scope the
     definition's lines)."""
     lst = next((c for c in node.children if c.type == "parameter_list"), None)
-    return _parameters(ctx, "", lst, _generic_names(ctx, node))
+    found = _parameters(ctx, "", lst, _generic_names(ctx, node))
+    return found + _hidden_in_nested_types(ctx, node, found)
+
+
+def _hidden_in_nested_types(ctx: Ctx, node: TSNode, found: list[LocalType]) -> list[LocalType]:
+    """A nested type cannot use the outer type's primary parameters (CS9105),
+    so over each nested type the names bind untyped, unless the nested type
+    binds them itself."""
+    if not found:
+        return []
+    out: list[LocalType] = []
+    body = node.child_by_field_name("body")
+    stack = list(body.named_children) if body is not None else []
+    while stack:
+        n = stack.pop()
+        if n.type not in _TYPE_OWNERS:
+            stack.extend(n.named_children)
+            continue
+        own = next((c for c in n.children if c.type == "parameter_list"), None)
+        mine = {loc.name for loc in _parameters(ctx, "", own, set())}
+        hidden = [replace(loc, type_name="") for loc in found if loc.name not in mine]
+        out += ctx.whole(hidden, n)
+    return out
 
 
 def _type_rule(kind: str) -> Define:

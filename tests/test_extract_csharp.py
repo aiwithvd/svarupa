@@ -702,3 +702,39 @@ def test_a_field_typed_by_an_external_namespace_is_not_a_repo_type(tmp_path: Pat
         "class U {\n    private readonly Repo _r;\n    void F() { _r.Save(); }\n}\n",
     )
     assert not saves(got)
+
+
+# ----------------------------------------------------------------------
+# a member of the type beats a primary-constructor parameter in member bodies
+
+
+def test_a_member_beats_a_primary_parameter_in_a_member_body(tmp_path: Path) -> None:
+    src = (
+        "class U(Repo r) {\n    private readonly Other r = r.Make();\n"
+        "    public void M() { r.X(); r.Save(); }\n}\n"
+    )
+    got = typed_calls(tmp_path, src)
+    assert ("Use.cs#A.U.M", "Other.cs#A.Other.X") in got
+    assert not [c for c in got if c[0] == "Use.cs#A.U.M" and c[1].endswith("Save")]
+
+
+def test_a_primary_parameter_still_shadows_the_member_in_an_initializer(tmp_path: Path) -> None:
+    src = "class U(Repo r) {\n    private readonly Other r = r.Save();\n}\n"
+    assert saves(typed_calls(tmp_path, src))
+
+
+def test_a_base_member_may_beat_a_primary_parameter(tmp_path: Path) -> None:
+    (tmp_path / "Base.cs").write_text(
+        "namespace A;\npublic class Base { protected Other r; }\n"
+    )
+    src = "class U(Repo r) : Base {\n    public void M() { r.Save(); }\n}\n"
+    got = typed_calls(tmp_path, src)
+    assert not [c for c in got if c[0] == "Use.cs#A.U.M" and c[1].endswith("Save")]
+
+
+def test_a_nested_type_does_not_see_the_outer_primary_parameters(tmp_path: Path) -> None:
+    src = (
+        "class U(Repo r) {\n    class Inner {\n        static Other r = new();\n"
+        "        object z = Use(r.Save());\n    }\n}\n"
+    )
+    assert not saves(typed_calls(tmp_path, src))
