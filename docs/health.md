@@ -165,17 +165,21 @@ Redis, MongoDB and Kafka clients) are not flagged either.
 
 ## Language gaps
 
-The Python, TypeScript, Go, Java and C# packs are stable: each passed the
-benchmark. The JavaScript and Rust packs are experimental. A pack is stable
-only when two of its benchmark repositories reach 90% recall with no false
-fact. The benchmark corpus has 15 repositories. The two Rust repositories
-score 96% (rust-web-app) and 77% (zero-to-production), and no probe fired, so
-Rust is not stable yet. These gaps are known and are not guessed around.
+The Python, TypeScript, Go, Java, C# and Rust packs are stable: each passed
+the benchmark. The JavaScript pack is experimental. A pack is stable only when
+two of its benchmark repositories reach 90% recall with no false fact. The
+benchmark corpus has 15 repositories. The two Rust repositories score 98%
+(rust-web-app) and 93% (zero-to-production), and no probe fired. These gaps
+are known and are not guessed around.
 
 **Rust**
 
-- A call on a value that is typed only by a function parameter is not
-  resolved. This is true for every language, not only Rust.
+- A call on a typed parameter or on a `let x: T` local resolves through its
+  type, and `param.field.m()` takes one step through the field. A name rebound
+  by an `if let`, `match` or `for` pattern is not tracked as a shadow, so a
+  call on it can resolve to the earlier parameter type. A local with no
+  written type (`let x = Repo::new()`) is not resolved. Parameter and local
+  types are not read yet in the other languages.
 - A call through a module path with several segments, such as
   `web::routes::f()`, is not resolved.
 - A `pub use` inside an inline `mod { }` block is not followed. A `pub use`

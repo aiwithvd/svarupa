@@ -1,4 +1,4 @@
-"""Rust language pack (experimental).
+"""Rust language pack.
 
 A file is a module, so the qualified prefix is the module path from the
 crate root (`src/a/b.rs` is `a.b`), and an inline `mod x { }` extends it.
@@ -874,7 +874,7 @@ PACK = Pack(
         module="tree_sitter_rust",
         default="language",
     ),
-    maturity=Maturity.EXPERIMENTAL,
+    maturity=Maturity.STABLE,
     metrics=METRICS,
     risks=RISKS,
     qualified_prefix=qualified_prefix,
