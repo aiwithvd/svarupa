@@ -169,9 +169,18 @@ Calls through a typed parameter and through an explicitly typed local now
 resolve in Rust, Go, Java, C#, TypeScript and Python. A local is scoped to the
 block that binds it, and the innermost binding wins. A name that is rebound
 without a written type hides the older type, a field and an import of the same
-name, so Svarupa leaves that call unresolved instead of guessing. A type that
-the file imports from a dependency stays external, even when the repository
-has a class with the same name.
+name, so Svarupa leaves that call unresolved instead of guessing.
+
+The type is looked up only where the language itself looks: the same file, the
+file's imports, and the language's own implicit scope. That scope is the
+package directory in Go, the package in Java, and the namespaces in scope in
+C# (the file's own namespaces, its `using`s and the project's `global using`s).
+Rust, TypeScript and Python have no implicit scope beyond the file and its
+imports. A repository class with the same bare name somewhere else is never
+used. When an import names the type but points outside the repository, the
+call is external if the module is a known dependency or part of the standard
+library, and unresolved otherwise. A field reached through a local
+(`local.field.m()`) and a typed field use the same lookup.
 
 Locals whose type is only inferred do not resolve. These also do not resolve:
 
@@ -182,7 +191,18 @@ Locals whose type is only inferred do not resolve. These also do not resolve:
   `if (!(o instanceof T x)) return; x.f();`;
 - a name that is bound on the same line where its scope starts or ends, which
   is left unresolved;
-- Python `global` names.
+- Python `global` names;
+- Go interface-typed parameters, because interface methods are not symbols;
+- Python module-level typed names used inside a function;
+- Python dotted and container annotations, such as `models.Repo` and
+  `list[Repo]`;
+- a name from the enclosing method used inside a Java anonymous class whose
+  supertype is not in the same file, because an inherited field could hide it;
+- Java fully qualified types, such as `com.acme.Repo r`.
+- a C# primary-constructor parameter used in a member body when a base type
+  is not in the same file, because an inherited member could hide it;
+- Rust files of an integration test crate (`tests/api/main.rs` and its
+  modules), because their `use crate::...` paths do not resolve yet.
 
 ## Language gaps
 
