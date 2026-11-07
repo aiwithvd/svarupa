@@ -233,6 +233,10 @@ def _d_fields() -> dict[tuple[str, str, str], str]:
     return {}
 
 
+def _d_locals() -> dict[tuple[str, str, str], str]:
+    return {}
+
+
 def _is_named(qualified: str, name: str) -> bool:
     """Whether a qualified class name ends in `name`; a type at a crate root
     (Rust `src/lib.rs`) has no module prefix at all."""
@@ -254,6 +258,9 @@ class _Index:
     methods_of: dict[tuple[str, str], list[tuple[str, str]]] = field(default_factory=_d_meth)
     bases_of: dict[str, tuple[str, ...]] = field(default_factory=_d_bases)
     field_types: dict[tuple[str, str, str], str] = field(default_factory=_d_fields)
+    # (file, function, name) -> declared type. "" when the name is typed two
+    # ways, or rebound untyped: it then resolves to nothing.
+    locals: dict[tuple[str, str, str], str] = field(default_factory=_d_locals)
     files: set[str] = field(default_factory=_s_str)
     # Bases a class gets from the methods declared for it elsewhere (a Rust
     # `impl Trait for Type`), keyed by the class's identity.
@@ -325,6 +332,10 @@ class Resolver:
             idx.files.add(f.path)
             for fld in f.fields:
                 idx.field_types[(f.path, fld.owner, fld.field)] = fld.type_name
+            for loc in f.locals:
+                lkey = (f.path, loc.function, loc.name)
+                seen = idx.locals.get(lkey, loc.type_name)
+                idx.locals[lkey] = loc.type_name if seen == loc.type_name else ""
             for s in f.symbols:
                 key = (f.path, s.qualified_name)
                 idx.by_qualname.setdefault(s.qualified_name, key)
@@ -477,7 +488,12 @@ class Resolver:
 
     def _type_is_external(self, f: FileFacts, name: str) -> bool:
         for imp in f.imports:
-            if name not in imp.names and name not in imp.alias_of:
+            # A plain `use a::Name` / `import a.Name` ends in the type's name.
+            if (
+                name not in imp.names
+                and name not in imp.alias_of
+                and not imp.specifier.endswith(f".{name}")
+            ):
                 continue
             if imp.is_relative:
                 return False
@@ -1215,6 +1231,10 @@ class Resolver:
 
         if call.shape is CallShape.QUALIFIED:
             recv = call.receiver or ""
+            if call.enclosing and (f.path, call.enclosing, recv) in self.idx.locals:
+                # A parameter or typed local shadows a field or an import.
+                type_name = self.idx.locals[(f.path, call.enclosing, recv)]
+                return self._typed_call(f, f.path, type_name, name) if type_name else []
             if recv in import_names:
                 spec, level = import_names[recv]
                 if self._names_modules(f.lang):
@@ -1247,7 +1267,12 @@ class Resolver:
             # as anything but unresolved would be invention.
             return []
 
-        # MEMBER: chained receiver, type unknowable without inference.
+        # MEMBER: a chained receiver has no type without inference, except
+        # `local.field`, which takes one step through the local's class.
+        local, _, member = (call.receiver or "").partition(".")
+        type_name = self.idx.locals.get((f.path, call.enclosing or "", local))
+        if type_name and member.isidentifier():
+            return self._field_call(f, type_name, member, name)
         return []
 
     def _field_call(
@@ -1264,6 +1289,12 @@ class Resolver:
             type_name = self.idx.field_types.get((home, cls, field_name))
         if type_name is None:
             return []
+        return self._typed_call(f, home, type_name, name)
+
+    def _typed_call(
+        self, f: FileFacts, home: str, type_name: str, name: str
+    ) -> list[tuple[str, str]] | None:
+        """`name` called on a value declared as `type_name`, named in `home`."""
         owner, ambiguous = self._resolve_class_name_x(type_name, home)
         if owner is None:
             # `_resolve_class_name` returns None both for "not in the repo"

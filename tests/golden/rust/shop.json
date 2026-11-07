@@ -410,6 +410,7 @@
    "type_name": "HashMap"
   }
  ],
+ "locals": [],
  "reexports": [],
  "diagnostics": [],
  "ctor_assigns": [],

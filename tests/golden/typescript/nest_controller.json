@@ -378,6 +378,7 @@
    "type_name": "Logger"
   }
  ],
+ "locals": [],
  "reexports": [],
  "diagnostics": [],
  "ctor_assigns": [],

@@ -34,6 +34,7 @@ from svarupa.extract.base import (
     FileFacts,
     FunctionMetrics,
     ImportRef,
+    LocalType,
     RiskFact,
     SymbolRef,
     depth_capped,
@@ -48,6 +49,7 @@ from svarupa.extract.packs.model import (
     Field,
     Grammar,
     Import,
+    Local,
     MetricsSpec,
     Pack,
     RiskSpec,
@@ -111,6 +113,7 @@ class Ctx:
         self.imports: list[ImportRef] = []
         self.calls: list[CallSite] = []
         self.fields: list[FieldType] = []
+        self.locals: list[LocalType] = []
         self.ctor_assigns: list[tuple[str, str]] = []
         self.reexports: list[str] = []
         self.namespace = ""
@@ -173,6 +176,8 @@ class Ctx:
                 self.calls.append(site)
         elif isinstance(rule, Field) and frame.cls:
             self.fields.extend(rule.hook(self, node, frame.cls))
+        elif isinstance(rule, Local) and frame.fn:
+            self.locals.extend(rule.hook(self, node, frame.fn))
         plain = frame.plain()
         for child in node.children:
             self.visit(child, plain, depth + 1)
@@ -217,6 +222,8 @@ class Ctx:
         )
         if rule.after is not None:
             rule.after(self, node, frame, name)
+        if rule.locals is not None:
+            self.locals.extend(rule.locals(self, node, qualified))
         if rule.body_field is None:
             return
         body = node.child_by_field_name(rule.body_field)
@@ -636,6 +643,7 @@ class Ctx:
             imports=tuple(self.imports),
             calls=tuple(self.calls),
             fields=tuple(self.fields),
+            locals=tuple(self.locals),
             reexports=tuple(sorted(set(self.reexports))),
             diagnostics=tuple(diags),
             ctor_assigns=tuple(self.ctor_assigns),

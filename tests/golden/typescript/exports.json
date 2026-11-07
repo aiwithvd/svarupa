@@ -192,6 +192,7 @@
   }
  ],
  "fields": [],
+ "locals": [],
  "reexports": [
   "Svc",
   "UsersService"

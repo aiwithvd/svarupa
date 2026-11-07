@@ -81,6 +81,7 @@
  ],
  "calls": [],
  "fields": [],
+ "locals": [],
  "reexports": [
   "Order",
   "make_order"

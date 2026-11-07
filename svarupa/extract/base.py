@@ -39,6 +39,7 @@ __all__ = [
     "FileFacts",
     "FunctionMetrics",
     "ImportRef",
+    "LocalType",
     "RiskFact",
     "RouteFact",
     "Scorecard",
@@ -174,6 +175,21 @@ class FieldType:
 
 
 @dataclass(frozen=True, slots=True)
+class LocalType:
+    """A parameter or local whose declared type names a class.
+
+    `function` is the qualified name `CallSite.enclosing` carries, so a call
+    finds its locals by the function it sits in. An empty `type_name` marks a
+    name rebound to something untyped (`let r = other();`): the earlier type
+    no longer holds, so the name resolves to nothing.
+    """
+
+    function: str
+    name: str
+    type_name: str
+
+
+@dataclass(frozen=True, slots=True)
 class CallSite:
     """A call, unresolved."""
 
@@ -244,6 +260,7 @@ class FileFacts:
     imports: tuple[ImportRef, ...] = ()
     calls: tuple[CallSite, ...] = ()
     fields: tuple[FieldType, ...] = ()
+    locals: tuple[LocalType, ...] = ()
     reexports: tuple[str, ...] = ()
     diagnostics: tuple[Diagnostic, ...] = ()
     # `local = callee(...)` bindings, as (local name, callee text). Generic:

@@ -400,6 +400,7 @@
    "type_name": "IRepo"
   }
  ],
+ "locals": [],
  "reexports": [],
  "diagnostics": [],
  "ctor_assigns": [],
