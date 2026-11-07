@@ -12,6 +12,7 @@ class TwoFiles:
 
     top_level_only = True
     package_scoped_bare = False
+    qualified_types = False
     fields_without_this = False
     follows_reexports = False
     names_modules = False

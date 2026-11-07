@@ -82,7 +82,9 @@ def _plain(callee: str) -> str:
 
 @cache
 def _word(name: str) -> re.Pattern[bytes]:
-    """`name` as a whole identifier, not part of a longer one."""
+    """`name` as a whole identifier, not part of a longer one. `$` counts as an
+    identifier character for every pack: it is harmless where it is not one,
+    since a name next to a `$` in such a language is only ever a miss."""
     return re.compile(rb"(?<![\w$])" + re.escape(name.encode()) + rb"(?![\w$])")
 
 

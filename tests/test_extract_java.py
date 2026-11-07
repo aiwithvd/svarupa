@@ -531,3 +531,47 @@ def test_sibling_blocks_each_resolve_their_own_type(tmp_path: Path) -> None:
 def test_a_local_resolves_only_from_its_declaration_on(tmp_path: Path) -> None:
     body = "    repo.q();\n    Other repo = make();\n    repo.w();"
     assert scope_calls(tmp_path, body) == {"Repo.q", "Other.w"}
+
+
+def test_an_externally_imported_parameter_type_stays_external(tmp_path: Path) -> None:
+    pom = (
+        '<project xmlns="http://maven.apache.org/POM/4.0.0"><dependencies>'
+        "<dependency><groupId>com.squareup.okhttp</groupId>"
+        "<artifactId>okhttp</artifactId></dependency></dependencies></project>\n"
+    )
+    write(tmp_path, "pom.xml", pom)
+    write(
+        tmp_path,
+        "src/a/Request.java",
+        "package a;\npublic class Request {\n  public void send() {}\n}\n",
+    )
+    write(
+        tmp_path,
+        "src/a/A.java",
+        "package a;\nimport com.squareup.okhttp.Request;\n"
+        "class A { void f(Request r) { r.send(); } }\n",
+    )
+    calls = {e.dst for e in run(tmp_path).edges if e.kind is EdgeKind.CALLS}
+    assert not any(d.endswith("Request.send") for d in calls)
+
+
+def test_an_externally_imported_field_type_stays_external(tmp_path: Path) -> None:
+    pom = (
+        '<project xmlns="http://maven.apache.org/POM/4.0.0"><dependencies>'
+        "<dependency><groupId>com.squareup.okhttp</groupId>"
+        "<artifactId>okhttp</artifactId></dependency></dependencies></project>\n"
+    )
+    write(tmp_path, "pom.xml", pom)
+    write(
+        tmp_path,
+        "src/a/Request.java",
+        "package a;\npublic class Request {\n  public void send() {}\n}\n",
+    )
+    write(
+        tmp_path,
+        "src/a/A.java",
+        "package a;\nimport com.squareup.okhttp.Request;\n"
+        "class A { Request r; void f() { r.send(); } }\n",
+    )
+    calls = {e.dst for e in run(tmp_path).edges if e.kind is EdgeKind.CALLS}
+    assert not any(d.endswith("Request.send") for d in calls)

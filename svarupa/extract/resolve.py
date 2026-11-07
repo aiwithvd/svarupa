@@ -1330,6 +1330,13 @@ class Resolver:
             qualified = self._qualified_type_call(f, home, type_name, name)
             if qualified is not _NOT_QUALIFIED:
                 return qualified
+        facts = self.idx.by_file.get(home, f)
+        if self._type_is_external(facts, type_name) and not any(
+            cid[0] == home and _is_named(cid[1], type_name) for cid in self.idx.class_by_id
+        ):
+            # The file imports this name from a dependency: a repo class with
+            # the same bare name is a different type.
+            return None
         owner, ambiguous = self._resolve_class_name_x(type_name, home)
         if owner is None:
             # `_resolve_class_name` returns None both for "not in the repo"
@@ -1344,14 +1351,15 @@ class Resolver:
     def _qualified_type_call(
         self, f: FileFacts, home: str, type_name: str, name: str
     ) -> list[tuple[str, str]] | None:
-        """`name` called on a value of type `pkg.Name` (Go), where `pkg` is a
+        """`name` called on a value of type `pkg.Name` in a language whose types are
+        written that way, where `pkg` is a
         package the file imports: the type is looked up in that package only,
         so a repo type with the same bare name is never mistaken for it. A
         package outside the repository is EXTERNAL. Anything else is left to
         the caller (`_NOT_QUALIFIED`)."""
         module = self.modules.get(f.lang)
         facts = self.idx.by_file.get(home)
-        if module is None or not module.package_scoped_bare or facts is None:
+        if module is None or not module.qualified_types or facts is None:
             return _NOT_QUALIFIED
         qualifier, _, bare = type_name.rpartition(".")
         spec = self._imported_spec(facts, qualifier)

@@ -988,3 +988,12 @@ def test_a_pattern_binding_hides_the_parameter_only_in_its_scope(
 ) -> None:
     src = f"fn f(r: Repo, o: Option<Other>) {{\n    {binding}\n    r.w();\n}}\n"
     assert scope_calls(tmp_path, src) == {"Repo.w"}
+
+
+def test_an_externally_imported_parameter_type_stays_external(tmp_path: Path) -> None:
+    write(tmp_path, "Cargo.toml", '[package]\nname = "app"\n[dependencies]\nreqwest = "0.12"\n')
+    write(
+        tmp_path, "src/client.rs", "pub struct Client;\nimpl Client { pub fn get(&self) {} }\n"
+    )
+    write(tmp_path, "src/app.rs", "use reqwest::Client;\nfn f(c: &Client) { c.get(); }\n")
+    assert not any(d.endswith("Client.get") for _, d in calls_of(tmp_path))

@@ -33,6 +33,9 @@ class ModuleResolver(Protocol):
     # True when a bare name can only mean a definition in the caller's own
     # package directory (Go).
     package_scoped_bare: bool
+    # True when a type may be written `pkg.Name` with `pkg` an imported package
+    # (Go), so it is looked up in that package only.
+    qualified_types: bool
     # True when `field.m()` without `this.` is a call on the class's field
     # (Java); languages that require `this.` leave it False.
     fields_without_this: bool
@@ -77,6 +80,7 @@ class GoModules:
 
     top_level_only = True
     package_scoped_bare = True
+    qualified_types = True
     fields_without_this = False
     names_modules = False
     follows_reexports = False
@@ -151,6 +155,7 @@ class JvmPackages:
 
     top_level_only = False
     package_scoped_bare = False
+    qualified_types = False
     fields_without_this = True
     names_modules = False
     follows_reexports = False
@@ -194,6 +199,7 @@ class CSharpNamespaces:
 
     top_level_only = False
     package_scoped_bare = False
+    qualified_types = False
     fields_without_this = True
     names_modules = False
     follows_reexports = False
@@ -423,6 +429,7 @@ class RustCrates:
     # Bare names are scoped by module (a `use` name or a glob), not by
     # directory, so the resolver reads `names_modules` instead of a package.
     package_scoped_bare = False
+    qualified_types = False
     fields_without_this = False
     # `use a::b;` can import a module `b`, so `b::f()` looks in `a.b` first.
     names_modules = True
