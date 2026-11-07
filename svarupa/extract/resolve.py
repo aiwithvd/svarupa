@@ -1231,9 +1231,11 @@ class Resolver:
 
         if call.shape is CallShape.QUALIFIED:
             recv = call.receiver or ""
-            if call.enclosing and (f.path, call.enclosing, recv) in self.idx.locals:
-                # A parameter or typed local shadows a field or an import.
-                type_name = self.idx.locals[(f.path, call.enclosing, recv)]
+            lkey = (f.path, call.enclosing or "", recv)
+            if lkey in self.idx.locals:
+                # A parameter or typed local shadows a field or an import. A
+                # call outside any function (an initializer) has the key "".
+                type_name = self.idx.locals[lkey]
                 return self._typed_call(f, f.path, type_name, name) if type_name else []
             if recv in import_names:
                 spec, level = import_names[recv]

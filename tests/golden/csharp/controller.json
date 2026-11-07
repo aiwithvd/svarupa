@@ -415,6 +415,11 @@
    "function": "Shop.Api.OrdersController.Create",
    "name": "helper",
    "type_name": ""
+  },
+  {
+   "function": "",
+   "name": "Qty",
+   "type_name": ""
   }
  ],
  "reexports": [],

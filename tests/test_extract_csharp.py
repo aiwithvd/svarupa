@@ -440,3 +440,65 @@ def test_a_typed_join_variable_is_not_mistaken_for_its_type() -> None:
     )
     assert ("j", "Repo") in got
     assert ("Repo", "") not in got
+
+
+# ----------------------------------------------------------------------
+# fix round 1
+
+
+def test_into_names_hide_a_field(tmp_path: Path) -> None:
+    for q in (
+        "from a in b group a by a.k into grp select grp.Save()",
+        "from a in b select a into grp select grp.Save()",
+    ):
+        src = f"class U {{ Repo grp; void F() {{ var z = {q}; }} }}\n"
+        assert ("grp", "") in pairs(src)
+        assert not saves(typed_calls(tmp_path, src))
+
+
+def test_var_deconstruction_patterns_hide_fields(tmp_path: Path) -> None:
+    for use in (
+        "if (o is var (x, (a, c))) {}",
+        "switch (o) { case var (p, a): break; }",
+        "G(out var (a, s));",
+    ):
+        src = f"class U {{ Repo a; void F(object o) {{ {use} a.Save(); }} }}\n"
+        assert ("a", "") in pairs(src), use
+        assert not saves(typed_calls(tmp_path, src)), use
+    got = pairs("class U { void F(object o) { if (o is var (x, (y, z))) {} } }\n")
+    assert {("x", ""), ("y", ""), ("z", "")} <= got
+    got = pairs("class U { void F(object o) { switch (o) { case var (p, q): break; } } }\n")
+    assert {("p", ""), ("q", "")} <= got
+
+
+def test_a_local_function_sees_the_locals_of_its_enclosing_function(tmp_path: Path) -> None:
+    src = "class U { Other r; void F() { Repo r = Make(); void G() { r.Save(); } } }\n"
+    assert ("a.U.F.G", "r", "Repo") in locals_of(src)
+    got = typed_calls(tmp_path, src)
+    assert saves(got)
+    assert not [d for _, d in got if d.endswith(".X")]
+
+
+def test_a_local_function_sees_enclosing_parameters_and_nesting(tmp_path: Path) -> None:
+    src = "class U { Other r; void F(Repo r) { void G() { void H() { r.Save(); } } } }\n"
+    assert saves(typed_calls(tmp_path, src))
+
+
+def test_a_local_function_own_binding_conflicting_merges_to_untyped(tmp_path: Path) -> None:
+    src = "class U { void F() { Repo r = Make(); void G(Other r) { r.X(); } } }\n"
+    got = typed_calls(tmp_path, src)
+    assert not got or not any(d.endswith((".X", "Save")) for _, d in got)
+
+
+def test_initializers_of_a_primary_constructor_type_do_not_get_wrong_edges(
+    tmp_path: Path,
+) -> None:
+    src = "class U(Repo repo) { Other repo2 = repo.Save2(); Other X2 = Make(repo); }\n"
+    assert not saves(typed_calls(tmp_path, src))
+
+
+def test_a_primary_parameter_shadows_a_field_in_an_initializer(tmp_path: Path) -> None:
+    got = typed_calls(tmp_path, "class U(Other repo) { Repo repo; int x = repo.Save(); }\n")
+    assert not saves(got)
+    got = typed_calls(tmp_path, "class V(Repo repo) { int x = repo.Save(); }\n")
+    assert saves(got)

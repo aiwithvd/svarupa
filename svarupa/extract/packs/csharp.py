@@ -473,11 +473,43 @@ def _primary_parameters(ctx: Ctx, node: TSNode, fn: str) -> list[LocalType]:
     return _parameters(ctx, fn, lst, _generic_names(ctx, cur))
 
 
+_FUNCTIONS = ("method_declaration", "constructor_declaration", "local_function_statement")
+
+
+def _outer_scope(ctx: Ctx, node: TSNode, fn: str) -> list[LocalType]:
+    """A local function sees the parameters and locals of the functions around
+    it. Each binding is recorded again under the local function's own name; the
+    resolver merges a name bound two ways to untyped."""
+    outer = node.parent
+    while outer is not None and outer.type not in _FUNCTIONS:
+        outer = outer.parent
+    if outer is None:
+        return []
+    out = _parameters(
+        ctx, fn, outer.child_by_field_name("parameters"), _generic_names(ctx, outer)
+    )
+    stack = list(outer.children)
+    while stack:
+        n = stack.pop()
+        if n.type == "local_function_statement" and n.id != node.id:
+            continue  # a sibling's bindings are not in scope here
+        hook = _SCOPE_HOOKS.get(n.type)
+        if hook is not None:
+            out += hook(ctx, n, fn)
+        stack.extend(n.children)
+    if outer.type == "local_function_statement":
+        out += _outer_scope(ctx, outer, fn)
+    return out
+
+
 def parameter_locals(ctx: Ctx, node: TSNode, qualified: str) -> list[LocalType]:
     params = node.child_by_field_name("parameters")
-    return _primary_parameters(ctx, node, qualified) + _parameters(
+    out = _primary_parameters(ctx, node, qualified) + _parameters(
         ctx, qualified, params, _generic_names(ctx, node)
     )
+    if node.type == "local_function_statement":
+        out += _outer_scope(ctx, node, qualified)
+    return out
 
 
 def variable_locals(ctx: Ctx, node: TSNode, fn: str) -> list[LocalType]:
@@ -498,6 +530,11 @@ def typed_name_locals(ctx: Ctx, node: TSNode, fn: str) -> list[LocalType]:
     """`foreach (T x in xs)`, `catch (T e)`, `is T x`, `case T x:`, `out T x`
     and a LINQ `from T x in xs`."""
     target = node.child_by_field_name("left") or node.child_by_field_name("name")
+    group = next(
+        (c for c in node.children if c.type == "parenthesized_variable_designation"), None
+    )
+    if group is not None:  # `case var (a, b):` binds every name in the group
+        return _untyped(ctx, fn, group)
     return _bind_target(
         ctx, fn, node.child_by_field_name("type"), target, _generic_names(ctx, node)
     )
@@ -514,6 +551,39 @@ def query_locals(ctx: Ctx, node: TSNode, fn: str) -> list[LocalType]:
     return _binding(ctx, fn, ty, names[0], _generic_names(ctx, node))
 
 
+def query_into_locals(ctx: Ctx, node: TSNode, fn: str) -> list[LocalType]:
+    """`.. into g`: a bare identifier child of the query binds a range variable."""
+    return [LocalType(fn, ctx.text(c), "") for c in node.children if c.type == "identifier"]
+
+
+def _is_var_group(call: TSNode | None) -> bool:
+    """The grammar reads `o is var (a, b)` and `F(out var (a, b))` as a call."""
+    function = call.child_by_field_name("function") if call is not None else None
+    if function is None:
+        return False
+    if function.type == "is_expression":
+        right = function.child_by_field_name("right")
+        return right is not None and right.type == "implicit_type"
+    return function.type == "identifier" and function.text in (b"var", b"")
+
+
+def _argument_names(ctx: Ctx, fn: str, node: TSNode) -> list[LocalType]:
+    out: list[LocalType] = []
+    for c in node.named_children:
+        if c.type == "identifier":
+            out.append(LocalType(fn, ctx.text(c), ""))
+        elif c.type in ("argument", "tuple_expression"):
+            out += _argument_names(ctx, fn, c)
+    return out
+
+
+def var_group_locals(ctx: Ctx, node: TSNode, fn: str) -> list[LocalType]:
+    """Every name in `var (a, (b, c))`, however deep."""
+    if node.parent is None or not _is_var_group(node.parent):
+        return []
+    return _argument_names(ctx, fn, node)
+
+
 def lambda_locals(ctx: Ctx, node: TSNode, fn: str) -> list[LocalType]:
     """`(Order o) => ..` is typed, `o => ..` and `(a, b) => ..` rebind untyped."""
     params = node.child_by_field_name("parameters")
@@ -524,6 +594,33 @@ def lambda_locals(ctx: Ctx, node: TSNode, fn: str) -> list[LocalType]:
     return _parameters(ctx, fn, params, _generic_names(ctx, node))
 
 
+_SCOPE_HOOKS = {
+    "variable_declaration": variable_locals,
+    "foreach_statement": typed_name_locals,
+    "catch_declaration": typed_name_locals,
+    "declaration_pattern": typed_name_locals,
+    "recursive_pattern": typed_name_locals,
+    "declaration_expression": typed_name_locals,
+    "from_clause": typed_name_locals,
+    "join_clause": query_locals,
+    "let_clause": query_locals,
+    "join_into_clause": query_locals,
+    "query_expression": query_into_locals,
+    "argument_list": var_group_locals,
+    "lambda_expression": lambda_locals,
+    "anonymous_method_expression": lambda_locals,
+}
+
+
+def type_locals(ctx: Ctx, node: TSNode, _qualified: str) -> list[LocalType]:
+    """Field and property initializers run outside any member, where a call has
+    no enclosing function. A primary constructor parameter is in scope there and
+    shadows a field, so bind it under the empty function. Types in one file
+    that bind the same name two ways merge to untyped."""
+    lst = next((c for c in node.children if c.type == "parameter_list"), None)
+    return _parameters(ctx, "", lst, _generic_names(ctx, node))
+
+
 def _type_rule(kind: str) -> Define:
     return Define(
         kind=kind,
@@ -531,6 +628,7 @@ def _type_rule(kind: str) -> Define:
         bases=bases,
         exported_by=_public,
         decorators_from=attributes_of,
+        locals=type_locals,
     )
 
 
@@ -710,6 +808,8 @@ PACK = Pack(
         "join_clause": Local(hook=query_locals),
         "let_clause": Local(hook=query_locals),
         "join_into_clause": Local(hook=query_locals),
+        "query_expression": Local(hook=query_into_locals),
+        "argument_list": Local(hook=var_group_locals),
         "lambda_expression": Local(hook=lambda_locals),
         "anonymous_method_expression": Local(hook=lambda_locals),
         "field_declaration": Field(hook=declared_field),
