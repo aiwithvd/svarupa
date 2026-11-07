@@ -163,6 +163,27 @@ How each one decides:
 a browser user can cancel a request. Clients that retry by default (most
 Redis, MongoDB and Kafka clients) are not flagged either.
 
+## Typed parameters and locals
+
+Calls through a typed parameter and through an explicitly typed local now
+resolve in Rust, Go, Java, C#, TypeScript and Python. A local is scoped to the
+block that binds it, and the innermost binding wins. A name that is rebound
+without a written type hides the older type, a field and an import of the same
+name, so Svarupa leaves that call unresolved instead of guessing. A type that
+the file imports from a dependency stays external, even when the repository
+has a class with the same name.
+
+Locals whose type is only inferred do not resolve. These also do not resolve:
+
+- inferred locals: `var x = new T()`, `let x = T::new()`, `x := NewT()`;
+- generic parameters;
+- chains longer than one field, such as `a.b.c.m()`;
+- flow-sensitive narrowing, such as Java
+  `if (!(o instanceof T x)) return; x.f();`;
+- a name that is bound on the same line where its scope starts or ends, which
+  is left unresolved;
+- Python `global` names.
+
 ## Language gaps
 
 The Python, TypeScript, Go, Java, C# and Rust packs are stable: each passed
@@ -174,12 +195,10 @@ are known and are not guessed around.
 
 **Rust**
 
-- A call on a typed parameter or on a `let x: T` local resolves through its
-  type, and `param.field.m()` takes one step through the field. A name rebound
-  by any pattern (`if let`, `match`, `for`, a tuple `let`, a closure
-  parameter) or by an untyped `let` hides the earlier type for the whole
-  function, so a call on it may be left unresolved. A local with no written type (`let x = Repo::new()`) is not resolved. Parameter and local
-  types are not read yet in the other languages.
+- A name rebound by any pattern (`if let`, `match`, `for`, a tuple `let`, a
+  closure parameter) or by an untyped `let` hides the earlier type inside the
+  scope of that new binding, so a call on it may be left unresolved. A local
+  with no written type (`let x = Repo::new()`) is not resolved.
 - A call through a module path with several segments, such as
   `web::routes::f()`, is not resolved.
 - A `pub use` inside an inline `mod { }` block is not followed. A `pub use`

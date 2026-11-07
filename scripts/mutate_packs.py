@@ -42,7 +42,14 @@ Each entry breaks one promise of the walker; a test must go red:
 * a `sqlx::query!` macro is not a raw sink;
 * `mod.rs` names its directory;
 * `pub use` re-exports in Rust;
-* a plain `use` does not re-export in Rust.
+* a plain `use` does not re-export in Rust;
+* locals are ignored by the resolver;
+* a local does not shadow a field;
+* Rust `&T` is not unwrapped;
+* a generic parameter counts as a type;
+* the innermost scope does not win;
+* a "" binding falls back to fields;
+* an externally imported type resolves to a same-named repo class.
 """
 
 from __future__ import annotations
@@ -433,6 +440,48 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
         "svarupa/extract/packs/rust.py",
         'return vis is not None and "".join',
         'return vis is None or "".join',
+    ),
+    (
+        "locals are ignored by the resolver",
+        "svarupa/extract/resolve.py",
+        "        line = call.evidence.start_line\n        found = [",
+        "        line = call.evidence.start_line\n        return None\n        found = [",
+    ),
+    (
+        "a local does not shadow a field",
+        "svarupa/extract/resolve.py",
+        "            if type_name is not None:\n                # A parameter or typed local shadows",
+        "            if type_name is not None and (\n                f.path,\n                call.enclosing_class,\n                recv,\n            ) not in self.idx.field_types:\n                # A parameter or typed local shadows",
+    ),
+    (
+        "rust &T is not unwrapped",
+        "svarupa/extract/packs/rust.py",
+        '    if ty.type == "reference_type":\n        return _type_name(ty.child_by_field_name("type"), unwrap)\n',
+        '    if ty.type == "reference_type":\n        return None\n',
+    ),
+    (
+        "a generic parameter counts as a type",
+        "svarupa/extract/packs/rust.py",
+        "    return None if name is None or name in generics else name",
+        "    return None if name is None else name",
+    ),
+    (
+        "the innermost scope does not win",
+        "svarupa/extract/resolve.py",
+        "inner = min(_span(loc) for loc in found)",
+        "inner = max(_span(loc) for loc in found)",
+    ),
+    (
+        'a "" binding falls back to fields',
+        "svarupa/extract/resolve.py",
+        "            if type_name is not None:\n                # A parameter or typed local shadows",
+        "            if type_name:\n                # A parameter or typed local shadows",
+    ),
+    (
+        "an externally imported type resolves to a same-named repo class",
+        "svarupa/extract/resolve.py",
+        "        if self._type_is_external(facts, type_name) and not any(",
+        "        if False and self._type_is_external(facts, type_name) and not any(",
     ),
 ]
 
