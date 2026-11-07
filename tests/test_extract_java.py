@@ -621,3 +621,49 @@ def test_an_imported_or_same_package_type_resolves(tmp_path: Path) -> None:
         tmp_path, "package app.model;\nclass A { void f(HttpEntity e) { e.getBody(); } }\n"
     )
     assert [c for c in got if c[1].endswith("HttpEntity.getBody")]
+
+
+# ----------------------------------------------------------------------
+# anonymous and local classes see the enclosing method; initializer lambdas
+# bind their parameters
+
+
+def other_x(calls: set[tuple[str, str]]) -> bool:
+    return any(d.endswith("Other.x") for _, d in calls)
+
+
+JOB = "interface Job { void run(); }\n"
+
+
+def test_an_anonymous_class_method_sees_the_enclosing_parameter(tmp_path: Path) -> None:
+    body = "class A { Other r; void f(Repo r) { new Job() { public void run() { r.save(); } }; } }\n"
+    assert saves(typed_calls(tmp_path, JOB + body))
+
+
+def test_an_anonymous_class_of_an_unknown_type_hides_the_outer_name(tmp_path: Path) -> None:
+    body = "class A { Other r; void f(Repo r) {\n new Runnable() { public void run() { r.x(); } };\n } }\n"
+    assert not other_x(typed_calls(tmp_path, body))
+
+
+def test_an_anonymous_class_field_beats_the_enclosing_parameter(tmp_path: Path) -> None:
+    body = (
+        "class A { void f(Repo r) {\n new Job() { Other r; public void run() { r.save(); r.x(); } };\n"
+        " } }\n"
+    )
+    got = typed_calls(tmp_path, JOB + body)
+    assert not saves(got)
+    assert other_x(got)
+
+
+def test_a_local_class_method_sees_the_enclosing_parameter(tmp_path: Path) -> None:
+    body = "class A { Other r; void f(Repo r) { class L { void m() { r.save(); } } } }\n"
+    assert saves(typed_calls(tmp_path, body))
+
+
+def test_a_field_initializer_lambda_binds_its_parameter(tmp_path: Path) -> None:
+    body = "class A {\n Other r;\n java.util.function.Consumer<Repo> c = (Repo r) -> r.save();\n}\n"
+    assert saves(typed_calls(tmp_path, body))
+    body = (
+        "class A {\n Other r;\n java.util.function.Consumer<Repo> c = (Repo r) -> r.x();\n}\n"
+    )
+    assert not other_x(typed_calls(tmp_path, body))

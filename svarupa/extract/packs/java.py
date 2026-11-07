@@ -10,6 +10,7 @@ statically imported that name.
 from __future__ import annotations
 
 import re
+from dataclasses import replace
 
 from tree_sitter import Node as TSNode
 from tree_sitter import Point
@@ -279,15 +280,133 @@ def _formal(ctx: Ctx, fn: str, p: TSNode, generics: set[str]) -> list[LocalType]
     return []
 
 
-def parameter_locals(ctx: Ctx, node: TSNode, qualified: str) -> list[LocalType]:
+def _own_parameters(ctx: Ctx, node: TSNode, fn: str) -> list[LocalType]:
     params = node.child_by_field_name("parameters")
     if params is None:
         return []
     generics = _generic_names(ctx, node)
     out: list[LocalType] = []
     for p in params.named_children:
-        out += _formal(ctx, qualified, p, generics)
+        out += _formal(ctx, fn, p, generics)
     return out
+
+
+def parameter_locals(ctx: Ctx, node: TSNode, qualified: str) -> list[LocalType]:
+    return _own_parameters(ctx, node, qualified) + _enclosing_scope(ctx, node, qualified)
+
+
+_METHODS = ("method_declaration", "constructor_declaration")
+# Where a class is a member or a top-level type, not a local class.
+_TYPE_HOMES = ("program", "class_body", "interface_body", "enum_body_declarations")
+_TYPE_DECLARATIONS = (
+    "class_declaration",
+    "interface_declaration",
+    "enum_declaration",
+    "record_declaration",
+)
+
+
+def _enclosing_scope(ctx: Ctx, node: TSNode, fn: str) -> list[LocalType]:
+    """A method of an anonymous or local class sees the parameters and locals
+    of the method around the class. Each binding is recorded again under this
+    method's name, with its own scope, so the method's own bindings are the
+    inner ones. A field of the class, its own or inherited, hides the outer
+    name, so a name the class declares is left out; when a supertype is not
+    in this file its fields are unknown, so the names bind untyped."""
+    owner, supers = _inner_class(ctx, node)
+    outer = owner.parent if owner is not None else None
+    while outer is not None and outer.type not in _METHODS:
+        outer = outer.parent
+    if owner is None or outer is None:
+        return []
+    found = ctx.whole(_own_parameters(ctx, outer, fn), outer)
+    found += _scan_scope(ctx, outer, owner, fn)
+    found += _enclosing_scope(ctx, outer, fn)
+    fields, known = _class_fields(ctx, owner, supers, set())
+    if not known:
+        found = [replace(loc, type_name="") for loc in found]
+    return [loc for loc in found if loc.name not in fields]
+
+
+def _inner_class(ctx: Ctx, method: TSNode) -> tuple[TSNode | None, list[str]]:
+    """The anonymous or local class a method is declared in, with its
+    supertypes; None for a member or top-level class."""
+    body = method.parent
+    owner = body.parent if body is not None and body.type == "class_body" else None
+    if owner is None:
+        return None, []
+    if owner.type == "object_creation_expression":
+        ty = owner.child_by_field_name("type")
+        return owner, [_type_name(ctx.text(ty))] if ty is not None else []
+    home = owner.parent.type if owner.parent is not None else "program"
+    if owner.type in _TYPE_DECLARATIONS and home not in _TYPE_HOMES:
+        return owner, list(bases(ctx, owner))
+    return None, []
+
+
+def _scan_scope(ctx: Ctx, outer: TSNode, skip: TSNode, fn: str) -> list[LocalType]:
+    """The bindings made in `outer`, outside the class `skip`."""
+    out: list[LocalType] = []
+    stack = [c for c in outer.children if c.type == "block"]
+    while stack:
+        n = stack.pop()
+        if n.id == skip.id:
+            continue
+        hook = _SCOPE_HOOKS.get(n.type)
+        if hook is not None:
+            out += hook(ctx, n, fn)
+        stack.extend(n.children)
+    return out
+
+
+def _class_fields(
+    ctx: Ctx, owner: TSNode, supers: list[str], seen: set[str]
+) -> tuple[set[str], bool]:
+    """The field names a class declares and inherits from supertypes in this
+    file, and whether every supertype was found here."""
+    names = _declared_fields(ctx, owner)
+    known = True
+    for name in supers:
+        decl = None if name in seen else _type_in_file(ctx, owner, name)
+        if decl is None:
+            known = known and name in seen
+            continue
+        inherited, ok = _class_fields(ctx, decl, list(bases(ctx, decl)), seen | {name})
+        names |= inherited
+        known = known and ok
+    return names, known
+
+
+def _declared_fields(ctx: Ctx, owner: TSNode) -> set[str]:
+    body = owner.child_by_field_name("body") or next(
+        (c for c in owner.children if c.type == "class_body"), None
+    )
+    names: set[str] = set()
+    for c in body.named_children if body is not None else ():
+        if c.type in ("field_declaration", "constant_declaration"):
+            names |= _variable_names(ctx, c)
+    return names
+
+
+def _variable_names(ctx: Ctx, declaration: TSNode) -> set[str]:
+    declarators = [d for d in declaration.named_children if d.type == "variable_declarator"]
+    return {
+        ctx.text(n) for d in declarators if (n := d.child_by_field_name("name")) is not None
+    }
+
+
+def _type_in_file(ctx: Ctx, node: TSNode, name: str) -> TSNode | None:
+    root = node
+    while root.parent is not None:
+        root = root.parent
+    stack = [root]
+    while stack:
+        n = stack.pop()
+        ident = n.child_by_field_name("name") if n.type in _TYPE_DECLARATIONS else None
+        if ident is not None and ctx.text(ident) == name:
+            return n
+        stack.extend(n.named_children)
+    return None
 
 
 def _rest_of_block(node: TSNode) -> tuple[Point, Point]:
@@ -422,6 +541,18 @@ def lambda_locals(ctx: Ctx, node: TSNode, fn: str) -> list[LocalType]:
     if params is None:
         return []
     return ctx.over(_lambda_bindings(ctx, params, fn), node)
+
+
+_SCOPE_HOOKS = {
+    "local_variable_declaration": local_variable_locals,
+    "enhanced_for_statement": for_locals,
+    "resource": resource_locals,
+    "type_pattern": pattern_locals,
+    "instanceof_expression": instanceof_locals,
+    "record_pattern_component": pattern_locals,
+    "catch_formal_parameter": catch_locals,
+    "lambda_expression": lambda_locals,
+}
 
 
 def _type_rule(kind: str) -> Define:
@@ -582,14 +713,9 @@ PACK = Pack(
             decorators_from=annotations_of,
             locals=parameter_locals,
         ),
-        "local_variable_declaration": Local(hook=local_variable_locals),
-        "enhanced_for_statement": Local(hook=for_locals),
-        "resource": Local(hook=resource_locals),
-        "type_pattern": Local(hook=pattern_locals),
-        "instanceof_expression": Local(hook=instanceof_locals),
-        "record_pattern_component": Local(hook=pattern_locals),
-        "catch_formal_parameter": Local(hook=catch_locals),
-        "lambda_expression": Local(hook=lambda_locals),
+        **{kind: Local(hook=hook) for kind, hook in _SCOPE_HOOKS.items()},
+        # A lambda in a field initializer binds its parameters there too.
+        "lambda_expression": Local(hook=lambda_locals, top_level=True),
         "field_declaration": Field(hook=declared_field),
         "method_invocation": Call(hook=call),
     },
