@@ -229,6 +229,20 @@
  "fields": [],
  "locals": [
   {
+   "function": "",
+   "name": "ordering",
+   "type_name": "",
+   "start_line": 10,
+   "end_line": 19
+  },
+  {
+   "function": "",
+   "name": "qty",
+   "type_name": "",
+   "start_line": 24,
+   "end_line": 24
+  },
+  {
    "function": "src.shop.orders.Order.total",
    "name": "helper",
    "type_name": "",

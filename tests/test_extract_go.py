@@ -369,7 +369,7 @@ def test_a_type_switch_binding_does_not_leak_out_of_its_clause(tmp_path: Path) -
 
 
 def test_a_short_var_resolves_from_the_next_line_on(tmp_path: Path) -> None:
-    src = "func F(r *Repo, x any) {\n\tr.Save()\n\tr := x.(*Other)\n\tr.X()\n}\n"
+    src = "func F(r *Repo, x any) {\n\tr.Save()\n\tif true {\n\t\tr := x.(*Other)\n\t\tr.X()\n\t}\n}\n"
     assert scope_calls(tmp_path, src) == {"Repo.Save", "Other.X"}
 
 
@@ -383,3 +383,19 @@ def test_a_short_var_reading_the_outer_name_on_its_line_resolves_to_nothing(
 def test_a_package_level_literal_parameter_resolves(tmp_path: Path) -> None:
     src = "var h = func(o *Other) {\n\to.X()\n}\n"
     assert scope_calls(tmp_path, src) == {"Other.X"}
+
+
+def test_a_type_assertion_that_reassigns_a_declared_name_does_not_retype_it(
+    tmp_path: Path,
+) -> None:
+    src = "func F(x any) {\n var y Other\n y, ok := x.(*Repo)\n y.Save()\n _ = ok\n}\n"
+    assert not saves_repo(typed_calls(tmp_path, src))
+    src = "func F(x any, y Other) {\n y, ok := x.(*Repo)\n y.Save()\n _ = ok\n}\n"
+    assert not saves_repo(typed_calls(tmp_path, src))
+
+
+def test_a_type_assertion_that_declares_a_new_name_in_an_inner_block_types_it(
+    tmp_path: Path,
+) -> None:
+    src = "func F(x any) {\n var y Other\n if true {\n  y, ok := x.(*Repo)\n  y.Save()\n  _ = ok\n }\n _ = y\n}\n"
+    assert saves_repo(typed_calls(tmp_path, src))

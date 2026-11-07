@@ -1078,3 +1078,66 @@ def test_module_level_bindings_are_recorded_under_the_empty_function() -> None:
 def test_a_decorated_and_async_function_are_read() -> None:
     src = "@app.get('/')\nasync def f(r: Repo = Depends(g)): pass"
     assert locals_of(src) == {("src.a.f", "r", "Repo")}
+
+
+def test_an_externally_imported_parameter_type_stays_external(tmp_path: Path) -> None:
+    write(tmp_path, "pyproject.toml", '[project]\ndependencies = ["requests"]\n')
+    write(tmp_path, "models.py", "class Session:\n    def get(self):\n        pass\n")
+    write(
+        tmp_path,
+        "a.py",
+        "from requests import Session\n\ndef f(s: Session):\n    s.get()\n",
+    )
+    calls = [e for e in run(tmp_path).edges if e.kind is EdgeKind.CALLS and e.src.endswith("f")]
+    assert not any(e.dst.endswith("Session.get") for e in calls)
+
+
+def test_nonlocal_rebinding_hides_the_outer_typed_name(tmp_path: Path) -> None:
+    body = (
+        "def outer(r: Repo):\n"
+        "    def inner():\n"
+        "        nonlocal r\n"
+        "        r = make()\n"
+        "    inner()\n"
+        "    r.save()\n"
+    )
+    assert not saves_repo(typed_calls(tmp_path, body))
+
+
+@pytest.mark.parametrize(
+    "stmt",
+    [
+        "import json as r",
+        "import r",
+        "import r.sub",
+        "from other import Other as r",
+        "from other import r",
+    ],
+)
+def test_an_import_in_a_function_binds_its_name_untyped(tmp_path: Path, stmt: str) -> None:
+    for body in (
+        f"def f(r: Repo):\n    {stmt}\n    r.save()\n",
+        f"def f(r: Repo):\n    def g():\n        {stmt}\n        r.save()\n",
+        f"def f(r: Repo):\n    try:\n        {stmt}\n    except ImportError:\n        pass\n    r.save()\n",
+    ):
+        assert not saves_repo(typed_calls(tmp_path, body))
+
+
+def test_a_class_body_assignment_hides_the_outer_typed_name(tmp_path: Path) -> None:
+    body = "def f(r: Repo):\n    class C:\n        r = make()\n        r.save()\n"
+    assert not saves_repo(typed_calls(tmp_path, body))
+    assert not saves_repo(
+        typed_calls(tmp_path, "r: Repo = Repo()\nclass C:\n    r = make()\n    r.save()\n")
+    )
+
+
+def test_a_class_body_assignment_does_not_hide_the_name_outside_the_class(
+    tmp_path: Path,
+) -> None:
+    body = "def f(r: Repo):\n    class C:\n        r = make()\n    r.save()\n"
+    assert saves_repo(typed_calls(tmp_path, body))
+
+
+def test_a_type_alias_statement_binds_its_name_untyped(tmp_path: Path) -> None:
+    body = "def f(r: Repo):\n    type r = int\n    r.save()\n"
+    assert not saves_repo(typed_calls(tmp_path, body))

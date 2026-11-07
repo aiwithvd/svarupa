@@ -359,6 +359,13 @@
  "fields": [],
  "locals": [
   {
+   "function": "",
+   "name": "registry",
+   "type_name": "",
+   "start_line": 16,
+   "end_line": 24
+  },
+  {
    "function": "src.svc.service.run",
    "name": "items",
    "type_name": "",

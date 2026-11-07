@@ -342,6 +342,7 @@ class _Scope:
         self.inner: list[tuple[str, TSNode]] = []  # name, the lambda or comprehension
         self.declared_global: set[str] = set()
         self.declared_nonlocal: set[str] = set()
+        self.imported: set[str] = set()  # names an import statement binds here
 
     def visible(self) -> list[tuple[str, str]]:
         """The function-wide bindings that are this scope's own."""
@@ -565,7 +566,7 @@ class _Walk:
             return [], binds, around
         # A class body binds its own names, not the scope's; a lambda or
         # comprehension in it still shadows.
-        return [body], False, around
+        return [body], False, around if around is not None else body
 
     def lambda_(self, node: TSNode, binds: bool, _around: TSNode | None) -> _Next:
         params = node.child_by_field_name("parameters")
@@ -623,6 +624,27 @@ class _Walk:
                 self.bind(_captures(self.ctx, pattern), "", binds, around)
         return list(node.children), binds, around
 
+    def import_(self, node: TSNode, binds: bool, around: TSNode | None) -> _Next:
+        """`import a.b as c` binds `c`, `import a.b` binds `a`, and
+        `from m import X as c` binds `c`; a wildcard binds nothing known. The
+        name is only noted: it hides a typed name of the same spelling (see
+        `function_locals`), and otherwise the import still resolves."""
+        names = node.children_by_field_name("name")
+        for item in names:
+            if item.type == "aliased_import":
+                item = item.child_by_field_name("alias") or item
+            first = item.named_children[0] if item.type == "dotted_name" else item
+            if first.type == "identifier":
+                self.sc.imported.add(self.ctx.text(first))
+        return [], binds, around
+
+    def type_alias(self, node: TSNode, binds: bool, around: TSNode | None) -> _Next:
+        left = node.named_children[0] if node.named_children else None
+        ident = _first_identifier(left) if left is not None else None
+        if ident is not None:
+            self.bind([self.ctx.text(ident)], "", binds, around)
+        return [], binds, around
+
     def global_(self, node: TSNode, binds: bool, around: TSNode | None) -> _Next:
         self.sc.declared_global.update(self.ctx.text(c) for c in node.named_children)
         return [], binds, around
@@ -632,27 +654,11 @@ class _Walk:
         return [], binds, around
 
     def run(self, start: TSNode) -> None:
-        steps = {
-            "function_definition": self.definition,
-            "class_definition": self.definition,
-            "lambda": self.lambda_,
-            "list_comprehension": self.comprehension,
-            "set_comprehension": self.comprehension,
-            "dictionary_comprehension": self.comprehension,
-            "generator_expression": self.comprehension,
-            "assignment": self.assignment,
-            "for_statement": self.for_,
-            "with_item": self.with_item,
-            "except_clause": self.except_,
-            "named_expression": self.walrus,
-            "case_clause": self.case,
-            "global_statement": self.global_,
-            "nonlocal_statement": self.nonlocal_,
-        }
         todo: list[tuple[TSNode, bool, TSNode | None]] = [(start, True, None)]
         while todo:
             node, binds, around = todo.pop()
-            step = steps.get(node.type)
+            method = _STEPS.get(node.type)
+            step = getattr(self, method) if method else None
             kids, binds, around = (
                 step(node, binds, around) if step else (list(node.children), binds, around)
             )
@@ -660,6 +666,28 @@ class _Walk:
 
 
 _Next = tuple[list[TSNode], bool, "TSNode | None"]
+
+# Node type to the `_Walk` method that handles it.
+_STEPS = {
+    "function_definition": "definition",
+    "class_definition": "definition",
+    "lambda": "lambda_",
+    "list_comprehension": "comprehension",
+    "set_comprehension": "comprehension",
+    "dictionary_comprehension": "comprehension",
+    "generator_expression": "comprehension",
+    "assignment": "assignment",
+    "for_statement": "for_",
+    "with_item": "with_item",
+    "except_clause": "except_",
+    "named_expression": "walrus",
+    "case_clause": "case",
+    "global_statement": "global_",
+    "nonlocal_statement": "nonlocal_",
+    "import_statement": "import_",
+    "import_from_statement": "import_",
+    "type_alias_statement": "type_alias",
+}
 
 
 def _scope(ctx: Ctx, root: TSNode) -> _Scope:
@@ -679,7 +707,21 @@ def _scope(ctx: Ctx, root: TSNode) -> _Scope:
         sc.wide[(name, ty)] = None
     body = root.child_by_field_name("body")
     walk.run(body if body is not None else root)
+    _rebound_by_nested(ctx, root, sc)
     return sc
+
+
+def _rebound_by_nested(ctx: Ctx, root: TSNode, sc: _Scope) -> None:
+    """A nested function that says `nonlocal x` may rebind the `x` of this
+    function, so `x` is also untyped here: the conflict hides it."""
+    names = {n for n, _ in sc.wide}
+    todo = list(root.children)
+    while todo and names:
+        node = todo.pop()
+        if node.type == "function_definition":
+            for name in _scope(ctx, node).declared_nonlocal & names:
+                sc.wide[(name, "")] = None
+        todo.extend(node.children)
 
 
 def _own(fn: str, sc: _Scope) -> list[LocalType]:
@@ -699,10 +741,12 @@ def function_locals(ctx: Ctx, node: TSNode, qualified: str) -> list[LocalType]:
     own = _scope(ctx, node)
     out = _own(qualified, own)
     blocked = set(own.declared_global)
+    typed = {n for n, t in own.visible() if t}
     outer = node.parent
     while outer is not None:
         if outer.type == "function_definition":
             sc = _scope(ctx, outer)
+            typed |= {n for n, t in sc.visible() if t}
             start, end = outer.start_point[0] + 1, outer.end_point[0] + 1
             out += [
                 LocalType(qualified, n, t, start, end)
@@ -711,6 +755,9 @@ def function_locals(ctx: Ctx, node: TSNode, qualified: str) -> list[LocalType]:
             ]
             blocked |= sc.declared_global
         outer = outer.parent
+    # An import that rebinds a typed name hides it; any other import is left to
+    # the import resolution.
+    out += [LocalType(qualified, n, "") for n in sorted(own.imported & typed)]
     return out
 
 
