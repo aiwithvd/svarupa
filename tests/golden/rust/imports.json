@@ -21,7 +21,8 @@
    "type_only": false,
    "is_from": true,
    "is_reexport": false,
-   "is_star": false
+   "is_star": false,
+   "is_global": false
   },
   {
    "specifier": "self.models",
@@ -38,7 +39,8 @@
    "type_only": false,
    "is_from": true,
    "is_reexport": false,
-   "is_star": true
+   "is_star": true,
+   "is_global": false
   },
   {
    "specifier": "a",
@@ -62,7 +64,8 @@
    "type_only": false,
    "is_from": true,
    "is_reexport": false,
-   "is_star": false
+   "is_star": false,
+   "is_global": false
   },
   {
    "specifier": "self.models",
@@ -79,11 +82,13 @@
    "type_only": false,
    "is_from": true,
    "is_reexport": false,
-   "is_star": false
+   "is_star": false,
+   "is_global": false
   }
  ],
  "calls": [],
  "fields": [],
+ "locals": [],
  "reexports": [],
  "diagnostics": [],
  "ctor_assigns": [],

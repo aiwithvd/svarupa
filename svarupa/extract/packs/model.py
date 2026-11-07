@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING
 
 from tree_sitter import Node as TSNode
 
-from svarupa.extract.base import CallSite, DecoratorRef, FieldType, ImportRef
+from svarupa.extract.base import CallSite, DecoratorRef, FieldType, ImportRef, LocalType
 
 if TYPE_CHECKING:
     from svarupa.extract.packs.modules import ModuleContext, ModuleResolver
@@ -45,6 +45,8 @@ __all__ = [
     "Grammar",
     "Import",
     "ImportHook",
+    "Local",
+    "LocalsHook",
     "Maturity",
     "MetricsSpec",
     "Pack",
@@ -60,6 +62,8 @@ __all__ = [
 ImportHook = Callable[["Ctx", TSNode], ImportRef | None]
 CallHook = Callable[["Ctx", TSNode, "Frame"], CallSite | None]
 FieldHook = Callable[["Ctx", TSNode, str], list[FieldType]]
+# (ctx, node, qualified name of the function the node belongs to)
+LocalsHook = Callable[["Ctx", TSNode, str], list[LocalType]]
 CustomHook = Callable[["Ctx", TSNode, "Frame", int], None]
 DecoratorHook = Callable[["Ctx", TSNode], DecoratorRef | None]
 BasesHook = Callable[["Ctx", TSNode], tuple[str, ...]]
@@ -100,6 +104,9 @@ class Define:
     after: AfterHook | None = None  # runs after the symbol, before the body
     exported_by: ExportedHook | None = None  # Java `public`, Go capital letter
     decorators_from: DecoratorsHook | None = None  # Java annotations in `modifiers`
+    # Typed parameters, read as the function's locals. A binding with no scope
+    # lines gets the definition's own lines.
+    locals: LocalsHook | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -131,6 +138,17 @@ class Field:
 
 
 @dataclass(frozen=True, slots=True)
+class Local:
+    """A typed local (`let x: T`). Only inside a function, unless `top_level`,
+    when the function is "" as for a call outside any function; children are
+    walked too. The hook gets the function's qualified name, as a call's
+    `enclosing`, and sets each binding's scope (`Ctx.scoped`)."""
+
+    hook: LocalsHook
+    top_level: bool = False
+
+
+@dataclass(frozen=True, slots=True)
 class Carry:
     """Walk the children and keep the exported flag (`export const f = ...`)."""
 
@@ -142,7 +160,7 @@ class Custom:
     hook: CustomHook
 
 
-Rule = Define | Decorated | Import | Call | Field | Carry | Custom
+Rule = Define | Decorated | Import | Call | Field | Local | Carry | Custom
 
 
 @dataclass(frozen=True, slots=True)

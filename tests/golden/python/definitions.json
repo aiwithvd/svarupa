@@ -187,7 +187,8 @@
    "type_only": false,
    "is_from": false,
    "is_reexport": false,
-   "is_star": false
+   "is_star": false,
+   "is_global": false
   }
  ],
  "calls": [
@@ -227,6 +228,43 @@
   }
  ],
  "fields": [],
+ "locals": [
+  {
+   "function": "",
+   "name": "ordering",
+   "type_name": "",
+   "start_line": 10,
+   "end_line": 19
+  },
+  {
+   "function": "",
+   "name": "qty",
+   "type_name": "",
+   "start_line": 24,
+   "end_line": 24
+  },
+  {
+   "function": "src.shop.orders.Order.total",
+   "name": "helper",
+   "type_name": "",
+   "start_line": 13,
+   "end_line": 16
+  },
+  {
+   "function": "src.shop.orders.Order.total.helper",
+   "name": "x",
+   "type_name": "",
+   "start_line": 14,
+   "end_line": 15
+  },
+  {
+   "function": "src.shop.orders.Order.total.helper",
+   "name": "helper",
+   "type_name": "",
+   "start_line": 13,
+   "end_line": 16
+  }
+ ],
  "reexports": [],
  "diagnostics": [],
  "ctor_assigns": [],

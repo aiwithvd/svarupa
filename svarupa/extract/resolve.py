@@ -20,6 +20,7 @@ Three rules govern what gets emitted:
 
 from __future__ import annotations
 
+import math
 import sys
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
@@ -27,9 +28,11 @@ from dataclasses import dataclass, field
 from svarupa.diagnostics import Diagnostic, Severity
 from svarupa.extract.base import (
     CallShape,
+    CallSite,
     ExtractResult,
     FileFacts,
     ImportRef,
+    LocalType,
     Scorecard,
     SymbolRef,
     node_id,
@@ -233,10 +236,35 @@ def _d_fields() -> dict[tuple[str, str, str], str]:
     return {}
 
 
+def _d_locals() -> dict[tuple[str, str, str], list[LocalType]]:
+    return {}
+
+
+def _span(loc: LocalType) -> float:
+    """How many lines a binding's scope covers; the whole function is widest."""
+    return loc.end_line - loc.start_line if loc.start_line else math.inf
+
+
+def _covers(loc: LocalType, line: int) -> bool:
+    return not loc.start_line or loc.start_line <= line <= loc.end_line
+
+
 def _is_named(qualified: str, name: str) -> bool:
     """Whether a qualified class name ends in `name`; a type at a crate root
     (Rust `src/lib.rs`) has no module prefix at all."""
     return qualified == name or qualified.endswith(f".{name}")
+
+
+# A class lookup: (the class, False) when found, (None, True) when the type
+# is known to be external, (None, False) when it is unresolved.
+_Found = tuple[tuple[str, str] | None, bool]
+
+
+def _one(hits: list[tuple[str, str]]) -> _Found | None:
+    """None for no hit; one hit is the class; two or more are ambiguous."""
+    if not hits:
+        return None
+    return (hits[0] if len(hits) == 1 else None), False
 
 
 def _d_extra() -> dict[tuple[str, str], tuple[str, ...]]:
@@ -254,6 +282,8 @@ class _Index:
     methods_of: dict[tuple[str, str], list[tuple[str, str]]] = field(default_factory=_d_meth)
     bases_of: dict[str, tuple[str, ...]] = field(default_factory=_d_bases)
     field_types: dict[tuple[str, str, str], str] = field(default_factory=_d_fields)
+    # (file, function, name) -> every binding of the name, each with its scope.
+    locals: dict[tuple[str, str, str], list[LocalType]] = field(default_factory=_d_locals)
     files: set[str] = field(default_factory=_s_str)
     # Bases a class gets from the methods declared for it elsewhere (a Rust
     # `impl Trait for Type`), keyed by the class's identity.
@@ -325,6 +355,8 @@ class Resolver:
             idx.files.add(f.path)
             for fld in f.fields:
                 idx.field_types[(f.path, fld.owner, fld.field)] = fld.type_name
+            for loc in f.locals:
+                idx.locals.setdefault((f.path, loc.function, loc.name), []).append(loc)
             for s in f.symbols:
                 key = (f.path, s.qualified_name)
                 idx.by_qualname.setdefault(s.qualified_name, key)
@@ -474,23 +506,6 @@ class Resolver:
             if hits:
                 return hits
         return []
-
-    def _type_is_external(self, f: FileFacts, name: str) -> bool:
-        for imp in f.imports:
-            if name not in imp.names and name not in imp.alias_of:
-                continue
-            if imp.is_relative:
-                return False
-            return self._is_external(self._package_root(imp.specifier, f.lang), f.lang)
-        return False
-
-    def _resolve_class_name_x(
-        self, name: str, from_file: str
-    ) -> tuple[tuple[str, str] | None, bool]:
-        """Resolve, and say whether a None means absent or ambiguous."""
-        repo_wide = [cid for cid in self.idx.class_by_id if _is_named(cid[1], name)]
-        hit = self._resolve_class_name(name, from_file)
-        return hit, hit is None and len(repo_wide) > 1
 
     def _resolve_class_name(self, name: str, from_file: str) -> tuple[str, str] | None:
         same_file = [
@@ -1215,6 +1230,10 @@ class Resolver:
 
         if call.shape is CallShape.QUALIFIED:
             recv = call.receiver or ""
+            type_name = self._local_type(f, call, recv)
+            if type_name is not None:
+                # A parameter or typed local shadows a field or an import.
+                return self._typed_call(f, f.path, type_name, name) if type_name else []
             if recv in import_names:
                 spec, level = import_names[recv]
                 if self._names_modules(f.lang):
@@ -1247,8 +1266,180 @@ class Resolver:
             # as anything but unresolved would be invention.
             return []
 
-        # MEMBER: chained receiver, type unknowable without inference.
+        # MEMBER: a chained receiver has no type without inference, except
+        # `local.field`, which takes one step through the local's class.
+        local, _, member = (call.receiver or "").partition(".")
+        type_name = self._local_type(f, call, local)
+        if type_name and member.isidentifier():
+            return self._local_field_call(f, type_name, member, name)
         return []
+
+    def _local_type(self, f: FileFacts, call: CallSite, name: str) -> str | None:
+        """The declared type of local `name` where `call` sits: the innermost
+        binding whose scope holds the call's line wins. "" when that scope binds
+        the name untyped or two ways, which hides any field or import of the
+        name; None when no binding is in scope there. A call outside any
+        function (an initializer) looks under the function ""."""
+        line = call.evidence.start_line
+        found = [
+            loc
+            for loc in self.idx.locals.get((f.path, call.enclosing or "", name), ())
+            if _covers(loc, line)
+        ]
+        if not found:
+            return None
+        inner = min(_span(loc) for loc in found)
+        types = {loc.type_name for loc in found if _span(loc) == inner}
+        return types.pop() if len(types) == 1 else ""
+
+    def _local_field_call(
+        self, f: FileFacts, type_name: str, field_name: str, name: str
+    ) -> list[tuple[str, str]] | None:
+        """`local.field.name()`: the local's class is found the way
+        `_typed_call` finds it, then the field is read on that class."""
+        owner, external = self._type_class(f, type_name)
+        if owner is None:
+            return None if external else []
+        cls = owner[1].rsplit(".", 1)[-1]
+        field_type = self.idx.field_types.get((owner[0], cls, field_name))
+        if field_type is None:
+            return []
+        return self._typed_call(f, owner[0], field_type, name)
+
+    def _type_class(self, f: FileFacts, type_name: str) -> _Found:
+        """The class a value declared as `type_name` in `f` has, found only where
+        the language itself looks: this file, the file's imports, and the
+        language's implicit scope (its package or namespace). Never a
+        repo-wide match on the bare name, which would make a global, an
+        implicit standard type or an undeclared dependency a repo class.
+
+        Returns (class, False) when found, (None, True) when the type comes
+        from a module known to be external, and (None, False) otherwise."""
+        module = self.modules.get(f.lang)
+        if "." in type_name and module is not None and module.qualified_types:
+            return self._qualified_class(f, type_name)
+        for lookup in (self._class_in_file, self._class_imported, self._class_in_scope):
+            found = lookup(f, type_name)
+            if found is not None:
+                return found
+        return None, False
+
+    def _class_in_file(self, f: FileFacts, name: str) -> _Found | None:
+        return _one(
+            [
+                cid
+                for cid in self.idx.class_by_id
+                if cid[0] == f.path and _is_named(cid[1], name)
+            ]
+        )
+
+    def _class_imported(self, f: FileFacts, name: str) -> _Found | None:
+        """The class an import of `name` names. A language that writes another
+        package's type as `pkg.Name` never brings a bare type in by import."""
+        module = self.modules.get(f.lang)
+        if module is not None and module.qualified_types:
+            return None
+        for imp in f.imports:
+            named = self._names_type(imp, name, f.lang)
+            if named is not None:
+                return self._imported_class(f, imp, *named)
+        return None
+
+    def _class_in_scope(self, f: FileFacts, name: str) -> _Found | None:
+        """The language's implicit scope first, then the file's glob imports."""
+        module = self.modules.get(f.lang)
+        globs = tuple(
+            (t, "")
+            for imp in f.imports
+            if imp.is_star and not imp.is_reexport
+            for t in self._resolve_targets(imp.specifier, f.path, imp.level, f.lang)
+        )
+        for scope in (module.implicit_scope(f.path) if module is not None else (), globs):
+            found = _one(self._classes_in_scope(scope, name))
+            if found is not None:
+                return found
+        return None
+
+    def _names_type(self, imp: ImportRef, name: str, lang: str) -> tuple[str, str] | None:
+        """(module path, real name) when `imp` brings `name` in by name:
+        `from m import Name`, `import { Name as X }`, `use a::{Name}`, or a
+        plain `use a::b::Name` in a language whose paths name items."""
+        if not imp.is_from or imp.is_star:
+            return None
+        if name in imp.alias_of:
+            return imp.specifier, imp.alias_of[name]
+        if name in imp.names:
+            return imp.specifier, name
+        if (
+            not imp.names
+            and not imp.alias_of
+            and imp.specifier.endswith(f".{name}")
+            and self._names_modules(lang)
+        ):
+            return imp.specifier, name
+        return None
+
+    def _imported_class(self, f: FileFacts, imp: ImportRef, spec: str, real: str) -> _Found:
+        """The class an import names. An import that names the type ends the
+        lookup: a module outside the repo is external when it is known to be,
+        and unresolved otherwise."""
+        targets = self._resolve_targets(spec, f.path, imp.level, f.lang)
+        if not targets:
+            return None, self._import_is_external(f, imp, spec)
+        hits = _dedupe(
+            [
+                cid
+                for cid in self.idx.class_by_id
+                if cid[0] in targets and _is_named(cid[1], real)
+            ]
+        )
+        if not hits:
+            # A barrel or `pub use` re-exports the class from another file.
+            reexported = (self._follow_reexport(t, real) for t in targets)
+            hits = _dedupe([x for x in reexported if x in self.idx.class_by_id])
+        return _one(hits) or (None, False)
+
+    def _import_is_external(self, f: FileFacts, imp: ImportRef, spec: str) -> bool:
+        if imp.is_relative:
+            return False
+        return self._is_external(self._package_root(spec, f.lang), f.lang)
+
+    def _classes_in_scope(
+        self, scope: Sequence[tuple[str, str]], name: str
+    ) -> list[tuple[str, str]]:
+        """Classes called `name` in an implicit scope: `namespace.name` in the
+        file when a namespace is given, else a top-level class of the file."""
+        out: list[tuple[str, str]] = []
+        for path, namespace in scope:
+            facts = self.idx.by_file.get(path)
+            if facts is None:
+                continue
+            for s in facts.symbols:
+                if s.kind not in ("class", "interface") or s.name != name:
+                    continue
+                if (
+                    (s.qualified_name == f"{namespace}.{name}")
+                    if namespace
+                    else not s.enclosing_class
+                ):
+                    out.append((path, s.qualified_name))
+        return _dedupe(out)
+
+    def _qualified_class(
+        self, f: FileFacts, type_name: str
+    ) -> tuple[tuple[str, str] | None, bool]:
+        """`pkg.Name` where `pkg` is a package the file imports."""
+        qualifier, _, bare = type_name.rpartition(".")
+        spec = self._imported_spec(f, qualifier)
+        if spec is None:
+            return None, False
+        targets = frozenset(self._resolve_targets(spec, f.path, 0, f.lang))
+        if not targets:
+            return None, self._is_external(self._package_root(spec, f.lang), f.lang)
+        owners = [
+            cid for cid in self.idx.class_by_id if cid[0] in targets and _is_named(cid[1], bare)
+        ]
+        return (owners[0] if len(owners) == 1 else None), False
 
     def _field_call(
         self, f: FileFacts, cls: str, field_name: str, name: str
@@ -1264,16 +1455,24 @@ class Resolver:
             type_name = self.idx.field_types.get((home, cls, field_name))
         if type_name is None:
             return []
-        owner, ambiguous = self._resolve_class_name_x(type_name, home)
+        return self._typed_call(f, home, type_name, name)
+
+    def _typed_call(
+        self, f: FileFacts, home: str, type_name: str, name: str
+    ) -> list[tuple[str, str]] | None:
+        """`name` called on a value declared as `type_name` in the file
+        `home`: a parameter, a local or a field. The type is found the way
+        `_type_class` finds it, from `home`."""
+        owner, external = self._type_class(self.idx.by_file.get(home, f), type_name)
         if owner is None:
-            # `_resolve_class_name` returns None both for "not in the repo"
-            # and for "in the repo twice". Collapsing those into EXTERNAL is
-            # the unconditioned-external shape review #4 promoted to the
-            # decision log; an ambiguous intra-repo type is unresolved.
-            if ambiguous:
-                return []
-            return None if self._type_is_external(f, type_name) else []
+            return None if external else []
         return self._nearest_methods(self._mro_ids(owner), name)[:MAX_CANDIDATE_ARITY]
+
+    @staticmethod
+    def _imported_spec(facts: FileFacts, qualifier: str) -> str | None:
+        """The one import path a package name stands for in this file."""
+        specs = {imp.alias_of[qualifier] for imp in facts.imports if qualifier in imp.alias_of}
+        return next(iter(specs)) if len(specs) == 1 else None
 
     def _lookup_in_module(
         self, f: FileFacts, spec: str, level: int, name: str

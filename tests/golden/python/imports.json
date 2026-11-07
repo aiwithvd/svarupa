@@ -20,7 +20,8 @@
    "type_only": false,
    "is_from": false,
    "is_reexport": false,
-   "is_star": false
+   "is_star": false,
+   "is_global": false
   },
   {
    "specifier": "os.path",
@@ -40,7 +41,8 @@
    "type_only": false,
    "is_from": false,
    "is_reexport": false,
-   "is_star": false
+   "is_star": false,
+   "is_global": false
   },
   {
    "specifier": "numpy",
@@ -64,7 +66,8 @@
    "type_only": false,
    "is_from": false,
    "is_reexport": false,
-   "is_star": false
+   "is_star": false,
+   "is_global": false
   },
   {
    "specifier": ".",
@@ -83,7 +86,8 @@
    "type_only": false,
    "is_from": true,
    "is_reexport": false,
-   "is_star": false
+   "is_star": false,
+   "is_global": false
   },
   {
    "specifier": ".models",
@@ -108,7 +112,8 @@
    "type_only": false,
    "is_from": true,
    "is_reexport": false,
-   "is_star": false
+   "is_star": false,
+   "is_global": false
   },
   {
    "specifier": "..core.db",
@@ -128,7 +133,8 @@
    "type_only": false,
    "is_from": true,
    "is_reexport": false,
-   "is_star": false
+   "is_star": false,
+   "is_global": false
   },
   {
    "specifier": "pkg.sub",
@@ -145,11 +151,13 @@
    "type_only": false,
    "is_from": true,
    "is_reexport": false,
-   "is_star": false
+   "is_star": false,
+   "is_global": false
   }
  ],
  "calls": [],
  "fields": [],
+ "locals": [],
  "reexports": [],
  "diagnostics": [],
  "ctor_assigns": [],

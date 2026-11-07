@@ -280,3 +280,390 @@ def test_a_class_method_wins_over_its_interface_declaration(tmp_path: Path) -> N
     calls = [e for e in run(tmp_path).edges if e.kind is EdgeKind.CALLS]
     assert [c.resolution for c in calls] == [Resolution.RESOLVED, Resolution.RESOLVED]
     assert all(c.dst.endswith("SqlRepo.save") for c in calls)
+
+
+def test_a_field_typed_by_a_plain_import_of_a_dependency_is_external(tmp_path: Path) -> None:
+    write(
+        tmp_path,
+        "pom.xml",
+        "<project><dependencies><dependency><groupId>org.acme</groupId>"
+        "<artifactId>http</artifactId></dependency></dependencies></project>",
+    )
+    write(
+        tmp_path,
+        "src/main/java/app/A.java",
+        "package app;\nimport org.acme.Client;\n"
+        "class A { Client c; void f() { this.c.get(); } }\n",
+    )
+    card = run(tmp_path).scorecard
+    assert card.get("java", "calls", Resolution.EXTERNAL) == 1
+
+
+# ----------------------------------------------------------------------
+# parameter and local types
+
+REPO_J = "package a;\npublic class Repo {\n  public void save() {}\n}\n"
+OTHER_J = "package a;\npublic class Other {\n  public void x() {}\n}\n"
+
+
+def locals_of(src: str) -> set[tuple[str, str, str]]:
+    facts = extractor("java").parse("a/A.java", src.encode("utf8"))
+    return {(x.function, x.name, x.type_name) for x in facts.locals}
+
+
+def typed_calls(tmp_path: Path, body: str) -> set[tuple[str, str]]:
+    write(tmp_path, "src/a/Repo.java", REPO_J)
+    write(tmp_path, "src/a/Other.java", OTHER_J)
+    write(tmp_path, "src/a/A.java", "package a;\n" + body)
+    return {(e.src, e.dst) for e in run(tmp_path).edges if e.kind is EdgeKind.CALLS}
+
+
+def saves(calls: set[tuple[str, str]]) -> bool:
+    return any(d.endswith("Repo.save") for _, d in calls)
+
+
+def test_a_local_shadows_a_field_of_the_same_name(tmp_path: Path) -> None:
+    got = typed_calls(tmp_path, "class A { Repo repo; void f(Other repo) { repo.x(); } }\n")
+    assert [d for _, d in got if d.endswith(".x")] == ["src/a/Other.java#src.a.Other.Other.x"]
+    assert not saves(got)
+
+
+def test_a_var_local_hides_a_field_of_the_same_name(tmp_path: Path) -> None:
+    got = typed_calls(
+        tmp_path, "class A { Repo repo; void f() { var repo = make(); repo.save(); } }\n"
+    )
+    assert not saves(got)
+
+
+def test_a_typed_parameter_resolves(tmp_path: Path) -> None:
+    got = typed_calls(tmp_path, "class A { void f(final Repo r) { r.save(); } }\n")
+    assert ("src/a/A.java#src.a.A.A.f", "src/a/Repo.java#src.a.Repo.Repo.save") in got
+
+
+def test_a_typed_local_resolves(tmp_path: Path) -> None:
+    got = typed_calls(tmp_path, "class A { void f() { Repo r = make(); r.save(); } }\n")
+    assert saves(got)
+
+
+def test_a_var_local_is_not_inferred(tmp_path: Path) -> None:
+    src = "class A { void f() { var r = new Repo(); r.save(); } }\n"
+    assert locals_of(src) == {("a.A.A.f", "r", "")}
+    assert not saves(typed_calls(tmp_path, src))
+
+
+def test_a_generic_parameter_stays_unresolved(tmp_path: Path) -> None:
+    src = "class A { <T extends Repo> void f(T t) { t.save(); } }\n"
+    assert locals_of(src) == {("a.A.A.f", "t", "")}
+    assert not saves(typed_calls(tmp_path, src))
+
+
+def test_a_class_generic_parameter_stays_unresolved() -> None:
+    assert locals_of("class A<T> { void f(T t) {} }\n") == {("a.A.A.f", "t", "")}
+
+
+def test_generic_and_qualified_types_keep_the_class_name() -> None:
+    got = locals_of(
+        "class A { void f(Optional<Repo> a, java.util.List<Order> b, Map.Entry<K, V> c) {} }\n"
+    )
+    assert {(n, t) for _, n, t in got} == {("a", "Optional"), ("b", "List"), ("c", "Entry")}
+
+
+def test_arrays_and_primitives_are_not_typed() -> None:
+    got = locals_of("class A { void f(Repo[] a, int b, Repo... c) { Repo d[] = null; } }\n")
+    assert {(n, t) for _, n, t in got} == {("a", ""), ("b", ""), ("c", ""), ("d", "")}
+
+
+def test_an_enhanced_for_variable_is_typed(tmp_path: Path) -> None:
+    got = typed_calls(
+        tmp_path,
+        "class A { void f(java.util.List<Repo> l) { for (Repo o : l) { o.save(); } } }\n",
+    )
+    assert saves(got)
+
+
+def test_a_catch_parameter_is_typed_and_a_multi_catch_is_not() -> None:
+    got = locals_of("class A { void f() { try {} catch (Boom e) {} catch (A1 | A2 g) {} } }\n")
+    assert {(n, t) for _, n, t in got} == {("e", "Boom"), ("g", "")}
+
+
+def test_lambda_parameters_typed_and_untyped() -> None:
+    got = locals_of(
+        "class A { void f() { g((Repo a) -> 1, b -> 2, (c, d) -> 3, (final Other e) -> 4); } }\n"
+    )
+    assert {(n, t) for _, n, t in got} == {
+        ("a", "Repo"),
+        ("b", ""),
+        ("c", ""),
+        ("d", ""),
+        ("e", "Other"),
+    }
+
+
+def test_an_instanceof_pattern_variable_is_typed(tmp_path: Path) -> None:
+    src = "class A { void f(Object x) { if (x instanceof Repo r) { r.save(); } } }\n"
+    assert ("a.A.A.f", "r", "Repo") in locals_of(src)
+    assert saves(typed_calls(tmp_path, src))
+
+
+def test_a_try_with_resources_variable_is_typed() -> None:
+    got = locals_of("class A { void f() { try (Repo r = open()) { } } }\n")
+    assert got == {("a.A.A.f", "r", "Repo")}
+
+
+def test_a_receiver_parameter_and_a_constructor() -> None:
+    got = locals_of("class A { A(Repo r) {} void m(A this, int x) {} }\n")
+    assert {(f, n, t) for f, n, t in got if n == "r"} == {("a.A.A.A", "r", "Repo")}
+    assert not [x for x in got if x[1] == "this"]
+
+
+def test_a_name_typed_two_ways_in_one_method_resolves_nothing(tmp_path: Path) -> None:
+    src = "class A { void f() { { Repo r = a(); r.save(); } { Other r = b(); r.x(); } } }\n"
+    assert not saves(typed_calls(tmp_path, src))
+
+
+def test_a_local_field_chain_takes_one_step(tmp_path: Path) -> None:
+    write(tmp_path, "src/a/Repo.java", REPO_J)
+    write(tmp_path, "src/a/State.java", "package a;\npublic class State { Repo db; }\n")
+    write(
+        tmp_path, "src/a/A.java", "package a;\nclass A { void f(State s) { s.db.save(); } }\n"
+    )
+    got = {(e.src, e.dst) for e in run(tmp_path).edges if e.kind is EdgeKind.CALLS}
+    assert saves(got)
+
+
+def test_a_plain_instanceof_does_not_type_its_operand_field(tmp_path: Path) -> None:
+    src = "class A { Repo repo; void f() { if (repo instanceof Other) {} repo.save(); } }\n"
+    assert locals_of(src) == set()
+    assert saves(typed_calls(tmp_path, src))
+
+
+def test_a_plain_instanceof_does_not_retype_its_operand_param(tmp_path: Path) -> None:
+    src = "class A { void f(Repo r) { if (r instanceof Other) {} r.save(); } }\n"
+    assert {(n, t) for _, n, t in locals_of(src)} == {("r", "Repo")}
+    assert saves(typed_calls(tmp_path, src))
+
+
+# ----------------------------------------------------------------------
+# a binding is in scope only in its block, loop, clause, arm or lambda
+
+REPO_QW = "package a;\npublic class Repo {\n  public void q() {}\n  public void w() {}\n}\n"
+OTHER_QW = "package a;\npublic class Other {\n  public void q() {}\n  public void w() {}\n}\n"
+
+
+def scope_calls(tmp_path: Path, body: str) -> set[str]:
+    """What `f` calls, as `Type.method`, in a class with a field `Repo repo`."""
+    write(tmp_path, "src/a/Repo.java", REPO_QW)
+    write(tmp_path, "src/a/Other.java", OTHER_QW)
+    write(
+        tmp_path,
+        "src/a/A.java",
+        "package a;\nclass A {\n  Repo repo;\n  void f(Object o, java.util.List<Other> xs) {\n"
+        + body
+        + "\n  }\n}\n",
+    )
+    got = {(e.src, e.dst) for e in run(tmp_path).edges if e.kind is EdgeKind.CALLS}
+    return {".".join(d.rsplit(".", 2)[-2:]) for s, d in got if s.endswith(".f")}
+
+
+def test_a_local_in_a_block_does_not_leak_out_of_it(tmp_path: Path) -> None:
+    body = "    {\n      Other repo = make();\n      repo.q();\n    }\n    repo.w();"
+    assert scope_calls(tmp_path, body) == {"Other.q", "Repo.w"}
+
+
+def test_a_lambda_parameter_does_not_leak_out_of_the_lambda(tmp_path: Path) -> None:
+    body = "    xs.forEach((Other repo) -> {\n      repo.q();\n    });\n    repo.w();"
+    assert scope_calls(tmp_path, body) == {"Other.q", "Repo.w"}
+
+
+def test_a_one_line_lambda_with_the_name_outside_resolves_to_nothing(tmp_path: Path) -> None:
+    body = "    xs.forEach((Other repo) -> repo.q()); repo.w();"
+    assert scope_calls(tmp_path, body) == set()
+
+
+def test_a_one_line_typed_lambda_resolves(tmp_path: Path) -> None:
+    body = "    xs.forEach((Other repo) -> repo.q());"
+    assert scope_calls(tmp_path, body) == {"Other.q"}
+
+
+def test_a_for_variable_does_not_leak_out_of_the_loop(tmp_path: Path) -> None:
+    body = "    for (Other repo : xs) {\n      repo.q();\n    }\n    repo.w();"
+    assert scope_calls(tmp_path, body) == {"Other.q", "Repo.w"}
+
+
+def test_a_catch_parameter_does_not_leak_out_of_the_clause(tmp_path: Path) -> None:
+    body = "    try {\n    } catch (Other repo) {\n      repo.q();\n    }\n    repo.w();"
+    assert scope_calls(tmp_path, body) == {"Other.q", "Repo.w"}
+
+
+def test_a_case_pattern_does_not_leak_out_of_the_arm(tmp_path: Path) -> None:
+    body = (
+        "    switch (o) {\n      case Other repo -> repo.q();\n      default -> {}\n    }\n"
+        "    repo.w();"
+    )
+    assert scope_calls(tmp_path, body) == {"Other.q", "Repo.w"}
+
+
+def test_an_instanceof_binding_only_hides_the_field_after_its_statement(
+    tmp_path: Path,
+) -> None:
+    body = "    if (o instanceof Other repo) {\n      repo.q();\n    }\n    repo.w();"
+    assert scope_calls(tmp_path, body) == {"Other.q"}
+
+
+def test_a_negated_instanceof_gives_no_edge_after_the_statement(tmp_path: Path) -> None:
+    body = "    if (!(o instanceof Other repo)) {\n      return;\n    }\n    repo.w();"
+    assert scope_calls(tmp_path, body) == set()
+
+
+def test_an_instanceof_binding_not_used_later_leaves_the_field(tmp_path: Path) -> None:
+    body = "    if (o instanceof Other other) {\n      other.q();\n    }\n    repo.w();"
+    assert scope_calls(tmp_path, body) == {"Other.q", "Repo.w"}
+
+
+def test_sibling_blocks_each_resolve_their_own_type(tmp_path: Path) -> None:
+    body = (
+        "    {\n      Repo r = make();\n      r.q();\n    }\n"
+        "    {\n      Other r = make();\n      r.w();\n    }"
+    )
+    assert scope_calls(tmp_path, body) == {"Repo.q", "Other.w"}
+
+
+def test_a_local_resolves_only_from_its_declaration_on(tmp_path: Path) -> None:
+    body = "    repo.q();\n    Other repo = make();\n    repo.w();"
+    assert scope_calls(tmp_path, body) == {"Repo.q", "Other.w"}
+
+
+def test_an_externally_imported_parameter_type_stays_external(tmp_path: Path) -> None:
+    pom = (
+        '<project xmlns="http://maven.apache.org/POM/4.0.0"><dependencies>'
+        "<dependency><groupId>com.squareup.okhttp</groupId>"
+        "<artifactId>okhttp</artifactId></dependency></dependencies></project>\n"
+    )
+    write(tmp_path, "pom.xml", pom)
+    write(
+        tmp_path,
+        "src/a/Request.java",
+        "package a;\npublic class Request {\n  public void send() {}\n}\n",
+    )
+    write(
+        tmp_path,
+        "src/a/A.java",
+        "package a;\nimport com.squareup.okhttp.Request;\n"
+        "class A { void f(Request r) { r.send(); } }\n",
+    )
+    calls = {e.dst for e in run(tmp_path).edges if e.kind is EdgeKind.CALLS}
+    assert not any(d.endswith("Request.send") for d in calls)
+
+
+def test_an_externally_imported_field_type_stays_external(tmp_path: Path) -> None:
+    pom = (
+        '<project xmlns="http://maven.apache.org/POM/4.0.0"><dependencies>'
+        "<dependency><groupId>com.squareup.okhttp</groupId>"
+        "<artifactId>okhttp</artifactId></dependency></dependencies></project>\n"
+    )
+    write(tmp_path, "pom.xml", pom)
+    write(
+        tmp_path,
+        "src/a/Request.java",
+        "package a;\npublic class Request {\n  public void send() {}\n}\n",
+    )
+    write(
+        tmp_path,
+        "src/a/A.java",
+        "package a;\nimport com.squareup.okhttp.Request;\n"
+        "class A { Request r; void f() { r.send(); } }\n",
+    )
+    calls = {e.dst for e in run(tmp_path).edges if e.kind is EdgeKind.CALLS}
+    assert not any(d.endswith("Request.send") for d in calls)
+
+
+# ----------------------------------------------------------------------
+# a local's type is found only where Java looks: the file, its imports and
+# its own package
+
+THREAD_J = (
+    'package app.model;\npublic class Thread {\n  public String getName() { return ""; }\n}\n'
+)
+ENTITY_J = "package app.model;\npublic class HttpEntity {\n  public Object getBody() { return null; }\n}\n"
+
+
+def java_calls(tmp_path: Path, body: str) -> set[tuple[str, str]]:
+    write(tmp_path, "src/app/model/Thread.java", THREAD_J)
+    write(tmp_path, "src/app/model/HttpEntity.java", ENTITY_J)
+    write(tmp_path, "src/app/web/A.java", body)
+    return {(e.src, e.dst) for e in run(tmp_path).edges if e.kind is EdgeKind.CALLS}
+
+
+def test_a_java_lang_type_is_not_a_repo_class_of_another_package(tmp_path: Path) -> None:
+    got = java_calls(
+        tmp_path, "package app.web;\nclass A { void f(Thread t) { t.getName(); } }\n"
+    )
+    assert not [c for c in got if c[1].endswith("getName")]
+
+
+def test_a_wildcard_import_of_a_dependency_is_not_a_repo_class(tmp_path: Path) -> None:
+    got = java_calls(
+        tmp_path,
+        "package app.web;\nimport org.springframework.http.*;\n"
+        "class A { void f(HttpEntity e) { e.getBody(); } }\n",
+    )
+    assert not [c for c in got if c[1].endswith("getBody")]
+
+
+def test_an_imported_or_same_package_type_resolves(tmp_path: Path) -> None:
+    got = java_calls(
+        tmp_path,
+        "package app.web;\nimport app.model.Thread;\n"
+        "class A { void f(Thread t) { t.getName(); } }\n",
+    )
+    assert [c for c in got if c[1].endswith("Thread.getName")]
+    got = java_calls(
+        tmp_path, "package app.model;\nclass A { void f(HttpEntity e) { e.getBody(); } }\n"
+    )
+    assert [c for c in got if c[1].endswith("HttpEntity.getBody")]
+
+
+# ----------------------------------------------------------------------
+# anonymous and local classes see the enclosing method; initializer lambdas
+# bind their parameters
+
+
+def other_x(calls: set[tuple[str, str]]) -> bool:
+    return any(d.endswith("Other.x") for _, d in calls)
+
+
+JOB = "interface Job { void run(); }\n"
+
+
+def test_an_anonymous_class_method_sees_the_enclosing_parameter(tmp_path: Path) -> None:
+    body = "class A { Other r; void f(Repo r) { new Job() { public void run() { r.save(); } }; } }\n"
+    assert saves(typed_calls(tmp_path, JOB + body))
+
+
+def test_an_anonymous_class_of_an_unknown_type_hides_the_outer_name(tmp_path: Path) -> None:
+    body = "class A { Other r; void f(Repo r) {\n new Runnable() { public void run() { r.x(); } };\n } }\n"
+    assert not other_x(typed_calls(tmp_path, body))
+
+
+def test_an_anonymous_class_field_beats_the_enclosing_parameter(tmp_path: Path) -> None:
+    body = (
+        "class A { void f(Repo r) {\n new Job() { Other r; public void run() { r.save(); r.x(); } };\n"
+        " } }\n"
+    )
+    got = typed_calls(tmp_path, JOB + body)
+    assert not saves(got)
+    assert other_x(got)
+
+
+def test_a_local_class_method_sees_the_enclosing_parameter(tmp_path: Path) -> None:
+    body = "class A { Other r; void f(Repo r) { class L { void m() { r.save(); } } } }\n"
+    assert saves(typed_calls(tmp_path, body))
+
+
+def test_a_field_initializer_lambda_binds_its_parameter(tmp_path: Path) -> None:
+    body = "class A {\n Other r;\n java.util.function.Consumer<Repo> c = (Repo r) -> r.save();\n}\n"
+    assert saves(typed_calls(tmp_path, body))
+    body = (
+        "class A {\n Other r;\n java.util.function.Consumer<Repo> c = (Repo r) -> r.x();\n}\n"
+    )
+    assert not other_x(typed_calls(tmp_path, body))

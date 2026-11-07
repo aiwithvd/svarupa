@@ -136,7 +136,8 @@
    "type_only": false,
    "is_from": true,
    "is_reexport": false,
-   "is_star": false
+   "is_star": false,
+   "is_global": false
   },
   {
    "specifier": "com.acme.shop.model",
@@ -153,7 +154,8 @@
    "type_only": false,
    "is_from": true,
    "is_reexport": false,
-   "is_star": true
+   "is_star": true,
+   "is_global": false
   },
   {
    "specifier": "com.acme.shop.util.Strings",
@@ -172,7 +174,8 @@
    "type_only": false,
    "is_from": true,
    "is_reexport": false,
-   "is_star": false
+   "is_star": false,
+   "is_global": false
   }
  ],
  "calls": [
@@ -306,6 +309,15 @@
    "owner": "OrderController",
    "field": "cache",
    "type_name": "List"
+  }
+ ],
+ "locals": [
+  {
+   "function": "src.main.java.com.acme.shop.OrderController.OrderController.OrderController",
+   "name": "service",
+   "type_name": "OrderService",
+   "start_line": 13,
+   "end_line": 16
   }
  ],
  "reexports": [],

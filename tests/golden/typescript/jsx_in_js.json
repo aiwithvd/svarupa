@@ -51,11 +51,35 @@
    "type_only": false,
    "is_from": true,
    "is_reexport": false,
-   "is_star": false
+   "is_star": false,
+   "is_global": false
   }
  ],
  "calls": [],
  "fields": [],
+ "locals": [
+  {
+   "function": "src.Button.Button",
+   "name": "onClick",
+   "type_name": "",
+   "start_line": 3,
+   "end_line": 5
+  },
+  {
+   "function": "src.Button.Button",
+   "name": "children",
+   "type_name": "",
+   "start_line": 3,
+   "end_line": 5
+  },
+  {
+   "function": "",
+   "name": "Icon",
+   "type_name": "",
+   "start_line": 1,
+   "end_line": 8
+  }
+ ],
  "reexports": [],
  "diagnostics": [],
  "ctor_assigns": [],

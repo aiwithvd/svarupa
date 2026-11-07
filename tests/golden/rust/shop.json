@@ -195,7 +195,8 @@
    "type_only": false,
    "is_from": true,
    "is_reexport": false,
-   "is_star": false
+   "is_star": false,
+   "is_global": false
   },
   {
    "specifier": "crate.db",
@@ -220,7 +221,8 @@
    "type_only": false,
    "is_from": true,
    "is_reexport": false,
-   "is_star": false
+   "is_star": false,
+   "is_global": false
   },
   {
    "specifier": "crate.db.inner",
@@ -240,7 +242,8 @@
    "type_only": false,
    "is_from": true,
    "is_reexport": false,
-   "is_star": false
+   "is_star": false,
+   "is_global": false
   },
   {
    "specifier": "super.Kind",
@@ -257,7 +260,8 @@
    "type_only": false,
    "is_from": true,
    "is_reexport": false,
-   "is_star": false
+   "is_star": false,
+   "is_global": false
   },
   {
    "specifier": "self.handlers",
@@ -274,7 +278,8 @@
    "type_only": false,
    "is_from": true,
    "is_reexport": false,
-   "is_star": false
+   "is_star": false,
+   "is_global": false
   }
  ],
  "calls": [
@@ -410,6 +415,7 @@
    "type_name": "HashMap"
   }
  ],
+ "locals": [],
  "reexports": [],
  "diagnostics": [],
  "ctor_assigns": [],
