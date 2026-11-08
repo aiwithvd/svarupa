@@ -20,7 +20,8 @@
    "type_only": false,
    "is_from": true,
    "is_reexport": false,
-   "is_star": false
+   "is_star": false,
+   "is_global": false
   },
   {
    "specifier": "express",
@@ -40,7 +41,8 @@
    "type_only": false,
    "is_from": true,
    "is_reexport": false,
-   "is_star": false
+   "is_star": false,
+   "is_global": false
   },
   {
    "specifier": "./lazy",
@@ -59,7 +61,8 @@
    "type_only": false,
    "is_from": true,
    "is_reexport": false,
-   "is_star": false
+   "is_star": false,
+   "is_global": false
   }
  ],
  "calls": [
@@ -302,6 +305,36 @@
   }
  ],
  "fields": [],
+ "locals": [
+  {
+   "function": "",
+   "name": "app",
+   "type_name": "",
+   "start_line": 1,
+   "end_line": 20
+  },
+  {
+   "function": "",
+   "name": "router",
+   "type_name": "",
+   "start_line": 1,
+   "end_line": 20
+  },
+  {
+   "function": "",
+   "name": "req",
+   "type_name": "",
+   "start_line": 8,
+   "end_line": 8
+  },
+  {
+   "function": "",
+   "name": "res",
+   "type_name": "",
+   "start_line": 8,
+   "end_line": 8
+  }
+ ],
  "reexports": [],
  "diagnostics": [],
  "ctor_assigns": [

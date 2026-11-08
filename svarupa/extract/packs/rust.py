@@ -1,4 +1,4 @@
-"""Rust language pack (experimental).
+"""Rust language pack.
 
 A file is a module, so the qualified prefix is the module path from the
 crate root (`src/a/b.rs` is `a.b`), and an inline `mod x { }` extends it.
@@ -18,6 +18,7 @@ from collections.abc import Callable
 from dataclasses import replace
 
 from tree_sitter import Node as TSNode
+from tree_sitter import Point
 
 from svarupa.extract.base import (
     CallShape,
@@ -25,6 +26,7 @@ from svarupa.extract.base import (
     DecoratorRef,
     FieldType,
     ImportRef,
+    LocalType,
 )
 from svarupa.extract.packs.model import (
     Call,
@@ -32,6 +34,7 @@ from svarupa.extract.packs.model import (
     Define,
     Field,
     Grammar,
+    Local,
     Maturity,
     MetricsSpec,
     Pack,
@@ -153,6 +156,170 @@ def field_types(_ctx: Ctx, node: TSNode, cls: str) -> list[FieldType]:
         return []
     type_name = _type_name(node.child_by_field_name("type"), True)
     return [FieldType(cls, _text(name), type_name)] if type_name else []
+
+
+# ----------------------------------------------------------------------
+# parameter and local types
+
+# Wrappers that hand out the value they hold: `Arc<AppState>` is used as an
+# `AppState`, so a call on it resolves on `AppState`.
+_LOCAL_WRAPPERS = frozenset(
+    {"Arc", "Rc", "Box", "Data", "State", "Extension", "Json", "Path", "Query", "Form"}
+)
+
+
+def _generic_names(owner: TSNode | None) -> set[str]:
+    """The type parameters a function, impl or trait declares: `S` in `<S: Store>`."""
+    params = owner.child_by_field_name("type_parameters") if owner is not None else None
+    names: set[str] = set()
+    for p in params.named_children if params is not None else ():
+        if p.type == "type_parameter":
+            name = p.child_by_field_name("name")
+        elif p.type == "constrained_type_parameter":
+            name = p.child_by_field_name("left")
+        else:
+            continue
+        if name is not None:
+            names.add(_text(name))
+    return names
+
+
+def _enclosing_fn(node: TSNode) -> TSNode | None:
+    cur = node.parent
+    while cur is not None and cur.type != "function_item":
+        cur = cur.parent
+    return cur
+
+
+def _in_generics(fn: TSNode) -> set[str]:
+    body = fn.parent
+    owner = body.parent if body is not None and body.type == "declaration_list" else None
+    return _generic_names(fn) | _generic_names(owner)
+
+
+def _local_type(ty: TSNode | None, generics: set[str]) -> str | None:
+    """The class a declared type names, seen through `&`, `Arc<..>` and the
+    like; None for a generic parameter, a tuple, `impl Trait` or a bare path."""
+    while ty is not None and ty.type == "generic_type":
+        inner = _type_name(ty.child_by_field_name("type"), False)
+        if inner not in _LOCAL_WRAPPERS:
+            break
+        ty = _first_type_arg(ty)
+        while ty is not None and ty.type == "reference_type":
+            ty = ty.child_by_field_name("type")
+    name = _type_name(ty, False)
+    return None if name is None or name in generics else name
+
+
+def _bound_name(pattern: TSNode | None) -> str | None:
+    return _text(pattern) if pattern is not None and pattern.type == "identifier" else None
+
+
+_BINDERS = frozenset({"identifier", "shorthand_field_identifier"})
+
+
+def _bound_names(pattern: TSNode | None) -> list[str]:
+    """Every name a pattern may bind. An enum or struct name inside it is
+    included too: that only hides a name, never invents an edge."""
+    if pattern is None:
+        return []
+    names = [_text(pattern)] if pattern.type in _BINDERS else []
+    for child in pattern.children:
+        names += _bound_names(child)
+    return names
+
+
+def _is_known(ctx: Ctx, fn: str, name: str) -> bool:
+    return any(x.function == fn and x.name == name and x.type_name for x in ctx.locals)
+
+
+def _typed(
+    fn: str, pattern: TSNode | None, ty: TSNode | None, generics: set[str]
+) -> list[LocalType]:
+    name = _bound_name(pattern)
+    type_name = _local_type(ty, generics)
+    return [LocalType(fn, name, type_name)] if name and type_name else []
+
+
+def parameter_locals(_ctx: Ctx, node: TSNode, qualified: str) -> list[LocalType]:
+    params = node.child_by_field_name("parameters")
+    if params is None:
+        return []
+    generics = _in_generics(node)
+    out: list[LocalType] = []
+    for p in params.named_children:
+        if p.type == "parameter":
+            out += _typed(
+                qualified,
+                p.child_by_field_name("pattern"),
+                p.child_by_field_name("type"),
+                generics,
+            )
+    return out
+
+
+def _rebinds(ctx: Ctx, fn: str, pattern: TSNode | None) -> list[str]:
+    """Names a pattern binds that were typed before: the type no longer holds."""
+    return [n for n in _bound_names(pattern) if _is_known(ctx, fn, n)]
+
+
+def _untyped(
+    ctx: Ctx, fn: str, pattern: TSNode | None, start: Point, end: Point
+) -> list[LocalType]:
+    found = [LocalType(fn, n, "") for n in _rebinds(ctx, fn, pattern)]
+    return ctx.rescoped(found, start, end)
+
+
+def let_locals(ctx: Ctx, node: TSNode, fn: str) -> list[LocalType]:
+    """A `let` is in scope from its end (`let r: Repo = r.into();` reads the
+    outer `r`) to the end of its block."""
+    enclosing = _enclosing_fn(node)
+    generics: set[str] = set() if enclosing is None else _in_generics(enclosing)
+    pattern, ty = node.child_by_field_name("pattern"), node.child_by_field_name("type")
+    start, end = node.end_point, (node.parent or node).end_point
+    typed = _typed(fn, pattern, ty, generics)
+    if typed:
+        return ctx.rescoped(typed, start, end, pattern)
+    return _untyped(ctx, fn, pattern, start, end)
+
+
+def _guarded(node: TSNode) -> TSNode:
+    """The block an `if let` or `while let` binds in."""
+    cur: TSNode | None = node
+    while cur is not None and cur.type not in ("if_expression", "while_expression"):
+        cur = cur.parent
+    if cur is None:
+        return node
+    return cur.child_by_field_name("consequence") or cur.child_by_field_name("body") or cur
+
+
+def pattern_locals(ctx: Ctx, node: TSNode, fn: str) -> list[LocalType]:
+    """`if let` and `while let` bind in their block, a `for` in its body and a
+    `match` pattern in its arm."""
+    if node.type == "match_pattern":
+        arm = node.parent or node
+        return _untyped(ctx, fn, node, arm.start_point, arm.end_point)
+    pattern = node.child_by_field_name("pattern")
+    if node.type == "for_expression":
+        body = node.child_by_field_name("body") or node
+        return _untyped(ctx, fn, pattern, body.start_point, body.end_point)
+    return _untyped(ctx, fn, pattern, node.end_point, _guarded(node).end_point)
+
+
+def closure_locals(ctx: Ctx, node: TSNode, fn: str) -> list[LocalType]:
+    """A closure's parameters bind in the closure: `|r: &Repo|` is typed."""
+    params = node.child_by_field_name("parameters")
+    enclosing = _enclosing_fn(node)
+    generics: set[str] = set() if enclosing is None else _in_generics(enclosing)
+    out: list[LocalType] = []
+    for p in params.named_children if params is not None else ():
+        pattern = p.child_by_field_name("pattern") if p.type == "parameter" else p
+        typed = _typed(fn, pattern, p.child_by_field_name("type"), generics)
+        if typed:
+            out += ctx.over(typed, node)
+        else:
+            out += _untyped(ctx, fn, pattern, node.start_point, node.end_point)
+    return out
 
 
 # ----------------------------------------------------------------------
@@ -416,6 +583,16 @@ def _scoped_receiver(path: TSNode) -> str:
 _Site = Callable[[TSNode, CallShape, str | None], CallSite]
 
 
+def _receiver_head(value: TSNode) -> str | None:
+    """A chain's receiver can span lines (an SQL body): keep the head. A cut
+    call keeps `()`, so `a.b()` is not mistaken for the field path `a.b`."""
+    text = _text(value)
+    head = re.split(r"[(\n]", text, maxsplit=1)[0]
+    if head != text and "." in head:
+        head += "()"
+    return head or None
+
+
 def _method_site(
     func: TSNode, site: Callable[[TSNode, CallShape, str | None], CallSite]
 ) -> CallSite | None:
@@ -430,9 +607,7 @@ def _method_site(
         return site(field, CallShape.SELF_FIELD, _text(owned) if owned is not None else None)
     if value.type == "identifier":
         return site(field, CallShape.QUALIFIED, _text(value))
-    # A macro chain's receiver can span lines (an SQL body): keep the head.
-    head = re.split(r"[(\n]", _text(value), maxsplit=1)[0]
-    return site(field, CallShape.MEMBER, head or None)
+    return site(field, CallShape.MEMBER, _receiver_head(value))
 
 
 def _callee(node: TSNode) -> TSNode | None:
@@ -573,6 +748,7 @@ _METHOD = Define(
     kind_in_class="method",
     exported_by=exported,
     bases=impl_trait,
+    locals=parameter_locals,
 )
 
 _SHELLS = frozenset({"sh", "bash", "cmd"})
@@ -755,7 +931,7 @@ PACK = Pack(
         module="tree_sitter_rust",
         default="language",
     ),
-    maturity=Maturity.EXPERIMENTAL,
+    maturity=Maturity.STABLE,
     metrics=METRICS,
     risks=RISKS,
     qualified_prefix=qualified_prefix,
@@ -779,6 +955,11 @@ PACK = Pack(
         "function_item": _METHOD,
         "function_signature_item": _METHOD,
         "field_declaration": Field(hook=field_types),
+        "let_declaration": Local(hook=let_locals),
+        "closure_expression": Local(hook=closure_locals),
+        "let_condition": Local(hook=pattern_locals),
+        "match_pattern": Local(hook=pattern_locals),
+        "for_expression": Local(hook=pattern_locals),
         "call_expression": Call(hook=call),
     },
 )

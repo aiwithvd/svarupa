@@ -12,6 +12,7 @@ class TwoFiles:
 
     top_level_only = True
     package_scoped_bare = False
+    qualified_types = False
     fields_without_this = False
     follows_reexports = False
     names_modules = False
@@ -21,6 +22,9 @@ class TwoFiles:
 
     def is_external(self, spec: str, /) -> bool:
         return spec == "std"
+
+    def implicit_scope(self, _from_file: str, /) -> tuple[tuple[str, str], ...]:
+        return ()
 
 
 def ev(path: str, line: int = 1) -> Evidence:

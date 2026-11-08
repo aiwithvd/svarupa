@@ -1,0 +1,21 @@
+path: src/app.rs
+---
+use crate::db::Repo;
+
+pub struct AppState { pub db: Repo }
+
+impl AppState {
+    pub fn run(&self, repo: &Repo, state: web::Data<AppState>, n: Count) {
+        repo.save();
+        state.db.fetch();
+        let x: Other = make();
+        x.go();
+        let n = 1;
+        if let Some(repo) = find() { repo.q(); }
+    }
+}
+
+pub fn handler<S: Store>(s: S, r: Arc<Repo>) {
+    s.save();
+    r.save();
+}

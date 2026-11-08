@@ -39,6 +39,7 @@ __all__ = [
     "FileFacts",
     "FunctionMetrics",
     "ImportRef",
+    "LocalType",
     "RiskFact",
     "RouteFact",
     "Scorecard",
@@ -158,6 +159,9 @@ class ImportRef:
     # `export * from './x'` names nothing explicitly; the resolver has to
     # search the target's own symbol table to chase it.
     is_star: bool = False
+    # C# `global using`: the import holds in every file of the project, not
+    # only in the file that writes it.
+    is_global: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -171,6 +175,29 @@ class FieldType:
     owner: str
     field: str
     type_name: str
+
+
+@dataclass(frozen=True, slots=True)
+class LocalType:
+    """A parameter or local whose declared type names a class.
+
+    `function` is the qualified name `CallSite.enclosing` carries, so a call
+    finds its locals by the function it sits in. An empty `type_name` marks a
+    name bound to something untyped (`let r = other();`): inside its scope the
+    name resolves to nothing, not to a field or an import of the same name.
+
+    `start_line` and `end_line` (1-indexed, inclusive) are the lines where the
+    binding is in scope: the function for a parameter, the rest of the block
+    for a declaration, the body for a loop, a clause, an arm or a callback.
+    `0, 0` is the whole function. A call sees the innermost binding whose
+    lines hold it.
+    """
+
+    function: str
+    name: str
+    type_name: str
+    start_line: int = 0
+    end_line: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -244,6 +271,7 @@ class FileFacts:
     imports: tuple[ImportRef, ...] = ()
     calls: tuple[CallSite, ...] = ()
     fields: tuple[FieldType, ...] = ()
+    locals: tuple[LocalType, ...] = ()
     reexports: tuple[str, ...] = ()
     diagnostics: tuple[Diagnostic, ...] = ()
     # `local = callee(...)` bindings, as (local name, callee text). Generic:

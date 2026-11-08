@@ -264,7 +264,8 @@
    "type_only": false,
    "is_from": true,
    "is_reexport": false,
-   "is_star": false
+   "is_star": false,
+   "is_global": false
   },
   {
    "specifier": "./users.service",
@@ -283,7 +284,8 @@
    "type_only": false,
    "is_from": true,
    "is_reexport": false,
-   "is_star": false
+   "is_star": false,
+   "is_global": false
   }
  ],
  "calls": [
@@ -376,6 +378,36 @@
    "owner": "UsersController",
    "field": "logger",
    "type_name": "Logger"
+  }
+ ],
+ "locals": [
+  {
+   "function": "",
+   "name": "PATH",
+   "type_name": "",
+   "start_line": 1,
+   "end_line": 46
+  },
+  {
+   "function": "src.users.users.controller.UsersController.constructor",
+   "name": "usersService",
+   "type_name": "UsersService",
+   "start_line": 11,
+   "end_line": 15
+  },
+  {
+   "function": "src.users.users.controller.UsersController.constructor",
+   "name": "logger",
+   "type_name": "Logger",
+   "start_line": 11,
+   "end_line": 15
+  },
+  {
+   "function": "src.users.users.controller.UsersController.constructor",
+   "name": "config",
+   "type_name": "ConfigService",
+   "start_line": 11,
+   "end_line": 15
   }
  ],
  "reexports": [],

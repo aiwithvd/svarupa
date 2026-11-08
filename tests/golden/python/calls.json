@@ -94,7 +94,8 @@
    "type_only": false,
    "is_from": false,
    "is_reexport": false,
-   "is_star": false
+   "is_star": false,
+   "is_global": false
   },
   {
    "specifier": "repo",
@@ -113,7 +114,8 @@
    "type_only": false,
    "is_from": true,
    "is_reexport": false,
-   "is_star": false
+   "is_star": false,
+   "is_global": false
   }
  ],
  "calls": [
@@ -357,6 +359,50 @@
   }
  ],
  "fields": [],
+ "locals": [
+  {
+   "function": "",
+   "name": "registry",
+   "type_name": "",
+   "start_line": 16,
+   "end_line": 24
+  },
+  {
+   "function": "src.svc.service.run",
+   "name": "items",
+   "type_name": "",
+   "start_line": 5,
+   "end_line": 12
+  },
+  {
+   "function": "src.svc.service.run",
+   "name": "local",
+   "type_name": "",
+   "start_line": 5,
+   "end_line": 12
+  },
+  {
+   "function": "src.svc.service.run",
+   "name": "result",
+   "type_name": "",
+   "start_line": 5,
+   "end_line": 12
+  },
+  {
+   "function": "src.svc.service.Service.handle",
+   "name": "callback",
+   "type_name": "",
+   "start_line": 18,
+   "end_line": 24
+  },
+  {
+   "function": "src.svc.service.Service.handle",
+   "name": "x",
+   "type_name": "",
+   "start_line": 23,
+   "end_line": 23
+  }
+ ],
  "reexports": [],
  "diagnostics": [],
  "ctor_assigns": [],

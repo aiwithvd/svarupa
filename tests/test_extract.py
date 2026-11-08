@@ -835,3 +835,339 @@ def test_an_override_wins_over_the_method_it_overrides(tmp_path: Path) -> None:
     assert len(calls) == 1
     assert calls[0].resolution is Resolution.RESOLVED
     assert calls[0].dst.endswith("Child.m")
+
+
+# --------------------------------------------------------------------------
+# Parameter and local types
+# --------------------------------------------------------------------------
+
+REPO_PY = "class Repo:\n    def save(self):\n        pass\n"
+OTHER_PY = "class Other:\n    def save(self):\n        pass\n    def x(self):\n        pass\n"
+PY_IMPORTS = "from repo import Repo\nfrom other import Other\n"
+
+
+def locals_of(src: str, path: str = "src/a.py") -> set[tuple[str, str, str]]:
+    return {(x.function, x.name, x.type_name) for x in facts(src, path).locals}
+
+
+def scoped_locals(src: str) -> set[tuple[str, str, str, int, int]]:
+    f = facts(src, "src/a.py")
+    return {(x.function, x.name, x.type_name, x.start_line, x.end_line) for x in f.locals}
+
+
+def typed_calls(tmp_path: Path, body: str) -> set[str]:
+    write(tmp_path, "repo.py", REPO_PY)
+    write(tmp_path, "other.py", OTHER_PY)
+    write(tmp_path, "a.py", PY_IMPORTS + body)
+    return {e.dst for e in run(tmp_path).edges if e.kind is EdgeKind.CALLS}
+
+
+def saves_repo(calls: set[str]) -> bool:
+    return any(d.endswith("Repo.save") for d in calls)
+
+
+def test_a_typed_parameter_resolves(tmp_path: Path) -> None:
+    assert saves_repo(typed_calls(tmp_path, "def f(r: Repo):\n    r.save()\n"))
+
+
+def test_a_default_parameter_and_a_fastapi_depends_resolve(tmp_path: Path) -> None:
+    body = "def f(r: Repo = Depends(get_repo), s: Other = None):\n    r.save()\n"
+    assert saves_repo(typed_calls(tmp_path, body))
+    assert locals_of(body) == {("src.a.f", "r", "Repo"), ("src.a.f", "s", "Other")}
+
+
+def test_a_method_parameter_resolves_and_self_is_not_a_local(tmp_path: Path) -> None:
+    body = "class S:\n    def f(self, r: Repo, cls=None):\n        r.save()\n"
+    assert saves_repo(typed_calls(tmp_path, body))
+    assert locals_of(body) == {("src.a.S.f", "r", "Repo"), ("src.a.S.f", "cls", "")}
+    assert locals_of("class S:\n    @classmethod\n    def g(cls, r: Repo): pass") == {
+        ("src.a.S.g", "r", "Repo")
+    }
+
+
+def test_wrappers_are_unwrapped() -> None:
+    src = (
+        "from typing import Annotated, Optional, Union\n"
+        "def f(a: Optional[Repo], b: Repo | None, c: Union[Repo, None], d: Annotated[Repo, 1],\n"
+        '      e: "Repo", f: "Optional[Repo]", g: Optional["Repo"], h: None | Repo,\n'
+        "      i: typing.Optional[Repo], j: Annotated[Optional[Repo], Depends(x, y)]): pass"
+    )
+    got = {n: t for (_, n, t) in locals_of(src)}
+    assert got == dict.fromkeys("abcdefghij", "Repo")
+
+
+def test_unions_containers_and_typevars_give_no_type() -> None:
+    src = (
+        "from typing import Any, Callable, TypeVar, Union\n"
+        'T = TypeVar("T")\n'
+        "def f(a: A | B, b: Union[A, B], c: T, d: Any, e: list[Repo], f: Callable[[A], B],\n"
+        "      g: type[Repo], h: Optional[A | B], i: Optional[T], j: models.Repo, k: dict[str, Repo],\n"
+        "      l: 'A | B', m: None, n: Optional[list[Repo]]): pass\n"
+        "def g[S](x: S, y: Repo): pass\n"
+    )
+    got = {(f, n): t for (f, n, t) in locals_of(src)}
+    for name in "abcdefghijklmn":
+        assert got[("src.a.f", name)] == "", name
+    assert got[("src.a.g", "x")] == "" and got[("src.a.g", "y")] == "Repo"
+
+
+def test_untyped_and_splat_parameters_hide_the_name() -> None:
+    src = "def f(a, b=1, *args: Repo, **kw): pass"
+    assert locals_of(src) == {
+        ("src.a.f", "a", ""),
+        ("src.a.f", "b", ""),
+        ("src.a.f", "args", ""),
+        ("src.a.f", "kw", ""),
+    }
+
+
+def test_an_annotated_assignment_resolves(tmp_path: Path) -> None:
+    assert saves_repo(typed_calls(tmp_path, "def f():\n    r: Repo = make()\n    r.save()\n"))
+    assert saves_repo(typed_calls(tmp_path, "def f():\n    r: Optional[Repo]\n    r.save()\n"))
+    assert locals_of("def f():\n    self.r: Repo = 1") == set()
+
+
+def test_an_untyped_assignment_is_not_inferred_and_hides_the_name(tmp_path: Path) -> None:
+    body = "def f():\n    r = Repo()\n    r.save()\n"
+    assert locals_of(body) == {("src.a.f", "r", "")}
+    assert not saves_repo(typed_calls(tmp_path, body))
+    two_ways = "def f(r: Repo):\n    r = other()\n    r.save()\n"
+    assert not saves_repo(typed_calls(tmp_path, two_ways))
+
+
+def test_every_binding_form_is_recorded_untyped() -> None:
+    src = (
+        "def f(xs):\n"
+        "    a, (b, *c) = xs\n"
+        "    d = e = 1\n"
+        "    for g, h in xs: pass\n"
+        "    with open() as i, j as (k, m): pass\n"
+        "    if (n := 3): pass\n"
+        "    try: pass\n"
+        "    except (A, B) as o: pass\n"
+        "    def p(): pass\n"
+        "    class Q: pass\n"
+        "    match xs:\n"
+        "        case Repo(x=r, y=[s, *t]) as u: pass\n"
+        "        case {'k': v, **w}: pass\n"
+        "        case y: pass\n"
+    )
+    got = {n: t for (fn, n, t) in locals_of(src) if fn == "src.a.f"}
+    names = "xs a b c d e g h i k m n o p Q r s t u v w y"
+    assert got == dict.fromkeys(names.split(), "")
+
+
+def test_an_except_name_is_typed_only_for_a_single_plain_name() -> None:
+    src = (
+        "def f():\n    try: pass\n    except Boom as e: pass\n"
+        "def g():\n    try: pass\n    except (A, B) as e: pass\n"
+        "def h():\n    try: pass\n    except mod.Boom as e: pass\n"
+    )
+    assert locals_of(src) == {
+        ("src.a.f", "e", "Boom"),
+        ("src.a.g", "e", ""),
+        ("src.a.h", "e", ""),
+    }
+
+
+def test_a_class_pattern_does_not_type_its_subject(tmp_path: Path) -> None:
+    body = "def f(x):\n    match x:\n        case Repo():\n            x.save()\n"
+    assert locals_of(body) == {("src.a.f", "x", "")}
+    assert not saves_repo(typed_calls(tmp_path, body))
+
+
+def test_isinstance_is_not_a_binding(tmp_path: Path) -> None:
+    body = "def f(x):\n    if isinstance(x, Repo):\n        x.save()\n"
+    assert locals_of(body) == {("src.a.f", "x", "")}
+    assert not saves_repo(typed_calls(tmp_path, body))
+
+
+def test_global_and_nonlocal_names_are_not_locals() -> None:
+    src = (
+        "def f():\n    global a\n    a = 1\n    b = 2\n"
+        "def outer(r: Repo):\n    n = 1\n    def inner():\n        nonlocal n\n        n = 2\n"
+    )
+    got = locals_of(src)
+    assert ("src.a.f", "a", "") not in got and ("src.a.f", "b", "") in got
+    # `n` in inner is outer's variable: recorded once, over outer's lines
+    mine = [x for x in scoped_locals(src) if x[0] == "src.a.outer.inner" and x[1] == "n"]
+    assert mine == [("src.a.outer.inner", "n", "", 5, 9)]
+
+
+def test_comprehension_variables_are_scoped_to_the_comprehension() -> None:
+    src = "def f(r: Repo, xs):\n    ys = [r.save() for r in xs]\n    r.save()\n"
+    got = scoped_locals(src)
+    assert ("src.a.f", "r", "", 2, 2) in got
+    assert ("src.a.f", "r", "Repo", 1, 3) in got
+
+
+def test_a_comprehension_variable_hides_a_typed_parameter(tmp_path: Path) -> None:
+    body = "def f(r: Repo, xs):\n    return [r.save() for r in xs]\n"
+    assert not saves_repo(typed_calls(tmp_path, body))
+    after = "def f(r: Repo, xs):\n    ys = [1 for r in xs]\n    r.save()\n"
+    assert saves_repo(typed_calls(tmp_path, after))
+
+
+def test_a_lambda_parameter_hides_the_name_inside_the_lambda_only(tmp_path: Path) -> None:
+    body = "def f(r: Repo):\n    g = lambda r: r.save()\n    r.save()\n"
+    assert not saves_repo(
+        typed_calls(tmp_path, "def f(r: Repo):\n    return lambda r: r.save()\n")
+    )
+    assert saves_repo(typed_calls(tmp_path, body.replace("g = lambda r: r.save()", "g = 1")))
+    assert ("src.a.f", "r", "", 2, 2) in scoped_locals(body)
+
+
+def test_a_walrus_binds_untyped(tmp_path: Path) -> None:
+    body = "def f(r: Repo):\n    if (r := other()):\n        r.save()\n"
+    assert not saves_repo(typed_calls(tmp_path, body))
+
+
+def test_a_nested_function_sees_the_outer_locals(tmp_path: Path) -> None:
+    body = "def f(r: Repo):\n    def g():\n        r.save()\n    g()\n"
+    assert saves_repo(typed_calls(tmp_path, body))
+    own = "def f(r: Repo):\n    def g(r):\n        r.save()\n    g(1)\n"
+    assert not saves_repo(typed_calls(tmp_path, own))
+    assigned = "def f(r: Repo):\n    def g():\n        r = make()\n        r.save()\n"
+    assert not saves_repo(typed_calls(tmp_path, assigned))
+    deep = "def f(r: Repo):\n    def g():\n        def h():\n            r.save()\n"
+    assert saves_repo(typed_calls(tmp_path, deep))
+    method = "def f(r: Repo):\n    class C:\n        def m(self):\n            r.save()\n"
+    assert saves_repo(typed_calls(tmp_path, method))
+
+
+def test_a_global_in_a_nested_function_does_not_inherit_the_outer_local(tmp_path: Path) -> None:
+    body = "def f(r: Repo):\n    def g():\n        global r\n        r.save()\n"
+    assert not saves_repo(typed_calls(tmp_path, body))
+
+
+def test_a_nested_def_or_class_name_hides_the_outer_name(tmp_path: Path) -> None:
+    body = "def f(r: Repo):\n    def r():\n        pass\n    r.save()\n"
+    assert not saves_repo(typed_calls(tmp_path, body))
+    body = "def f(r: Repo):\n    class r:\n        pass\n    r.save()\n"
+    assert not saves_repo(typed_calls(tmp_path, body))
+
+
+def test_a_local_hides_an_import_of_the_same_name_only_in_its_scope(tmp_path: Path) -> None:
+    write(tmp_path, "util.py", "def go():\n    pass\n")
+    write(tmp_path, "repo.py", REPO_PY)
+    write(
+        tmp_path,
+        "a.py",
+        "import util\nfrom repo import Repo\n\n"
+        "def hidden(util: Repo):\n    util.go()\n\n"
+        "def shown():\n    util.go()\n",
+    )
+    edges = {(e.src, e.dst) for e in run(tmp_path).edges if e.kind is EdgeKind.CALLS}
+    assert not any(s.endswith("a.hidden") and d.endswith("util.go") for s, d in edges)
+    assert any(s.endswith("a.shown") and d.endswith("util.go") for s, d in edges)
+
+
+def test_a_local_shadows_an_import_without_a_type(tmp_path: Path) -> None:
+    write(tmp_path, "util.py", "def go():\n    pass\n")
+    write(tmp_path, "a.py", "import util\n\ndef f():\n    util = make()\n    util.go()\n")
+    assert not any(
+        e.dst.endswith("util.go") for e in run(tmp_path).edges if e.kind is EdgeKind.CALLS
+    )
+
+
+def test_module_level_bindings_are_recorded_under_the_empty_function() -> None:
+    src = "r: Repo = make()\nfor x in xs: pass\n"
+    assert locals_of(src) == {("", "r", "Repo"), ("", "x", "")}
+
+
+def test_a_decorated_and_async_function_are_read() -> None:
+    src = "@app.get('/')\nasync def f(r: Repo = Depends(g)): pass"
+    assert locals_of(src) == {("src.a.f", "r", "Repo")}
+
+
+def test_an_externally_imported_parameter_type_stays_external(tmp_path: Path) -> None:
+    write(tmp_path, "pyproject.toml", '[project]\ndependencies = ["requests"]\n')
+    write(tmp_path, "models.py", "class Session:\n    def get(self):\n        pass\n")
+    write(
+        tmp_path,
+        "a.py",
+        "from requests import Session\n\ndef f(s: Session):\n    s.get()\n",
+    )
+    calls = [e for e in run(tmp_path).edges if e.kind is EdgeKind.CALLS and e.src.endswith("f")]
+    assert not any(e.dst.endswith("Session.get") for e in calls)
+
+
+def test_nonlocal_rebinding_hides_the_outer_typed_name(tmp_path: Path) -> None:
+    body = (
+        "def outer(r: Repo):\n"
+        "    def inner():\n"
+        "        nonlocal r\n"
+        "        r = make()\n"
+        "    inner()\n"
+        "    r.save()\n"
+    )
+    assert not saves_repo(typed_calls(tmp_path, body))
+
+
+@pytest.mark.parametrize(
+    "stmt",
+    [
+        "import json as r",
+        "import r",
+        "import r.sub",
+        "from other import Other as r",
+        "from other import r",
+    ],
+)
+def test_an_import_in_a_function_binds_its_name_untyped(tmp_path: Path, stmt: str) -> None:
+    for body in (
+        f"def f(r: Repo):\n    {stmt}\n    r.save()\n",
+        f"def f(r: Repo):\n    def g():\n        {stmt}\n        r.save()\n",
+        f"def f(r: Repo):\n    try:\n        {stmt}\n    except ImportError:\n        pass\n    r.save()\n",
+    ):
+        assert not saves_repo(typed_calls(tmp_path, body))
+
+
+def test_a_class_body_assignment_hides_the_outer_typed_name(tmp_path: Path) -> None:
+    body = "def f(r: Repo):\n    class C:\n        r = make()\n        r.save()\n"
+    assert not saves_repo(typed_calls(tmp_path, body))
+    assert not saves_repo(
+        typed_calls(tmp_path, "r: Repo = Repo()\nclass C:\n    r = make()\n    r.save()\n")
+    )
+
+
+def test_a_class_body_assignment_does_not_hide_the_name_outside_the_class(
+    tmp_path: Path,
+) -> None:
+    body = "def f(r: Repo):\n    class C:\n        r = make()\n    r.save()\n"
+    assert saves_repo(typed_calls(tmp_path, body))
+
+
+def test_a_type_alias_statement_binds_its_name_untyped(tmp_path: Path) -> None:
+    body = "def f(r: Repo):\n    type r = int\n    r.save()\n"
+    assert not saves_repo(typed_calls(tmp_path, body))
+
+
+# ----------------------------------------------------------------------
+# a local's type is found only in the file and its imports
+
+
+def test_an_import_from_an_undeclared_package_is_not_a_repo_class(tmp_path: Path) -> None:
+    write(tmp_path, "session.py", "class Session:\n    def commit(self):\n        pass\n")
+    write(
+        tmp_path,
+        "a.py",
+        "from sqlalchemy.orm import Session\n\ndef f(s: Session):\n    s.commit()\n",
+    )
+    calls = {e.dst for e in run(tmp_path).edges if e.kind is EdgeKind.CALLS}
+    assert not [d for d in calls if d.endswith("Session.commit")]
+
+
+def test_an_unimported_exception_type_is_not_a_repo_class(tmp_path: Path) -> None:
+    write(
+        tmp_path,
+        "session.py",
+        "class Session(Exception):\n    def commit(self):\n        pass\n",
+    )
+    write(
+        tmp_path,
+        "a.py",
+        "def f():\n    try:\n        g()\n    except Session as e:\n        e.commit()\n",
+    )
+    calls = {e.dst for e in run(tmp_path).edges if e.kind is EdgeKind.CALLS}
+    assert not [d for d in calls if d.endswith("Session.commit")]

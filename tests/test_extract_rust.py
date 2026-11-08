@@ -86,7 +86,7 @@ def test_an_impl_in_another_file_joins_the_type_and_its_trait(tmp_path: Path) ->
 
 
 def test_a_field_call_resolves_through_the_struct_in_another_file(tmp_path: Path) -> None:
-    write(tmp_path, "src/shop.rs", "pub struct Shop { repo: Repo }\n")
+    write(tmp_path, "src/shop.rs", "use crate::repo::Repo;\npub struct Shop { repo: Repo }\n")
     write(tmp_path, "src/repo.rs", "pub struct Repo;\nimpl Repo { pub fn find(&self) {} }\n")
     write(tmp_path, "src/imp.rs", "impl Shop { fn run(&self) { self.repo.find(1); } }\n")
     assert ("src/imp.rs#imp.Shop.run", "src/repo.rs#repo.Repo.find") in calls_of(tmp_path)
@@ -269,7 +269,7 @@ def test_types_at_the_crate_root_resolve(tmp_path: Path) -> None:
         write(
             d,
             f"src/{root}.rs",
-            "pub struct Shop { repo: Repo }\n"
+            "use crate::repo::Repo;\npub struct Shop { repo: Repo }\n"
             "impl Shop {\n    fn a(&self) {}\n    fn new() -> Shop { Shop { repo: Repo } }\n"
             "    fn run(&self) { self.a(); self.repo.find(); }\n}\n"
             "fn make() { Shop::new(); }\n",
@@ -700,3 +700,351 @@ def test_a_plain_use_does_not_reexport(tmp_path: Path) -> None:
         "use crate::model::create;\nuse crate::model::list;\nfn run() { create(); list(); }\n",
     )
     assert not [c for c in found if c[0] == RUN]
+
+
+# ----------------------------------------------------------------------
+# parameter and local types
+
+REPO_RS = "pub struct Repo;\nimpl Repo { pub fn save(&self) {} }\n"
+# A Rust type is in scope only through its module or a `use`.
+USES = "use crate::repo::Repo;\nuse crate::other::Other;\n"
+
+
+def locals_of(src: str) -> set[tuple[str, str, str]]:
+    return {(x.function, x.name, x.type_name) for x in parse(src).locals}
+
+
+def typed_calls(tmp_path: Path, body: str, model: str = REPO_RS) -> set[tuple[str, str]]:
+    write(tmp_path, "src/repo.rs", model)
+    write(tmp_path, "src/app.rs", USES + body)
+    return calls_of(tmp_path)
+
+
+def test_a_typed_parameter_resolves_through_an_impl_in_another_file(tmp_path: Path) -> None:
+    write(tmp_path, "src/ctx.rs", "pub struct Ctx;\n")
+    write(
+        tmp_path, "src/imp.rs", "use crate::ctx::Ctx;\nimpl Ctx { pub fn user_id(&self) {} }\n"
+    )
+    write(tmp_path, "src/app.rs", "use crate::ctx::Ctx;\nfn h(ctx: &Ctx) { ctx.user_id(); }\n")
+    assert ("src/app.rs#app.h", "src/imp.rs#imp.Ctx.user_id") in calls_of(tmp_path)
+
+
+def test_a_method_parameter_uses_the_impl_qualified_name() -> None:
+    got = locals_of("impl Shop { fn run(&self, repo: Repo) {} }\n")
+    assert got == {("shop.Shop.run", "repo", "Repo")}
+
+
+def test_wrappers_are_unwrapped() -> None:
+    got = locals_of(
+        "fn f(a: Arc<AppState>, b: &mut Ctx, c: web::Data<Pool>, d: Box<dyn Store>,"
+        " e: State<Db>, g: Rc<Cfg>, h: Extension<Auth>, j: Json<Body>) {}\n"
+    )
+    assert {(n, t) for _, n, t in got} == {
+        ("a", "AppState"),
+        ("b", "Ctx"),
+        ("c", "Pool"),
+        ("d", "Store"),
+        ("e", "Db"),
+        ("g", "Cfg"),
+        ("h", "Auth"),
+        ("j", "Body"),
+    }
+
+
+def test_an_explicitly_typed_let_resolves(tmp_path: Path) -> None:
+    got = typed_calls(tmp_path, "fn f() { let x: Repo = make(); x.save(); }\n")
+    assert ("src/app.rs#app.f", "src/repo.rs#repo.Repo.save") in got
+
+
+def test_an_inferred_let_is_not_a_local(tmp_path: Path) -> None:
+    src = "fn f() { let x = Repo::new(); x.save(); }\n"
+    assert locals_of(src) == set()
+    got = typed_calls(tmp_path, src)
+    assert not [c for c in got if c[1].endswith("Repo.save")]
+
+
+def test_a_destructured_parameter_is_not_a_local() -> None:
+    assert locals_of("fn f((a, b): (A, B), Point { x, y }: Point) {}\n") == set()
+
+
+def test_self_is_not_a_local() -> None:
+    assert locals_of("impl Shop { fn run(&self, mut n: Count) {} }\n") == {
+        ("shop.Shop.run", "n", "Count")
+    }
+
+
+def test_a_generic_parameter_stays_unresolved(tmp_path: Path) -> None:
+    src = "fn h<S: Store>(s: S, r: Arc<S>) { s.save(); }\n"
+    assert locals_of(src) == set()
+    got = typed_calls(tmp_path, src, "pub struct S;\nimpl S { pub fn save(&self) {} }\n")
+    assert not [c for c in got if c[1].endswith("S.save")]
+
+
+def test_an_impl_generic_parameter_stays_unresolved() -> None:
+    assert locals_of("impl<T> Shop<T> { fn run(&self, t: T, r: Repo) {} }\n") == {
+        ("shop.Shop.run", "r", "Repo")
+    }
+
+
+def test_a_closure_sees_the_outer_parameters(tmp_path: Path) -> None:
+    src = "fn f(r: &Repo) { let go = || { r.save(); }; go(); }\n"
+    assert ("src/app.rs#app.f", "src/repo.rs#repo.Repo.save") in typed_calls(tmp_path, src)
+
+
+def test_a_closure_parameter_hides_the_outer_one(tmp_path: Path) -> None:
+    src = "fn f(r: &Repo) { let go = |r| { r.save(); }; go(1); }\n"
+    got = typed_calls(tmp_path, src)
+    assert not [c for c in got if c[1].endswith("Repo.save")]
+
+
+def test_an_untyped_rebinding_hides_the_parameter(tmp_path: Path) -> None:
+    src = "fn f(r: &Repo) { let r = other(); r.save(); }\n"
+    got = typed_calls(tmp_path, src)
+    assert not [c for c in got if c[1].endswith("Repo.save")]
+
+
+def test_a_local_shadows_a_field(tmp_path: Path) -> None:
+    write(tmp_path, "src/repo.rs", REPO_RS)
+    write(tmp_path, "src/other.rs", "pub struct Other;\nimpl Other { pub fn save(&self) {} }\n")
+    write(
+        tmp_path,
+        "src/app.rs",
+        USES
+        + "pub struct A { repo: Repo }\nimpl A { fn f(&self, repo: Other) { repo.save(); } }\n",
+    )
+    got = calls_of(tmp_path)
+    assert ("src/app.rs#app.A.f", "src/other.rs#other.Other.save") in got
+    assert ("src/app.rs#app.A.f", "src/repo.rs#repo.Repo.save") not in got
+
+
+def test_a_parameter_field_takes_one_step_through_field_types(tmp_path: Path) -> None:
+    write(tmp_path, "src/db.rs", "pub struct Db;\nimpl Db { pub fn fetch(&self) {} }\n")
+    write(tmp_path, "src/state.rs", "use crate::db::Db;\npub struct AppState { pub db: Db }\n")
+    write(
+        tmp_path,
+        "src/app.rs",
+        "use crate::state::AppState;\nfn h(state: web::Data<AppState>) { state.db.fetch(); }\n",
+    )
+    assert ("src/app.rs#app.h", "src/db.rs#db.Db.fetch") in calls_of(tmp_path)
+
+
+def test_an_imported_external_type_is_external_and_an_unknown_one_is_not(
+    tmp_path: Path,
+) -> None:
+    write(tmp_path, "Cargo.toml", '[package]\nname = "app"\n[dependencies]\nreqwest = "0"\n')
+    write(
+        tmp_path,
+        "src/app.rs",
+        "use reqwest::Client;\nfn f(c: &Client, g: &Ghost) { c.get(); g.get(); }\n",
+    )
+    card = run(tmp_path).scorecard
+    assert card.get("rust", "calls", Resolution.EXTERNAL) == 1
+    assert card.get("rust", "calls", Resolution.UNRESOLVED) == 1
+
+
+# ----------------------------------------------------------------------
+# pattern bindings rebind a typed name
+
+
+OTHER_RS = "pub struct Other;\nimpl Other { pub fn q(&self) {} }\n"
+Q_REPO = "pub struct Repo;\nimpl Repo { pub fn q(&self) {} }\n"
+
+
+def rebound_calls(tmp_path: Path, body: str) -> set[tuple[str, str]]:
+    write(tmp_path, "src/repo.rs", Q_REPO)
+    write(tmp_path, "src/other.rs", OTHER_RS)
+    write(tmp_path, "src/app.rs", USES + body)
+    return calls_of(tmp_path)
+
+
+@pytest.mark.parametrize(
+    "binding",
+    [
+        "if let Some(r) = o { r.q(); }",
+        "while let Some(r) = o { r.q(); }",
+        "match o { Some(r) => r.q(), None => {} }",
+        "for r in v { r.q(); }",
+        "let (r, z) = pair(); r.q();",
+        "let Some(r) = o else { return }; r.q();",
+        "let P { r, .. } = p; r.q();",
+        "let go = |(r, z)| r.q(); go(1);",
+    ],
+)
+def test_a_pattern_binding_hides_the_typed_parameter(tmp_path: Path, binding: str) -> None:
+    got = rebound_calls(tmp_path, f"fn f(r: Repo, o: Option<Other>) {{ {binding} }}\n")
+    assert not [c for c in got if c[1].endswith("Repo.q")]
+
+
+def test_a_name_no_pattern_binds_still_resolves(tmp_path: Path) -> None:
+    src = "fn f(r: Repo, o: Option<Other>) { if let Some(x) = o { x.q(); } r.q(); }\n"
+    assert ("src/app.rs#app.f", "src/repo.rs#repo.Repo.q") in rebound_calls(tmp_path, src)
+
+
+def test_wrappers_beyond_the_core_set_unwrap() -> None:
+    got = locals_of("fn f(a: Path<Id>, b: Query<Page>, c: Form<Login>) {}\n")
+    assert {(n, t) for _, n, t in got} == {("a", "Id"), ("b", "Page"), ("c", "Login")}
+
+
+def test_a_call_result_receiver_is_not_a_field_path() -> None:
+    (call,) = [c for c in parse("fn f(a: A) { a.b().c(); }\n").calls if c.name == "c"]
+    assert call.receiver == "a.b()"
+
+
+def test_a_call_result_does_not_resolve_through_a_field(tmp_path: Path) -> None:
+    write(tmp_path, "src/db.rs", "pub struct Db;\nimpl Db { pub fn c(&self) {} }\n")
+    write(tmp_path, "src/a.rs", "pub struct A { pub b: Db }\n")
+    write(tmp_path, "src/app.rs", "fn f(a: A) { a.b().c(); }\n")
+    assert not [c for c in calls_of(tmp_path) if c[1].endswith("Db.c")]
+
+
+def test_a_name_typed_two_ways_resolves_to_nothing(tmp_path: Path) -> None:
+    src = "fn f() { let r: Repo = a(); let r: Other = b(); r.q(); }\n"
+    assert not [c for c in rebound_calls(tmp_path, src) if c[1].endswith(".q")]
+
+
+def test_two_structs_with_one_name_are_ambiguous(tmp_path: Path) -> None:
+    write(tmp_path, "src/a.rs", Q_REPO)
+    write(tmp_path, "src/b.rs", Q_REPO)
+    write(
+        tmp_path, "src/app.rs", "use crate::a::*;\nuse crate::b::*;\nfn f(r: Repo) { r.q(); }\n"
+    )
+    assert not [c for c in calls_of(tmp_path) if c[1].endswith("Repo.q")]
+
+
+def test_a_path_typed_parameter_without_a_use_is_unresolved(tmp_path: Path) -> None:
+    write(tmp_path, "Cargo.toml", '[package]\nname = "app"\n[dependencies]\nreqwest = "0"\n')
+    write(tmp_path, "src/app.rs", "fn f(c: &reqwest::Client) { c.get(); }\n")
+    card = run(tmp_path).scorecard
+    assert card.get("rust", "calls", Resolution.UNRESOLVED) == 1
+    assert card.get("rust", "calls", Resolution.EXTERNAL) == 0
+
+
+# ----------------------------------------------------------------------
+# a binding is in scope only in its block, arm, loop or closure
+
+REPO_QW = "pub struct Repo;\nimpl Repo { pub fn q(&self) {} pub fn w(&self) {} }\n"
+OTHER_QW = "pub struct Other;\nimpl Other { pub fn q(&self) {} pub fn w(&self) {} }\n"
+
+
+def scope_calls(tmp_path: Path, body: str) -> set[str]:
+    """The methods `f` calls, as `Type.method`."""
+    write(tmp_path, "src/repo.rs", REPO_QW)
+    write(tmp_path, "src/other.rs", OTHER_QW)
+    write(tmp_path, "src/app.rs", USES + body)
+    got = calls_of(tmp_path)
+    return {
+        d.rsplit(".", 2)[-2] + "." + d.rsplit(".", 1)[-1] for s, d in got if s.endswith(".f")
+    }
+
+
+def test_a_let_in_a_block_does_not_leak_out_of_it(tmp_path: Path) -> None:
+    src = "fn f() {\n    let r = make();\n    {\n        let r: Other = b();\n        r.q();\n    }\n    r.w();\n}\n"
+    assert scope_calls(tmp_path, src) == {"Other.q"}
+
+
+def test_a_let_in_a_match_arm_does_not_leak_out_of_it(tmp_path: Path) -> None:
+    src = (
+        "fn f(x: u8) {\n    let r = make();\n    match x {\n"
+        "        1 => { let r: Other = b(); r.q(); }\n        _ => {}\n    }\n    r.w();\n}\n"
+    )
+    assert scope_calls(tmp_path, src) == {"Other.q"}
+
+
+def test_a_typed_closure_parameter_does_not_leak_out_of_the_closure(tmp_path: Path) -> None:
+    src = "fn f() {\n    let r = make();\n    let go = |r: &Other| {\n        r.q();\n    };\n    r.w();\n}\n"
+    assert scope_calls(tmp_path, src) == {"Other.q"}
+
+
+def test_a_closure_on_one_line_with_the_name_outside_resolves_to_nothing(
+    tmp_path: Path,
+) -> None:
+    src = "fn f() {\n    let r = make();\n    let go = |r: &Other| r.q(); r.w();\n}\n"
+    assert scope_calls(tmp_path, src) == set()
+
+
+def test_a_one_line_typed_closure_resolves(tmp_path: Path) -> None:
+    src = "fn f(xs: Vec<u8>) {\n    xs.iter().for_each(|r: &Repo| r.q());\n}\n"
+    assert scope_calls(tmp_path, src) == {"Repo.q"}
+
+
+def test_a_later_let_shadows_an_earlier_one_from_its_line_on(tmp_path: Path) -> None:
+    src = (
+        "fn f() {\n    let r: Repo = a();\n    r.q();\n    let r: Other = b();\n    r.w();\n}\n"
+    )
+    assert scope_calls(tmp_path, src) == {"Repo.q", "Other.w"}
+
+
+def test_a_shadowing_let_reads_the_outer_name_on_its_own_line(tmp_path: Path) -> None:
+    src = "fn f(r: Repo) {\n    let r: Other = r.q();\n    r.w();\n}\n"
+    assert scope_calls(tmp_path, src) == {"Other.w"}
+
+
+def test_the_parameter_resolves_again_after_a_block(tmp_path: Path) -> None:
+    src = "fn f(r: Repo) {\n    {\n        let r: Other = b();\n        r.q();\n    }\n    r.w();\n}\n"
+    assert scope_calls(tmp_path, src) == {"Other.q", "Repo.w"}
+
+
+@pytest.mark.parametrize(
+    "binding",
+    [
+        "if let Some(r) = o {\n        r.q();\n    }",
+        "while let Some(r) = o {\n        r.q();\n    }",
+        "match o {\n        Some(r) => r.q(),\n        None => {}\n    }",
+        "for r in v {\n        r.q();\n    }",
+        "let go = |r| {\n        r.q();\n    };",
+    ],
+)
+def test_a_pattern_binding_hides_the_parameter_only_in_its_scope(
+    tmp_path: Path, binding: str
+) -> None:
+    src = f"fn f(r: Repo, o: Option<Other>) {{\n    {binding}\n    r.w();\n}}\n"
+    assert scope_calls(tmp_path, src) == {"Repo.w"}
+
+
+def test_an_externally_imported_parameter_type_stays_external(tmp_path: Path) -> None:
+    write(tmp_path, "Cargo.toml", '[package]\nname = "app"\n[dependencies]\nreqwest = "0.12"\n')
+    write(
+        tmp_path, "src/client.rs", "pub struct Client;\nimpl Client { pub fn get(&self) {} }\n"
+    )
+    write(tmp_path, "src/app.rs", "use reqwest::Client;\nfn f(c: &Client) { c.get(); }\n")
+    assert not any(d.endswith("Client.get") for _, d in calls_of(tmp_path))
+
+
+# ----------------------------------------------------------------------
+# a local's type is found only where Rust looks: the module and its `use`s
+
+CLIENT_RS = (
+    "pub struct Inner;\nimpl Inner { pub fn send(&self) {} }\n"
+    "pub struct Client { pub inner: Inner }\nimpl Client { pub fn get(&self) {} }\n"
+)
+
+
+def test_a_type_used_from_an_undeclared_crate_is_not_a_repo_type(tmp_path: Path) -> None:
+    got = typed_calls(
+        tmp_path, "use hyper::Client;\nfn h(c: &Client) { c.get(); }\n", CLIENT_RS
+    )
+    assert not [c for c in got if c[0] == "src/app.rs#app.h"]
+
+
+def test_a_type_the_module_never_imports_is_not_found_elsewhere(tmp_path: Path) -> None:
+    got = typed_calls(tmp_path, "fn h(c: &Client) { c.get(); }\n", CLIENT_RS)
+    assert not [c for c in got if c[0] == "src/app.rs#app.h"]
+
+
+def test_a_type_brought_in_by_use_resolves(tmp_path: Path) -> None:
+    body = "use crate::repo::Client;\nfn h(c: &Client) { c.get(); c.inner.send(); }\n"
+    got = typed_calls(tmp_path, body, CLIENT_RS)
+    assert ("src/app.rs#app.h", "src/repo.rs#repo.Client.get") in got
+    assert ("src/app.rs#app.h", "src/repo.rs#repo.Inner.send") in got
+
+
+def test_a_field_of_an_external_local_type_is_not_a_repo_field(tmp_path: Path) -> None:
+    got = typed_calls(
+        tmp_path, "use reqwest::Client;\npub fn h(c: &Client) { c.inner.send(); }\n", CLIENT_RS
+    )
+    assert not [c for c in got if c[0] == "src/app.rs#app.h"]
+
+
+def test_a_field_of_an_unimported_local_type_is_not_found_elsewhere(tmp_path: Path) -> None:
+    got = typed_calls(tmp_path, "pub fn h(c: &Client) { c.inner.send(); }\n", CLIENT_RS)
+    assert not [c for c in got if c[0] == "src/app.rs#app.h"]

@@ -347,7 +347,8 @@
    "type_only": false,
    "is_from": true,
    "is_reexport": false,
-   "is_star": false
+   "is_star": false,
+   "is_global": false
   },
   {
    "specifier": "flask",
@@ -366,7 +367,8 @@
    "type_only": false,
    "is_from": true,
    "is_reexport": false,
-   "is_star": false
+   "is_star": false,
+   "is_global": false
   }
  ],
  "calls": [
@@ -423,6 +425,36 @@
   }
  ],
  "fields": [],
+ "locals": [
+  {
+   "function": "",
+   "name": "router",
+   "type_name": "",
+   "start_line": 0,
+   "end_line": 0
+  },
+  {
+   "function": "",
+   "name": "bp",
+   "type_name": "",
+   "start_line": 0,
+   "end_line": 0
+  },
+  {
+   "function": "",
+   "name": "PATH",
+   "type_name": "",
+   "start_line": 0,
+   "end_line": 0
+  },
+  {
+   "function": "",
+   "name": "METHODS",
+   "type_name": "",
+   "start_line": 0,
+   "end_line": 0
+  }
+ ],
  "reexports": [],
  "diagnostics": [],
  "ctor_assigns": [],

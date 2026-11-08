@@ -163,19 +163,62 @@ How each one decides:
 a browser user can cancel a request. Clients that retry by default (most
 Redis, MongoDB and Kafka clients) are not flagged either.
 
+## Typed parameters and locals
+
+Calls through a typed parameter and through an explicitly typed local now
+resolve in Rust, Go, Java, C#, TypeScript and Python. A local is scoped to the
+block that binds it, and the innermost binding wins. A name that is rebound
+without a written type hides the older type, a field and an import of the same
+name, so Svarupa leaves that call unresolved instead of guessing.
+
+The type is looked up only where the language itself looks: the same file, the
+file's imports, and the language's own implicit scope. That scope is the
+package directory in Go, the package in Java, and the namespaces in scope in
+C# (the file's own namespaces, its `using`s and the project's `global using`s).
+Rust, TypeScript and Python have no implicit scope beyond the file and its
+imports. A repository class with the same bare name somewhere else is never
+used. When an import names the type but points outside the repository, the
+call is external if the module is a known dependency or part of the standard
+library, and unresolved otherwise. A field reached through a local
+(`local.field.m()`) and a typed field use the same lookup.
+
+Locals whose type is only inferred do not resolve. These also do not resolve:
+
+- inferred locals: `var x = new T()`, `let x = T::new()`, `x := NewT()`;
+- generic parameters;
+- chains longer than one field, such as `a.b.c.m()`;
+- flow-sensitive narrowing, such as Java
+  `if (!(o instanceof T x)) return; x.f();`;
+- a name that is bound on the same line where its scope starts or ends, which
+  is left unresolved;
+- Python `global` names;
+- Go interface-typed parameters, because interface methods are not symbols;
+- Python module-level typed names used inside a function;
+- Python dotted and container annotations, such as `models.Repo` and
+  `list[Repo]`;
+- a name from the enclosing method used inside a Java anonymous class whose
+  supertype is not in the same file, because an inherited field could hide it;
+- Java fully qualified types, such as `com.acme.Repo r`.
+- a C# primary-constructor parameter used in a member body when a base type
+  is not in the same file, because an inherited member could hide it;
+- Rust files of an integration test crate (`tests/api/main.rs` and its
+  modules), because their `use crate::...` paths do not resolve yet.
+
 ## Language gaps
 
-The Python, TypeScript, Go, Java and C# packs are stable: each passed the
-benchmark. The JavaScript and Rust packs are experimental. A pack is stable
-only when two of its benchmark repositories reach 90% recall with no false
-fact. The benchmark corpus has 15 repositories. The two Rust repositories
-score 96% (rust-web-app) and 77% (zero-to-production), and no probe fired, so
-Rust is not stable yet. These gaps are known and are not guessed around.
+The Python, TypeScript, Go, Java, C# and Rust packs are stable: each passed
+the benchmark. The JavaScript pack is experimental. A pack is stable only when
+two of its benchmark repositories reach 90% recall with no false fact. The
+benchmark corpus has 15 repositories. The two Rust repositories score 98%
+(rust-web-app) and 93% (zero-to-production), and no probe fired. These gaps
+are known and are not guessed around.
 
 **Rust**
 
-- A call on a value that is typed only by a function parameter is not
-  resolved. This is true for every language, not only Rust.
+- A name rebound by any pattern (`if let`, `match`, `for`, a tuple `let`, a
+  closure parameter) or by an untyped `let` hides the earlier type inside the
+  scope of that new binding, so a call on it may be left unresolved. A local
+  with no written type (`let x = Repo::new()`) is not resolved.
 - A call through a module path with several segments, such as
   `web::routes::f()`, is not resolved.
 - A `pub use` inside an inline `mod { }` block is not followed. A `pub use`

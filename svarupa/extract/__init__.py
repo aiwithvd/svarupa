@@ -143,6 +143,7 @@ def extract(scan: Scan, declared_deps: frozenset[str] = frozenset()) -> ExtractR
         go_modules=go_modules(scan),
         rust_crates=rust_crates(scan),
         rust_uses=rust_uses(scan),
+        csharp_projects=csharp_projects(scan),
     )
     modules: dict[str, ModuleResolver] = {
         lang: pack.modules(context)
@@ -332,6 +333,16 @@ def _catalog_groups(text: str) -> set[str]:
         if isinstance(coordinate, str) and (g := _jvm_group(coordinate.split(":")[0])):
             out.add(g)
     return out
+
+
+def csharp_projects(scan: Scan) -> tuple[str, ...]:
+    """The directory of each .csproj: a C# project, the reach of a `global using`."""
+    out = {
+        "" if (d := str(Path(rec.path).parent)) == "." else d
+        for rec in scan.files
+        if rec.path.endswith(".csproj")
+    }
+    return tuple(sorted(out))
 
 
 def go_modules(scan: Scan) -> tuple[tuple[str, str], ...]:
