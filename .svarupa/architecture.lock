@@ -1,4 +1,4 @@
-# svarupa 2026.10.3
+# svarupa 2026.11.1
 # schema 1.7
 # grammars python@0.25.0
 dep	scripts	svarupa
@@ -46,6 +46,7 @@ dep	svarupa/setup	svarupa/design
 dep	svarupa/setup	svarupa/extract
 dep	svarupa/setup	svarupa/health
 entrypoint	svarupa	svarupa
+environment	production
 environment	pypi
 module	scripts
 module	svarupa
